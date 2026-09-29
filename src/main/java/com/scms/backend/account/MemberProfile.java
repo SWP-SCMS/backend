@@ -61,8 +61,14 @@ public class MemberProfile {
 	}
 
 	public MemberProfile(Account account) {
+		this(account, null, null);
+	}
+
+	public MemberProfile(Account account, String profileImageUrl, String fitnessGoal) {
 		this.account = Objects.requireNonNull(account);
 		this.accountId = account.getId();
+		this.profileImageUrl = profileImageUrl;
+		this.fitnessGoal = fitnessGoal;
 	}
 
 	public UUID getAccountId() {
