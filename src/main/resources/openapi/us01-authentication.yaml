@@ -1,0 +1,181 @@
+openapi: 3.1.0
+info:
+  title: SCMS Authentication API
+  version: 1.0.0
+  description: Contract for US01 authentication. Refresh tokens are sent only in an HttpOnly cookie.
+servers:
+  - url: /api/v1
+paths:
+  /auth/login:
+    post:
+      summary: Authenticate an active account
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication succeeded
+          headers:
+            Set-Cookie:
+              description: >-
+                refresh_token cookie; HttpOnly; Path=/api/v1/auth; SameSite=Lax;
+                Max-Age=604800. Secure is enabled in production.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/refresh:
+    post:
+      summary: Rotate the refresh token and issue a new access token
+      operationId: refresh
+      security:
+        - RefreshCookie: []
+      responses:
+        '200':
+          description: Refresh succeeded and the previous refresh token was revoked
+          headers:
+            Set-Cookie:
+              description: Replacement refresh_token cookie with the same attributes as login
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      summary: Revoke the current refresh-token session
+      description: Idempotent. The refresh-token cookie is cleared even when it is absent or invalid.
+      operationId: logout
+      security:
+        - RefreshCookie: []
+        - {}
+      responses:
+        '204':
+          description: Session revoked when present and cookie cleared
+          headers:
+            Set-Cookie:
+              description: Expired refresh_token cookie with Max-Age=0
+              schema:
+                type: string
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        The signature and expiry are validated, then the account identified by sub must still exist
+        with ACTIVE status for each protected request.
+    RefreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+  responses:
+    BadRequest:
+      description: Request validation or parsing failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: Credentials or refresh token are invalid, expired, revoked, or inactive
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - identifier
+        - password
+      properties:
+        identifier:
+          type: string
+          maxLength: 320
+          description: >-
+            Registered email or canonical phone number. The backend trims the value, lowercases
+            email identifiers, and matches phone identifiers against the canonical stored value.
+          examples:
+            - member@example.com
+            - '0901234567'
+        password:
+          type: string
+          format: password
+    AuthResponse:
+      type: object
+      required:
+        - accountId
+        - fullName
+        - role
+        - accessToken
+        - tokenType
+        - expiresIn
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        role:
+          $ref: '#/components/schemas/AccountRole'
+        accessToken:
+          type: string
+          description: JWT access token. Send it as Authorization Bearer credentials.
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          const: 900
+          description: Access-token lifetime in seconds
+    AccountRole:
+      type: string
+      enum:
+        - MEMBER
+        - RECEPTIONIST
+        - COACH
+        - MANAGER
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string

@@ -25,7 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(excludeAutoConfiguration = UserDetailsServiceAutoConfiguration.class)
+@WebMvcTest(controllers = GlobalExceptionHandlerTests.TestController.class,
+	excludeAutoConfiguration = UserDetailsServiceAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
 @Import(GlobalExceptionHandlerTests.TestController.class)
 class GlobalExceptionHandlerTests {

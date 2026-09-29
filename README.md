@@ -27,7 +27,7 @@ Các biến môi trường:
 | `DB_PASSWORD` | Mật khẩu database |
 | `PORT` | Cổng HTTP, mặc định `8080` |
 | `CORS_ALLOWED_ORIGINS` | Danh sách origin phân cách bằng dấu phẩy |
-| `JWT_SECRET` | Dành cho US01; foundation hiện chưa phát hành hoặc xác thực JWT |
+| `JWT_SECRET` | Secret ký JWT HS256, bắt buộc có ít nhất 32 byte |
 
 Spring Boot không tự đọc `.env` chỉ vì file tồn tại. Profile `local` chủ động dùng Spring Config Data để
 import `optional:file:.env[.properties]`. Tạo file local từ `.env.example`, thay toàn bộ placeholder, rồi chạy:
@@ -41,6 +41,21 @@ $env:SPRING_PROFILES_ACTIVE = "local"
 Hoặc đặt trực tiếp các environment variable tương ứng thay vì dùng `.env`. Không commit `.env` hoặc bất kỳ
 secret thật nào. Khi triển khai, đặt `SPRING_PROFILES_ACTIVE=prod`; profile production không import `.env`.
 
+## Authentication
+
+Contract US01 được chốt tại `src/main/resources/openapi/us01-authentication.yaml`:
+
+- `POST /api/v1/auth/login`: nhận `identifier` (email hoặc số điện thoại canonical) và `password`, trả access token
+  cùng thông tin account tối thiểu. Email được trim/lowercase; số điện thoại được trim trước khi lookup.
+- `POST /api/v1/auth/refresh`: đọc và rotate refresh token từ cookie.
+- `POST /api/v1/auth/logout`: thu hồi phiên hiện tại và luôn xóa cookie; endpoint có tính idempotent.
+
+Access token là JWT có thời hạn 15 phút và được gửi bằng `Authorization: Bearer <token>`. Mỗi request được bảo vệ
+xác minh chữ ký/thời hạn JWT, sau đó kiểm tra Account từ claim `sub` vẫn tồn tại và `ACTIVE`; access token đã phát
+hành bị từ chối ngay khi Account chuyển sang `SUSPENDED` hoặc `INACTIVE`. Refresh token có thời hạn 7 ngày, chỉ xuất
+hiện trong cookie `refresh_token` với `HttpOnly`, `Path=/api/v1/auth`, `SameSite=Lax`; `Secure=false` ở local/test và
+`Secure=true` ở production. Chỉ account `ACTIVE` có thể login hoặc refresh.
+
 ## Kiểm thử
 
 Đảm bảo Docker daemon đang chạy, sau đó:
@@ -49,8 +64,9 @@ secret thật nào. Khi triển khai, đặt `SPRING_PROFILES_ACTIVE=prod`; prof
 .\mvnw.cmd test
 ```
 
-Test khởi động PostgreSQL 17 sạch, chạy Flyway V1–V5, để Hibernate validate schema, và kiểm tra persistence,
-password encoder, security/CORS cùng ProblemDetail error handling. Test không kết nối Supabase.
+Test khởi động PostgreSQL 17 sạch, chạy Flyway V1–V6, để Hibernate validate schema, và kiểm tra persistence,
+authentication, refresh-token rotation, cookie policy, security/CORS cùng ProblemDetail error handling. Test không
+kết nối Supabase.
 
 ## Ghi chú triển khai bắt buộc
 
