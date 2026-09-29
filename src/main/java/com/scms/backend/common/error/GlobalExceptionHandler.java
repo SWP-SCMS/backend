@@ -5,6 +5,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.scms.backend.auth.InvalidCredentialsException;
+import com.scms.backend.auth.InvalidRefreshTokenException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -50,6 +53,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Malformed request");
 		problem.setProperty("code", "MALFORMED_REQUEST");
 		return handleExceptionInternal(exception, problem, headers, status, request);
+	}
+
+	@ExceptionHandler(InvalidCredentialsException.class)
+	ProblemDetail handleInvalidCredentials() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED,
+			"Invalid credentials");
+		problem.setTitle("Authentication failed");
+		problem.setProperty("code", "INVALID_CREDENTIALS");
+		return problem;
+	}
+
+	@ExceptionHandler(InvalidRefreshTokenException.class)
+	ProblemDetail handleInvalidRefreshToken() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED,
+			"The refresh token is invalid or expired.");
+		problem.setTitle("Refresh failed");
+		problem.setProperty("code", "INVALID_REFRESH_TOKEN");
+		return problem;
 	}
 
 	@ExceptionHandler(Exception.class)
