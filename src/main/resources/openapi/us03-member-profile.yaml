@@ -1,0 +1,213 @@
+openapi: 3.1.0
+info:
+  title: SCMS Member Profile API
+  version: 1.0.0
+  description: >-
+    Contract for US03 self-service Member Profile access. The authenticated account is always
+    taken from the JWT subject; this API does not accept an account or Member ID selector and
+    does not upload or process image files.
+servers:
+  - url: /api/v1
+paths:
+  /members/me/profile:
+    get:
+      summary: Get the authenticated Member's profile
+      operationId: getMyMemberProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The authenticated Member's Account and MemberProfile data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      summary: Partially update the authenticated Member's profile
+      operationId: updateMyMemberProfile
+      description: >-
+        Omitted properties keep their current values. Explicit null is rejected for fullName,
+        phone, email, and birthDate. Explicit null clears optional Profile properties. An empty
+        object is a valid no-op. Emergency-contact name and phone must both be non-null or both
+        be null after the complete patch is applied.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberProfilePatchRequest'
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: The JWT subject is the Account UUID and the role claim must be MEMBER.
+  responses:
+    BadRequest:
+      description: >-
+        The JSON body is malformed, contains a forbidden/unknown property, or fails validation.
+        Stable codes are MALFORMED_REQUEST and VALIDATION_ERROR.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: Bearer token is absent, invalid, expired, or belongs to a non-active Account
+    Forbidden:
+      description: The authenticated Account does not have the MEMBER role
+    Conflict:
+      description: >-
+        Email or phone is used by another Account whose status is not INACTIVE. Stable codes are
+        EMAIL_ALREADY_EXISTS, PHONE_ALREADY_EXISTS, and ACCOUNT_IDENTIFIER_ALREADY_EXISTS.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    MemberProfilePatchRequest:
+      type: object
+      additionalProperties: false
+      description: No property is required; property presence controls partial-update behavior.
+      properties:
+        fullName:
+          type: string
+          maxLength: 200
+          description: Trimmed and non-blank when present; explicit null is invalid.
+        phone:
+          type: string
+          pattern: '^0[0-9]{9}$'
+          description: Trimmed canonical Vietnamese phone; explicit null is invalid.
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          description: Trimmed and lowercased; explicit null is invalid.
+        birthDate:
+          type: string
+          format: date
+          description: Must not be in the future; explicit null is invalid.
+        profileImageUrl:
+          type:
+            - string
+            - 'null'
+          description: URL value only; file upload is outside US03. Null clears the value.
+        fitnessGoal:
+          type:
+            - string
+            - 'null'
+          description: Null clears the value.
+        emergencyContactName:
+          type:
+            - string
+            - 'null'
+          maxLength: 200
+          description: Final-state paired with emergencyContactPhone; null clears the value.
+        emergencyContactPhone:
+          type:
+            - string
+            - 'null'
+          pattern: '^0[0-9]{9}$'
+          description: Final-state paired with emergencyContactName; null clears the value.
+    MemberProfileResponse:
+      type: object
+      required:
+        - accountId
+        - memberId
+        - fullName
+        - phone
+        - email
+        - birthDate
+        - role
+        - status
+        - profileImageUrl
+        - fitnessGoal
+        - emergencyContactName
+        - emergencyContactPhone
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          readOnly: true
+        memberId:
+          type: string
+          pattern: '^MB-[0-9]+$'
+          readOnly: true
+          description: Immutable system-generated value mapped from member_profiles.member_code.
+        fullName:
+          type: string
+        phone:
+          type: string
+          pattern: '^0[0-9]{9}$'
+        email:
+          type: string
+          format: email
+        birthDate:
+          type: string
+          format: date
+        role:
+          type: string
+          const: MEMBER
+          readOnly: true
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+          readOnly: true
+        profileImageUrl:
+          type: [string, 'null']
+        fitnessGoal:
+          type: [string, 'null']
+        emergencyContactName:
+          type: [string, 'null']
+        emergencyContactPhone:
+          type: [string, 'null']
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string

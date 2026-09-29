@@ -75,6 +75,14 @@ public class MemberProfile {
 		return accountId;
 	}
 
+	public void updateDetails(String profileImageUrl, String fitnessGoal, String emergencyContactName,
+			String emergencyContactPhone) {
+		this.profileImageUrl = profileImageUrl;
+		this.fitnessGoal = fitnessGoal;
+		this.emergencyContactName = emergencyContactName;
+		this.emergencyContactPhone = emergencyContactPhone;
+	}
+
 	public Account getAccount() {
 		return account;
 	}

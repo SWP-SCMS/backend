@@ -66,6 +66,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
+				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
 				.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));

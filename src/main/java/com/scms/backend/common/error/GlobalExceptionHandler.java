@@ -9,6 +9,7 @@ import com.scms.backend.auth.DuplicateAccountException;
 import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.RegistrationValidationException;
+import com.scms.backend.member.MemberProfileValidationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -90,6 +91,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
 		problem.setTitle("Account conflict");
 		problem.setProperty("code", exception.getCode());
+		return problem;
+	}
+
+	@ExceptionHandler(MemberProfileValidationException.class)
+	ProblemDetail handleMemberProfileValidation(MemberProfileValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		return problem;
 	}
 

@@ -13,7 +13,6 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationRepository;
@@ -44,26 +43,27 @@ class RegistrationServiceTests {
 	@Mock
 	private PasswordEncoder passwordEncoder;
 
+	@Mock
+	private AccountIdentifierAvailability identifierAvailability;
+
 	private RegistrationService registrationService;
 
 	@BeforeEach
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-09-29T00:00:00Z"), ZoneOffset.UTC);
 		registrationService = new RegistrationService(accountRepository, memberProfileRepository,
-			auditEventRepository, notificationRepository, passwordEncoder, clock);
+			auditEventRepository, notificationRepository, passwordEncoder, clock, identifierAvailability);
 	}
 
 	@Test
 	void databaseEmailConstraintRaceIsTranslatedToConflictAndStopsRemainingWrites() {
 		RegistrationRequest request = new RegistrationRequest("Race Member", "0901234567", "race@example.com",
 			"Password123", LocalDate.of(2000, 1, 15), null, null);
-		when(accountRepository.existsByEmailIgnoreCaseAndStatusNot(request.email(), AccountStatus.INACTIVE))
-			.thenReturn(false);
-		when(accountRepository.existsByPhoneAndStatusNot(request.phone(), AccountStatus.INACTIVE)).thenReturn(false);
 		when(passwordEncoder.encode(request.password())).thenReturn("bcrypt-hash");
-		when(accountRepository.saveAndFlush(any()))
-			.thenThrow(new DataIntegrityViolationException(
-				"duplicate key value violates unique constraint uq_accounts_current_email"));
+		DataIntegrityViolationException databaseFailure = new DataIntegrityViolationException(
+			"duplicate key value violates unique constraint uq_accounts_current_email");
+		when(accountRepository.saveAndFlush(any())).thenThrow(databaseFailure);
+		when(identifierAvailability.fromDatabase(databaseFailure)).thenReturn(DuplicateAccountException.email());
 
 		assertThatThrownBy(() -> registrationService.register(request))
 			.isInstanceOfSatisfying(DuplicateAccountException.class,
