@@ -2,8 +2,12 @@ package com.scms.backend.auth;
 
 import jakarta.validation.Valid;
 
+import java.util.UUID;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -39,6 +43,16 @@ public class AuthenticationController {
 	ResponseEntity<Void> logout(
 			@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
 		authenticationService.logout(refreshToken);
+		return ResponseEntity.noContent()
+			.header(HttpHeaders.SET_COOKIE, cookieService.clear().toString())
+			.build();
+	}
+
+	@PostMapping("/change-password")
+	ResponseEntity<Void> changePassword(@AuthenticationPrincipal Jwt jwt,
+			@RequestBody ChangePasswordRequest request,
+			@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
+		authenticationService.changePassword(UUID.fromString(jwt.getSubject()), request, refreshToken);
 		return ResponseEntity.noContent()
 			.header(HttpHeaders.SET_COOKIE, cookieService.clear().toString())
 			.build();

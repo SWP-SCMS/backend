@@ -12,4 +12,9 @@ public record LoginRequest(
 			identifier = identifier.trim();
 		}
 	}
+
+	@Override
+	public String toString() {
+		return "LoginRequest[identifier=%s, password=[REDACTED]]".formatted(identifier);
+	}
 }

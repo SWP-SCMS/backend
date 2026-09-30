@@ -56,6 +56,16 @@ hành bị từ chối ngay khi Account chuyển sang `SUSPENDED` hoặc `INACTI
 hiện trong cookie `refresh_token` với `HttpOnly`, `Path=/api/v1/auth`, `SameSite=Lax`; `Secure=false` ở local/test và
 `Secure=true` ở production. Chỉ account `ACTIVE` có thể login hoặc refresh.
 
+### Đổi mật khẩu
+
+Contract US04 nằm tại `src/main/resources/openapi/us04-change-password.yaml`:
+
+- `POST /api/v1/auth/change-password` yêu cầu Bearer JWT và chỉ nhận `currentPassword`, `newPassword` (tối thiểu 8 ký tự).
+- Account được xác định từ JWT `sub`; cả bốn role `MEMBER`, `RECEPTIONIST`, `COACH`, `MANAGER` đều được phép khi `ACTIVE`.
+- Thành công trả `204 No Content`, thu hồi refresh token trong cookie hiện tại nếu hợp lệ, luôn xóa cookie `refresh_token`, và không cấp token mới.
+- FE phải xóa access token khỏi memory/state và chuyển về Login. Access token là JWT stateless có TTL 15 phút nên backend không blacklist token cũ trong phạm vi US04.
+- Đổi mật khẩu của chính mình không tạo Audit Event hoặc Notification và không thu hồi các session khác.
+
 ## Kiểm thử
 
 Đảm bảo Docker daemon đang chạy, sau đó:
