@@ -2,6 +2,7 @@ package com.scms.backend.auth;
 
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -50,6 +51,24 @@ public class AuthenticationService {
 	@Transactional
 	void logout(String rawRefreshToken) {
 		refreshTokenService.revokeIfPresent(rawRefreshToken);
+	}
+
+	@Transactional
+	void changePassword(UUID accountId, ChangePasswordRequest request, String rawRefreshToken) {
+		request.validate();
+		Account account = accountRepository.findById(accountId)
+			.filter(candidate -> candidate.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
+		String currentPasswordHash = account.getPasswordHash();
+		if (!passwordEncoder.matches(request.currentPassword(), currentPasswordHash)) {
+			throw new CurrentPasswordIncorrectException();
+		}
+		if (passwordEncoder.matches(request.newPassword(), currentPasswordHash)) {
+			throw new NewPasswordSameAsCurrentException();
+		}
+
+		account.changePassword(passwordEncoder.encode(request.newPassword()));
+		refreshTokenService.revokeIfPresent(rawRefreshToken, accountId);
 	}
 
 	private AuthSession issueSession(Account account, String refreshToken) {

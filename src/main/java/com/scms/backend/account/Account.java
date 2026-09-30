@@ -84,6 +84,10 @@ public class Account {
 		this.birthDate = Objects.requireNonNull(birthDate);
 	}
 
+	public void changePassword(String passwordHash) {
+		this.passwordHash = Objects.requireNonNull(passwordHash);
+	}
+
 	public AccountRole getRole() {
 		return role;
 	}

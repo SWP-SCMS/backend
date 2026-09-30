@@ -6,8 +6,12 @@ import java.util.List;
 import java.util.Map;
 
 import com.scms.backend.auth.DuplicateAccountException;
+import com.scms.backend.auth.CurrentPasswordIncorrectException;
+import com.scms.backend.auth.ChangePasswordValidationException;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
+import com.scms.backend.auth.NewPasswordSameAsCurrentException;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.member.MemberProfileValidationException;
 
@@ -73,6 +77,43 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 			"The refresh token is invalid or expired.");
 		problem.setTitle("Refresh failed");
 		problem.setProperty("code", "INVALID_REFRESH_TOKEN");
+		return problem;
+	}
+
+	@ExceptionHandler(InvalidAuthenticatedAccountException.class)
+	ProblemDetail handleInvalidAuthenticatedAccount() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED,
+			"The authenticated account is no longer active.");
+		problem.setTitle("Authentication failed");
+		problem.setProperty("code", "INVALID_TOKEN");
+		return problem;
+	}
+
+	@ExceptionHandler(CurrentPasswordIncorrectException.class)
+	ProblemDetail handleCurrentPasswordIncorrect() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"The current password is incorrect.");
+		problem.setTitle("Password change failed");
+		problem.setProperty("code", "CURRENT_PASSWORD_INCORRECT");
+		return problem;
+	}
+
+	@ExceptionHandler(ChangePasswordValidationException.class)
+	ProblemDetail handleChangePasswordValidation(ChangePasswordValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(NewPasswordSameAsCurrentException.class)
+	ProblemDetail handleNewPasswordSameAsCurrent() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"The new password must differ from the current password.");
+		problem.setTitle("Password change failed");
+		problem.setProperty("code", "NEW_PASSWORD_SAME_AS_CURRENT");
 		return problem;
 	}
 
