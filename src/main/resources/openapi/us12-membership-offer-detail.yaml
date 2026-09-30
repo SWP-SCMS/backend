@@ -1,0 +1,151 @@
+openapi: 3.1.0
+info:
+  title: SCMS Membership Offer Detail API
+  version: 1.0.0
+  description: >-
+    Contract for US12. This read-only contract returns one sellable Membership Offer. It does
+    not include Order creation or Membership Offer administration from US15 or US13.
+servers:
+  - url: /api/v1
+paths:
+  /membership-offers/{offerId}:
+    get:
+      summary: Get an active Membership Offer
+      operationId: getMembershipOffer
+      description: >-
+        Returns an ACTIVE Membership Offer to an ACTIVE MEMBER or RECEPTIONIST. A nonexistent
+        offer and an INACTIVE offer produce the same not-found response, so the endpoint does
+        not disclose whether an inactive record exists. A MEMBER may use this endpoint even
+        when the Account already has an ACTIVE Membership.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          description: Membership Offer identifier.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The active Membership Offer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipOffer'
+        '400':
+          description: offerId is not a valid UUID; code is MALFORMED_REQUEST
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/MalformedRequestProblem'
+        '401':
+          description: >-
+            Bearer token is missing, invalid, or expired, or its Account no longer exists with
+            ACTIVE status.
+        '403':
+          description: The authenticated Account is not a MEMBER or RECEPTIONIST
+        '404':
+          description: >-
+            The offer does not exist or is INACTIVE; both cases use code
+            MEMBERSHIP_OFFER_NOT_FOUND.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/OfferNotFoundProblem'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        The signature and expiry are validated, then the Account identified by sub must still
+        exist with ACTIVE status.
+  schemas:
+    MembershipPlanCode:
+      type: string
+      enum:
+        - BASIC
+        - PLUS
+    MembershipOffer:
+      type: object
+      additionalProperties: false
+      required:
+        - offerId
+        - planCode
+        - planDisplayName
+        - name
+        - description
+        - priceAmount
+        - currencyCode
+        - durationDays
+        - supportsBooking
+        - supportsPersonalCoaching
+      properties:
+        offerId:
+          type: string
+          format: uuid
+        planCode:
+          $ref: '#/components/schemas/MembershipPlanCode'
+        planDisplayName:
+          type: string
+          description: Loaded from membership_plans.display_name.
+        name:
+          type: string
+        description:
+          type: string
+        priceAmount:
+          type: integer
+          minimum: 1
+          description: Exact numeric(19,0) amount serialized as a JSON number; never floating point.
+        currencyCode:
+          type: string
+          const: VND
+        durationDays:
+          type: integer
+          minimum: 1
+        supportsBooking:
+          type: boolean
+          description: Loaded from membership_plans.supports_booking.
+        supportsPersonalCoaching:
+          type: boolean
+          description: Loaded from membership_plans.supports_personal_coaching.
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+    MalformedRequestProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          properties:
+            code:
+              const: MALFORMED_REQUEST
+    OfferNotFoundProblem:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetail'
+        - type: object
+          properties:
+            code:
+              const: MEMBERSHIP_OFFER_NOT_FOUND

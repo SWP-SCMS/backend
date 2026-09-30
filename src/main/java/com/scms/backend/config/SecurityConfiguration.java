@@ -66,7 +66,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
-				.requestMatchers(HttpMethod.GET, "/membership-offers").hasAnyRole("MEMBER", "RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*")
+					.hasAnyRole("MEMBER", "RECEPTIONIST")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
