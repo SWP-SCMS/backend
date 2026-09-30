@@ -68,6 +68,7 @@ public class SecurityConfiguration {
 					.permitAll()
 				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*")
 					.hasAnyRole("MEMBER", "RECEPTIONIST")
+				.requestMatchers(HttpMethod.POST, "/reception/members").hasRole("RECEPTIONIST")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
