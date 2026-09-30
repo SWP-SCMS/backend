@@ -81,4 +81,3 @@ US01–US04 **không có điểm lệch cần sửa code hoặc database** so v�
 - Task list mới giao **US05 cho BE Thiện**, không phải Khánh.
 - Branch `feat/us05-staff-account-list` hiện chưa có thay đổi code, nên chưa tạo xung đột; Khánh không nên tiếp tục code US05 nếu team dùng bản này làm task list hiện hành.
 - US tiếp theo trong bản này được giao cho BE Khánh là **US11 – Membership Offer List**.
-
