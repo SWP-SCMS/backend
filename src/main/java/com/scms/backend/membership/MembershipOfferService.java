@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +26,13 @@ public class MembershipOfferService {
 			offers = repository.findAllByStatusAndPlanCode(MembershipOfferStatus.ACTIVE, planCode);
 		}
 		return offers.stream().map(MembershipOfferResponse::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	MembershipOfferResponse getActiveOffer(UUID offerId) {
+		return repository.findByIdAndStatus(offerId, MembershipOfferStatus.ACTIVE)
+			.map(MembershipOfferResponse::from)
+			.orElseThrow(MembershipOfferNotFoundException::new);
 	}
 
 	private MembershipPlanCode parsePlanCode(String requestedPlanCode) {

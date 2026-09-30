@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -25,4 +26,12 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 		""")
 	List<MembershipOffer> findAllByStatusAndPlanCode(@Param("status") MembershipOfferStatus status,
 		@Param("planCode") MembershipPlanCode planCode);
+
+	@Query("""
+		select offer from MembershipOffer offer
+		join fetch offer.plan
+		where offer.id = :offerId and offer.status = :status
+		""")
+	Optional<MembershipOffer> findByIdAndStatus(@Param("offerId") UUID offerId,
+		@Param("status") MembershipOfferStatus status);
 }

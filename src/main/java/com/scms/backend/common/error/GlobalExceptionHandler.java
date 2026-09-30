@@ -15,9 +15,11 @@ import com.scms.backend.auth.NewPasswordSameAsCurrentException;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.member.MemberProfileValidationException;
 import com.scms.backend.membership.InvalidPlanCodeException;
+import com.scms.backend.membership.MembershipOfferNotFoundException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -61,6 +63,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Malformed request");
 		problem.setProperty("code", "MALFORMED_REQUEST");
 		return handleExceptionInternal(exception, problem, headers, status, request);
+	}
+
+	@Override
+	protected ResponseEntity<Object> handleTypeMismatch(TypeMismatchException exception, HttpHeaders headers,
+			HttpStatusCode status, WebRequest request) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"A request parameter or path value is malformed.");
+		problem.setTitle("Malformed request");
+		problem.setProperty("code", "MALFORMED_REQUEST");
+		return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
 	}
 
 	@ExceptionHandler(InvalidCredentialsException.class)
@@ -152,6 +164,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 			"planCode must be exactly BASIC or PLUS.");
 		problem.setTitle("Invalid plan code");
 		problem.setProperty("code", "INVALID_PLAN_CODE");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipOfferNotFoundException.class)
+	ProblemDetail handleMembershipOfferNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested membership offer was not found.");
+		problem.setTitle("Membership offer not found");
+		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_FOUND");
 		return problem;
 	}
 
