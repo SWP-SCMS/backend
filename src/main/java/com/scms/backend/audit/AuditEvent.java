@@ -53,7 +53,13 @@ public class AuditEvent {
 	}
 
 	public AuditEvent(UUID id, String action, String targetType, UUID targetId, Map<String, Object> afterData) {
+		this(id, null, action, targetType, targetId, afterData);
+	}
+
+	public AuditEvent(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId,
+			Map<String, Object> afterData) {
 		this.id = Objects.requireNonNull(id);
+		this.actorAccountId = actorAccountId;
 		this.action = Objects.requireNonNull(action);
 		this.targetType = Objects.requireNonNull(targetType);
 		this.targetId = Objects.requireNonNull(targetId);
