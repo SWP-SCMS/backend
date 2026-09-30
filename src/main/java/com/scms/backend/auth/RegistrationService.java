@@ -2,7 +2,6 @@ package com.scms.backend.auth;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,23 +33,25 @@ public class RegistrationService {
 	private final NotificationRepository notificationRepository;
 	private final PasswordEncoder passwordEncoder;
 	private final Clock clock;
+	private final AccountIdentifierAvailability identifierAvailability;
 
 	RegistrationService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
 			AuditEventRepository auditEventRepository, NotificationRepository notificationRepository,
-			PasswordEncoder passwordEncoder, Clock clock) {
+			PasswordEncoder passwordEncoder, Clock clock, AccountIdentifierAvailability identifierAvailability) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.auditEventRepository = auditEventRepository;
 		this.notificationRepository = notificationRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.clock = clock;
+		this.identifierAvailability = identifierAvailability;
 	}
 
 	@Transactional
 	RegistrationResponse register(RegistrationRequest request) {
 		validatePassword(request.password());
 		validateBirthDate(request.birthDate());
-		ensureIdentifiersAvailable(request.email(), request.phone());
+		identifierAvailability.ensureAvailableForRegistration(request.email(), request.phone());
 
 		UUID accountId = UUID.randomUUID();
 		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, request.fullName(),
@@ -59,7 +60,7 @@ public class RegistrationService {
 			accountRepository.saveAndFlush(account);
 		}
 		catch (DataIntegrityViolationException exception) {
-			throw duplicateFrom(exception);
+			throw identifierAvailability.fromDatabase(exception);
 		}
 
 		MemberProfile profile = memberProfileRepository.saveAndFlush(
@@ -99,35 +100,4 @@ public class RegistrationService {
 		}
 	}
 
-	private void ensureIdentifiersAvailable(String email, String phone) {
-		if (accountRepository.existsByEmailIgnoreCaseAndStatusNot(email, AccountStatus.INACTIVE)) {
-			throw DuplicateAccountException.email();
-		}
-		if (accountRepository.existsByPhoneAndStatusNot(phone, AccountStatus.INACTIVE)) {
-			throw DuplicateAccountException.phone();
-		}
-	}
-
-	private DuplicateAccountException duplicateFrom(DataIntegrityViolationException exception) {
-		String messages = exceptionMessages(exception).toLowerCase(Locale.ROOT);
-		if (messages.contains("uq_accounts_current_email")) {
-			return DuplicateAccountException.email();
-		}
-		if (messages.contains("uq_accounts_current_phone")) {
-			return DuplicateAccountException.phone();
-		}
-		return DuplicateAccountException.identifier();
-	}
-
-	private String exceptionMessages(Throwable exception) {
-		StringBuilder messages = new StringBuilder();
-		Throwable current = exception;
-		while (current != null) {
-			if (current.getMessage() != null) {
-				messages.append(' ').append(current.getMessage());
-			}
-			current = current.getCause();
-		}
-		return messages.toString();
-	}
 }

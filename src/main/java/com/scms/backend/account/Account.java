@@ -77,6 +77,13 @@ public class Account {
 		return id;
 	}
 
+	public void updateMemberProfileDetails(String fullName, String phone, String email, LocalDate birthDate) {
+		this.fullName = Objects.requireNonNull(fullName);
+		this.phone = Objects.requireNonNull(phone);
+		this.email = Objects.requireNonNull(email);
+		this.birthDate = Objects.requireNonNull(birthDate);
+	}
+
 	public AccountRole getRole() {
 		return role;
 	}
