@@ -14,6 +14,7 @@ import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.member.MemberProfileValidationException;
+import com.scms.backend.membership.InvalidPlanCodeException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -142,6 +143,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Validation failed");
 		problem.setProperty("code", "VALIDATION_ERROR");
 		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(InvalidPlanCodeException.class)
+	ProblemDetail handleInvalidPlanCode() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"planCode must be exactly BASIC or PLUS.");
+		problem.setTitle("Invalid plan code");
+		problem.setProperty("code", "INVALID_PLAN_CODE");
 		return problem;
 	}
 

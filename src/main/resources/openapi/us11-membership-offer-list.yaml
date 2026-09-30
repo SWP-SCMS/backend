@@ -1,0 +1,131 @@
+openapi: 3.1.0
+info:
+  title: SCMS Membership Offer List API
+  version: 1.0.0
+  description: >-
+    Contract for US11. This contract lists sellable Membership Offers only; offer detail and
+    management operations belong to US12 and US13 and are not included here.
+servers:
+  - url: /api/v1
+paths:
+  /membership-offers:
+    get:
+      summary: List active Membership Offers
+      operationId: listMembershipOffers
+      description: >-
+        Returns every ACTIVE Membership Offer, optionally restricted to one fixed Membership
+        Plan. The endpoint is available only to ACTIVE MEMBER and RECEPTIONIST Accounts. Results
+        are not paginated and are sorted by planCode ASC, durationDays ASC, name ASC, then
+        offerId ASC. When no offer matches, the response is 200 with an empty JSON array.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: planCode
+          in: query
+          required: false
+          description: Exact, case-sensitive fixed Membership Plan code.
+          schema:
+            $ref: '#/components/schemas/MembershipPlanCode'
+      responses:
+        '200':
+          description: Active offers in stable order; the array is empty when no offer matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MembershipOfferSummary'
+        '400':
+          description: planCode is present but is not exactly BASIC or PLUS
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          description: >-
+            Bearer token is missing, invalid, or expired, or its Account no longer exists with
+            ACTIVE status.
+        '403':
+          description: The authenticated Account is not a MEMBER or RECEPTIONIST
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        The signature and expiry are validated, then the Account identified by sub must still
+        exist with ACTIVE status.
+  schemas:
+    MembershipPlanCode:
+      type: string
+      enum:
+        - BASIC
+        - PLUS
+    MembershipOfferSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - offerId
+        - planCode
+        - planDisplayName
+        - name
+        - description
+        - priceAmount
+        - currencyCode
+        - durationDays
+        - supportsBooking
+        - supportsPersonalCoaching
+      properties:
+        offerId:
+          type: string
+          format: uuid
+        planCode:
+          $ref: '#/components/schemas/MembershipPlanCode'
+        planDisplayName:
+          type: string
+          description: Loaded from membership_plans.display_name.
+        name:
+          type: string
+        description:
+          type: string
+        priceAmount:
+          type: integer
+          minimum: 1
+          description: Exact numeric(19,0) amount serialized as a JSON number; never floating point.
+        currencyCode:
+          type: string
+          const: VND
+        durationDays:
+          type: integer
+          minimum: 1
+        supportsBooking:
+          type: boolean
+          description: Loaded from membership_plans.supports_booking.
+        supportsPersonalCoaching:
+          type: boolean
+          description: Loaded from membership_plans.supports_personal_coaching.
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          const: INVALID_PLAN_CODE
