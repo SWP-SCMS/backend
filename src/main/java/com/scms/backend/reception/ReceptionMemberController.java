@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.scms.backend.manager.ResetPasswordService;
 
 @RestController
 @RequestMapping("/reception/members")
@@ -26,10 +27,19 @@ public class ReceptionMemberController {
 
 	private final ReceptionMemberService service;
 	private final ReceptionMemberProfileService profileService;
+	private final ResetPasswordService resetPasswordService;
 
-	ReceptionMemberController(ReceptionMemberService service, ReceptionMemberProfileService profileService) {
+	ReceptionMemberController(ReceptionMemberService service, ReceptionMemberProfileService profileService,
+			ResetPasswordService resetPasswordService) {
 		this.service = service;
 		this.profileService = profileService;
+		this.resetPasswordService = resetPasswordService;
+	}
+
+	@PostMapping("/{memberId}/reset-password")
+	ResponseEntity<Void> resetPassword(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberId) {
+		resetPasswordService.receptionistResetMember(UUID.fromString(jwt.getSubject()), memberId);
+		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,9 +25,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class StaffAccountController {
 
 	private final StaffAccountService service;
+	private final StaffAccountCreateService createService;
+	private final StaffStatusService statusService;
+	private final ResetPasswordService resetPasswordService;
 
-	StaffAccountController(StaffAccountService service) {
+	StaffAccountController(StaffAccountService service, StaffAccountCreateService createService,
+			StaffStatusService statusService, ResetPasswordService resetPasswordService) {
 		this.service = service;
+		this.createService = createService;
+		this.statusService = statusService;
+		this.resetPasswordService = resetPasswordService;
+	}
+
+	@PostMapping
+	ResponseEntity<StaffAccountResponse> create(@AuthenticationPrincipal Jwt jwt,
+			@RequestBody StaffAccountCreateRequest request) {
+		return ResponseEntity.status(201)
+			.body(createService.create(UUID.fromString(jwt.getSubject()), request));
 	}
 
 	@GetMapping
@@ -50,5 +65,17 @@ public class StaffAccountController {
 	ResponseEntity<StaffAccountResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
 			@RequestBody StaffAccountPatchRequest request) {
 		return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), accountId, request));
+	}
+
+	@PatchMapping("/{accountId}/status")
+	ResponseEntity<StaffAccountResponse> changeStatus(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
+			@RequestBody StaffStatusChangeRequest request) {
+		return ResponseEntity.ok(statusService.deactivate(UUID.fromString(jwt.getSubject()), accountId, request));
+	}
+
+	@PostMapping("/{accountId}/reset-password")
+	ResponseEntity<Void> resetPassword(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId) {
+		resetPasswordService.managerReset(UUID.fromString(jwt.getSubject()), accountId);
+		return ResponseEntity.noContent().build();
 	}
 }

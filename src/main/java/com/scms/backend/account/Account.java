@@ -96,6 +96,12 @@ public class Account {
 		this.status = newStatus;
 	}
 
+	public void deactivateStaff() {
+		if (role == AccountRole.MEMBER) {
+			throw new IllegalStateException("Member accounts cannot be deactivated as staff");
+		}
+		status = AccountStatus.INACTIVE;
+	}
 	public AccountRole getRole() {
 		return role;
 	}

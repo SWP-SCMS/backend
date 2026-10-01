@@ -6,6 +6,31 @@ servers:
   - url: /api/v1
 paths:
   /manager/staff-accounts:
+    post:
+      summary: Create a staff or manager account
+      operationId: createStaffAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullName, phone, email, birthDate, role]
+              additionalProperties: false
+              properties:
+                fullName: { type: string, minLength: 1, maxLength: 200 }
+                phone: { type: string, pattern: '^0[0-9]{9}$' }
+                email: { type: string, format: email, maxLength: 320 }
+                birthDate: { type: string, format: date }
+                role: { type: string, enum: [COACH, RECEPTIONIST, MANAGER] }
+      responses:
+        '201': { description: Created staff account. }
+        '400': { description: Invalid account fields. }
+        '401': { description: Missing, invalid or inactive authentication. }
+        '403': { description: Authenticated account is not a Manager. }
+        '409': { description: Email or phone is already in use. }
     get:
       summary: List and search staff and manager accounts
       operationId: searchStaffAccounts
