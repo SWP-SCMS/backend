@@ -1,59 +1,52 @@
 openapi: 3.1.0
 info:
-  title: SCMS Membership Offer Detail API
+  title: SCMS Membership Offer List API
   version: 1.0.0
   description: >-
-    Contract for US12. This read-only contract returns one sellable Membership Offer. It does
-    not include Order creation or Membership Offer administration from US15 or US13.
+    Contract for US12. This contract lists sellable Membership Offers only; offer detail and
+    management operations belong to US13 and US14 and are not included here.
 servers:
   - url: /api/v1
 paths:
-  /membership-offers/{offerId}:
+  /membership-offers:
     get:
-      summary: Get an active Membership Offer
-      operationId: getMembershipOffer
+      summary: List active Membership Offers
+      operationId: listMembershipOffers
       description: >-
-        Returns an ACTIVE Membership Offer to an ACTIVE MEMBER or RECEPTIONIST. A nonexistent
-        offer and an INACTIVE offer produce the same not-found response, so the endpoint does
-        not disclose whether an inactive record exists. A MEMBER may use this endpoint even
-        when the Account already has an ACTIVE Membership.
+        Returns every ACTIVE Membership Offer, optionally restricted to one fixed Membership
+        Plan. The endpoint is available only to ACTIVE MEMBER and RECEPTIONIST Accounts. Results
+        are not paginated and are sorted by planCode ASC, durationDays ASC, name ASC, then
+        offerId ASC. When no offer matches, the response is 200 with an empty JSON array.
       security:
         - BearerAuth: []
       parameters:
-        - name: offerId
-          in: path
-          required: true
-          description: Membership Offer identifier.
+        - name: planCode
+          in: query
+          required: false
+          description: Exact, case-sensitive fixed Membership Plan code.
           schema:
-            type: string
-            format: uuid
+            $ref: '#/components/schemas/MembershipPlanCode'
       responses:
         '200':
-          description: The active Membership Offer
+          description: Active offers in stable order; the array is empty when no offer matches
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MembershipOffer'
+                type: array
+                items:
+                  $ref: '#/components/schemas/MembershipOfferSummary'
         '400':
-          description: offerId is not a valid UUID; code is MALFORMED_REQUEST
+          description: planCode is present but is not exactly BASIC or PLUS
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/MalformedRequestProblem'
+                $ref: '#/components/schemas/ProblemDetail'
         '401':
           description: >-
             Bearer token is missing, invalid, or expired, or its Account no longer exists with
             ACTIVE status.
         '403':
           description: The authenticated Account is not a MEMBER or RECEPTIONIST
-        '404':
-          description: >-
-            The offer does not exist or is INACTIVE; both cases use code
-            MEMBERSHIP_OFFER_NOT_FOUND.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/OfferNotFoundProblem'
 components:
   securitySchemes:
     BearerAuth:
@@ -69,7 +62,7 @@ components:
       enum:
         - BASIC
         - PLUS
-    MembershipOffer:
+    MembershipOfferSummary:
       type: object
       additionalProperties: false
       required:
@@ -135,17 +128,4 @@ components:
           format: uri-reference
         code:
           type: string
-    MalformedRequestProblem:
-      allOf:
-        - $ref: '#/components/schemas/ProblemDetail'
-        - type: object
-          properties:
-            code:
-              const: MALFORMED_REQUEST
-    OfferNotFoundProblem:
-      allOf:
-        - $ref: '#/components/schemas/ProblemDetail'
-        - type: object
-          properties:
-            code:
-              const: MEMBERSHIP_OFFER_NOT_FOUND
+          const: INVALID_PLAN_CODE

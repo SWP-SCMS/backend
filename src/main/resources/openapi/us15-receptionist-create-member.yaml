@@ -3,7 +3,7 @@ info:
   title: SCMS Receptionist Create Member API
   version: 1.0.0
   description: >-
-    Contract for US14. An ACTIVE RECEPTIONIST creates an ACTIVE MEMBER Account and profile.
+    Contract for US15. An ACTIVE RECEPTIONIST creates an ACTIVE MEMBER Account and profile.
     The default password is generated internally from the normalized phone number and stored
     only as a BCrypt hash. The response never returns a password or authentication token.
 servers:
@@ -108,7 +108,7 @@ components:
           type:
             - string
             - 'null'
-          description: Optional reference only; US14 does not upload or process images.
+          description: Optional reference only; US15 does not upload or process images.
     CreateMemberResponse:
       type: object
       additionalProperties: false

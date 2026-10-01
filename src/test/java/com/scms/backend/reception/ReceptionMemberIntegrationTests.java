@@ -294,15 +294,15 @@ class ReceptionMemberIntegrationTests {
 	@Test
 	void duplicateCurrentEmailAndPhoneReturnSpecificConflictCodes() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
-		createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "0901000030", "duplicate-us14@example.com");
-		createAccount(AccountRole.MEMBER, AccountStatus.SUSPENDED, "0901000031", "phone-owner-us14@example.com");
+		createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "0901000030", "duplicate-us15@example.com");
+		createAccount(AccountRole.MEMBER, AccountStatus.SUSPENDED, "0901000031", "phone-owner-us15@example.com");
 
 		createMember(accessToken(receptionist),
-			validRequest("0901000032", "  DUPLICATE-US14@EXAMPLE.COM  ", ""))
+			validRequest("0901000032", "  DUPLICATE-US15@EXAMPLE.COM  ", ""))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
 		createMember(accessToken(receptionist),
-			validRequest("  0901000031  ", "new-us14@example.com", ""))
+			validRequest("  0901000031  ", "new-us15@example.com", ""))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
 	}
@@ -310,15 +310,15 @@ class ReceptionMemberIntegrationTests {
 	@Test
 	void databaseIdentifierRaceIsTranslatedToConflict() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
-		installFailureTrigger("accounts", "us14_account_race", "us14_force_account_race",
+		installFailureTrigger("accounts", "us15_account_race", "us15_force_account_race",
 			"duplicate key value violates unique constraint \\\"uq_accounts_current_email\\\"", "23505");
 		try {
-			createMember(accessToken(receptionist), validRequest("0901000040", "race-us14@example.com", ""))
+			createMember(accessToken(receptionist), validRequest("0901000040", "race-us15@example.com", ""))
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
 		}
 		finally {
-			dropFailureTrigger("accounts", "us14_account_race", "us14_force_account_race");
+			dropFailureTrigger("accounts", "us15_account_race", "us15_force_account_race");
 		}
 	}
 
@@ -326,10 +326,10 @@ class ReceptionMemberIntegrationTests {
 	void identifiersFromInactiveStaffAccountCanBeReusedWithoutChangingOldAccount() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		Account inactive = createAccount(AccountRole.COACH, AccountStatus.INACTIVE, "0901000050",
-			"inactive-us14@example.com");
+			"inactive-us15@example.com");
 
 		createMember(accessToken(receptionist),
-			validRequest("0901000050", "inactive-us14@example.com", ""))
+			validRequest("0901000050", "inactive-us15@example.com", ""))
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.role").value("MEMBER"));
 
@@ -345,19 +345,19 @@ class ReceptionMemberIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
-		installFailureTrigger("audit_events", "us14_audit_failure", "us14_force_audit_failure",
+		installFailureTrigger("audit_events", "us15_audit_failure", "us15_force_audit_failure",
 			"forced audit failure", "P0001");
 		try {
-			createMember(accessToken(receptionist), validRequest("0901000060", "audit-failure-us14@example.com", ""))
+			createMember(accessToken(receptionist), validRequest("0901000060", "audit-failure-us15@example.com", ""))
 				.andExpect(status().isInternalServerError())
 				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 		}
 		finally {
-			dropFailureTrigger("audit_events", "us14_audit_failure", "us14_force_audit_failure");
+			dropFailureTrigger("audit_events", "us15_audit_failure", "us15_force_audit_failure");
 		}
 
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
-		assertThat(accountRepository.findByEmailIgnoreCaseAndStatus("audit-failure-us14@example.com",
+		assertThat(accountRepository.findByEmailIgnoreCaseAndStatus("audit-failure-us15@example.com",
 			AccountStatus.ACTIVE)).isEmpty();
 	}
 
@@ -368,18 +368,18 @@ class ReceptionMemberIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
-		installFailureTrigger("notifications", "us14_notification_failure", "us14_force_notification_failure",
+		installFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure",
 			"forced notification failure", "P0001");
 		MvcResult result;
 		try {
 			result = createMember(accessToken(receptionist),
-				validRequest("0901000070", "notification-failure-us14@example.com", ""))
+				validRequest("0901000070", "notification-failure-us15@example.com", ""))
 				.andExpect(status().isCreated())
 				.andExpect(jsonPath("$.memberId", matchesPattern("MB-[0-9]+")))
 				.andReturn();
 		}
 		finally {
-			dropFailureTrigger("notifications", "us14_notification_failure", "us14_force_notification_failure");
+			dropFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure");
 		}
 
 		UUID accountId = UUID.fromString(JsonPath.read(result.getResponse().getContentAsString(), "$.accountId"));
@@ -403,7 +403,7 @@ class ReceptionMemberIntegrationTests {
 
 	private static Stream<String> invalidFormattedRequests() {
 		return Stream.of(
-			validRequest("+84901234567", "invalid-phone-us14@example.com", ""),
+			validRequest("+84901234567", "invalid-phone-us15@example.com", ""),
 			validRequest("0901000019", "not-an-email", ""),
 			validRequest("0901000022", "too-long-name@example.com", "")
 				.replace("Reception Member", "X".repeat(201)));
@@ -417,7 +417,7 @@ class ReceptionMemberIntegrationTests {
 
 	private Account createAccount(AccountRole role, AccountStatus status, String phone, String email) {
 		UUID id = UUID.randomUUID();
-		return accountRepository.saveAndFlush(new Account(id, role, status, role + " US14 Actor", phone, email,
+		return accountRepository.saveAndFlush(new Account(id, role, status, role + " US15 Actor", phone, email,
 			LocalDate.of(1990, 1, 1), passwordEncoder.encode(EXISTING_PASSWORD)));
 	}
 
