@@ -12,6 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -36,5 +39,16 @@ public class StaffAccountController {
 		}
 		Pageable pageable = PageRequest.of(page, size, Sort.by("fullName").ascending().and(Sort.by("id")));
 		return ResponseEntity.ok(service.search(UUID.fromString(jwt.getSubject()), query, role, status, pageable));
+	}
+
+	@GetMapping("/{accountId}")
+	ResponseEntity<StaffAccountResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId) {
+		return ResponseEntity.ok(service.get(UUID.fromString(jwt.getSubject()), accountId));
+	}
+
+	@PatchMapping("/{accountId}")
+	ResponseEntity<StaffAccountResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
+			@RequestBody StaffAccountPatchRequest request) {
+		return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), accountId, request));
 	}
 }
