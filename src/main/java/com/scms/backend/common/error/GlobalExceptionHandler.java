@@ -23,6 +23,7 @@ import com.scms.backend.membership.PendingMembershipOrderExistsException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
 import com.scms.backend.manager.StaffAccountValidationException;
+import com.scms.backend.manager.StaffAccountNotFoundException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -182,6 +183,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Validation failed");
 		problem.setProperty("code", "VALIDATION_ERROR");
 		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(StaffAccountNotFoundException.class)
+	ProblemDetail handleStaffAccountNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested staff account was not found.");
+		problem.setTitle("Staff account not found");
+		problem.setProperty("code", "STAFF_ACCOUNT_NOT_FOUND");
 		return problem;
 	}
 

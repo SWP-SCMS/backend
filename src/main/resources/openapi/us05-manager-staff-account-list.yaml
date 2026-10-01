@@ -34,6 +34,45 @@ paths:
         '400': { description: Invalid filter or pagination parameter. }
         '401': { description: Missing, invalid or inactive authentication. }
         '403': { description: Authenticated account is not a Manager. }
+  /manager/staff-accounts/{accountId}:
+    parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get a staff or manager account
+      operationId: getStaffAccount
+      security:
+        - bearerAuth: []
+      responses:
+        '200': { description: Staff account details. }
+        '401': { description: Missing, invalid or inactive authentication. }
+        '403': { description: Authenticated account is not a Manager. }
+        '404': { description: Target is not a staff or manager account. }
+    patch:
+      summary: Update permitted staff or manager account fields
+      operationId: updateStaffAccount
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                fullName: { type: string, minLength: 1, maxLength: 200 }
+                phone: { type: string, pattern: '^0[0-9]{9}$' }
+                email: { type: string, format: email, maxLength: 320 }
+                birthDate: { type: string, format: date }
+      responses:
+        '200': { description: Updated staff account. }
+        '400': { description: Invalid field or attempted role change. }
+        '401': { description: Missing, invalid or inactive authentication. }
+        '403': { description: Authenticated account is not a Manager. }
+        '404': { description: Target is not a staff or manager account. }
 components:
   securitySchemes:
     bearerAuth:
