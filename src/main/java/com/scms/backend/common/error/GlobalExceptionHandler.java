@@ -222,7 +222,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setProperty("code", "STAFF_STATUS_CONFLICT");
 		return problem;
 	}
-
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)
 	ProblemDetail handleReceptionMemberNotFound() {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,

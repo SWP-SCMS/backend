@@ -102,7 +102,6 @@ public class Account {
 		}
 		status = AccountStatus.INACTIVE;
 	}
-
 	public AccountRole getRole() {
 		return role;
 	}
