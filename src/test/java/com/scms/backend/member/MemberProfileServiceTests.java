@@ -46,7 +46,7 @@ class MemberProfileServiceTests {
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-09-29T00:00:00Z"), ZoneOffset.UTC);
 		memberProfileService = new MemberProfileService(accountRepository, memberProfileRepository,
-			identifierAvailability, clock);
+			identifierAvailability, new MemberProfileDetailsValidator(clock));
 	}
 
 	@Test

@@ -1,0 +1,426 @@
+openapi: 3.1.0
+info:
+  title: SCMS Receptionist Member Search and Profile API
+  version: 1.0.0
+  description: >-
+    Contract for US11. An ACTIVE RECEPTIONIST can find an ACTIVE or SUSPENDED MEMBER by exact
+    Member ID or phone, then view or partially update that Member's profile. The authenticated
+    Receptionist is always taken from the JWT sub claim; no actor/account ID is accepted from
+    the client. INACTIVE Accounts are never exposed and are handled as not found.
+servers:
+  - url: /api/v1
+paths:
+  /reception/members/search:
+    get:
+      summary: Find one Member by exact Member ID or phone
+      operationId: searchReceptionMember
+      description: >-
+        Exactly one query criterion must be supplied. Values are trimmed before an exact lookup.
+        This endpoint does not search by email or full name and is not paginated because both
+        accepted identifiers are unique.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: memberId
+          in: query
+          required: false
+          description: Exact member_profiles.member_code. Mutually exclusive with phone.
+          schema:
+            type: string
+            maxLength: 20
+          example: MB-123
+        - name: phone
+          in: query
+          required: false
+          description: Exact Vietnamese phone number. Mutually exclusive with memberId.
+          schema:
+            type: string
+            pattern: '^0[0-9]{9}$'
+          example: '0901234567'
+      responses:
+        '200':
+          description: Matching ACTIVE or SUSPENDED MEMBER
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberSearchResponse'
+              example:
+                accountId: 8fb245e3-d64e-4c78-9ad4-e3434556856c
+                memberId: MB-123
+                fullName: Nguyen Van A
+                phone: '0901234567'
+                email: member@example.com
+                birthDate: '2000-01-01'
+                profileImageUrl: null
+                status: ACTIVE
+        '400':
+          $ref: '#/components/responses/SearchValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+  /reception/members/{memberId}/profile:
+    parameters:
+      - name: memberId
+        in: path
+        required: true
+        description: Immutable member_profiles.member_code, not an Account UUID.
+        schema:
+          type: string
+          pattern: '^MB-[0-9]+$'
+        example: MB-123
+    get:
+      summary: Get a Member profile at reception
+      operationId: getReceptionMemberProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Complete profile for an ACTIVE or SUSPENDED MEMBER
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+              example:
+                accountId: 8fb245e3-d64e-4c78-9ad4-e3434556856c
+                memberId: MB-123
+                fullName: Nguyen Van A
+                phone: '0901234567'
+                email: member@example.com
+                birthDate: '2000-01-01'
+                role: MEMBER
+                status: SUSPENDED
+                profileImageUrl: null
+                fitnessGoal: Build strength
+                emergencyContactName: Nguyen Van B
+                emergencyContactPhone: '0912345678'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+    patch:
+      summary: Partially update a Member profile at reception
+      operationId: updateReceptionMemberProfile
+      description: >-
+        Omitted properties keep their current values and an empty object is a valid no-op.
+        Explicit null is rejected for fullName, phone, email, and birthDate; it clears optional
+        properties. accountId, memberId, role, status, password, passwordHash, and version are
+        read-only and supplying them is a MALFORMED_REQUEST. Account status is never changed.
+        As an approved FE/BA clarification, emergency-contact name and phone must both be non-null
+        or both be null in the final state after applying the complete patch.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemberProfilePatchRequest'
+            example:
+              fullName: Nguyen Van A
+              phone: '0901234567'
+              email: member@example.com
+              birthDate: '2000-01-01'
+              profileImageUrl: https://cdn.example.com/member.png
+              fitnessGoal: Build strength
+              emergencyContactName: Nguyen Van B
+              emergencyContactPhone: '0912345678'
+      responses:
+        '200':
+          description: Updated profile; immutable identifiers, role, and status are preserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+        '400':
+          $ref: '#/components/responses/PatchBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '409':
+          $ref: '#/components/responses/IdentifierConflict'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        JWT sub identifies an existing ACTIVE Account and the role claim must be RECEPTIONIST.
+        Missing, invalid, expired, or no-longer-active credentials receive 401.
+  responses:
+    SearchValidationError:
+      description: >-
+        VALIDATION_ERROR: neither criterion, both criteria, a blank criterion, or an invalid phone
+        was supplied.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          examples:
+            criteria:
+              value:
+                title: Validation failed
+                status: 400
+                detail: One or more request fields are invalid.
+                instance: /api/v1/reception/members/search
+                code: VALIDATION_ERROR
+                errors:
+                  criteria:
+                    - exactly one of memberId or phone must be provided
+            phone:
+              value:
+                title: Validation failed
+                status: 400
+                detail: One or more request fields are invalid.
+                instance: /api/v1/reception/members/search
+                code: VALIDATION_ERROR
+                errors:
+                  phone:
+                    - must be 10 digits starting with 0
+    PatchBadRequest:
+      description: >-
+        VALIDATION_ERROR for invalid accepted fields or emergency-contact final state;
+        MALFORMED_REQUEST for malformed JSON, unknown fields, or read-only fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          examples:
+            validation:
+              value:
+                title: Validation failed
+                status: 400
+                detail: One or more request fields are invalid.
+                instance: /api/v1/reception/members/MB-123/profile
+                code: VALIDATION_ERROR
+                errors:
+                  emergencyContact:
+                    - name and phone must both be provided or both be null
+            malformed:
+              value:
+                title: Malformed request
+                status: 400
+                detail: The request body is missing or malformed.
+                instance: /api/v1/reception/members/MB-123/profile
+                code: MALFORMED_REQUEST
+    Unauthorized:
+      description: >-
+        Bearer token is absent, invalid, or expired, or its Account no longer exists with ACTIVE
+        status. The request is rejected before member data is accessed.
+    Forbidden:
+      description: Authenticated Account has MEMBER, COACH, or MANAGER role instead of RECEPTIONIST.
+    MemberNotFound:
+      description: >-
+        MEMBER_NOT_FOUND. The identifier is absent, belongs to a non-MEMBER, or belongs to an
+        INACTIVE Account; these cases intentionally have the same response.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          example:
+            title: Member not found
+            status: 404
+            detail: The requested member was not found.
+            instance: /api/v1/reception/members/MB-123/profile
+            code: MEMBER_NOT_FOUND
+    IdentifierConflict:
+      description: Another current Account already uses the requested email or phone.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+          examples:
+            email:
+              value:
+                title: Account conflict
+                status: 409
+                detail: An active or suspended account already uses this email address.
+                instance: /api/v1/reception/members/MB-123/profile
+                code: EMAIL_ALREADY_EXISTS
+            phone:
+              value:
+                title: Account conflict
+                status: 409
+                detail: An active or suspended account already uses this phone number.
+                instance: /api/v1/reception/members/MB-123/profile
+                code: PHONE_ALREADY_EXISTS
+            databaseRace:
+              value:
+                title: Account conflict
+                status: 409
+                detail: An active or suspended account already uses this email address or phone number.
+                instance: /api/v1/reception/members/MB-123/profile
+                code: ACCOUNT_IDENTIFIER_ALREADY_EXISTS
+  schemas:
+    MemberSearchResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - accountId
+        - memberId
+        - fullName
+        - phone
+        - email
+        - birthDate
+        - profileImageUrl
+        - status
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          readOnly: true
+        memberId:
+          type: string
+          pattern: '^MB-[0-9]+$'
+          readOnly: true
+        fullName:
+          type: string
+        phone:
+          type: string
+          pattern: '^0[0-9]{9}$'
+        email:
+          type: string
+          format: email
+        birthDate:
+          type: string
+          format: date
+        profileImageUrl:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+          readOnly: true
+    MemberProfilePatchRequest:
+      type: object
+      additionalProperties: false
+      description: >-
+        No property is required. Property presence controls partial-update behavior. Non-null
+        optional strings are trimmed and must not be blank.
+      properties:
+        fullName:
+          type: string
+          maxLength: 200
+          description: Trimmed and non-blank; explicit null is invalid.
+        phone:
+          type: string
+          pattern: '^0[0-9]{9}$'
+          description: Trimmed; explicit null is invalid.
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          description: Trimmed and lowercased; explicit null is invalid.
+        birthDate:
+          type: string
+          format: date
+          description: Must not be in the future; explicit null is invalid.
+        profileImageUrl:
+          type: [string, 'null']
+          description: Null clears the value.
+        fitnessGoal:
+          type: [string, 'null']
+          description: Null clears the value.
+        emergencyContactName:
+          type: [string, 'null']
+          maxLength: 200
+          description: Final-state paired with emergencyContactPhone; null clears the value.
+        emergencyContactPhone:
+          type: [string, 'null']
+          pattern: '^0[0-9]{9}$'
+          description: Final-state paired with emergencyContactName; null clears the value.
+    MemberProfileResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - accountId
+        - memberId
+        - fullName
+        - phone
+        - email
+        - birthDate
+        - role
+        - status
+        - profileImageUrl
+        - fitnessGoal
+        - emergencyContactName
+        - emergencyContactPhone
+      properties:
+        accountId:
+          type: string
+          format: uuid
+          readOnly: true
+        memberId:
+          type: string
+          pattern: '^MB-[0-9]+$'
+          readOnly: true
+        fullName:
+          type: string
+        phone:
+          type: string
+          pattern: '^0[0-9]{9}$'
+        email:
+          type: string
+          format: email
+        birthDate:
+          type: string
+          format: date
+        role:
+          type: string
+          const: MEMBER
+          readOnly: true
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+          readOnly: true
+        profileImageUrl:
+          type: [string, 'null']
+        fitnessGoal:
+          type: [string, 'null']
+        emergencyContactName:
+          type: [string, 'null']
+        emergencyContactPhone:
+          type: [string, 'null']
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - MEMBER_NOT_FOUND
+            - EMAIL_ALREADY_EXISTS
+            - PHONE_ALREADY_EXISTS
+            - ACCOUNT_IDENTIFIER_ALREADY_EXISTS
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
