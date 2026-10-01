@@ -27,12 +27,14 @@ public class StaffAccountController {
 	private final StaffAccountService service;
 	private final StaffAccountCreateService createService;
 	private final StaffStatusService statusService;
+	private final ResetPasswordService resetPasswordService;
 
 	StaffAccountController(StaffAccountService service, StaffAccountCreateService createService,
-			StaffStatusService statusService) {
+			StaffStatusService statusService, ResetPasswordService resetPasswordService) {
 		this.service = service;
 		this.createService = createService;
 		this.statusService = statusService;
+		this.resetPasswordService = resetPasswordService;
 	}
 
 	@PostMapping
@@ -69,5 +71,11 @@ public class StaffAccountController {
 	ResponseEntity<StaffAccountResponse> changeStatus(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
 			@RequestBody StaffStatusChangeRequest request) {
 		return ResponseEntity.ok(statusService.deactivate(UUID.fromString(jwt.getSubject()), accountId, request));
+	}
+
+	@PostMapping("/{accountId}/reset-password")
+	ResponseEntity<Void> resetPassword(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId) {
+		resetPasswordService.managerReset(UUID.fromString(jwt.getSubject()), accountId);
+		return ResponseEntity.noContent().build();
 	}
 }

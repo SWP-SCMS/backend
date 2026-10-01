@@ -75,6 +75,12 @@ public class RefreshTokenService {
 			.ifPresent(token -> token.revoke(now, null));
 	}
 
+	@Transactional
+	public void revokeAll(UUID accountId) {
+		Instant now = clock.instant();
+		repository.findAllByAccountId(accountId).forEach(token -> token.revoke(now, null));
+	}
+
 	private IssuedRefreshToken create(Account account, Instant now) {
 		String rawToken = generateToken();
 		RefreshToken token = new RefreshToken(UUID.randomUUID(), account, hash(rawToken),
