@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,9 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class StaffAccountController {
 
 	private final StaffAccountService service;
+	private final StaffAccountCreateService createService;
 
-	StaffAccountController(StaffAccountService service) {
+	StaffAccountController(StaffAccountService service, StaffAccountCreateService createService) {
 		this.service = service;
+		this.createService = createService;
+	}
+
+	@PostMapping
+	ResponseEntity<StaffAccountResponse> create(@AuthenticationPrincipal Jwt jwt,
+			@RequestBody StaffAccountCreateRequest request) {
+		return ResponseEntity.status(201)
+			.body(createService.create(UUID.fromString(jwt.getSubject()), request));
 	}
 
 	@GetMapping
