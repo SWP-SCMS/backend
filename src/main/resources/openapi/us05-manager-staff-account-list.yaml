@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Staff Account List
+  version: v4.2
+servers:
+  - url: /api/v1
+paths:
+  /manager/staff-accounts:
+    get:
+      summary: List and search staff and manager accounts
+      operationId: searchStaffAccounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: Case-insensitive search over full name, email or phone.
+        - name: role
+          in: query
+          schema: { type: string, enum: [COACH, RECEPTIONIST, MANAGER] }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, INACTIVE] }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Staff accounts visible to the active Manager.
+        '400': { description: Invalid filter or pagination parameter. }
+        '401': { description: Missing, invalid or inactive authentication. }
+        '403': { description: Authenticated account is not a Manager. }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
