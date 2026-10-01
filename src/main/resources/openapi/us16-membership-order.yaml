@@ -1,0 +1,284 @@
+openapi: 3.1.0
+info:
+  title: SCMS Membership Order API
+  version: 1.0.0
+  description: >-
+    Contract for US16. ACTIVE MEMBER accounts create and resume their own bank-transfer
+    Membership Order; ACTIVE RECEPTIONIST accounts do the same for one target Member. US16
+    creates no Cash Order, Payment, QR, Membership, Receipt, Notification, or Audit Event.
+    The 24-hour payment window has not started at Order creation and must not be inferred from
+    createdAt; US18 starts it only after a Payment/QR request is created successfully.
+servers:
+  - url: /api/v1
+paths:
+  /members/me/membership-orders:
+    post:
+      summary: Create the authenticated Member's bank-transfer Membership Order
+      operationId: createOwnMembershipOrder
+      description: >-
+        Requires role MEMBER. The target and creator Account are both taken from JWT sub; no
+        actor, account, member, payment, status, price, expiry, or snapshot field is accepted.
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/CreateOrderBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/OfferNotFound'
+        '409':
+          $ref: '#/components/responses/SelfOrderConflict'
+  /members/me/membership-orders/pending:
+    get:
+      summary: Resume the authenticated Member's pending Membership Order
+      operationId: resumeOwnPendingMembershipOrder
+      description: >-
+        Requires role MEMBER and can only return the Order owned by JWT sub. Snapshot values
+        are returned from the Order, never from the current Offer.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/PendingOrder'
+        '204':
+          description: No PENDING_PAYMENT Membership Order exists; the response has no body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reception/members/{memberId}/membership-orders:
+    post:
+      summary: Create a bank-transfer Membership Order for a Member at reception
+      operationId: createReceptionMembershipOrder
+      description: >-
+        Requires role RECEPTIONIST. The creator is JWT sub and the target is resolved only from
+        memberId. Cash is outside US16 and must not call this operation.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      requestBody:
+        $ref: '#/components/requestBodies/CreateOrderBody'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedOrder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: MEMBERSHIP_OFFER_NOT_FOUND or MEMBER_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '409':
+          $ref: '#/components/responses/OrderConflict'
+  /reception/members/{memberId}/membership-orders/pending:
+    get:
+      summary: Resume a target Member's pending Membership Order at reception
+      operationId: resumeReceptionPendingMembershipOrder
+      description: >-
+        Requires role RECEPTIONIST. Only the Member resolved from memberId is queried and
+        snapshot values are returned from the Order.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MemberId'
+      responses:
+        '200':
+          $ref: '#/components/responses/PendingOrder'
+        '204':
+          description: No PENDING_PAYMENT Membership Order exists; the response has no body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Target does not exist or is not a MEMBER; code is MEMBER_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '409':
+          $ref: '#/components/responses/MemberNotActive'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >-
+        JWT sub identifies the actor. Its signature and expiry are validated and the Account
+        must still exist with ACTIVE status. Endpoint role and ownership are enforced by the backend.
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      description: Stable public Member identifier; never an Account or actor ID.
+      schema:
+        type: string
+        pattern: '^MB-[0-9]+$'
+        maxLength: 20
+  requestBodies:
+    CreateOrderBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CreateMembershipOrderRequest'
+          example:
+            offerId: 3f873b67-6177-49ff-8b79-e8478ebf0db8
+  responses:
+    CreatedOrder:
+      description: Bank-transfer Membership Order created atomically and flushed to the database
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MembershipOrder'
+    PendingOrder:
+      description: Existing PENDING_PAYMENT Membership Order using its stored Offer snapshot
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MembershipOrder'
+    BadRequest:
+      description: >-
+        VALIDATION_ERROR for missing/null offerId; MALFORMED_REQUEST for malformed JSON, an
+        invalid UUID, unknown fields, or client-supplied read-only fields.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: >-
+        Bearer token is missing, invalid, or expired, or its Account no longer exists with ACTIVE status.
+    Forbidden:
+      description: Authenticated Account does not have the endpoint's required role
+    OfferNotFound:
+      description: Offer does not exist or is INACTIVE; code is MEMBERSHIP_OFFER_NOT_FOUND
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    MemberNotActive:
+      description: Target Member is SUSPENDED or INACTIVE; code is MEMBER_NOT_ACTIVE
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    SelfOrderConflict:
+      description: ACTIVE_MEMBERSHIP_EXISTS or PENDING_MEMBERSHIP_ORDER_EXISTS.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    OrderConflict:
+      description: >-
+        MEMBER_NOT_ACTIVE, ACTIVE_MEMBERSHIP_EXISTS, or PENDING_MEMBERSHIP_ORDER_EXISTS.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+  schemas:
+    CreateMembershipOrderRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - offerId
+      properties:
+        offerId:
+          type: string
+          format: uuid
+    MembershipOrder:
+      type: object
+      additionalProperties: false
+      required:
+        - orderId
+        - orderNumber
+        - memberId
+        - offerId
+        - offerName
+        - planCode
+        - priceAmount
+        - currencyCode
+        - durationDays
+        - paymentMethod
+        - status
+        - createdAt
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          pattern: '^ORD-[0-9A-F]{32}$'
+          maxLength: 36
+        memberId:
+          type: string
+          pattern: '^MB-[0-9]+$'
+        offerId:
+          type: string
+          format: uuid
+        offerName:
+          type: string
+          description: Stored Order snapshot, not the Offer's current name.
+        planCode:
+          type: string
+          enum: [BASIC, PLUS]
+        priceAmount:
+          type: integer
+          minimum: 1
+          description: Exact numeric(19,0) snapshot serialized as a JSON number.
+        currencyCode:
+          type: string
+          const: VND
+        durationDays:
+          type: integer
+          minimum: 1
+        paymentMethod:
+          type: string
+          const: BANK_TRANSFER
+        status:
+          type: string
+          const: PENDING_PAYMENT
+        createdAt:
+          type: string
+          format: date-time
+          description: Order creation time; it is not a payment deadline.
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - MEMBERSHIP_OFFER_NOT_FOUND
+            - MEMBER_NOT_FOUND
+            - MEMBER_NOT_ACTIVE
+            - ACTIVE_MEMBERSHIP_EXISTS
+            - PENDING_MEMBERSHIP_ORDER_EXISTS
