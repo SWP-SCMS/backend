@@ -88,6 +88,14 @@ public class Account {
 		this.passwordHash = Objects.requireNonNull(passwordHash);
 	}
 
+	public void changeMemberStatus(AccountStatus newStatus) {
+		Objects.requireNonNull(newStatus);
+		if (role != AccountRole.MEMBER || (newStatus != AccountStatus.ACTIVE && newStatus != AccountStatus.SUSPENDED)) {
+			throw new IllegalStateException("Only Member accounts can transition between ACTIVE and SUSPENDED");
+		}
+		this.status = newStatus;
+	}
+
 	public AccountRole getRole() {
 		return role;
 	}
