@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Member Status
+  version: v4.2
+servers:
+  - url: /api/v1
+paths:
+  /manager/members/{memberAccountId}/status:
+    patch:
+      summary: Suspend or reactivate a Member account
+      operationId: changeMemberStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberAccountId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status, reason]
+              additionalProperties: false
+              properties:
+                status: { type: string, enum: [ACTIVE, SUSPENDED] }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200': { description: Updated Member status and cancelled booking count. }
+        '400': { description: Invalid status or missing reason. }
+        '401': { description: Missing, invalid or inactive authentication. }
+        '403': { description: Authenticated account is not an active Manager. }
+        '404': { description: Member account was not found. }
+        '409': { description: Member already has the requested status. }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
