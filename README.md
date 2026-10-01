@@ -66,6 +66,14 @@ Contract US04 nằm tại `src/main/resources/openapi/us04-change-password.yaml`
 - FE phải xóa access token khỏi memory/state và chuyển về Login. Access token là JWT stateless có TTL 15 phút nên backend không blacklist token cũ trong phạm vi US04.
 - Đổi mật khẩu của chính mình không tạo Audit Event hoặc Notification và không thu hồi các session khác.
 
+## Membership Order
+
+Contract US16 nằm tại `src/main/resources/openapi/us16-membership-order.yaml`:
+
+- `POST/GET /api/v1/members/me/membership-orders[/pending]`: MEMBER tạo hoặc tiếp tục Order của chính mình.
+- `POST/GET /api/v1/reception/members/{memberId}/membership-orders[/pending]`: RECEPTIONIST hỗ trợ Member mục tiêu.
+- US16 chỉ tạo Order `BANK_TRANSFER/PENDING_PAYMENT`; chưa tạo Payment/QR và chưa bắt đầu payment window 24 giờ.
+
 ## Kiểm thử
 
 Đảm bảo Docker daemon đang chạy, sau đó:
@@ -74,7 +82,7 @@ Contract US04 nằm tại `src/main/resources/openapi/us04-change-password.yaml`
 .\mvnw.cmd test
 ```
 
-Test khởi động PostgreSQL 17 sạch, chạy Flyway V1–V6, để Hibernate validate schema, và kiểm tra persistence,
+Test khởi động PostgreSQL 17 sạch, chạy Flyway V1–V7, để Hibernate validate schema, và kiểm tra persistence,
 authentication, refresh-token rotation, cookie policy, security/CORS cùng ProblemDetail error handling. Test không
 kết nối Supabase.
 

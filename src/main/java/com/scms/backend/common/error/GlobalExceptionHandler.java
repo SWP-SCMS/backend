@@ -14,8 +14,12 @@ import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.member.MemberProfileValidationException;
+import com.scms.backend.membership.ActiveMembershipExistsException;
 import com.scms.backend.membership.InvalidPlanCodeException;
+import com.scms.backend.membership.MemberNotActiveException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
+import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
+import com.scms.backend.membership.PendingMembershipOrderExistsException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
 
@@ -194,6 +198,42 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 			"The requested membership offer was not found.");
 		problem.setTitle("Membership offer not found");
 		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipOrderMemberNotFoundException.class)
+	ProblemDetail handleMembershipOrderMemberNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested member was not found.");
+		problem.setTitle("Member not found");
+		problem.setProperty("code", "MEMBER_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(MemberNotActiveException.class)
+	ProblemDetail handleMemberNotActive() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"The member account is not active.");
+		problem.setTitle("Member not active");
+		problem.setProperty("code", "MEMBER_NOT_ACTIVE");
+		return problem;
+	}
+
+	@ExceptionHandler(ActiveMembershipExistsException.class)
+	ProblemDetail handleActiveMembershipExists() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"The member already has an active membership.");
+		problem.setTitle("Active membership exists");
+		problem.setProperty("code", "ACTIVE_MEMBERSHIP_EXISTS");
+		return problem;
+	}
+
+	@ExceptionHandler(PendingMembershipOrderExistsException.class)
+	ProblemDetail handlePendingMembershipOrderExists() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"The member already has a pending membership order.");
+		problem.setTitle("Pending membership order exists");
+		problem.setProperty("code", "PENDING_MEMBERSHIP_ORDER_EXISTS");
 		return problem;
 	}
 
