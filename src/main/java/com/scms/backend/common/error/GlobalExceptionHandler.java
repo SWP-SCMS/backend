@@ -18,6 +18,7 @@ import com.scms.backend.membership.InvalidPlanCodeException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
+import com.scms.backend.manager.StaffAccountValidationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -162,6 +163,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
 	@ExceptionHandler(ReceptionMemberValidationException.class)
 	ProblemDetail handleReceptionMemberValidation(ReceptionMemberValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(StaffAccountValidationException.class)
+	ProblemDetail handleStaffAccountValidation(StaffAccountValidationException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
 			"One or more request fields are invalid.");
 		problem.setTitle("Validation failed");
