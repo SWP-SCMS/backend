@@ -26,6 +26,7 @@ import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
 import com.scms.backend.manager.MemberStatusConflictException;
+import com.scms.backend.manager.StaffStatusConflictException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -211,6 +212,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
 		problem.setTitle("Member status conflict");
 		problem.setProperty("code", "MEMBER_STATUS_CONFLICT");
+		return problem;
+	}
+
+	@ExceptionHandler(StaffStatusConflictException.class)
+	ProblemDetail handleStaffStatusConflict(StaffStatusConflictException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+		problem.setTitle("Staff status conflict");
+		problem.setProperty("code", "STAFF_STATUS_CONFLICT");
 		return problem;
 	}
 

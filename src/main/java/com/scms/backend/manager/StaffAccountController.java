@@ -26,10 +26,13 @@ public class StaffAccountController {
 
 	private final StaffAccountService service;
 	private final StaffAccountCreateService createService;
+	private final StaffStatusService statusService;
 
-	StaffAccountController(StaffAccountService service, StaffAccountCreateService createService) {
+	StaffAccountController(StaffAccountService service, StaffAccountCreateService createService,
+			StaffStatusService statusService) {
 		this.service = service;
 		this.createService = createService;
+		this.statusService = statusService;
 	}
 
 	@PostMapping
@@ -60,5 +63,11 @@ public class StaffAccountController {
 	ResponseEntity<StaffAccountResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
 			@RequestBody StaffAccountPatchRequest request) {
 		return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), accountId, request));
+	}
+
+	@PatchMapping("/{accountId}/status")
+	ResponseEntity<StaffAccountResponse> changeStatus(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId,
+			@RequestBody StaffStatusChangeRequest request) {
+		return ResponseEntity.ok(statusService.deactivate(UUID.fromString(jwt.getSubject()), accountId, request));
 	}
 }
