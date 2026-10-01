@@ -16,6 +16,8 @@ import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.member.MemberProfileValidationException;
 import com.scms.backend.membership.InvalidPlanCodeException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
+import com.scms.backend.reception.ReceptionMemberNotFoundException;
+import com.scms.backend.reception.ReceptionMemberValidationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,6 +157,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Validation failed");
 		problem.setProperty("code", "VALIDATION_ERROR");
 		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(ReceptionMemberValidationException.class)
+	ProblemDetail handleReceptionMemberValidation(ReceptionMemberValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(ReceptionMemberNotFoundException.class)
+	ProblemDetail handleReceptionMemberNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested member was not found.");
+		problem.setTitle("Member not found");
+		problem.setProperty("code", "MEMBER_NOT_FOUND");
 		return problem;
 	}
 
