@@ -78,6 +78,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/staff-accounts/**").hasRole("MANAGER")
 				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
+				.requestMatchers("/reception/membership-orders/**").hasRole("RECEPTIONIST")
+				.requestMatchers("/payments/**").hasAnyRole("MANAGER", "RECEPTIONIST")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
