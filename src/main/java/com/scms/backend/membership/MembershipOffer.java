@@ -65,6 +65,28 @@ public class MembershipOffer {
 	protected MembershipOffer() {
 	}
 
+	public MembershipOffer(UUID id, MembershipPlan plan, String name, String description, BigInteger priceAmount,
+			String currencyCode, int durationDays, MembershipOfferStatus status, UUID createdByAccountId) {
+		this.id = id;
+		this.plan = plan;
+		this.name = name;
+		this.description = description;
+		this.priceAmount = priceAmount;
+		this.currencyCode = currencyCode;
+		this.durationDays = durationDays;
+		this.status = status;
+		this.createdByAccountId = createdByAccountId;
+	}
+
+	public void update(String name, String description, BigInteger priceAmount, int durationDays) {
+		this.name = name;
+		this.description = description;
+		this.priceAmount = priceAmount;
+		this.durationDays = durationDays;
+	}
+
+	public void changeStatus(MembershipOfferStatus status) { this.status = status; }
+
 	public UUID getId() {
 		return id;
 	}
