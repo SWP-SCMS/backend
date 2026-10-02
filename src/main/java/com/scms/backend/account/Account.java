@@ -88,6 +88,20 @@ public class Account {
 		this.passwordHash = Objects.requireNonNull(passwordHash);
 	}
 
+	public void changeMemberStatus(AccountStatus newStatus) {
+		Objects.requireNonNull(newStatus);
+		if (role != AccountRole.MEMBER || (newStatus != AccountStatus.ACTIVE && newStatus != AccountStatus.SUSPENDED)) {
+			throw new IllegalStateException("Only Member accounts can transition between ACTIVE and SUSPENDED");
+		}
+		this.status = newStatus;
+	}
+
+	public void deactivateStaff() {
+		if (role == AccountRole.MEMBER) {
+			throw new IllegalStateException("Member accounts cannot be deactivated as staff");
+		}
+		status = AccountStatus.INACTIVE;
+	}
 	public AccountRole getRole() {
 		return role;
 	}
