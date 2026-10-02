@@ -19,10 +19,25 @@ public class PaymentService {
  private final JdbcTemplate db; private final AccountRepository accounts; private final AuditEventRepository audits; private final Clock clock;
  PaymentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits, Clock clock){this.db=db;this.accounts=accounts;this.audits=audits;this.clock=clock;}
  @Transactional public Map<String,Object> cash(UUID actor, UUID order){ensure(actor,AccountRole.RECEPTIONIST); return settle(actor,order,"CASH",null,"cash");}
+ @Transactional public Map<String,Object> bankTransfer(UUID actor, UUID order){
+  if(!accounts.existsByIdAndRoleAndStatus(actor,AccountRole.MEMBER,AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException();
+  var o=db.queryForMap("select * from membership_orders where id=? and member_account_id=?",order,actor);
+  UUID payment=UUID.randomUUID(); db.update("insert into payments(id,order_id,method,status,amount,currency_code) values(?,?, 'BANK_TRANSFER','PENDING',?,'VND')",payment,order,o.get("price_amount_snapshot"));
+  return Map.of("paymentId",payment,"orderId",order,"status","PENDING");
+ }
+ @Transactional(readOnly=true) public java.util.List<Map<String,Object>> receipts(UUID actor){
+  ensureAny(actor); return db.queryForList("select id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot,issued_at from receipts where member_account_id=? order by issued_at desc",actor);
+ }
+ @Transactional(readOnly=true) public java.util.List<Map<String,Object>> memberHistory(UUID actor){
+  ensure(actor,AccountRole.MEMBER); return db.queryForList("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",actor);
+ }
+ @Transactional(readOnly=true) public Map<String,Object> report(UUID actor){
+  ensure(actor,AccountRole.MANAGER); return db.queryForMap("select count(*) filter (where status='PAID') paid_payments, coalesce(sum(amount) filter (where status='PAID'),0) paid_revenue, count(*) filter (where status='PENDING') pending_payments, count(*) filter (where status='FAILED') failed_payments from payments");
+ }
  @Transactional public Map<String,Object> reconcile(UUID actor, UUID payment, PaymentActionRequest r){
   ensureAny(actor); var p=db.queryForMap("select * from payments where id=? for update",payment); String status=(String)p.get("status");
   if("PAID".equals(status)) return p; if(r==null||r.reason()==null||r.reason().isBlank()) throw new IllegalArgumentException("reason is required");
-  String method=(String)p.get("method"); if("PAID".equals(r.reason())) return settle(actor,(UUID)p.get("order_id"),method,r.providerReference(),r.reason());
+  String method=(String)p.get("method"); if("PAID".equalsIgnoreCase(r.status())) return settle(actor,(UUID)p.get("order_id"),method,r.providerReference(),r.reason());
   db.update("update payments set status='FAILED', failure_reason=?, updated_at=current_timestamp where id=? and status='PENDING'",r.reason(),payment);
   db.update("update membership_orders set status='EXPIRED', updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",p.get("order_id"));
   audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_RECONCILED","PAYMENT",payment,r.reason(),Map.of("status",(Object)status),Map.of("status",(Object)"FAILED","evidence",(Object)String.valueOf(r.evidence())))); return db.queryForMap("select * from payments where id=?",payment);
