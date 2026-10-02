@@ -77,6 +77,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.POST, "/reception/members").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/staff-accounts/**").hasRole("MANAGER")
+				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
