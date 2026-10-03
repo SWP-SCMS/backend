@@ -66,6 +66,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
+				.requestMatchers("/docs", "/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*")
 					.hasAnyRole("MEMBER", "RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders").hasRole("MEMBER")
