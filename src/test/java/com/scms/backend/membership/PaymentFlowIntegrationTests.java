@@ -216,16 +216,17 @@ class PaymentFlowIntegrationTests {
 			Instant.now().minusSeconds(60));
 		UUID noWindowOrder = order(noWindowMember.getAccountId(), noWindowMember.getAccountId(), offer, 12000,
 			false, null);
-		UUID futurePayment = pendingPayment(futureOrder, 12000, "FUTURE-" + futureOrder);
-		pendingPayment(expiredOrder, 12000, "EXPIRED-" + expiredOrder);
-		pendingPayment(noWindowOrder, 12000, "NO-WINDOW-" + noWindowOrder);
+		String marker = "QUEUE-" + UUID.randomUUID();
+		UUID futurePayment = pendingPayment(futureOrder, 12000, marker + "-FUTURE");
+		pendingPayment(expiredOrder, 12000, marker + "-EXPIRED");
+		pendingPayment(noWindowOrder, 12000, marker + "-NO-WINDOW");
 
-		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?status=ALL&page=0&size=2")
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?status=ALL&page=0&size=2&query=" + marker)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2))
 			.andExpect(jsonPath("$.totalElements").value(3)).andExpect(jsonPath("$.totalPages").value(2));
-		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=PENDING")
+		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=PENDING&query=" + marker)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
-		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=EXPIRED_WINDOW")
+		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=EXPIRED_WINDOW&query=" + marker)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
 		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?query=" + futurePayment)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
