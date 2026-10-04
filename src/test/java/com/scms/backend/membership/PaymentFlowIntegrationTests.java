@@ -202,6 +202,44 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void reconciliationQueueFiltersSearchesPaginatesAndEnforcesRoles() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		Account coach = account(AccountRole.COACH);
+		MemberProfile futureMember = member();
+		MemberProfile expiredMember = member();
+		MemberProfile noWindowMember = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID futureOrder = order(futureMember.getAccountId(), futureMember.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		UUID expiredOrder = order(expiredMember.getAccountId(), expiredMember.getAccountId(), offer, 12000, false,
+			Instant.now().minusSeconds(60));
+		UUID noWindowOrder = order(noWindowMember.getAccountId(), noWindowMember.getAccountId(), offer, 12000,
+			false, null);
+		UUID futurePayment = pendingPayment(futureOrder, 12000, "FUTURE-" + futureOrder);
+		pendingPayment(expiredOrder, 12000, "EXPIRED-" + expiredOrder);
+		pendingPayment(noWindowOrder, 12000, "NO-WINDOW-" + noWindowOrder);
+
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?status=ALL&page=0&size=2")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(2))
+			.andExpect(jsonPath("$.totalElements").value(3)).andExpect(jsonPath("$.totalPages").value(2));
+		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=PENDING")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2));
+		getAuthorized(receptionist, "/api/v1/payments/reconciliation-queue?status=EXPIRED_WINDOW")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?query=" + futurePayment)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+			.andExpect(jsonPath("$.content[0].paymentId").value(futurePayment.toString()));
+		getAuthorized(coach, "/api/v1/payments/reconciliation-queue").andExpect(status().isForbidden());
+		getAuthorized(futureMember.getAccount(), "/api/v1/payments/reconciliation-queue")
+			.andExpect(status().isForbidden());
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?page=-1").andExpect(status().isBadRequest());
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?size=101").andExpect(status().isBadRequest());
+		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?status=UNKNOWN")
+			.andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void receiptAndPaymentResultEnforceOwnershipAndRoleScope() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile owner = member();

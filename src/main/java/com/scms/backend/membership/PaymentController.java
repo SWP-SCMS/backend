@@ -40,6 +40,18 @@ class PaymentController {
 		return ResponseEntity.ok(service.reconcile(id(jwt), paymentId, request));
 	}
 
+	@GetMapping("/payments/reconciliation-queue")
+	ResponseEntity<ReconciliationQueuePageResponse> reconciliationQueue(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(defaultValue = "ALL") ReconciliationQueueStatus status,
+			@RequestParam(required = false) String query,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size) {
+		if (page < 0 || size < 1 || size > 100) {
+			throw PaymentException.validation("page must be >= 0 and size must be between 1 and 100");
+		}
+		return ResponseEntity.ok(service.reconciliationQueue(id(jwt), status, query, page, size));
+	}
+
 	@GetMapping("/members/me/receipts")
 	ResponseEntity<List<ReceiptResponse>> receipts(@AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.ok(service.receipts(id(jwt)));

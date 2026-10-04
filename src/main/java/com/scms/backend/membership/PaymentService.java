@@ -99,6 +99,60 @@ class PaymentService {
 			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null);
 	}
 
+	@Transactional(readOnly = true)
+	ReconciliationQueuePageResponse reconciliationQueue(UUID actor, ReconciliationQueueStatus status,
+			String query, int page, int size) {
+		ensureAny(actor);
+		ReconciliationQueueStatus effectiveStatus = status == null ? ReconciliationQueueStatus.ALL : status;
+		String normalizedQuery = query == null ? null : query.trim();
+		if (normalizedQuery != null && normalizedQuery.isEmpty()) normalizedQuery = null;
+
+		StringBuilder where = new StringBuilder(" where p.status='PENDING' and o.status='PENDING_PAYMENT'");
+		List<Object> filterArgs = new ArrayList<>();
+		if (effectiveStatus == ReconciliationQueueStatus.PENDING) {
+			where.append(" and (o.expires_at is null or o.expires_at > ?)");
+			filterArgs.add(Timestamp.from(clock.instant()));
+		} else if (effectiveStatus == ReconciliationQueueStatus.EXPIRED_WINDOW) {
+			where.append(" and o.expires_at is not null and o.expires_at <= ?");
+			filterArgs.add(Timestamp.from(clock.instant()));
+		}
+		if (normalizedQuery != null) {
+			where.append(" and (o.order_number ilike ? or p.id::text ilike ? or a.full_name ilike ?")
+				.append(" or coalesce(p.bank_transfer_content,'') ilike ?)");
+			String pattern = "%" + normalizedQuery + "%";
+			filterArgs.add(pattern);
+			filterArgs.add(pattern);
+			filterArgs.add(pattern);
+			filterArgs.add(pattern);
+		}
+
+		Long count = db.queryForObject("select count(*) from payments p join membership_orders o on o.id=p.order_id "
+			+ "join accounts a on a.id=o.member_account_id" + where, Long.class, filterArgs.toArray());
+		long totalElements = count == null ? 0 : count;
+		List<Object> contentArgs = new ArrayList<>(filterArgs);
+		contentArgs.add(size);
+		contentArgs.add(Math.multiplyFull(page, size));
+		String sql = """
+			select p.id payment_id,p.order_id,o.order_number,o.member_account_id,a.full_name member_name,
+				p.amount,p.currency_code,p.bank_transfer_content transfer_content,p.created_at,o.expires_at
+			from payments p
+			join membership_orders o on o.id=p.order_id
+			join accounts a on a.id=o.member_account_id
+			""" + where + " order by p.created_at desc, p.id desc limit ? offset ?";
+		List<ReconciliationQueueItem> content = db.query(sql, (rs, rowNum) -> {
+			Timestamp expiresAt = rs.getTimestamp("expires_at");
+			return new ReconciliationQueueItem(rs.getObject("payment_id", UUID.class),
+				rs.getObject("order_id", UUID.class), rs.getString("order_number"),
+				rs.getObject("member_account_id", UUID.class), rs.getString("member_name"),
+				rs.getBigDecimal("amount").toBigIntegerExact(), rs.getString("currency_code").trim(),
+				rs.getString("transfer_content"), rs.getTimestamp("created_at").toInstant(),
+				expiresAt == null ? null : expiresAt.toInstant());
+		}, contentArgs.toArray());
+		int totalPages = totalElements == 0 ? 0 : (int)Math.min(Integer.MAX_VALUE,
+			Math.ceilDiv(totalElements, (long)size));
+		return new ReconciliationQueuePageResponse(content, page, size, totalElements, totalPages);
+	}
+
 	@Transactional(readOnly=true)
 	List<ReceiptResponse> receipts(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
