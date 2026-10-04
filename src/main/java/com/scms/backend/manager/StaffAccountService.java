@@ -14,6 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,7 +67,25 @@ public class StaffAccountService {
 			throw new InvalidAuthenticatedAccountException();
 		}
 		String normalizedQuery = normalizeQuery(query);
-		Page<Account> accounts = accountRepository.searchStaff(normalizedQuery, role, status, pageable);
+		if (role == AccountRole.MEMBER) {
+			throw new StaffAccountValidationException("role", "must be COACH, RECEPTIONIST or MANAGER");
+		}
+		Specification<Account> filters = (root, ignored, builder) -> root.get("role")
+			.in(AccountRole.COACH, AccountRole.RECEPTIONIST, AccountRole.MANAGER);
+		if (role != null) {
+			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("role"), role));
+		}
+		if (status != null) {
+			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("status"), status));
+		}
+		if (normalizedQuery != null) {
+			String pattern = "%" + normalizedQuery.toLowerCase(java.util.Locale.ROOT) + "%";
+			filters = filters.and((root, ignored, builder) -> builder.or(
+				builder.like(builder.lower(root.get("fullName")), pattern),
+				builder.like(builder.lower(root.get("email")), pattern),
+				builder.like(root.get("phone"), pattern)));
+		}
+		Page<Account> accounts = accountRepository.findAll(filters, pageable);
 		return new StaffAccountPageResponse(accounts.getContent().stream().map(this::toResponse).toList(),
 			accounts.getNumber(), accounts.getSize(), accounts.getTotalElements(), accounts.getTotalPages());
 	}

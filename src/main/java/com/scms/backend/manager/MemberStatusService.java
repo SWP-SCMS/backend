@@ -2,6 +2,7 @@ package com.scms.backend.manager;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.sql.Timestamp;
 import java.util.Map;
 import java.util.UUID;
 
@@ -73,7 +74,7 @@ public class MemberStatusService {
 			from class_sessions s
 			where b.class_session_id = s.id and b.member_account_id = ?
 				and b.status = 'BOOKED' and s.start_time > ?
-			""", managerId, now, now, memberId, now);
+			""", managerId, Timestamp.from(now), Timestamp.from(now), memberId, Timestamp.from(now));
 	}
 
 	private void ensureActiveManager(UUID managerId) {
