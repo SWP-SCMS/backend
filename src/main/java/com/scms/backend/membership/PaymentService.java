@@ -1,55 +1,168 @@
 package com.scms.backend.membership;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
+import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class PaymentService {
- private final JdbcTemplate db; private final AccountRepository accounts; private final AuditEventRepository audits; private final Clock clock;
- PaymentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits, Clock clock){this.db=db;this.accounts=accounts;this.audits=audits;this.clock=clock;}
- @Transactional public Map<String,Object> cash(UUID actor, UUID order){ensure(actor,AccountRole.RECEPTIONIST); return settle(actor,order,"CASH",null,"cash");}
- @Transactional public Map<String,Object> bankTransfer(UUID actor, UUID order){
-  if(!accounts.existsByIdAndRoleAndStatus(actor,AccountRole.MEMBER,AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException();
-  var o=db.queryForMap("select * from membership_orders where id=? and member_account_id=?",order,actor);
-  UUID payment=UUID.randomUUID(); db.update("insert into payments(id,order_id,method,status,amount,currency_code) values(?,?, 'BANK_TRANSFER','PENDING',?,'VND')",payment,order,o.get("price_amount_snapshot"));
-  return Map.of("paymentId",payment,"orderId",order,"status","PENDING");
- }
- @Transactional(readOnly=true) public java.util.List<Map<String,Object>> receipts(UUID actor){
-  ensureAny(actor); return db.queryForList("select id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot,issued_at from receipts where member_account_id=? order by issued_at desc",actor);
- }
- @Transactional(readOnly=true) public java.util.List<Map<String,Object>> memberHistory(UUID actor){
-  ensure(actor,AccountRole.MEMBER); return db.queryForList("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",actor);
- }
- @Transactional(readOnly=true) public Map<String,Object> report(UUID actor){
-  ensure(actor,AccountRole.MANAGER); return db.queryForMap("select count(*) filter (where status='PAID') paid_payments, coalesce(sum(amount) filter (where status='PAID'),0) paid_revenue, count(*) filter (where status='PENDING') pending_payments, count(*) filter (where status='FAILED') failed_payments from payments");
- }
- @Transactional public Map<String,Object> reconcile(UUID actor, UUID payment, PaymentActionRequest r){
-  ensureAny(actor); var p=db.queryForMap("select * from payments where id=? for update",payment); String status=(String)p.get("status");
-  if("PAID".equals(status)) return p; if(r==null||r.reason()==null||r.reason().isBlank()) throw new IllegalArgumentException("reason is required");
-  String method=(String)p.get("method"); if("PAID".equalsIgnoreCase(r.status())) return settle(actor,(UUID)p.get("order_id"),method,r.providerReference(),r.reason());
-  db.update("update payments set status='FAILED', failure_reason=?, updated_at=current_timestamp where id=? and status='PENDING'",r.reason(),payment);
-  db.update("update membership_orders set status='EXPIRED', updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",p.get("order_id"));
-  audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_RECONCILED","PAYMENT",payment,r.reason(),Map.of("status",(Object)status),Map.of("status",(Object)"FAILED","evidence",(Object)String.valueOf(r.evidence())))); return db.queryForMap("select * from payments where id=?",payment);
- }
- private Map<String,Object> settle(UUID actor, UUID order, String method, String ref, String reason){
-  var o=db.queryForMap("select * from membership_orders where id=? for update",order); if(!"PENDING_PAYMENT".equals(o.get("status"))&&db.queryForObject("select count(*) from payments where order_id=? and status='PAID'",Integer.class,order)==0) throw new IllegalArgumentException("Order is not payable");
-  UUID payment=UUID.randomUUID(); Instant now=clock.instant(); db.update("insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,processed_by_account_id,paid_at) values(?,?,?,'PAID',?,'VND',?,?,?)",payment,order,method,o.get("price_amount_snapshot"),ref,actor,now);
-  db.update("update membership_orders set status='PAID',paid_at=?,updated_at=current_timestamp where id=?",now,order);
-  UUID membership=UUID.randomUUID(); db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,?,?,?,?,'ACTIVE',?,?)",membership,o.get("member_account_id"),order,o.get("offer_id"),o.get("plan_code_snapshot"),o.get("offer_name_snapshot"),o.get("price_amount_snapshot"),o.get("currency_code_snapshot"),o.get("duration_days_snapshot"),now,now.plusSeconds(((Number)o.get("duration_days_snapshot")).longValue()*86400));
-  UUID receipt=UUID.randomUUID(); db.update("insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot) values(?,?,?,?,?,?,?,?)",receipt,"RC-"+receipt, payment,order,o.get("member_account_id"),o.get("price_amount_snapshot"),o.get("currency_code_snapshot"),method);
-  audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_PAID","PAYMENT",payment,reason,Map.of("status",(Object)"PENDING"),Map.of("status",(Object)"PAID"))); return Map.of("paymentId",payment,"membershipId",membership,"receiptId",receipt,"status","PAID");
- }
- private void ensure(UUID id,AccountRole role){if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
- private void ensureAny(UUID id){if(!accounts.existsByIdAndRoleAndStatus(id,AccountRole.MANAGER,AccountStatus.ACTIVE)&&!accounts.existsByIdAndRoleAndStatus(id,AccountRole.RECEPTIONIST,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
+class PaymentService {
+	private final JdbcTemplate db;
+	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
+	private final PaymentFulfillmentService fulfillment;
+	private final Clock clock;
+
+	PaymentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits,
+			PaymentFulfillmentService fulfillment, Clock clock) {
+		this.db=db; this.accounts=accounts; this.audits=audits; this.fulfillment=fulfillment; this.clock=clock;
+	}
+
+	@Transactional
+	PaymentResultResponse cash(UUID actor, String memberCode, CashPaymentRequest request) {
+		ensure(actor, AccountRole.RECEPTIONIST);
+		if (request == null || request.offerId() == null) throw PaymentException.validation("offerId is required");
+		Map<String,Object> member;
+		Map<String,Object> offer;
+		try {
+			member = db.queryForMap("""
+				select a.id account_id from accounts a join member_profiles m on m.account_id=a.id
+				where m.member_code=? and a.role='MEMBER' and a.status='ACTIVE'
+				""", memberCode);
+			offer = db.queryForMap("select * from membership_offers where id=? and status='ACTIVE'", request.offerId());
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Active Member or Membership Offer was not found");
+		}
+		UUID memberId=(UUID)member.get("account_id");
+		if (count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId)>0)
+			throw PaymentException.conflict("Member already has an active membership");
+		if (count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId)>0)
+			throw PaymentException.conflict("Member already has a pending membership order");
+		UUID orderId=UUID.randomUUID(); UUID paymentId=UUID.randomUUID();
+		String orderNumber="ORD-"+orderId.toString().replace("-","").toUpperCase();
+		db.update("""
+			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
+				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
+				duration_days_snapshot,payment_method,status)
+			values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT')
+			""", orderId,orderNumber,memberId,actor,request.offerId(),offer.get("name"),offer.get("plan_code"),
+			offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"));
+		return fulfillment.fulfillCash(paymentId, orderId, actor, "Cash received by receptionist",
+			"Cash payment confirmed");
+	}
+
+	@Transactional
+	PaymentResultResponse reconcile(UUID actor, UUID paymentId, PaymentActionRequest request) {
+		ensureAny(actor);
+		if (request == null || request.status() == null || blank(request.reason()) || blank(request.evidence()))
+			throw PaymentException.validation("status, evidence and reason are required");
+		Map<String,Object> payment=fulfillment.paymentForUpdate(paymentId);
+		if (request.status() == PaymentActionRequest.ReconciliationStatus.PAID) {
+			if (request.receivedAmount()==null || blank(request.transferContent()) || blank(request.providerTransactionId()))
+				throw PaymentException.validation("receivedAmount, transferContent and providerTransactionId are required for PAID");
+			if (!PaymentFulfillmentService.amount(payment,"payment_amount").equals(request.receivedAmount()))
+				throw PaymentException.validation("receivedAmount does not match Payment amount");
+			String expectedContent=PaymentFulfillmentService.string(payment,"bank_transfer_content");
+			if (expectedContent==null || !expectedContent.equals(request.transferContent().trim()))
+				throw PaymentException.validation("transferContent does not match Payment");
+			return fulfillment.fulfill(paymentId,actor,request.providerTransactionId().trim(),request.evidence().trim(),request.reason().trim());
+		}
+		String status=PaymentFulfillmentService.string(payment,"payment_status");
+		if (!"PENDING".equals(status)) throw PaymentException.conflict("Payment is terminal");
+		Object expires=payment.get("expires_at");
+		Instant expiry=expires instanceof Timestamp value ? value.toInstant() : (Instant)expires;
+		if (expiry==null || clock.instant().isBefore(expiry)) throw PaymentException.conflict("Payment window has not expired");
+		db.update("update payments set status='FAILED',failure_reason=?,evidence=?,processed_by_account_id=?,updated_at=current_timestamp where id=? and status='PENDING'",
+			request.reason().trim(),request.evidence().trim(),actor,paymentId);
+		db.update("update membership_orders set status='EXPIRED',updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",
+			payment.get("order_id"));
+		audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_RECONCILED","PAYMENT",paymentId,
+			request.reason().trim(),Map.of("status","PENDING"),Map.of("status","FAILED","evidence",request.evidence().trim())));
+		return new PaymentResultResponse(paymentId,(UUID)payment.get("order_id"),"FAILED",
+			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null);
+	}
+
+	@Transactional(readOnly=true)
+	List<ReceiptResponse> receipts(UUID actor) {
+		ensure(actor,AccountRole.MEMBER);
+		return db.query("select * from receipts where member_account_id=? order by issued_at desc",
+			(rs,row)->receipt(rs),actor);
+	}
+
+	@Transactional(readOnly=true)
+	ReceiptResponse receipt(UUID actor, UUID receiptId) {
+		Account account=active(actor);
+		try {
+			Map<String,Object> row=db.queryForMap("select * from receipts where id=?",receiptId);
+			if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
+			if (account.getRole()==AccountRole.COACH
+					|| (account.getRole()==AccountRole.RECEPTIONIST && !"CASH".equals(row.get("payment_method_snapshot"))))
+				throw PaymentException.forbidden();
+			return receipt(row);
+		} catch (EmptyResultDataAccessException exception) { throw PaymentException.notFound("Receipt was not found"); }
+	}
+
+	@Transactional(readOnly=true)
+	PaymentResultResponse result(UUID actor, UUID paymentId) {
+		Account account=active(actor); Map<String,Object> row=fulfillment.payment(paymentId);
+		if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
+		if (account.getRole()==AccountRole.COACH
+				|| (account.getRole()==AccountRole.RECEPTIONIST && !"CASH".equals(row.get("payment_method"))))
+			throw PaymentException.forbidden();
+		if (!"PAID".equals(row.get("payment_status"))) return new PaymentResultResponse(paymentId,(UUID)row.get("order_id"),
+			row.get("payment_status").toString(),row.get("payment_method").toString(),null,null,null);
+		return fulfillment.result(row);
+	}
+
+	@Transactional(readOnly=true)
+	List<Map<String,Object>> memberHistory(UUID actor) {
+		ensure(actor,AccountRole.MEMBER);
+		return db.queryForList("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",actor);
+	}
+
+	@Transactional(readOnly=true)
+	RevenueReportResponse report(UUID actor, Instant from, Instant to, boolean includeTestData) {
+		ensure(actor,AccountRole.MANAGER);
+		if (from!=null && to!=null && !from.isBefore(to)) throw PaymentException.validation("from must be earlier than to");
+		String test=includeTestData ? "" : " and not o.is_test_data";
+		String paid=range("p.status='PAID'","p.paid_at",from,to);
+		String pending=range("p.status='PENDING'","p.created_at",from,to);
+		String failed=range("p.status='FAILED'","p.updated_at",from,to);
+		String sql="select count(*) filter(where "+paid+") paid_payments,coalesce(sum(p.amount) filter(where "+paid+"),0) paid_revenue,"+
+			"count(*) filter(where "+pending+") pending_payments,count(*) filter(where "+failed+") failed_payments from payments p join membership_orders o on o.id=p.order_id where true"+test;
+		List<Object> args=new ArrayList<>(); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to);
+		Map<String,Object> row=db.queryForMap(sql,args.toArray());
+		Map<String,Object> memberships=db.queryForMap("select count(*) filter(where m.status='ACTIVE') active,count(*) filter(where m.status='EXPIRED') expired from memberships m join membership_orders o on o.id=m.order_id where true"+test);
+		return new RevenueReportResponse(from,to,number(row,"paid_payments"),big(row,"paid_revenue"),number(row,"pending_payments"),
+			number(row,"failed_payments"),number(memberships,"active"),number(memberships,"expired"),includeTestData);
+	}
+
+	private String range(String base,String column,Instant from,Instant to){StringBuilder p=new StringBuilder(base);if(from!=null)p.append(" and ").append(column).append(">=?");if(to!=null)p.append(" and ").append(column).append("<?");return p.toString();}
+	private void addRangeArgs(List<Object> args,Instant from,Instant to){if(from!=null)args.add(Timestamp.from(from));if(to!=null)args.add(Timestamp.from(to));}
+	private long count(String sql,Object...args){Long value=db.queryForObject(sql,Long.class,args);return value==null?0:value;}
+	private long number(Map<String,Object> row,String key){return ((Number)row.get(key)).longValue();}
+	private BigInteger big(Map<String,Object> row,String key){return new BigDecimal(row.get(key).toString()).toBigIntegerExact();}
+	private boolean blank(String value){return value==null||value.isBlank();}
+	private Account active(UUID id){return accounts.findById(id).filter(a->a.getStatus()==AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);}
+	private void ensure(UUID id,AccountRole role){if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
+	private void ensureAny(UUID id){if(!accounts.existsByIdAndRoleAndStatus(id,AccountRole.MANAGER,AccountStatus.ACTIVE)&&!accounts.existsByIdAndRoleAndStatus(id,AccountRole.RECEPTIONIST,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
+	private ReceiptResponse receipt(java.sql.ResultSet rs)throws java.sql.SQLException{return new ReceiptResponse(rs.getObject("id",UUID.class),rs.getString("receipt_number"),rs.getObject("payment_id",UUID.class),rs.getObject("order_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getBigDecimal("amount_snapshot").toBigIntegerExact(),rs.getString("currency_code_snapshot").trim(),rs.getString("payment_method_snapshot"),rs.getTimestamp("issued_at").toInstant());}
+	private ReceiptResponse receipt(Map<String,Object> r){return new ReceiptResponse((UUID)r.get("id"),r.get("receipt_number").toString(),(UUID)r.get("payment_id"),(UUID)r.get("order_id"),(UUID)r.get("member_account_id"),new BigDecimal(r.get("amount_snapshot").toString()).toBigIntegerExact(),r.get("currency_code_snapshot").toString().trim(),r.get("payment_method_snapshot").toString(),((Timestamp)r.get("issued_at")).toInstant());}
 }

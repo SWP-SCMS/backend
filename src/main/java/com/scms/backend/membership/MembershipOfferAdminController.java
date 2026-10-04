@@ -11,5 +11,5 @@ class MembershipOfferAdminController {
 	MembershipOfferAdminController(MembershipOfferAdminService service) { this.service = service; }
 	@GetMapping ResponseEntity<?> all(@AuthenticationPrincipal Jwt jwt) { return ResponseEntity.ok(service.all(UUID.fromString(jwt.getSubject()))); }
 	@PostMapping ResponseEntity<?> create(@AuthenticationPrincipal Jwt jwt, @RequestBody MembershipOfferAdminRequest r) { return ResponseEntity.status(201).body(service.create(UUID.fromString(jwt.getSubject()), r)); }
-	@PatchMapping("/{id}") ResponseEntity<?> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, @RequestBody MembershipOfferAdminRequest r) { return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), id, r)); }
+	@PatchMapping("/{id}") ResponseEntity<?> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, @RequestBody MembershipOfferPatchRequest r) { return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), id, r)); }
 }
