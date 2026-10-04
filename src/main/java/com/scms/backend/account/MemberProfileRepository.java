@@ -6,9 +6,10 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.query.Param;
 
-public interface MemberProfileRepository extends JpaRepository<MemberProfile, UUID> {
+public interface MemberProfileRepository extends JpaRepository<MemberProfile, UUID>, JpaSpecificationExecutor<MemberProfile> {
 
 	@Query("""
 		select profile from MemberProfile profile
