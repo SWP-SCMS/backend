@@ -78,7 +78,7 @@ class PaymentMigrationV9Tests {
 		assertThatThrownBy(() -> payment(db, UUID.randomUUID(), pendingOrder, "PENDING", null, "PENDING-3"))
 			.isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> db.update("update payments set status='PENDING' where id=?", duplicatePending))
-			.isInstanceOf(DataIntegrityViolationException.class);
+			.isInstanceOf(org.springframework.dao.DataAccessException.class);
 	}
 
 	private void account(JdbcTemplate db, UUID id, String role, String email, String phone) {

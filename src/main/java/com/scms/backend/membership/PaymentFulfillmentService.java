@@ -43,9 +43,7 @@ class PaymentFulfillmentService {
 		}
 		if (!"PENDING".equals(status)) throw PaymentException.conflict("Payment is terminal");
 		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))) throw PaymentException.conflict("Order is not payable");
-		UUID memberId = uuid(row, "member_account_id");
-		Integer active = db.queryForObject("select count(*) from memberships where member_account_id=? and status='ACTIVE'", Integer.class, memberId);
-		if (active != null && active > 0) throw PaymentException.conflict("Member already has an active membership");
+		ensureNoActiveMembership(row);
 
 		Instant now = clock.instant();
 		try {
@@ -56,31 +54,74 @@ class PaymentFulfillmentService {
 				""", providerTransactionId, evidence, actorId, Timestamp.from(now), paymentId);
 			db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",
 				Timestamp.from(now), uuid(row, "order_id"));
-			UUID membershipId = UUID.randomUUID();
-			db.update("""
-				insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,
-					offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
-					status,starts_at,ends_at)
-				values(?,?,?,?,?,?,?,?,?,'ACTIVE',?,?)
-				""", membershipId, memberId, uuid(row, "order_id"), uuid(row, "offer_id"),
-				row.get("plan_code_snapshot"), row.get("offer_name_snapshot"), row.get("price_amount_snapshot"),
-				row.get("currency_code_snapshot"), row.get("duration_days_snapshot"), Timestamp.from(now),
-				Timestamp.from(now.plusSeconds(number(row, "duration_days_snapshot").longValue() * 86400)));
-			UUID receiptId = UUID.randomUUID();
-			db.update("""
-				insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,
-					currency_code_snapshot,payment_method_snapshot)
-				values(?,?,?,?,?,?,?,?)
-				""", receiptId, "RC-" + receiptId, paymentId, uuid(row, "order_id"), memberId,
-				row.get("payment_amount"), row.get("payment_currency"), row.get("payment_method"));
-			audits.save(new AuditEvent(UUID.randomUUID(), actorId, "PAYMENT_PAID", "PAYMENT", paymentId,
-				reason, Map.of("status", "PENDING"), Map.of("status", "PAID", "evidence", evidence == null ? "" : evidence)));
-			events.publishEvent(new PaymentCompletedEvent(memberId, paymentId, uuid(row, "order_id")));
-			return new PaymentResultResponse(paymentId, uuid(row, "order_id"), "PAID",
-				string(row, "payment_method"), membershipId, receiptId, now);
+			return createArtifacts(row, paymentId, actorId, evidence, reason, now);
 		} catch (DataIntegrityViolationException exception) {
 			throw PaymentException.conflict("Payment or Order was already fulfilled");
 		}
+	}
+
+	@Transactional
+	PaymentResultResponse fulfillCash(UUID paymentId, UUID orderId, UUID actorId, String evidence, String reason) {
+		Map<String, Object> row;
+		try {
+			row = db.queryForMap("""
+				select ?::uuid payment_id,o.id order_id,'CASH' payment_method,'PENDING' payment_status,
+					o.price_amount_snapshot payment_amount,o.currency_code_snapshot payment_currency,
+					o.status order_status,o.member_account_id,o.offer_id,o.plan_code_snapshot,
+					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
+					o.duration_days_snapshot
+				from membership_orders o where o.id=? for update
+				""", paymentId, orderId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Membership Order was not found");
+		}
+		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))) throw PaymentException.conflict("Order is not payable");
+		ensureNoActiveMembership(row);
+		Instant now = clock.instant();
+		try {
+			db.update("""
+				insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at)
+				values(?,?,'CASH','PAID',?,'VND',?,?)
+				""", paymentId, orderId, row.get("payment_amount"), actorId, Timestamp.from(now));
+			db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",
+				Timestamp.from(now), orderId);
+			return createArtifacts(row, paymentId, actorId, evidence, reason, now);
+		} catch (DataIntegrityViolationException exception) {
+			throw PaymentException.conflict("Payment or Order was already fulfilled");
+		}
+	}
+
+	private void ensureNoActiveMembership(Map<String, Object> row) {
+		Integer active = db.queryForObject("select count(*) from memberships where member_account_id=? and status='ACTIVE'",
+			Integer.class, uuid(row, "member_account_id"));
+		if (active != null && active > 0) throw PaymentException.conflict("Member already has an active membership");
+	}
+
+	private PaymentResultResponse createArtifacts(Map<String, Object> row, UUID paymentId, UUID actorId,
+			String evidence, String reason, Instant now) {
+		UUID memberId = uuid(row, "member_account_id");
+		UUID membershipId = UUID.randomUUID();
+		db.update("""
+			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,
+				offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
+				status,starts_at,ends_at)
+			values(?,?,?,?,?,?,?,?,?,'ACTIVE',?,?)
+			""", membershipId, memberId, uuid(row, "order_id"), uuid(row, "offer_id"),
+			row.get("plan_code_snapshot"), row.get("offer_name_snapshot"), row.get("price_amount_snapshot"),
+			row.get("currency_code_snapshot"), row.get("duration_days_snapshot"), Timestamp.from(now),
+			Timestamp.from(now.plusSeconds(number(row, "duration_days_snapshot").longValue() * 86400)));
+		UUID receiptId = UUID.randomUUID();
+		db.update("""
+			insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,
+				currency_code_snapshot,payment_method_snapshot)
+			values(?,?,?,?,?,?,?,?)
+			""", receiptId, "RC-" + receiptId, paymentId, uuid(row, "order_id"), memberId,
+			row.get("payment_amount"), row.get("payment_currency"), row.get("payment_method"));
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "PAYMENT_PAID", "PAYMENT", paymentId,
+			reason, Map.of("status", "PENDING"), Map.of("status", "PAID", "evidence", evidence == null ? "" : evidence)));
+		events.publishEvent(new PaymentCompletedEvent(memberId, paymentId, uuid(row, "order_id")));
+		return new PaymentResultResponse(paymentId, uuid(row, "order_id"), "PAID",
+			string(row, "payment_method"), membershipId, receiptId, now);
 	}
 
 	Map<String, Object> paymentForUpdate(UUID paymentId) {

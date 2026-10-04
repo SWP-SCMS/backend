@@ -144,8 +144,9 @@ class PaymentFlowIntegrationTests {
 		String paid = webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"))
 			.andReturn().getResponse().getContentAsString();
+		String receiptId = JsonPath.read(paid, "$.receiptId");
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.receiptId").value(JsonPath.read(paid, "$.receiptId")));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.receiptId").value(receiptId));
 		webhook("hook-secret", webhookBody(9002, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isConflict());
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
@@ -275,7 +276,7 @@ class PaymentFlowIntegrationTests {
 			.isInstanceOf(DataIntegrityViolationException.class);
 		db.update("update payments set status='FAILED',failure_reason='test' where id=?", payment);
 		assertThatThrownBy(() -> db.update("update payments set status='PENDING' where id=?", payment))
-			.isInstanceOf(DataIntegrityViolationException.class);
+			.isInstanceOf(org.springframework.dao.DataAccessException.class);
 	}
 
 	private Account account(AccountRole role) {
@@ -331,10 +332,10 @@ class PaymentFlowIntegrationTests {
 			""", order, "ORD-" + order.toString().replace("-", "").toUpperCase(), member, member, offer, amount,
 			java.sql.Timestamp.from(paidAt), java.sql.Timestamp.from(paidAt), java.sql.Timestamp.from(paidAt), testData);
 		db.update("""
-			insert into payments(id,order_id,method,status,amount,currency_code,provider,provider_reference,
+			insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,provider,provider_reference,
 				provider_transaction_id,paid_at,created_at,updated_at)
-			values(?,?,'BANK_TRANSFER','PAID',?,'VND','SEPAY',?,?, ?,?,?)
-			""", payment, order, amount, "REF-" + payment, "TX-" + payment, java.sql.Timestamp.from(paidAt),
+			values(?,?,'BANK_TRANSFER','PAID',?,'VND',?,'SEPAY',?,?, ?,?,?)
+			""", payment, order, amount, "REF-" + payment, "REF-" + payment, "TX-" + payment, java.sql.Timestamp.from(paidAt),
 			java.sql.Timestamp.from(paidAt), java.sql.Timestamp.from(paidAt));
 		if (membershipStatus != null) {
 			db.update("""

@@ -64,11 +64,8 @@ class PaymentService {
 			values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT')
 			""", orderId,orderNumber,memberId,actor,request.offerId(),offer.get("name"),offer.get("plan_code"),
 			offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"));
-		db.update("""
-			insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id)
-			values(?,?,'CASH','PENDING',?,'VND',?)
-			""", paymentId,orderId,offer.get("price_amount"),actor);
-		return fulfillment.fulfill(paymentId, actor, null, "Cash received by receptionist", "Cash payment confirmed");
+		return fulfillment.fulfillCash(paymentId, orderId, actor, "Cash received by receptionist",
+			"Cash payment confirmed");
 	}
 
 	@Transactional
