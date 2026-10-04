@@ -1,0 +1,5 @@
+package com.scms.backend.membership;
+import java.util.Map; import java.util.UUID; import jakarta.validation.Valid; import org.springframework.http.*; import org.springframework.security.core.annotation.AuthenticationPrincipal; import org.springframework.security.oauth2.jwt.Jwt; import org.springframework.web.bind.annotation.*;
+@RestController class SepayController { private final SepayService service; SepayController(SepayService service){this.service=service;}
+ @PostMapping("/members/me/membership-orders/{orderId}/payments/sepay") ResponseEntity<SepayPaymentResponse> create(@AuthenticationPrincipal Jwt jwt,@PathVariable UUID orderId){return ResponseEntity.status(HttpStatus.CREATED).body(service.create(UUID.fromString(jwt.getSubject()),orderId));}
+ @PostMapping("/payments/sepay/webhook") ResponseEntity<Map<String,Object>> webhook(@RequestHeader(name="Authorization",required=false)String auth,@Valid @RequestBody SepayWebhookRequest request){String key=auth!=null&&auth.startsWith("Apikey ")?auth.substring(7):auth;return ResponseEntity.ok(service.webhook(key,request));}}
