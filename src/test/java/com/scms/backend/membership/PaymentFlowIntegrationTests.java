@@ -241,6 +241,40 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void managerAndReceptionistCanCancelOnlyPendingOrdersWithAudit() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		Account coach = account(AccountRole.COACH);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		UUID payment = pendingPayment(order, 12000, "CANCEL-" + order);
+
+		cancelOrder(manager, order, "Customer requested cancellation")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.orderId").value(order.toString()))
+			.andExpect(jsonPath("$.status").value("EXPIRED"))
+			.andExpect(jsonPath("$.cancelledPayments").value(1));
+		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+			.isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("FAILED");
+		assertThat(count("select count(*) from audit_events where target_id=? and action='MEMBERSHIP_ORDER_CANCELLED'",
+			order)).isOne();
+		cancelOrder(manager, order, "Duplicate cancellation").andExpect(status().isConflict());
+
+		MemberProfile secondMember = member();
+		UUID secondOrder = order(secondMember.getAccountId(), secondMember.getAccountId(), offer, 12000, false, null);
+		cancelOrder(receptionist, secondOrder, "Cancelled at the front desk")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.cancelledPayments").value(0));
+		cancelOrder(coach, secondOrder, "Not allowed").andExpect(status().isForbidden());
+		cancelOrder(member.getAccount(), secondOrder, "Not allowed").andExpect(status().isForbidden());
+		cancelOrder(manager, UUID.randomUUID(), "Unknown order").andExpect(status().isNotFound());
+		cancelOrder(manager, UUID.randomUUID(), " ").andExpect(status().isBadRequest());
+	}
+
+	@Test
 	void receiptAndPaymentResultEnforceOwnershipAndRoleScope() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile owner = member();
@@ -415,6 +449,13 @@ class PaymentFlowIntegrationTests {
 			throws Exception {
 		return mockMvc.perform(post("/api/v1/payments/{id}/reconcile", payment).contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, bearer(actor)).contentType(MediaType.APPLICATION_JSON).content(body));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions cancelOrder(Account actor, UUID order, String reason)
+			throws Exception {
+		return mockMvc.perform(patch("/api/v1/membership-orders/{id}/cancel", order).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(actor)).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"reason\":\"" + reason + "\"}"));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions getAuthorized(Account actor, String path)

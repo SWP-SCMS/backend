@@ -89,6 +89,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.POST, "/payments/sepay/webhook").permitAll()
 				.requestMatchers(HttpMethod.GET, "/payments/*/result", "/receipts/*")
 					.hasAnyRole("MEMBER", "RECEPTIONIST", "MANAGER")
+				.requestMatchers(HttpMethod.PATCH, "/membership-orders/*/cancel")
+					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers("/payments/**").hasAnyRole("MANAGER", "RECEPTIONIST")
 				.requestMatchers("/manager/reports/**").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")

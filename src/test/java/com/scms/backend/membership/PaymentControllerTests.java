@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
@@ -52,6 +53,14 @@ class PaymentControllerTests {
 	@Test
 	void exposesReconciliationQueueEndpoint() throws Exception {
 		mockMvc.perform(get("/payments/reconciliation-queue"))
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void exposesMembershipOrderCancellationEndpoint() throws Exception {
+		mockMvc.perform(patch("/membership-orders/{orderId}/cancel", UUID.randomUUID())
+			.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+			.content("{\"reason\":\"Customer no longer wants this order\"}"))
 			.andExpect(status().isOk());
 	}
 }

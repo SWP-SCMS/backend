@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -38,6 +39,12 @@ class PaymentController {
 	ResponseEntity<PaymentResultResponse> reconcile(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID paymentId,
 			@RequestBody PaymentActionRequest request) {
 		return ResponseEntity.ok(service.reconcile(id(jwt), paymentId, request));
+	}
+
+	@PatchMapping("/membership-orders/{orderId}/cancel")
+	ResponseEntity<MembershipOrderCancellationResponse> cancelOrder(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID orderId, @RequestBody MembershipOrderCancellationRequest request) {
+		return ResponseEntity.ok(service.cancelOrder(id(jwt), orderId, request));
 	}
 
 	@GetMapping("/payments/reconciliation-queue")

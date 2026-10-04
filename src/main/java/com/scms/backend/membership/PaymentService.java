@@ -99,6 +99,42 @@ class PaymentService {
 			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null);
 	}
 
+	@Transactional
+	MembershipOrderCancellationResponse cancelOrder(UUID actor, UUID orderId,
+			MembershipOrderCancellationRequest request) {
+		ensureAny(actor);
+		if (request == null || blank(request.reason())) {
+			throw PaymentException.validation("reason is required");
+		}
+		String reason = request.reason().trim();
+		Map<String, Object> order;
+		try {
+			order = db.queryForMap("select id,status from membership_orders where id=? for update", orderId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Membership Order was not found");
+		}
+		if (!"PENDING_PAYMENT".equals(PaymentFulfillmentService.string(order, "status"))) {
+			throw PaymentException.conflict("Only a pending Membership Order can be cancelled");
+		}
+		Instant now = clock.instant();
+		int cancelledPayments = db.update("""
+			update payments set status='FAILED',failure_reason=?,evidence=?,processed_by_account_id=?,
+				updated_at=? where order_id=? and status='PENDING'
+			""", "Order cancelled: " + reason, "Cancelled by authorized staff", actor,
+			Timestamp.from(now), orderId);
+		int cancelledOrder = db.update("""
+			update membership_orders set status='EXPIRED',updated_at=?,version=version+1
+			where id=? and status='PENDING_PAYMENT'
+			""", Timestamp.from(now), orderId);
+		if (cancelledOrder != 1) {
+			throw PaymentException.conflict("Membership Order is no longer pending");
+		}
+		audits.save(new AuditEvent(UUID.randomUUID(), actor, "MEMBERSHIP_ORDER_CANCELLED",
+			"MEMBERSHIP_ORDER", orderId, reason, Map.of("status", "PENDING_PAYMENT"),
+			Map.of("status", "EXPIRED", "cancelledPayments", cancelledPayments)));
+		return new MembershipOrderCancellationResponse(orderId, "EXPIRED", cancelledPayments, now, reason);
+	}
+
 	@Transactional(readOnly = true)
 	ReconciliationQueuePageResponse reconciliationQueue(UUID actor, ReconciliationQueueStatus status,
 			String query, int page, int size) {
