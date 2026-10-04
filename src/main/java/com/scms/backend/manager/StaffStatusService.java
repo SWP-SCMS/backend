@@ -1,6 +1,7 @@
 package com.scms.backend.manager;
 
 import java.time.Clock;
+import java.sql.Timestamp;
 import java.util.Map;
 import java.util.UUID;
 
@@ -65,7 +66,7 @@ public class StaffStatusService {
 		Boolean hasFutureSessions = jdbc.queryForObject("""
 			select exists(select 1 from class_sessions where teaching_coach_account_id = ?
 				and start_time > ? and status in ('SCHEDULED', 'IN_PROGRESS'))
-			""", Boolean.class, coachId, clock.instant());
+			""", Boolean.class, coachId, Timestamp.from(clock.instant()));
 		Boolean hasActiveAssignments = jdbc.queryForObject("""
 			select exists(select 1 from coach_assignments where coach_account_id = ? and status = 'ACTIVE')
 			""", Boolean.class, coachId);
