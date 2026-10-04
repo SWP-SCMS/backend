@@ -202,8 +202,7 @@ class PaymentService {
 		try {
 			Map<String,Object> row=db.queryForMap("select * from receipts where id=?",receiptId);
 			if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
-			if (account.getRole()==AccountRole.COACH
-					|| (account.getRole()==AccountRole.RECEPTIONIST && !"CASH".equals(row.get("payment_method_snapshot"))))
+			if (account.getRole()==AccountRole.COACH)
 				throw PaymentException.forbidden();
 			return receipt(row);
 		} catch (EmptyResultDataAccessException exception) { throw PaymentException.notFound("Receipt was not found"); }
@@ -213,8 +212,7 @@ class PaymentService {
 	PaymentResultResponse result(UUID actor, UUID paymentId) {
 		Account account=active(actor); Map<String,Object> row=fulfillment.payment(paymentId);
 		if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
-		if (account.getRole()==AccountRole.COACH
-				|| (account.getRole()==AccountRole.RECEPTIONIST && !"CASH".equals(row.get("payment_method"))))
+		if (account.getRole()==AccountRole.COACH)
 			throw PaymentException.forbidden();
 		if (!"PAID".equals(row.get("payment_status"))) return new PaymentResultResponse(paymentId,(UUID)row.get("order_id"),
 			row.get("payment_status").toString(),row.get("payment_method").toString(),null,null,null);

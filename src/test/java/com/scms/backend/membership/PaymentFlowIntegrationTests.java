@@ -295,6 +295,28 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void receptionistCanReadBankTransferReceiptAndPaymentResult() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		String created = sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		String reference = JsonPath.read(created, "$.paymentReference");
+		UUID payment = UUID.fromString(JsonPath.read(created, "$.paymentId"));
+		String paid = webhook("hook-secret",
+			webhookBody(9100, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		UUID receipt = UUID.fromString(JsonPath.read(paid, "$.receiptId"));
+
+		getAuthorized(receptionist, "/api/v1/receipts/" + receipt)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.paymentMethod").value("BANK_TRANSFER"));
+		getAuthorized(receptionist, "/api/v1/payments/" + payment + "/result")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.method").value("BANK_TRANSFER"));
+	}
+
+	@Test
 	void paymentEndpointsRejectAnonymousAndWrongRoles() throws Exception {
 		Account coach = account(AccountRole.COACH);
 		Account manager = account(AccountRole.MANAGER);

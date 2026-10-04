@@ -1,0 +1,86 @@
+package com.scms.backend.membership;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEventRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+class PaymentServiceReceiptAccessTests {
+
+	private final UUID receptionistId = UUID.randomUUID();
+	private final UUID memberId = UUID.randomUUID();
+	private final UUID orderId = UUID.randomUUID();
+	private final UUID paymentId = UUID.randomUUID();
+	private final UUID receiptId = UUID.randomUUID();
+	private final Instant issuedAt = Instant.parse("2026-10-04T16:00:00Z");
+	private JdbcTemplate db;
+	private PaymentFulfillmentService fulfillment;
+	private PaymentService service;
+
+	@BeforeEach
+	void setUp() {
+		db = mock(JdbcTemplate.class);
+		fulfillment = mock(PaymentFulfillmentService.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		Account receptionist = new Account(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE,
+			"Receptionist", "0900000000", "receptionist@example.test", LocalDate.of(1990, 1, 1), "hash");
+		when(accounts.findById(receptionistId)).thenReturn(Optional.of(receptionist));
+		service = new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
+			Clock.systemUTC());
+	}
+
+	@Test
+	void receptionistCanReadBankTransferReceipt() {
+		when(db.queryForMap(anyString(), eq(receiptId))).thenReturn(Map.of(
+			"id", receiptId,
+			"receipt_number", "RC-001",
+			"payment_id", paymentId,
+			"order_id", orderId,
+			"member_account_id", memberId,
+			"amount_snapshot", BigDecimal.valueOf(12000),
+			"currency_code_snapshot", "VND",
+			"payment_method_snapshot", "BANK_TRANSFER",
+			"issued_at", Timestamp.from(issuedAt)
+		));
+
+		ReceiptResponse response = service.receipt(receptionistId, receiptId);
+
+		assertThat(response.receiptId()).isEqualTo(receiptId);
+		assertThat(response.paymentMethod()).isEqualTo("BANK_TRANSFER");
+	}
+
+	@Test
+	void receptionistCanReadBankTransferPaymentResult() {
+		when(fulfillment.payment(paymentId)).thenReturn(Map.of(
+			"payment_id", paymentId,
+			"order_id", orderId,
+			"member_account_id", memberId,
+			"payment_method", "BANK_TRANSFER",
+			"payment_status", "PENDING"
+		));
+
+		PaymentResultResponse response = service.result(receptionistId, paymentId);
+
+		assertThat(response.paymentId()).isEqualTo(paymentId);
+		assertThat(response.method()).isEqualTo("BANK_TRANSFER");
+	}
+}
