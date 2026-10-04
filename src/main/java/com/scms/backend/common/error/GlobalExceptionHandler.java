@@ -20,7 +20,9 @@ import com.scms.backend.membership.MemberNotActiveException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
 import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
 import com.scms.backend.membership.PendingMembershipOrderExistsException;
+import com.scms.backend.membership.PaymentException;
 import com.scms.backend.membership.SepayValidationException;
+import com.scms.backend.membership.MembershipOfferValidationException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
 import com.scms.backend.manager.StaffAccountValidationException;
@@ -291,6 +293,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
 		problem.setTitle("SePay validation failed");
 		problem.setProperty("code", "SEPAY_VALIDATION_ERROR");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipOfferValidationException.class)
+	ProblemDetail handleMembershipOfferValidation(MembershipOfferValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+		problem.setTitle("Membership offer validation failed");
+		problem.setProperty("code", "MEMBERSHIP_OFFER_VALIDATION_ERROR");
+		return problem;
+	}
+
+	@ExceptionHandler(PaymentException.class)
+	ProblemDetail handlePayment(PaymentException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
+		problem.setTitle("Payment request failed");
+		problem.setProperty("code", exception.code());
 		return problem;
 	}
 
