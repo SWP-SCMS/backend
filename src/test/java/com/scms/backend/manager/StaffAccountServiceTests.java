@@ -3,7 +3,6 @@ package com.scms.backend.manager;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +23,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 @ExtendWith(MockitoExtension.class)
 class StaffAccountServiceTests {
@@ -40,7 +41,7 @@ class StaffAccountServiceTests {
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE, "Coach One");
 		when(accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
 			.thenReturn(true);
-		when(accountRepository.searchStaff(eq("coach"), eq(AccountRole.COACH), eq(AccountStatus.ACTIVE), any()))
+		when(accountRepository.findAll(any(Specification.class), any(Pageable.class)))
 			.thenReturn(new PageImpl<>(List.of(coach), PageRequest.of(0, 20), 1));
 
 		StaffAccountPageResponse result = service.search(managerId, " coach ", AccountRole.COACH,
@@ -48,8 +49,17 @@ class StaffAccountServiceTests {
 
 		assertThat(result.content()).singleElement().extracting(StaffAccountResponse::fullName)
 			.isEqualTo("Coach One");
-		verify(accountRepository).searchStaff("coach", AccountRole.COACH, AccountStatus.ACTIVE,
-			PageRequest.of(0, 20));
+		verify(accountRepository).findAll(any(Specification.class), any(Pageable.class));
+	}
+
+	@Test
+	void memberRoleIsRejectedFromStaffSearch() {
+		UUID managerId = UUID.randomUUID();
+		when(accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.search(managerId, null, AccountRole.MEMBER, null, PageRequest.of(0, 20)))
+			.isInstanceOf(StaffAccountValidationException.class);
 	}
 
 	@Test
