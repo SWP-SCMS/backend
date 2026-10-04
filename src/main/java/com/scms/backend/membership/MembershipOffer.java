@@ -85,6 +85,13 @@ public class MembershipOffer {
 		this.durationDays = durationDays;
 	}
 
+	public void patch(String name, String description, BigInteger priceAmount, Integer durationDays) {
+		if (name != null) this.name = name;
+		if (description != null) this.description = description;
+		if (priceAmount != null) this.priceAmount = priceAmount;
+		if (durationDays != null) this.durationDays = durationDays;
+	}
+
 	public void changeStatus(MembershipOfferStatus status) { this.status = status; }
 
 	public UUID getId() {
@@ -114,4 +121,6 @@ public class MembershipOffer {
 	public int getDurationDays() {
 		return durationDays;
 	}
+
+	public MembershipOfferStatus getStatus() { return status; }
 }
