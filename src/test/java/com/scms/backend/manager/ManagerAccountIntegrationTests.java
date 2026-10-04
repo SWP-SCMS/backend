@@ -13,6 +13,8 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +49,7 @@ class ManagerAccountIntegrationTests {
 
 	@Autowired MockMvc mockMvc;
 	@Autowired AccountRepository accounts;
+	@Autowired MemberProfileRepository memberProfiles;
 	@Autowired PasswordEncoder passwords;
 	@Autowired JwtEncoder jwtEncoder;
 
@@ -82,6 +85,38 @@ class ManagerAccountIntegrationTests {
 			.header(HttpHeaders.AUTHORIZATION, bearer(manager)).contentType(MediaType.APPLICATION_JSON)
 			.content("{\"status\":\"INACTIVE\",\"reason\":\"QA\"}"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("INACTIVE"));
+	}
+
+	@Test
+	void managerListsReadsAndUpdatesMemberAccounts() throws Exception {
+		Account manager = account(AccountRole.MANAGER, "Manager");
+		Account memberAccount = account(AccountRole.MEMBER, "Member Before");
+		MemberProfile member = memberProfiles.saveAndFlush(new MemberProfile(memberAccount));
+
+		mockMvc.perform(get("/api/v1/manager/members").contextPath("/api/v1")
+			.queryParam("query", member.getMemberCode()).queryParam("status", "ACTIVE")
+			.header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content.length()").value(1))
+			.andExpect(jsonPath("$.content[0].accountId").value(memberAccount.getId().toString()))
+			.andExpect(jsonPath("$.content[0].memberId").value(member.getMemberCode()));
+
+		mockMvc.perform(get("/api/v1/manager/members/{id}", memberAccount.getId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(manager)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.fullName").value("Member Before"));
+
+		mockMvc.perform(patch("/api/v1/manager/members/{id}", memberAccount.getId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(manager)).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"fullName\":\"Member After\",\"fitnessGoal\":\"Improve mobility\"}"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.fullName").value("Member After"))
+			.andExpect(jsonPath("$.fitnessGoal").value("Improve mobility"))
+			.andExpect(jsonPath("$.status").value("ACTIVE"));
+
+		mockMvc.perform(get("/api/v1/manager/members").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(memberAccount)))
+			.andExpect(status().isForbidden());
 	}
 
 	private Account account(AccountRole role, String name) {
