@@ -30,6 +30,9 @@ import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
 import com.scms.backend.manager.MemberStatusConflictException;
 import com.scms.backend.manager.StaffStatusConflictException;
+import com.scms.backend.scheduling.DisciplineNotFoundException;
+import com.scms.backend.scheduling.DisciplineValidationException;
+import com.scms.backend.scheduling.DuplicateDisciplineException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -223,6 +226,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
 		problem.setTitle("Staff status conflict");
 		problem.setProperty("code", "STAFF_STATUS_CONFLICT");
+		return problem;
+	}
+
+	@ExceptionHandler(DisciplineValidationException.class)
+	ProblemDetail handleDisciplineValidation(DisciplineValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(DisciplineNotFoundException.class)
+	ProblemDetail handleDisciplineNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested discipline was not found.");
+		problem.setTitle("Discipline not found");
+		problem.setProperty("code", "DISCIPLINE_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(DuplicateDisciplineException.class)
+	ProblemDetail handleDuplicateDiscipline() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"A discipline with this name already exists.");
+		problem.setTitle("Discipline conflict");
+		problem.setProperty("code", "DISCIPLINE_NAME_CONFLICT");
 		return problem;
 	}
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)
