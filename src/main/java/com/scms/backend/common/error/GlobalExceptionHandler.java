@@ -33,6 +33,7 @@ import com.scms.backend.manager.StaffStatusConflictException;
 import com.scms.backend.scheduling.DisciplineNotFoundException;
 import com.scms.backend.scheduling.DisciplineValidationException;
 import com.scms.backend.scheduling.DuplicateDisciplineException;
+import com.scms.backend.scheduling.SportClassException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -254,6 +255,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 			"A discipline with this name already exists.");
 		problem.setTitle("Discipline conflict");
 		problem.setProperty("code", "DISCIPLINE_NAME_CONFLICT");
+		return problem;
+	}
+
+	@ExceptionHandler(SportClassException.class)
+	ProblemDetail handleSportClass(SportClassException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Class request failed");
+		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
 		return problem;
 	}
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)
