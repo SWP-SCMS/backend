@@ -88,6 +88,7 @@ public class ClassSession {
 	Room getRoom() { return room; }
 	Instant getStartTime() { return startTime; }
 	Instant getEndTime() { return endTime; }
+	int getCapacity() { return capacity; }
 	ClassSessionStatus getStatus() { return status; }
 	UUID getCreatedBy() { return createdBy; }
 }
