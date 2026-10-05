@@ -2,7 +2,6 @@ package com.scms.backend.membership;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -81,7 +80,7 @@ class PaymentController {
 	}
 
 	@GetMapping("/members/me/memberships")
-	ResponseEntity<List<Map<String, Object>>> history(@AuthenticationPrincipal Jwt jwt) {
+	ResponseEntity<List<MembershipHistoryResponse>> history(@AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.ok(service.memberHistory(id(jwt)));
 	}
 

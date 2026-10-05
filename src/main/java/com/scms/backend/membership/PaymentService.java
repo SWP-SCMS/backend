@@ -255,9 +255,15 @@ class PaymentService {
 	}
 
 	@Transactional(readOnly=true)
-	List<Map<String,Object>> memberHistory(UUID actor) {
+	List<MembershipHistoryResponse> memberHistory(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
-		return db.queryForList("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",actor);
+		return db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",
+			(rs,row)->new MembershipHistoryResponse(rs.getObject("id",UUID.class),
+				rs.getObject("order_id",UUID.class),rs.getString("plan_code_snapshot"),
+				rs.getString("offer_name_snapshot"),rs.getBigDecimal("price_amount_snapshot").toBigIntegerExact(),
+				rs.getString("currency_code_snapshot").trim(),rs.getInt("duration_days_snapshot"),
+				rs.getString("status"),rs.getTimestamp("starts_at").toInstant(),
+				rs.getTimestamp("ends_at").toInstant()),actor);
 	}
 
 	@Transactional(readOnly=true)
