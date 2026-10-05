@@ -192,13 +192,17 @@ class PaymentService {
 	@Transactional(readOnly=true)
 	List<ReceiptResponse> receipts(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
-		return db.query("select * from receipts where member_account_id=? order by issued_at desc",
+		return db.query("""
+			select r.*,o.offer_name_snapshot from receipts r
+			join membership_orders o on o.id=r.order_id
+			where r.member_account_id=? order by r.issued_at desc,r.id desc
+			""",
 			(rs,row)->receipt(rs),actor);
 	}
 
 	@Transactional(readOnly=true)
 	List<ReceiptResponse> receiptsForReceptionist(UUID actor, String memberCode) {
-		ensure(actor, AccountRole.RECEPTIONIST);
+		ensureAny(actor);
 		if (blank(memberCode)) throw PaymentException.validation("memberId is required");
 		UUID memberId;
 		try {
@@ -209,7 +213,11 @@ class PaymentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Member was not found");
 		}
-		return db.query("select * from receipts where member_account_id=? order by issued_at desc, id desc",
+		return db.query("""
+			select r.*,o.offer_name_snapshot from receipts r
+			join membership_orders o on o.id=r.order_id
+			where r.member_account_id=? order by r.issued_at desc,r.id desc
+			""",
 			(rs,row)->receipt(rs),memberId);
 	}
 
@@ -217,7 +225,10 @@ class PaymentService {
 	ReceiptResponse receipt(UUID actor, UUID receiptId) {
 		Account account=active(actor);
 		try {
-			Map<String,Object> row=db.queryForMap("select * from receipts where id=?",receiptId);
+			Map<String,Object> row=db.queryForMap("""
+				select r.*,o.offer_name_snapshot from receipts r
+				join membership_orders o on o.id=r.order_id where r.id=?
+				""",receiptId);
 			if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
 			if (account.getRole()==AccountRole.COACH)
 				throw PaymentException.forbidden();
@@ -268,6 +279,6 @@ class PaymentService {
 	private Account active(UUID id){return accounts.findById(id).filter(a->a.getStatus()==AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);}
 	private void ensure(UUID id,AccountRole role){if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
 	private void ensureAny(UUID id){if(!accounts.existsByIdAndRoleAndStatus(id,AccountRole.MANAGER,AccountStatus.ACTIVE)&&!accounts.existsByIdAndRoleAndStatus(id,AccountRole.RECEPTIONIST,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
-	private ReceiptResponse receipt(java.sql.ResultSet rs)throws java.sql.SQLException{return new ReceiptResponse(rs.getObject("id",UUID.class),rs.getString("receipt_number"),rs.getObject("payment_id",UUID.class),rs.getObject("order_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getBigDecimal("amount_snapshot").toBigIntegerExact(),rs.getString("currency_code_snapshot").trim(),rs.getString("payment_method_snapshot"),rs.getTimestamp("issued_at").toInstant());}
-	private ReceiptResponse receipt(Map<String,Object> r){return new ReceiptResponse((UUID)r.get("id"),r.get("receipt_number").toString(),(UUID)r.get("payment_id"),(UUID)r.get("order_id"),(UUID)r.get("member_account_id"),new BigDecimal(r.get("amount_snapshot").toString()).toBigIntegerExact(),r.get("currency_code_snapshot").toString().trim(),r.get("payment_method_snapshot").toString(),((Timestamp)r.get("issued_at")).toInstant());}
+	private ReceiptResponse receipt(java.sql.ResultSet rs)throws java.sql.SQLException{return new ReceiptResponse(rs.getObject("id",UUID.class),rs.getString("receipt_number"),rs.getObject("payment_id",UUID.class),rs.getObject("order_id",UUID.class),rs.getString("offer_name_snapshot"),rs.getObject("member_account_id",UUID.class),rs.getBigDecimal("amount_snapshot").toBigIntegerExact(),rs.getString("currency_code_snapshot").trim(),rs.getString("payment_method_snapshot"),rs.getTimestamp("issued_at").toInstant());}
+	private ReceiptResponse receipt(Map<String,Object> r){return new ReceiptResponse((UUID)r.get("id"),r.get("receipt_number").toString(),(UUID)r.get("payment_id"),(UUID)r.get("order_id"),r.get("offer_name_snapshot").toString(),(UUID)r.get("member_account_id"),new BigDecimal(r.get("amount_snapshot").toString()).toBigIntegerExact(),r.get("currency_code_snapshot").toString().trim(),r.get("payment_method_snapshot").toString(),((Timestamp)r.get("issued_at")).toInstant());}
 }
