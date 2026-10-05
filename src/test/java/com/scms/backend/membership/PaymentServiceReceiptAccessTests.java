@@ -58,17 +58,19 @@ class PaymentServiceReceiptAccessTests {
 
 	@Test
 	void receptionistCanReadBankTransferReceipt() {
-		when(db.queryForMap(anyString(), eq(receiptId))).thenReturn(Map.of(
-			"id", receiptId,
-			"receipt_number", "RC-001",
-			"payment_id", paymentId,
-			"order_id", orderId,
-			"offer_name_snapshot", "Monthly Basic",
-			"member_account_id", memberId,
-			"amount_snapshot", BigDecimal.valueOf(12000),
-			"currency_code_snapshot", "VND",
-			"payment_method_snapshot", "BANK_TRANSFER",
-			"issued_at", Timestamp.from(issuedAt)
+		when(db.queryForMap(anyString(), eq(receiptId))).thenReturn(Map.ofEntries(
+			Map.entry("id", receiptId),
+			Map.entry("receipt_number", "RC-001"),
+			Map.entry("payment_id", paymentId),
+			Map.entry("order_id", orderId),
+			Map.entry("offer_name_snapshot", "Monthly Basic"),
+			Map.entry("member_account_id", memberId),
+			Map.entry("member_name", "Member One"),
+			Map.entry("member_code", "MB-100001"),
+			Map.entry("amount_snapshot", BigDecimal.valueOf(12000)),
+			Map.entry("currency_code_snapshot", "VND"),
+			Map.entry("payment_method_snapshot", "BANK_TRANSFER"),
+			Map.entry("issued_at", Timestamp.from(issuedAt))
 		));
 
 		ReceiptResponse response = service.receipt(receptionistId, receiptId);
@@ -76,6 +78,8 @@ class PaymentServiceReceiptAccessTests {
 		assertThat(response.receiptId()).isEqualTo(receiptId);
 		assertThat(response.paymentMethod()).isEqualTo("BANK_TRANSFER");
 		assertThat(response.offerName()).isEqualTo("Monthly Basic");
+		assertThat(response.memberName()).isEqualTo("Member One");
+		assertThat(response.memberCode()).isEqualTo("MB-100001");
 	}
 
 	@Test
@@ -97,11 +101,11 @@ class PaymentServiceReceiptAccessTests {
 	@Test
 	void receptionistCanListCashAndBankTransferReceiptsByMemberCode() {
 		ReceiptResponse cash = new ReceiptResponse(UUID.randomUUID(), "RC-CASH", UUID.randomUUID(),
-			UUID.randomUUID(), "Monthly Basic", memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND",
-			"CASH", issuedAt);
+			UUID.randomUUID(), "Monthly Basic", memberId, "Member One", "MB-100001",
+			BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "CASH", issuedAt);
 		ReceiptResponse bank = new ReceiptResponse(UUID.randomUUID(), "RC-BANK", UUID.randomUUID(),
-			UUID.randomUUID(), "Monthly Basic", memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND",
-			"BANK_TRANSFER", issuedAt.minusSeconds(60));
+			UUID.randomUUID(), "Monthly Basic", memberId, "Member One", "MB-100001",
+			BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "BANK_TRANSFER", issuedAt.minusSeconds(60));
 		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
 		doReturn(List.of(cash, bank)).when(db).query(anyString(),
 			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId));

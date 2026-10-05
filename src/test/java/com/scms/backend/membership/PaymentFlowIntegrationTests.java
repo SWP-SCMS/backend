@@ -291,7 +291,9 @@ class PaymentFlowIntegrationTests {
 		getAuthorized(owner.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isOk());
 		getAuthorized(stranger.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isForbidden());
 		getAuthorized(stranger.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isForbidden());
-		getAuthorized(receptionist, "/api/v1/receipts/" + receipt).andExpect(status().isOk());
+		getAuthorized(receptionist, "/api/v1/receipts/" + receipt).andExpect(status().isOk())
+			.andExpect(jsonPath("$.memberName").value(owner.getAccount().getFullName()))
+			.andExpect(jsonPath("$.memberCode").value(owner.getMemberCode()));
 	}
 
 	@Test
@@ -332,7 +334,9 @@ class PaymentFlowIntegrationTests {
 		getAuthorized(receptionist, "/api/v1/reception/members/" + cashMember.getMemberCode() + "/receipts")
 			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(cashReceipt.toString()))
 			.andExpect(jsonPath("$[0].paymentMethod").value("CASH"))
-			.andExpect(jsonPath("$[0].offerName").value("Offer " + offer));
+			.andExpect(jsonPath("$[0].offerName").value("Offer " + offer))
+			.andExpect(jsonPath("$[0].memberName").value(cashMember.getAccount().getFullName()))
+			.andExpect(jsonPath("$[0].memberCode").value(cashMember.getMemberCode()));
 
 		UUID bankOrder = order(bankMember.getAccountId(), bankMember.getAccountId(), offer, 12000, false, null);
 		String created = sepay(bankMember.getAccount(), bankOrder).andExpect(status().isOk())

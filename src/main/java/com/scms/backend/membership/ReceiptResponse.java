@@ -5,5 +5,5 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record ReceiptResponse(UUID receiptId, String receiptNumber, UUID paymentId, UUID orderId,
-		String offerName, UUID memberAccountId, BigInteger amount, String currency, String paymentMethod,
-		Instant issuedAt) { }
+		String offerName, UUID memberAccountId, String memberName, String memberCode, BigInteger amount,
+		String currency, String paymentMethod, Instant issuedAt) { }
