@@ -30,6 +30,7 @@ import org.springframework.jdbc.core.RowMapper;
 class PaymentServiceReceiptAccessTests {
 
 	private final UUID receptionistId = UUID.randomUUID();
+	private final UUID managerId = UUID.randomUUID();
 	private final UUID memberId = UUID.randomUUID();
 	private final UUID orderId = UUID.randomUUID();
 	private final UUID paymentId = UUID.randomUUID();
@@ -49,6 +50,8 @@ class PaymentServiceReceiptAccessTests {
 		when(accounts.findById(receptionistId)).thenReturn(Optional.of(receptionist));
 		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
 			.thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(true);
 		service = new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
 			Clock.systemUTC());
 	}
@@ -60,6 +63,7 @@ class PaymentServiceReceiptAccessTests {
 			"receipt_number", "RC-001",
 			"payment_id", paymentId,
 			"order_id", orderId,
+			"offer_name_snapshot", "Monthly Basic",
 			"member_account_id", memberId,
 			"amount_snapshot", BigDecimal.valueOf(12000),
 			"currency_code_snapshot", "VND",
@@ -71,6 +75,7 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response.receiptId()).isEqualTo(receiptId);
 		assertThat(response.paymentMethod()).isEqualTo("BANK_TRANSFER");
+		assertThat(response.offerName()).isEqualTo("Monthly Basic");
 	}
 
 	@Test
@@ -92,10 +97,11 @@ class PaymentServiceReceiptAccessTests {
 	@Test
 	void receptionistCanListCashAndBankTransferReceiptsByMemberCode() {
 		ReceiptResponse cash = new ReceiptResponse(UUID.randomUUID(), "RC-CASH", UUID.randomUUID(),
-			UUID.randomUUID(), memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "CASH", issuedAt);
+			UUID.randomUUID(), "Monthly Basic", memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND",
+			"CASH", issuedAt);
 		ReceiptResponse bank = new ReceiptResponse(UUID.randomUUID(), "RC-BANK", UUID.randomUUID(),
-			UUID.randomUUID(), memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "BANK_TRANSFER",
-			issuedAt.minusSeconds(60));
+			UUID.randomUUID(), "Monthly Basic", memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND",
+			"BANK_TRANSFER", issuedAt.minusSeconds(60));
 		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
 		doReturn(List.of(cash, bank)).when(db).query(anyString(),
 			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId));
@@ -104,5 +110,14 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response).extracting(ReceiptResponse::paymentMethod)
 			.containsExactly("CASH", "BANK_TRANSFER");
+	}
+
+	@Test
+	void managerCanListReceiptsByMemberCode() {
+		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
+		doReturn(List.of()).when(db).query(anyString(),
+			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId));
+
+		assertThat(service.receiptsForReceptionist(managerId, "MB-100001")).isEmpty();
 	}
 }
