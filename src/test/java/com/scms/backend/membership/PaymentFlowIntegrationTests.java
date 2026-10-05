@@ -317,6 +317,46 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void receptionistCanListCashAndBankTransferReceiptsForMember() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		Account coach = account(AccountRole.COACH);
+		MemberProfile cashMember = member();
+		MemberProfile bankMember = member();
+		MemberProfile noReceiptMember = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+
+		String cashPaid = cash(receptionist, cashMember.getMemberCode(), offer)
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+		UUID cashReceipt = UUID.fromString(JsonPath.read(cashPaid, "$.receiptId"));
+		getAuthorized(receptionist, "/api/v1/reception/members/" + cashMember.getMemberCode() + "/receipts")
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(cashReceipt.toString()))
+			.andExpect(jsonPath("$[0].paymentMethod").value("CASH"));
+
+		UUID bankOrder = order(bankMember.getAccountId(), bankMember.getAccountId(), offer, 12000, false, null);
+		String created = sepay(bankMember.getAccount(), bankOrder).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		String reference = JsonPath.read(created, "$.paymentReference");
+		String bankPaid = webhook("hook-secret",
+			webhookBody(9200, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		UUID bankReceipt = UUID.fromString(JsonPath.read(bankPaid, "$.receiptId"));
+		db.update("update accounts set status='SUSPENDED' where id=?", bankMember.getAccountId());
+		getAuthorized(receptionist, "/api/v1/reception/members/" + bankMember.getMemberCode() + "/receipts")
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(bankReceipt.toString()))
+			.andExpect(jsonPath("$[0].paymentMethod").value("BANK_TRANSFER"));
+
+		getAuthorized(receptionist, "/api/v1/reception/members/" + noReceiptMember.getMemberCode() + "/receipts")
+			.andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+		getAuthorized(receptionist, "/api/v1/reception/members/MB-NOT-FOUND/receipts")
+			.andExpect(status().isNotFound());
+		getAuthorized(coach, "/api/v1/reception/members/" + cashMember.getMemberCode() + "/receipts")
+			.andExpect(status().isForbidden());
+		getAuthorized(manager, "/api/v1/reception/members/" + cashMember.getMemberCode() + "/receipts")
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
 	void paymentEndpointsRejectAnonymousAndWrongRoles() throws Exception {
 		Account coach = account(AccountRole.COACH);
 		Account manager = account(AccountRole.MANAGER);

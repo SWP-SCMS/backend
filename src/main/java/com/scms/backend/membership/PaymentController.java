@@ -64,6 +64,12 @@ class PaymentController {
 		return ResponseEntity.ok(service.receipts(id(jwt)));
 	}
 
+	@GetMapping("/reception/members/{memberId}/receipts")
+	ResponseEntity<List<ReceiptResponse>> receiptsForReceptionist(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable String memberId) {
+		return ResponseEntity.ok(service.receiptsForReceptionist(id(jwt), memberId));
+	}
+
 	@GetMapping("/receipts/{receiptId}")
 	ResponseEntity<ReceiptResponse> receipt(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID receiptId) {
 		return ResponseEntity.ok(service.receipt(id(jwt), receiptId));

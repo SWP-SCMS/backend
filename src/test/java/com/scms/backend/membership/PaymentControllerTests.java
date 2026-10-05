@@ -63,4 +63,10 @@ class PaymentControllerTests {
 			.content("{\"reason\":\"Customer no longer wants this order\"}"))
 			.andExpect(status().isOk());
 	}
+
+	@Test
+	void exposesReceptionistMemberReceiptListEndpoint() throws Exception {
+		mockMvc.perform(get("/reception/members/{memberId}/receipts", "MB-100001"))
+			.andExpect(status().isOk());
+	}
 }
