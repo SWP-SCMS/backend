@@ -34,6 +34,7 @@ import com.scms.backend.scheduling.DisciplineNotFoundException;
 import com.scms.backend.scheduling.DisciplineValidationException;
 import com.scms.backend.scheduling.DuplicateDisciplineException;
 import com.scms.backend.scheduling.SportClassException;
+import com.scms.backend.scheduling.RoomException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -268,6 +269,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		}
 		return problem;
 	}
+
+	@ExceptionHandler(RoomException.class)
+	ProblemDetail handleRoom(RoomException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Room request failed");
+		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
+		return problem;
+	}
+
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)
 	ProblemDetail handleReceptionMemberNotFound() {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
