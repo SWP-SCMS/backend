@@ -3,6 +3,7 @@ package com.scms.backend.membership;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +25,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 class PaymentServiceReceiptAccessTests {
 
@@ -44,6 +47,8 @@ class PaymentServiceReceiptAccessTests {
 		Account receptionist = new Account(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE,
 			"Receptionist", "0900000000", "receptionist@example.test", LocalDate.of(1990, 1, 1), "hash");
 		when(accounts.findById(receptionistId)).thenReturn(Optional.of(receptionist));
+		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
 		service = new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
 			Clock.systemUTC());
 	}
@@ -82,5 +87,22 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response.paymentId()).isEqualTo(paymentId);
 		assertThat(response.method()).isEqualTo("BANK_TRANSFER");
+	}
+
+	@Test
+	void receptionistCanListCashAndBankTransferReceiptsByMemberCode() {
+		ReceiptResponse cash = new ReceiptResponse(UUID.randomUUID(), "RC-CASH", UUID.randomUUID(),
+			UUID.randomUUID(), memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "CASH", issuedAt);
+		ReceiptResponse bank = new ReceiptResponse(UUID.randomUUID(), "RC-BANK", UUID.randomUUID(),
+			UUID.randomUUID(), memberId, BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "BANK_TRANSFER",
+			issuedAt.minusSeconds(60));
+		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
+		doReturn(List.of(cash, bank)).when(db).query(anyString(),
+			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId));
+
+		List<ReceiptResponse> response = service.receiptsForReceptionist(receptionistId, " MB-100001 ");
+
+		assertThat(response).extracting(ReceiptResponse::paymentMethod)
+			.containsExactly("CASH", "BANK_TRANSFER");
 	}
 }

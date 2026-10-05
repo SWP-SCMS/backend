@@ -197,6 +197,23 @@ class PaymentService {
 	}
 
 	@Transactional(readOnly=true)
+	List<ReceiptResponse> receiptsForReceptionist(UUID actor, String memberCode) {
+		ensure(actor, AccountRole.RECEPTIONIST);
+		if (blank(memberCode)) throw PaymentException.validation("memberId is required");
+		UUID memberId;
+		try {
+			memberId = db.queryForObject("""
+				select a.id from member_profiles m join accounts a on a.id=m.account_id
+				where m.member_code=? and a.role='MEMBER'
+				""", UUID.class, memberCode.trim());
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Member was not found");
+		}
+		return db.query("select * from receipts where member_account_id=? order by issued_at desc, id desc",
+			(rs,row)->receipt(rs),memberId);
+	}
+
+	@Transactional(readOnly=true)
 	ReceiptResponse receipt(UUID actor, UUID receiptId) {
 		Account account=active(actor);
 		try {
