@@ -35,6 +35,7 @@ import com.scms.backend.scheduling.DisciplineValidationException;
 import com.scms.backend.scheduling.DuplicateDisciplineException;
 import com.scms.backend.scheduling.SportClassException;
 import com.scms.backend.scheduling.RoomException;
+import com.scms.backend.scheduling.RecurringScheduleException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -274,6 +275,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	ProblemDetail handleRoom(RoomException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Room request failed");
+		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
+		return problem;
+	}
+
+	@ExceptionHandler(RecurringScheduleException.class)
+	ProblemDetail handleRecurringSchedule(RecurringScheduleException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Recurring schedule request failed");
 		problem.setProperty("code", exception.getCode());
 		if (exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
