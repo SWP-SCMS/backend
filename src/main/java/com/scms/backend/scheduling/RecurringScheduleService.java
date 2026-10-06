@@ -9,11 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,58 +21,40 @@ public class RecurringScheduleService {
 
 	private final RecurringScheduleRepository schedules;
 	private final ClassSessionRepository sessions;
-	private final SportClassRepository classes;
-	private final RoomRepository rooms;
-	private final AccountRepository accounts;
+	private final ClassSessionService classSessionService;
 	private final Clock clock;
 
 	RecurringScheduleService(RecurringScheduleRepository schedules, ClassSessionRepository sessions,
-			SportClassRepository classes, RoomRepository rooms, AccountRepository accounts, Clock clock) {
+			ClassSessionService classSessionService, Clock clock) {
 		this.schedules = schedules;
 		this.sessions = sessions;
-		this.classes = classes;
-		this.rooms = rooms;
-		this.accounts = accounts;
+		this.classSessionService = classSessionService;
 		this.clock = clock;
 	}
 
 	@Transactional
 	RecurringScheduleResponse create(UUID managerId, RecurringScheduleCreateRequest request) {
-		ensureActiveManager(managerId);
+		classSessionService.ensureActiveManager(managerId);
 		validateRequest(request);
-		SportClass sportClass = classes.findById(request.classId())
-			.orElseThrow(() -> RecurringScheduleException.notFound("class"));
-		if (sportClass.getStatus() != SportClassStatus.ACTIVE
-				|| sportClass.getDiscipline().getStatus() != DisciplineStatus.ACTIVE) {
-			throw RecurringScheduleException.inactive("class");
-		}
-		Account coach = accounts.findById(request.coachId())
-			.orElseThrow(() -> RecurringScheduleException.notFound("coach"));
-		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE) {
-			throw RecurringScheduleException.coachInvalid();
-		}
-		Room room = rooms.findById(request.roomId())
-			.orElseThrow(() -> RecurringScheduleException.notFound("room"));
-		if (room.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
-		if (request.capacity() > room.getCapacity()) throw RecurringScheduleException.capacityConflict();
+		ClassSessionService.Resources resources = classSessionService.validateResources(request.classId(),
+			request.coachId(), request.roomId(), request.capacity());
 
 		List<Occurrence> occurrences = occurrences(request);
 		if (!occurrences.getFirst().start().isAfter(clock.instant())) {
 			throw RecurringScheduleException.validation("startTime", "the first Session must be in the future");
 		}
 		for (Occurrence occurrence : occurrences) {
-			if (sessions.existsOverlap(coach.getId(), room.getId(), occurrence.start(), occurrence.end())) {
-				throw RecurringScheduleException.sessionConflict();
-			}
+			classSessionService.ensureAvailable(resources, occurrence.start(), occurrence.end());
 		}
 
 		UUID scheduleId = UUID.randomUUID();
-		RecurringSchedule schedule = new RecurringSchedule(scheduleId, sportClass, coach, room, request.startDate(),
+		RecurringSchedule schedule = new RecurringSchedule(scheduleId, resources.sportClass(), resources.coach(),
+			resources.room(), request.startDate(),
 			request.weekdays().stream().map(Integer::shortValue).toArray(Short[]::new), request.startTime(),
 			request.endTime(), request.capacity(), managerId);
 		List<ClassSession> newSessions = occurrences.stream()
-			.map(occurrence -> new ClassSession(UUID.randomUUID(), sportClass, schedule, coach, room,
-				occurrence.start(), occurrence.end(), request.capacity(), managerId))
+			.map(occurrence -> classSessionService.newScheduled(resources, schedule, occurrence.start(),
+				occurrence.end(), request.capacity(), managerId))
 			.toList();
 		try {
 			schedules.saveAndFlush(schedule);
@@ -123,12 +100,6 @@ public class RecurringScheduleService {
 		}
 		if (request.capacity() == null || request.capacity() <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
-		}
-	}
-
-	private void ensureActiveManager(UUID managerId) {
-		if (!accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)) {
-			throw new InvalidAuthenticatedAccountException();
 		}
 	}
 

@@ -40,8 +40,9 @@ class RecurringScheduleServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new RecurringScheduleService(schedules, sessions, classes, rooms, accounts,
-			java.time.Clock.fixed(Instant.parse("2026-10-05T00:00:00Z"), ZoneOffset.UTC));
+		java.time.Clock clock = java.time.Clock.fixed(Instant.parse("2026-10-05T00:00:00Z"), ZoneOffset.UTC);
+		service = new RecurringScheduleService(schedules, sessions,
+			new ClassSessionService(sessions, classes, rooms, accounts, clock), clock);
 	}
 
 	@Test
