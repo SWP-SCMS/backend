@@ -32,12 +32,45 @@ class ClassSessionCancellationIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
 	@Autowired ClassSessionCancellationService service;
+	@Autowired BookingService bookingService;
 	@Autowired ClassSessionRepository sessions;
 	@Autowired AccountRepository accounts;
 	@Autowired DisciplineRepository disciplines;
 	@Autowired SportClassRepository classes;
 	@Autowired RoomRepository rooms;
 	@Autowired JdbcTemplate jdbc;
+
+	@Test
+	void memberBookingIsPersistedAuditedNotifiedAndCannotOverbook() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Booking Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Booking Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Booking Member");
+		Account otherMember = saveAccount(AccountRole.MEMBER, "Other Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Pilates", null,
+			DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Core",
+			SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Booking Studio", 10, RoomStatus.ACTIVE));
+		ClassSession session = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+			room, Instant.parse("2030-01-01T04:00:00Z"), Instant.parse("2030-01-01T05:00:00Z"), 1,
+			manager.getId()));
+		UUID membershipId = insertMembership(manager.getId(), member.getId());
+		insertMembership(manager.getId(), otherMember.getId());
+
+		BookingResponse response = bookingService.book(member.getId(), session.getId());
+
+		assertThat(response.membershipId()).isEqualTo(membershipId);
+		assertThat(jdbc.queryForObject("select count(*) from bookings where id = ? and status = 'BOOKED'",
+			Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CREATED' "
+			+ "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = "
+			+ "'BOOKING_CREATED' and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThatThrownBy(() -> bookingService.book(member.getId(), session.getId()))
+			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("BOOKING_DUPLICATE");
+		assertThatThrownBy(() -> bookingService.book(otherMember.getId(), session.getId()))
+			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("SESSION_FULL");
+	}
 
 	@Test
 	void cancellationIsAtomicKeepsHistoryAndNotifiesAffectedMemberOnce() {

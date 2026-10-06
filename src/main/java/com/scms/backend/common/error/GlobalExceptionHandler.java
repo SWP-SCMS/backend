@@ -36,6 +36,7 @@ import com.scms.backend.scheduling.DuplicateDisciplineException;
 import com.scms.backend.scheduling.SportClassException;
 import com.scms.backend.scheduling.RoomException;
 import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.BookingException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -290,6 +291,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		if (exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
+		return problem;
+	}
+
+	@ExceptionHandler(BookingException.class)
+	ProblemDetail handleBooking(BookingException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Booking request failed");
+		problem.setProperty("code", exception.getCode());
 		return problem;
 	}
 
