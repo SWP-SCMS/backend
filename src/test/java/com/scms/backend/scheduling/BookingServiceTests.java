@@ -38,6 +38,7 @@ class BookingServiceTests {
 
 	private final Instant now = Instant.parse("2026-10-06T03:00:00Z");
 	private UUID memberId;
+	private UUID receptionistId;
 	private ClassSession session;
 
 	@BeforeEach
@@ -45,8 +46,11 @@ class BookingServiceTests {
 		service = new BookingService(bookings, sessions, accounts, audits, events,
 			Clock.fixed(now, ZoneOffset.UTC));
 		memberId = UUID.randomUUID();
+		receptionistId = UUID.randomUUID();
 		Account member = account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member");
-		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		org.mockito.Mockito.lenient().when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		org.mockito.Mockito.lenient().when(accounts.findByIdForUpdate(receptionistId)).thenReturn(Optional.of(
+			account(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE, "Receptionist")));
 		session = session();
 		org.mockito.Mockito.lenient().when(sessions.findByIdForUpdate(session.getId()))
 			.thenReturn(Optional.of(session));
@@ -144,6 +148,74 @@ class BookingServiceTests {
 		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
 
 		assertThatThrownBy(() -> service.cancel(memberId, booking.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_NOT_FOUND");
+	}
+
+	@Test
+	void receptionistBooksForMemberWithoutBypassingMemberRules() {
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+			.thenReturn(Optional.of(membershipId));
+		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		BookingResponse response = service.bookForMember(receptionistId, memberId, session.getId());
+
+		assertThat(response.memberId()).isEqualTo(memberId);
+		assertThat(response.bookedBy()).isEqualTo(receptionistId);
+		ArgumentCaptor<com.scms.backend.audit.AuditEvent> audit =
+			ArgumentCaptor.forClass(com.scms.backend.audit.AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(receptionistId);
+	}
+
+	@Test
+	void inactiveReceptionistCannotBookForMember() {
+		when(accounts.findByIdForUpdate(receptionistId)).thenReturn(Optional.of(
+			account(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.INACTIVE, "Receptionist")));
+
+		assertThatThrownBy(() -> service.bookForMember(receptionistId, memberId, session.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_ACTOR_NOT_ACTIVE_RECEPTIONIST");
+	}
+
+	@Test
+	void nonReceptionistCannotBookForMember() {
+		when(accounts.findByIdForUpdate(receptionistId)).thenReturn(Optional.of(
+			account(receptionistId, AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager")));
+
+		assertThatThrownBy(() -> service.bookForMember(receptionistId, memberId, session.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_ACTOR_NOT_ACTIVE_RECEPTIONIST");
+	}
+
+	@Test
+	void receptionistCancelsForMemberAndRemainsAuditActor() {
+		ClassSession cancellableSession = sessionAt(now.plusSeconds(7200));
+		Booking booking = booking(cancellableSession);
+		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+		when(sessions.findByIdForUpdate(cancellableSession.getId())).thenReturn(Optional.of(cancellableSession));
+		when(bookings.saveAndFlush(booking)).thenReturn(booking);
+
+		BookingResponse response = service.cancelForMember(receptionistId, memberId, booking.getId());
+
+		assertThat(response.memberId()).isEqualTo(memberId);
+		assertThat(response.cancelledBy()).isEqualTo(receptionistId);
+		assertThat(response.cancellationSource()).isEqualTo("RECEPTIONIST");
+		ArgumentCaptor<com.scms.backend.audit.AuditEvent> audit =
+			ArgumentCaptor.forClass(com.scms.backend.audit.AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(receptionistId);
+	}
+
+	@Test
+	void receptionistCannotCancelAnotherMembersBooking() {
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(),
+			receptionistId, now.minusSeconds(60));
+		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+
+		assertThatThrownBy(() -> service.cancelForMember(receptionistId, memberId, booking.getId()))
 			.isInstanceOf(BookingException.class)
 			.extracting("code").isEqualTo("BOOKING_NOT_FOUND");
 	}
