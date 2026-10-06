@@ -10,6 +10,8 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +50,36 @@ public class ClassSessionService {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		return ClassSessionResponse.from(session);
+	}
+
+	@Transactional
+	ClassSessionPageResponse list(UUID managerId, Instant from, Instant to, UUID classId, UUID coachId,
+			UUID roomId, ClassSessionStatus status, Pageable pageable) {
+		ensureActiveManager(managerId);
+		if (from != null && to != null && !to.isAfter(from)) {
+			throw RecurringScheduleException.validation("to", "must be later than from");
+		}
+		Instant now = clock.instant();
+		sessions.advanceScheduledToInProgress(now);
+		sessions.advanceInProgressToCompleted(now);
+
+		Specification<ClassSession> filters = (root, ignored, builder) -> builder.conjunction();
+		if (from != null) filters = filters.and((root, ignored, builder) ->
+			builder.greaterThan(root.get("endTime"), from));
+		if (to != null) filters = filters.and((root, ignored, builder) ->
+			builder.lessThan(root.get("startTime"), to));
+		if (classId != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("sportClass").get("id"), classId));
+		if (coachId != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("teachingCoach").get("id"), coachId));
+		if (roomId != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("room").get("id"), roomId));
+		if (status != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("status"), status));
+
+		var page = sessions.findAll(filters, pageable);
+		return new ClassSessionPageResponse(page.getContent().stream().map(ClassSessionResponse::from).toList(),
+			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
 	void ensureActiveManager(UUID managerId) {

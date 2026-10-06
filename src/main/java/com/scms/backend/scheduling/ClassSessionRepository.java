@@ -4,10 +4,33 @@ import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID> {
+public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID>,
+		JpaSpecificationExecutor<ClassSession> {
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+		update ClassSession session
+		set session.status = com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS,
+			session.updatedAt = :now, session.version = session.version + 1
+		where session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED
+		  and session.startTime <= :now
+		""")
+	int advanceScheduledToInProgress(@Param("now") Instant now);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("""
+		update ClassSession session
+		set session.status = com.scms.backend.scheduling.ClassSessionStatus.COMPLETED,
+			session.updatedAt = :now, session.version = session.version + 1
+		where session.status = com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS
+		  and session.endTime <= :now
+		""")
+	int advanceInProgressToCompleted(@Param("now") Instant now);
 
 	@Query("""
 		select (count(session) > 0) from ClassSession session
