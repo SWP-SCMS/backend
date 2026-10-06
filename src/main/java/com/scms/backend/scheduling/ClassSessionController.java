@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -47,5 +48,10 @@ public class ClassSessionController {
 			Sort.by("startTime").ascending().and(Sort.by("id")));
 		return ResponseEntity.ok(service.list(UUID.fromString(jwt.getSubject()), from, to, classId, coachId,
 			roomId, status, pageable));
+	}
+
+	@GetMapping("/{id}")
+	ResponseEntity<ClassSessionDetailResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+		return ResponseEntity.ok(service.get(UUID.fromString(jwt.getSubject()), id));
 	}
 }
