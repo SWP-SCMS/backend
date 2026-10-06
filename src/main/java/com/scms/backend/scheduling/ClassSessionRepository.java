@@ -1,6 +1,8 @@
 package com.scms.backend.scheduling;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -58,4 +60,17 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	boolean existsOverlapExcluding(@Param("sessionId") UUID sessionId, @Param("coachId") UUID coachId,
 			@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
 			@Param("endTime") Instant endTime);
+
+	@Query(value = """
+		select class_session_id as "sessionId", count(*) as "bookedCount"
+		from bookings
+		where status = 'BOOKED' and class_session_id in (:sessionIds)
+		group by class_session_id
+		""", nativeQuery = true)
+	List<BookingCountView> countBookedBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
+
+	interface BookingCountView {
+		UUID getSessionId();
+		long getBookedCount();
+	}
 }

@@ -2,7 +2,9 @@ package com.scms.backend.scheduling;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -78,6 +80,39 @@ public class ClassSessionService {
 		var page = sessions.findAll(filters, pageable);
 		return new ClassSessionPageResponse(page.getContent().stream().map(ClassSessionResponse::from).toList(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
+
+	@Transactional
+	MemberClassSessionPageResponse memberSchedule(UUID memberId, Instant from, Instant to, UUID classId,
+			Pageable pageable) {
+		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		if (from != null && to != null && !to.isAfter(from)) {
+			throw RecurringScheduleException.validation("to", "must be later than from");
+		}
+		advanceStatuses();
+		Instant now = clock.instant();
+		Specification<ClassSession> filters = (root, ignored, builder) -> builder.and(
+			builder.equal(root.get("status"), ClassSessionStatus.SCHEDULED),
+			builder.greaterThan(root.get("startTime"), now));
+		if (from != null) filters = filters.and((root, ignored, builder) ->
+			builder.greaterThan(root.get("endTime"), from));
+		if (to != null) filters = filters.and((root, ignored, builder) ->
+			builder.lessThan(root.get("startTime"), to));
+		if (classId != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("sportClass").get("id"), classId));
+
+		var page = sessions.findAll(filters, pageable);
+		var ids = page.getContent().stream().map(ClassSession::getId).toList();
+		Map<UUID, Long> booked = ids.isEmpty() ? Map.of() : sessions.countBookedBySessionIds(ids).stream()
+			.collect(Collectors.toMap(ClassSessionRepository.BookingCountView::getSessionId,
+				ClassSessionRepository.BookingCountView::getBookedCount));
+		var content = page.getContent().stream()
+			.map(session -> MemberClassSessionResponse.from(session, booked.getOrDefault(session.getId(), 0L), now))
+			.toList();
+		return new MemberClassSessionPageResponse(content, page.getNumber(), page.getSize(),
+			page.getTotalElements(), page.getTotalPages());
 	}
 
 	@Transactional
