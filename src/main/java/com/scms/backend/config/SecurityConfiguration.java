@@ -89,6 +89,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/members/class-sessions").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/coach/class-sessions", "/coach/class-sessions/*")
+					.hasRole("COACH")
 				.requestMatchers(HttpMethod.POST, "/members/class-sessions/*/bookings").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.PATCH, "/members/me/bookings/*/cancel").hasRole("MEMBER")
 				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
