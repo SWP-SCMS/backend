@@ -35,6 +35,15 @@ public class Booking {
 	@Column(name = "booked_by_account_id", nullable = false, updatable = false)
 	private UUID bookedByAccountId;
 
+	@Column(name = "cancelled_by_account_id")
+	private UUID cancelledByAccountId;
+
+	@Column(name = "cancellation_source", length = 30)
+	private String cancellationSource;
+
+	@Column(name = "cancelled_at")
+	private Instant cancelledAt;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -67,4 +76,15 @@ public class Booking {
 	BookingStatus getStatus() { return status; }
 	UUID getBookedByAccountId() { return bookedByAccountId; }
 	Instant getCreatedAt() { return createdAt; }
+	UUID getCancelledByAccountId() { return cancelledByAccountId; }
+	String getCancellationSource() { return cancellationSource; }
+	Instant getCancelledAt() { return cancelledAt; }
+
+	void cancelByMember(UUID memberId, Instant now) {
+		this.status = BookingStatus.CANCELLED;
+		this.cancelledByAccountId = memberId;
+		this.cancellationSource = "MEMBER";
+		this.cancelledAt = now;
+		this.updatedAt = now;
+	}
 }

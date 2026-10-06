@@ -50,6 +50,20 @@ public class BookingException extends RuntimeException {
 			"The Booking could not be confirmed because availability changed.");
 	}
 
+	static BookingException notFound() {
+		return new BookingException(HttpStatus.NOT_FOUND, "BOOKING_NOT_FOUND", "The requested Booking was not found.");
+	}
+
+	static BookingException notBooked() {
+		return new BookingException(HttpStatus.CONFLICT, "BOOKING_NOT_BOOKED",
+			"Only a currently booked Booking can be cancelled.");
+	}
+
+	static BookingException cancellationWindowClosed() {
+		return new BookingException(HttpStatus.CONFLICT, "BOOKING_CANCELLATION_WINDOW_CLOSED",
+			"Booking cancellation must be completed at least two hours before Session start.");
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 }

@@ -70,6 +70,19 @@ class ClassSessionCancellationIntegrationTests {
 			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("BOOKING_DUPLICATE");
 		assertThatThrownBy(() -> bookingService.book(otherMember.getId(), session.getId()))
 			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("SESSION_FULL");
+
+		BookingResponse cancelled = bookingService.cancel(member.getId(), response.id());
+		BookingResponse rebooked = bookingService.book(member.getId(), session.getId());
+
+		assertThat(cancelled.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(cancelled.cancellationSource()).isEqualTo("MEMBER");
+		assertThat(rebooked.id()).isNotEqualTo(response.id());
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ?",
+			Long.class, session.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CANCELLED' "
+			+ "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = "
+			+ "'BOOKING_CANCELLED' and target_id = ?", Long.class, response.id())).isEqualTo(1L);
 	}
 
 	@Test

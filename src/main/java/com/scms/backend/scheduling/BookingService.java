@@ -1,6 +1,7 @@
 package com.scms.backend.scheduling;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -37,10 +38,7 @@ public class BookingService {
 
 	@Transactional
 	BookingResponse book(UUID memberId, UUID sessionId) {
-		var member = accounts.findByIdForUpdate(memberId).orElseThrow(BookingException::memberNotActive);
-		if (member.getRole() != AccountRole.MEMBER || member.getStatus() != AccountStatus.ACTIVE) {
-			throw BookingException.memberNotActive();
-		}
+		ensureActiveMember(memberId);
 		Instant now = clock.instant();
 		sessions.advanceScheduledToInProgress(now);
 		sessions.advanceInProgressToCompleted(now);
@@ -71,5 +69,33 @@ public class BookingService {
 				"status", BookingStatus.BOOKED.name())));
 		events.publishEvent(new BookingCreatedEvent(booking.getId(), sessionId, memberId));
 		return BookingResponse.from(booking);
+	}
+
+	@Transactional
+	BookingResponse cancel(UUID memberId, UUID bookingId) {
+		ensureActiveMember(memberId);
+		Booking booking = bookings.findByIdForUpdate(bookingId).orElseThrow(BookingException::notFound);
+		if (!booking.getMemberAccountId().equals(memberId)) throw BookingException.notFound();
+		if (booking.getStatus() != BookingStatus.BOOKED) throw BookingException.notBooked();
+		ClassSession session = sessions.findByIdForUpdate(booking.getClassSessionId())
+			.orElseThrow(BookingException::sessionNotFound);
+		Instant now = clock.instant();
+		if (now.isAfter(session.getStartTime().minus(Duration.ofHours(2)))) {
+			throw BookingException.cancellationWindowClosed();
+		}
+		booking.cancelByMember(memberId, now);
+		bookings.saveAndFlush(booking);
+		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "BOOKING_CANCELLED", "BOOKING", bookingId,
+			"Member cancellation", Map.of("status", BookingStatus.BOOKED.name()),
+			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", "MEMBER")));
+		events.publishEvent(new BookingCancelledEvent(bookingId, session.getId(), memberId));
+		return BookingResponse.from(booking);
+	}
+
+	private void ensureActiveMember(UUID memberId) {
+		var member = accounts.findByIdForUpdate(memberId).orElseThrow(BookingException::memberNotActive);
+		if (member.getRole() != AccountRole.MEMBER || member.getStatus() != AccountStatus.ACTIVE) {
+			throw BookingException.memberNotActive();
+		}
 	}
 }

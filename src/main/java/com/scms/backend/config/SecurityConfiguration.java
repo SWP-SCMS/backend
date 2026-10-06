@@ -89,6 +89,7 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/members/class-sessions").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/members/class-sessions/*/bookings").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.PATCH, "/members/me/bookings/*/cancel").hasRole("MEMBER")
 				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
 				.requestMatchers("/reception/membership-orders/**").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders/*/payments/sepay",
