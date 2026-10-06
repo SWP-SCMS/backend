@@ -59,9 +59,7 @@ public class ClassSessionService {
 		if (from != null && to != null && !to.isAfter(from)) {
 			throw RecurringScheduleException.validation("to", "must be later than from");
 		}
-		Instant now = clock.instant();
-		sessions.advanceScheduledToInProgress(now);
-		sessions.advanceInProgressToCompleted(now);
+		advanceStatuses();
 
 		Specification<ClassSession> filters = (root, ignored, builder) -> builder.conjunction();
 		if (from != null) filters = filters.and((root, ignored, builder) ->
@@ -80,6 +78,21 @@ public class ClassSessionService {
 		var page = sessions.findAll(filters, pageable);
 		return new ClassSessionPageResponse(page.getContent().stream().map(ClassSessionResponse::from).toList(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
+
+	@Transactional
+	ClassSessionDetailResponse get(UUID managerId, UUID sessionId) {
+		ensureActiveManager(managerId);
+		advanceStatuses();
+		ClassSession session = sessions.findById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		return ClassSessionDetailResponse.from(session);
+	}
+
+	private void advanceStatuses() {
+		Instant now = clock.instant();
+		sessions.advanceScheduledToInProgress(now);
+		sessions.advanceInProgressToCompleted(now);
 	}
 
 	void ensureActiveManager(UUID managerId) {

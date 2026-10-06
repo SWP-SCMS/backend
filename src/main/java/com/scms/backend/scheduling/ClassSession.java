@@ -52,6 +52,12 @@ public class ClassSession {
 	@Column(nullable = false, length = 20)
 	private ClassSessionStatus status;
 
+	@Column(name = "cancelled_at")
+	private Instant cancelledAt;
+
+	@Column(name = "cancellation_reason", columnDefinition = "text")
+	private String cancellationReason;
+
 	@Column(name = "created_by_account_id", nullable = false, updatable = false)
 	private UUID createdBy;
 
@@ -84,11 +90,14 @@ public class ClassSession {
 
 	UUID getId() { return id; }
 	SportClass getSportClass() { return sportClass; }
+	RecurringSchedule getRecurringSchedule() { return recurringSchedule; }
 	Account getTeachingCoach() { return teachingCoach; }
 	Room getRoom() { return room; }
 	Instant getStartTime() { return startTime; }
 	Instant getEndTime() { return endTime; }
 	int getCapacity() { return capacity; }
 	ClassSessionStatus getStatus() { return status; }
+	Instant getCancelledAt() { return cancelledAt; }
+	String getCancellationReason() { return cancellationReason; }
 	UUID getCreatedBy() { return createdBy; }
 }
