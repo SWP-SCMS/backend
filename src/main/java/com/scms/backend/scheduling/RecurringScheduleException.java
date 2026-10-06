@@ -45,6 +45,11 @@ public class RecurringScheduleException extends RuntimeException {
 			"The Coach or Room already has an overlapping Session.");
 	}
 
+	static RecurringScheduleException sessionNotScheduled() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_NOT_SCHEDULED", null,
+			"Only a scheduled Session can be changed.");
+	}
+
 	static RecurringScheduleException scheduleConflict() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "RECURRING_SCHEDULE_CONFLICT", null,
 			"The recurring schedule conflicts with an existing Session.");

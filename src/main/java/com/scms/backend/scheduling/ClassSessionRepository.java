@@ -41,4 +41,16 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 		""")
 	boolean existsOverlap(@Param("coachId") UUID coachId, @Param("roomId") UUID roomId,
 			@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
+
+	@Query("""
+		select (count(session) > 0) from ClassSession session
+		where session.id <> :sessionId
+		  and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+		  and (session.room.id = :roomId or session.teachingCoach.id = :coachId)
+		  and session.startTime < :endTime and session.endTime > :startTime
+		""")
+	boolean existsOverlapExcluding(@Param("sessionId") UUID sessionId, @Param("coachId") UUID coachId,
+			@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
+			@Param("endTime") Instant endTime);
 }

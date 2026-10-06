@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,5 +54,11 @@ public class ClassSessionController {
 	@GetMapping("/{id}")
 	ResponseEntity<ClassSessionDetailResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
 		return ResponseEntity.ok(service.get(UUID.fromString(jwt.getSubject()), id));
+	}
+
+	@PatchMapping("/{id}/assignment")
+	ResponseEntity<ClassSessionDetailResponse> updateAssignment(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID id, @RequestBody ClassSessionAssignmentRequest request) {
+		return ResponseEntity.ok(service.updateAssignment(UUID.fromString(jwt.getSubject()), id, request));
 	}
 }
