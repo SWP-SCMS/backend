@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -58,6 +59,10 @@ class ClassSessionCancellationIntegrationTests {
 				booked_by_account_id)
 			values (?, ?, ?, ?, 'BOOKED', ?)
 			""", bookingId, session.getId(), member.getId(), membershipId, member.getId());
+		assertThat(sessions.countBookedBySessionIds(List.of(session.getId()))).singleElement().satisfies(count -> {
+			assertThat(count.getSessionId()).isEqualTo(session.getId());
+			assertThat(count.getBookedCount()).isEqualTo(1);
+		});
 
 		service.cancel(manager.getId(), session.getId(), new ClassSessionCancellationRequest("Coach unavailable"));
 
