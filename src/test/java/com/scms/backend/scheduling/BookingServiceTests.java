@@ -48,7 +48,8 @@ class BookingServiceTests {
 		Account member = account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member");
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
 		session = session();
-		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		org.mockito.Mockito.lenient().when(sessions.findByIdForUpdate(session.getId()))
+			.thenReturn(Optional.of(session));
 	}
 
 	@Test
@@ -107,6 +108,46 @@ class BookingServiceTests {
 		assertCode("SESSION_FULL");
 	}
 
+	@Test
+	void cancellationAtExactlyTwoHoursIsAcceptedAndKeepsHistory() {
+		ClassSession cancellableSession = sessionAt(now.plusSeconds(7200));
+		Booking booking = booking(cancellableSession);
+		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+		when(sessions.findByIdForUpdate(cancellableSession.getId())).thenReturn(Optional.of(cancellableSession));
+		when(bookings.saveAndFlush(booking)).thenReturn(booking);
+
+		BookingResponse response = service.cancel(memberId, booking.getId());
+
+		assertThat(response.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(response.cancelledAt()).isEqualTo(now);
+		assertThat(response.cancellationSource()).isEqualTo("MEMBER");
+		verify(audits).save(org.mockito.ArgumentMatchers.any());
+		verify(events).publishEvent(org.mockito.ArgumentMatchers.any(BookingCancelledEvent.class));
+	}
+
+	@Test
+	void cancellationBelowTwoHoursIsRejected() {
+		ClassSession lateSession = sessionAt(now.plusSeconds(7199));
+		Booking booking = booking(lateSession);
+		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+		when(sessions.findByIdForUpdate(lateSession.getId())).thenReturn(Optional.of(lateSession));
+
+		assertThatThrownBy(() -> service.cancel(memberId, booking.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_CANCELLATION_WINDOW_CLOSED");
+	}
+
+	@Test
+	void memberCannotCancelAnotherMembersBooking() {
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(),
+			UUID.randomUUID(), now.minusSeconds(60));
+		when(bookings.findByIdForUpdate(booking.getId())).thenReturn(Optional.of(booking));
+
+		assertThatThrownBy(() -> service.cancel(memberId, booking.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_NOT_FOUND");
+	}
+
 	private void assertCode(String code) {
 		assertThatThrownBy(() -> service.book(memberId, session.getId()))
 			.isInstanceOf(BookingException.class)
@@ -114,13 +155,22 @@ class BookingServiceTests {
 	}
 
 	private ClassSession session() {
+		return sessionAt(now.plusSeconds(3600));
+	}
+
+	private ClassSession sessionAt(Instant start) {
 		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
 		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
 			null, SportClassStatus.ACTIVE);
 		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
 		Account coach = account(UUID.randomUUID(), AccountRole.COACH, AccountStatus.ACTIVE, "Coach");
-		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, now.plusSeconds(3600),
-			now.plusSeconds(7200), 15, UUID.randomUUID());
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, start,
+			start.plusSeconds(3600), 15, UUID.randomUUID());
+	}
+
+	private Booking booking(ClassSession targetSession) {
+		return new Booking(UUID.randomUUID(), targetSession.getId(), memberId, UUID.randomUUID(), memberId,
+			now.minusSeconds(60));
 	}
 
 	private Account account(UUID id, AccountRole role, AccountStatus status, String name) {
