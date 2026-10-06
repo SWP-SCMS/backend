@@ -89,6 +89,37 @@ public class ClassSessionService {
 		return ClassSessionDetailResponse.from(session);
 	}
 
+	@Transactional
+	ClassSessionDetailResponse updateAssignment(UUID managerId, UUID sessionId,
+			ClassSessionAssignmentRequest request) {
+		ensureActiveManager(managerId);
+		if (request == null || (request.coachId() == null && request.roomId() == null)) {
+			throw RecurringScheduleException.validation("request", "coachId or roomId is required");
+		}
+		advanceStatuses();
+		ClassSession session = sessions.findById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
+			throw RecurringScheduleException.sessionNotScheduled();
+		}
+		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
+		UUID roomId = request.roomId() == null ? session.getRoom().getId() : request.roomId();
+		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
+			session.getCapacity());
+		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, session.getStartTime(),
+				session.getEndTime())) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		session.updateAssignment(resources.coach(), resources.room());
+		try {
+			sessions.saveAndFlush(session);
+		}
+		catch (DataIntegrityViolationException exception) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		return ClassSessionDetailResponse.from(session);
+	}
+
 	private void advanceStatuses() {
 		Instant now = clock.instant();
 		sessions.advanceScheduledToInProgress(now);
