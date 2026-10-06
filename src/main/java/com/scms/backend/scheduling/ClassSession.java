@@ -105,4 +105,10 @@ public class ClassSession {
 		this.teachingCoach = coach;
 		this.room = room;
 	}
+
+	void cancel(Instant cancelledAt, String reason) {
+		this.status = ClassSessionStatus.CANCELLED;
+		this.cancelledAt = cancelledAt;
+		this.cancellationReason = reason;
+	}
 }

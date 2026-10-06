@@ -5,12 +5,17 @@ import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID>,
 		JpaSpecificationExecutor<ClassSession> {
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("select session from ClassSession session where session.id = :id")
+	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
 
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""
