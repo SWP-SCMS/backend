@@ -21,6 +21,11 @@ public class BookingException extends RuntimeException {
 		return new BookingException(HttpStatus.CONFLICT, "MEMBER_NOT_ACTIVE", "Booking requires an active Member.");
 	}
 
+	static BookingException actorNotActiveReceptionist() {
+		return new BookingException(HttpStatus.FORBIDDEN, "BOOKING_ACTOR_NOT_ACTIVE_RECEPTIONIST",
+			"This action requires an active Receptionist account.");
+	}
+
 	static BookingException sessionUnavailable() {
 		return new BookingException(HttpStatus.CONFLICT, "SESSION_NOT_BOOKABLE",
 			"Booking requires a future scheduled Session.");

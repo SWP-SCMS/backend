@@ -38,6 +38,16 @@ public class BookingService {
 
 	@Transactional
 	BookingResponse book(UUID memberId, UUID sessionId) {
+		return book(memberId, memberId, sessionId);
+	}
+
+	@Transactional
+	BookingResponse bookForMember(UUID receptionistId, UUID memberId, UUID sessionId) {
+		ensureActiveReceptionist(receptionistId);
+		return book(receptionistId, memberId, sessionId);
+	}
+
+	private BookingResponse book(UUID actorId, UUID memberId, UUID sessionId) {
 		ensureActiveMember(memberId);
 		Instant now = clock.instant();
 		sessions.advanceScheduledToInProgress(now);
@@ -57,14 +67,14 @@ public class BookingService {
 			throw BookingException.full();
 		}
 
-		Booking booking = new Booking(UUID.randomUUID(), sessionId, memberId, membershipId, memberId, now);
+		Booking booking = new Booking(UUID.randomUUID(), sessionId, memberId, membershipId, actorId, now);
 		try {
 			bookings.saveAndFlush(booking);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw BookingException.concurrentConflict();
 		}
-		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "BOOKING_CREATED", "BOOKING", booking.getId(),
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "BOOKING_CREATED", "BOOKING", booking.getId(),
 			Map.of("sessionId", sessionId.toString(), "membershipId", membershipId.toString(),
 				"status", BookingStatus.BOOKED.name())));
 		events.publishEvent(new BookingCreatedEvent(booking.getId(), sessionId, memberId));
@@ -73,6 +83,16 @@ public class BookingService {
 
 	@Transactional
 	BookingResponse cancel(UUID memberId, UUID bookingId) {
+		return cancel(memberId, memberId, bookingId, "MEMBER");
+	}
+
+	@Transactional
+	BookingResponse cancelForMember(UUID receptionistId, UUID memberId, UUID bookingId) {
+		ensureActiveReceptionist(receptionistId);
+		return cancel(receptionistId, memberId, bookingId, "RECEPTIONIST");
+	}
+
+	private BookingResponse cancel(UUID actorId, UUID memberId, UUID bookingId, String source) {
 		ensureActiveMember(memberId);
 		Booking booking = bookings.findByIdForUpdate(bookingId).orElseThrow(BookingException::notFound);
 		if (!booking.getMemberAccountId().equals(memberId)) throw BookingException.notFound();
@@ -83,11 +103,11 @@ public class BookingService {
 		if (now.isAfter(session.getStartTime().minus(Duration.ofHours(2)))) {
 			throw BookingException.cancellationWindowClosed();
 		}
-		booking.cancelByMember(memberId, now);
+		booking.cancel(actorId, source, now);
 		bookings.saveAndFlush(booking);
-		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "BOOKING_CANCELLED", "BOOKING", bookingId,
-			"Member cancellation", Map.of("status", BookingStatus.BOOKED.name()),
-			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", "MEMBER")));
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "BOOKING_CANCELLED", "BOOKING", bookingId,
+			source + " cancellation", Map.of("status", BookingStatus.BOOKED.name()),
+			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", source)));
 		events.publishEvent(new BookingCancelledEvent(bookingId, session.getId(), memberId));
 		return BookingResponse.from(booking);
 	}
@@ -96,6 +116,13 @@ public class BookingService {
 		var member = accounts.findByIdForUpdate(memberId).orElseThrow(BookingException::memberNotActive);
 		if (member.getRole() != AccountRole.MEMBER || member.getStatus() != AccountStatus.ACTIVE) {
 			throw BookingException.memberNotActive();
+		}
+	}
+
+	private void ensureActiveReceptionist(UUID accountId) {
+		var actor = accounts.findByIdForUpdate(accountId).orElseThrow(BookingException::actorNotActiveReceptionist);
+		if (actor.getRole() != AccountRole.RECEPTIONIST || actor.getStatus() != AccountStatus.ACTIVE) {
+			throw BookingException.actorNotActiveReceptionist();
 		}
 	}
 }

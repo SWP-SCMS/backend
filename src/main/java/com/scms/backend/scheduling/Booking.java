@@ -80,10 +80,10 @@ public class Booking {
 	String getCancellationSource() { return cancellationSource; }
 	Instant getCancelledAt() { return cancelledAt; }
 
-	void cancelByMember(UUID memberId, Instant now) {
+	void cancel(UUID actorId, String source, Instant now) {
 		this.status = BookingStatus.CANCELLED;
-		this.cancelledByAccountId = memberId;
-		this.cancellationSource = "MEMBER";
+		this.cancelledByAccountId = actorId;
+		this.cancellationSource = source;
 		this.cancelledAt = now;
 		this.updatedAt = now;
 	}

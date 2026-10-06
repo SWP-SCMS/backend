@@ -86,6 +86,46 @@ class ClassSessionCancellationIntegrationTests {
 	}
 
 	@Test
+	void receptionistBooksAndCancelsForMemberWithCorrectOwnershipAndActor() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Reception Booking Manager");
+		Account receptionist = saveAccount(AccountRole.RECEPTIONIST, "Reception Booking Receptionist");
+		Account coach = saveAccount(AccountRole.COACH, "Reception Booking Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Reception Booking Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Boxing", null,
+			DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Fundamentals",
+			SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Reception Booking Studio", 10,
+			RoomStatus.ACTIVE));
+		ClassSession session = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+			room, Instant.parse("2030-02-01T04:00:00Z"), Instant.parse("2030-02-01T05:00:00Z"), 10,
+			manager.getId()));
+		insertMembership(manager.getId(), member.getId());
+
+		BookingResponse booked = bookingService.bookForMember(receptionist.getId(), member.getId(), session.getId());
+		BookingResponse cancelled = bookingService.cancelForMember(receptionist.getId(), member.getId(), booked.id());
+
+		assertThat(booked.memberId()).isEqualTo(member.getId());
+		assertThat(booked.bookedBy()).isEqualTo(receptionist.getId());
+		assertThat(cancelled.cancelledBy()).isEqualTo(receptionist.getId());
+		assertThat(cancelled.cancellationSource()).isEqualTo("RECEPTIONIST");
+		assertThat(jdbc.queryForMap("""
+			select member_account_id, booked_by_account_id, cancelled_by_account_id, cancellation_source
+			from bookings where id = ?
+			""", booked.id())).containsEntry("member_account_id", member.getId())
+			.containsEntry("booked_by_account_id", receptionist.getId())
+			.containsEntry("cancelled_by_account_id", receptionist.getId())
+			.containsEntry("cancellation_source", "RECEPTIONIST");
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events
+			where target_id = ? and actor_account_id = ? and action in ('BOOKING_CREATED', 'BOOKING_CANCELLED')
+			""", Long.class, booked.id(), receptionist.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from notifications where target_id = ? and recipient_account_id = ?
+			""", Long.class, booked.id(), member.getId())).isEqualTo(2L);
+	}
+
+	@Test
 	void cancellationIsAtomicKeepsHistoryAndNotifiesAffectedMemberOnce() {
 		Account manager = saveAccount(AccountRole.MANAGER, "Manager");
 		Account coach = saveAccount(AccountRole.COACH, "Coach");
