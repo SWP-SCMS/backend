@@ -25,6 +25,7 @@ import com.scms.backend.membership.SepayValidationException;
 import com.scms.backend.membership.MembershipOfferValidationException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
+import com.scms.backend.reception.CenterVisitException;
 import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
@@ -308,6 +309,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 			"The requested member was not found.");
 		problem.setTitle("Member not found");
 		problem.setProperty("code", "MEMBER_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(CenterVisitException.class)
+	ProblemDetail handleCenterVisit(CenterVisitException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Center check-in failed");
+		problem.setProperty("code", exception.getCode());
 		return problem;
 	}
 
