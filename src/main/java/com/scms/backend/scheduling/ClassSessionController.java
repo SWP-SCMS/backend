@@ -21,9 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ClassSessionController {
 
 	private final ClassSessionService service;
+	private final ClassSessionCancellationService cancellationService;
 
-	ClassSessionController(ClassSessionService service) {
+	ClassSessionController(ClassSessionService service, ClassSessionCancellationService cancellationService) {
 		this.service = service;
+		this.cancellationService = cancellationService;
 	}
 
 	@PostMapping
@@ -60,5 +62,11 @@ public class ClassSessionController {
 	ResponseEntity<ClassSessionDetailResponse> updateAssignment(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID id, @RequestBody ClassSessionAssignmentRequest request) {
 		return ResponseEntity.ok(service.updateAssignment(UUID.fromString(jwt.getSubject()), id, request));
+	}
+
+	@PatchMapping("/{id}/cancel")
+	ResponseEntity<ClassSessionDetailResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+			@RequestBody ClassSessionCancellationRequest request) {
+		return ResponseEntity.ok(cancellationService.cancel(UUID.fromString(jwt.getSubject()), id, request));
 	}
 }
