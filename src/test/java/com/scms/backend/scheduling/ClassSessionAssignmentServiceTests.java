@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -17,10 +18,13 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -31,13 +35,15 @@ class ClassSessionAssignmentServiceTests {
 	@Mock SportClassRepository classes;
 	@Mock RoomRepository rooms;
 	@Mock AccountRepository accounts;
+	@Mock AuditEventRepository audits;
+	@Mock SessionLifecycleService lifecycle;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-06T05:30:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionService(sessions, classes, rooms, accounts,
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -55,6 +61,8 @@ class ClassSessionAssignmentServiceTests {
 		Instant originalStart = session.getStartTime();
 		Instant originalEnd = session.getEndTime();
 		int originalCapacity = session.getCapacity();
+		String originalCoachId = session.getTeachingCoach().getId().toString();
+		String originalRoomId = session.getRoom().getId().toString();
 		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(),
 			new ClassSessionAssignmentRequest(newCoach.getId(), newRoom.getId()));
 
@@ -63,6 +71,32 @@ class ClassSessionAssignmentServiceTests {
 		assertThat(result.startTime()).isEqualTo(originalStart);
 		assertThat(result.endTime()).isEqualTo(originalEnd);
 		assertThat(result.capacity()).isEqualTo(originalCapacity);
+		ArgumentCaptor<AuditEvent> event = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(event.capture());
+		assertThat(event.getValue()).satisfies(audit -> {
+			assertThat(audit.getActorAccountId()).isEqualTo(managerId);
+			assertThat(audit.getAction()).isEqualTo("SESSION_ASSIGNMENT_CHANGED");
+			assertThat(audit.getTargetType()).isEqualTo("CLASS_SESSION");
+			assertThat(audit.getTargetId()).isEqualTo(session.getId());
+			assertThat(audit.getBeforeData()).containsEntry("coachId", originalCoachId)
+				.containsEntry("roomId", originalRoomId);
+			assertThat(audit.getAfterData()).containsEntry("coachId", newCoach.getId().toString())
+				.containsEntry("roomId", newRoom.getId().toString());
+		});
+	}
+
+	@Test
+	void unchangedAssignmentWritesNoAuditOrSession() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+
+		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(),
+			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
+
+		assertThat(result.coachId()).isEqualTo(session.getTeachingCoach().getId());
+		verify(sessions, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
 	}
 
 	@Test
@@ -77,6 +111,7 @@ class ClassSessionAssignmentServiceTests {
 			.isInstanceOf(RecurringScheduleException.class)
 			.extracting("code").isEqualTo("SESSION_NOT_SCHEDULED");
 		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
 	}
 
 	@Test
@@ -94,6 +129,7 @@ class ClassSessionAssignmentServiceTests {
 			.isInstanceOf(RecurringScheduleException.class)
 			.extracting("code").isEqualTo("SESSION_CONFLICT");
 		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
 	}
 
 	private void stubAssignment(ClassSession session, Account coach, Room room) {

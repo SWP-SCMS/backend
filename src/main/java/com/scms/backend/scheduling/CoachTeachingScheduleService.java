@@ -19,13 +19,15 @@ class CoachTeachingScheduleService {
 	private final ClassSessionRepository sessions;
 	private final BookingRepository bookings;
 	private final AccountRepository accounts;
+	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	CoachTeachingScheduleService(ClassSessionRepository sessions, BookingRepository bookings,
-			AccountRepository accounts, Clock clock) {
+			AccountRepository accounts, SessionLifecycleService lifecycle, Clock clock) {
 		this.sessions = sessions;
 		this.bookings = bookings;
 		this.accounts = accounts;
+		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
 
@@ -72,8 +74,6 @@ class CoachTeachingScheduleService {
 	}
 
 	private void advanceStatuses() {
-		Instant now = clock.instant();
-		sessions.advanceScheduledToInProgress(now);
-		sessions.advanceInProgressToCompleted(now);
+		lifecycle.catchUp(clock.instant());
 	}
 }

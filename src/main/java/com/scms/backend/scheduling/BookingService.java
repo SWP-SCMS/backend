@@ -24,15 +24,18 @@ public class BookingService {
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final ApplicationEventPublisher events;
+	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	BookingService(BookingRepository bookings, ClassSessionRepository sessions, AccountRepository accounts,
-			AuditEventRepository audits, ApplicationEventPublisher events, Clock clock) {
+			AuditEventRepository audits, ApplicationEventPublisher events, SessionLifecycleService lifecycle,
+			Clock clock) {
 		this.bookings = bookings;
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
 		this.events = events;
+		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
 
@@ -50,8 +53,7 @@ public class BookingService {
 	private BookingResponse book(UUID actorId, UUID memberId, UUID sessionId) {
 		ensureActiveMember(memberId);
 		Instant now = clock.instant();
-		sessions.advanceScheduledToInProgress(now);
-		sessions.advanceInProgressToCompleted(now);
+		lifecycle.catchUp(now);
 		ClassSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(BookingException::sessionNotFound);
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED || !session.getStartTime().isAfter(now)) {
 			throw BookingException.sessionUnavailable();

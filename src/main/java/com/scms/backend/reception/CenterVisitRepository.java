@@ -37,11 +37,13 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 	@Query(value = """
 		select id from center_visits
 		where member_account_id = :memberId
+		and checked_in_at <= :now
 		and checked_in_at < :sessionEnd
 		and (checked_out_at is null or checked_out_at > :sessionStart)
 		order by checked_in_at desc, id
 		limit 1
 		""", nativeQuery = true)
 	Optional<UUID> findOverlappingVisitId(@Param("memberId") UUID memberId,
-		@Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd);
+		@Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd,
+		@Param("now") Instant now);
 }

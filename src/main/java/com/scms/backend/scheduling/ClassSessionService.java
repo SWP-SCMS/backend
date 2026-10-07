@@ -11,6 +11,8 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -24,14 +26,18 @@ public class ClassSessionService {
 	private final SportClassRepository classes;
 	private final RoomRepository rooms;
 	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
+	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
-			AccountRepository accounts, Clock clock) {
+			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
 		this.accounts = accounts;
+		this.audits = audits;
+		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
 
@@ -139,6 +145,11 @@ public class ClassSessionService {
 		}
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
 		UUID roomId = request.roomId() == null ? session.getRoom().getId() : request.roomId();
+		UUID beforeCoachId = session.getTeachingCoach().getId();
+		UUID beforeRoomId = session.getRoom().getId();
+		if (coachId.equals(beforeCoachId) && roomId.equals(beforeRoomId)) {
+			return ClassSessionDetailResponse.from(session);
+		}
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
 			session.getCapacity());
 		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, session.getStartTime(),
@@ -152,13 +163,15 @@ public class ClassSessionService {
 		catch (DataIntegrityViolationException exception) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_ASSIGNMENT_CHANGED", "CLASS_SESSION",
+			sessionId, "Manager changed session assignment",
+			Map.of("coachId", beforeCoachId.toString(), "roomId", beforeRoomId.toString()),
+			Map.of("coachId", coachId.toString(), "roomId", roomId.toString())));
 		return ClassSessionDetailResponse.from(session);
 	}
 
 	private void advanceStatuses() {
-		Instant now = clock.instant();
-		sessions.advanceScheduledToInProgress(now);
-		sessions.advanceInProgressToCompleted(now);
+		lifecycle.catchUp(clock.instant());
 	}
 
 	void ensureActiveManager(UUID managerId) {

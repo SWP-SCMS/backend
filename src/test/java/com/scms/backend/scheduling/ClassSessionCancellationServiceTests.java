@@ -35,13 +35,14 @@ class ClassSessionCancellationServiceTests {
 	@Mock AuditEventRepository audits;
 	@Mock JdbcTemplate jdbc;
 	@Mock ApplicationEventPublisher events;
+	@Mock SessionLifecycleService lifecycle;
 	ClassSessionCancellationService service;
 
 	private final Instant now = Instant.parse("2026-10-06T06:00:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionCancellationService(sessions, accounts, audits, jdbc, events,
+		service = new ClassSessionCancellationService(sessions, accounts, audits, jdbc, events, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -64,6 +65,7 @@ class ClassSessionCancellationServiceTests {
 		assertThat(result.status()).isEqualTo(ClassSessionStatus.CANCELLED);
 		assertThat(result.cancelledAt()).isEqualTo(now);
 		assertThat(result.cancellationReason()).isEqualTo("Coach unavailable");
+		verify(lifecycle).catchUp(now);
 		verify(jdbc).update("""
 			update bookings set status = 'CANCELLED', cancelled_by_account_id = ?,
 				cancellation_source = 'SESSION_CANCELLED', cancelled_at = ?, updated_at = ?, version = version + 1

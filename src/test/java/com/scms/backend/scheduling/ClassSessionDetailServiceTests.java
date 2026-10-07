@@ -16,6 +16,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,13 +30,15 @@ class ClassSessionDetailServiceTests {
 	@Mock SportClassRepository classes;
 	@Mock RoomRepository rooms;
 	@Mock AccountRepository accounts;
+	@Mock AuditEventRepository audits;
+	@Mock SessionLifecycleService lifecycle;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-06T05:00:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionService(sessions, classes, rooms, accounts,
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -47,8 +50,7 @@ class ClassSessionDetailServiceTests {
 
 		ClassSessionDetailResponse result = service.get(managerId, session.getId());
 
-		verify(sessions).advanceScheduledToInProgress(now);
-		verify(sessions).advanceInProgressToCompleted(now);
+		verify(lifecycle).catchUp(now);
 		assertThat(result.id()).isEqualTo(session.getId());
 		assertThat(result.className()).isEqualTo("Vinyasa");
 		assertThat(result.disciplineName()).isEqualTo("Yoga");

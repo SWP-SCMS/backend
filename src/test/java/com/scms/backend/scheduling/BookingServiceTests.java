@@ -34,6 +34,7 @@ class BookingServiceTests {
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
 	@Mock ApplicationEventPublisher events;
+	@Mock SessionLifecycleService lifecycle;
 	BookingService service;
 
 	private final Instant now = Instant.parse("2026-10-06T03:00:00Z");
@@ -43,7 +44,7 @@ class BookingServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new BookingService(bookings, sessions, accounts, audits, events,
+		service = new BookingService(bookings, sessions, accounts, audits, events, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 		memberId = UUID.randomUUID();
 		receptionistId = UUID.randomUUID();
@@ -70,6 +71,7 @@ class BookingServiceTests {
 		assertThat(response.sessionId()).isEqualTo(session.getId());
 		assertThat(response.membershipId()).isEqualTo(membershipId);
 		assertThat(response.status()).isEqualTo(BookingStatus.BOOKED);
+		verify(lifecycle).catchUp(now);
 		verify(audits).save(org.mockito.ArgumentMatchers.any());
 		ArgumentCaptor<BookingCreatedEvent> event = ArgumentCaptor.forClass(BookingCreatedEvent.class);
 		verify(events).publishEvent(event.capture());
