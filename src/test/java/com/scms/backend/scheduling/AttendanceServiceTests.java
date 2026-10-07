@@ -37,12 +37,13 @@ class AttendanceServiceTests {
 	@Mock AuditEventRepository audits;
 	@Mock AccountRepository accounts;
 	@Mock CenterVisitRepository visits;
+	@Mock SessionLifecycleService lifecycle;
 	AttendanceService service;
 	private final Instant now = Instant.parse("2026-10-07T03:00:00Z");
 
 	@BeforeEach void setUp() {
 		when(accounts.existsByIdAndRoleAndStatus(any(), any(), any())).thenReturn(true);
-		service = new AttendanceService(sessions, bookings, attendance, audits, accounts, visits,
+		service = new AttendanceService(sessions, bookings, attendance, audits, accounts, visits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -65,6 +66,7 @@ class AttendanceServiceTests {
 			assertThat(item.recordedAt()).isEqualTo(session.getStartTime());
 		});
 		verify(attendance, never()).save(any());
+		verify(lifecycle).catchUp(now);
 	}
 
 	@Test void coachCannotMarkPresentWithoutCenterVisit() {
@@ -115,6 +117,7 @@ class AttendanceServiceTests {
 			new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
 
 		assertThat(result.memberId()).isEqualTo(member.getMemberId());
+		verify(lifecycle).catchUp(now);
 	}
 
 	@Test void presentUsesOverlappingVisitForBookedMember() {
