@@ -38,6 +38,7 @@ import com.scms.backend.scheduling.SportClassException;
 import com.scms.backend.scheduling.RoomException;
 import com.scms.backend.scheduling.RecurringScheduleException;
 import com.scms.backend.scheduling.BookingException;
+import com.scms.backend.scheduling.AttendanceException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -301,6 +302,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		problem.setTitle("Booking request failed");
 		problem.setProperty("code", exception.getCode());
 		return problem;
+	}
+
+	@ExceptionHandler(AttendanceException.class)
+	ProblemDetail handleAttendance(AttendanceException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Attendance request failed"); problem.setProperty("code", exception.getCode()); return problem;
 	}
 
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)

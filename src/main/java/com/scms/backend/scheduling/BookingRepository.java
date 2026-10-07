@@ -24,6 +24,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	List<BookedMemberView> findBookedMembersBySessionId(@Param("sessionId") UUID sessionId);
 
+	@Query(value = "select attendance.id as \"attendanceId\", booking.id as \"bookingId\", booking.member_account_id as \"memberId\", profile.member_code as \"memberCode\", account.full_name as \"fullName\" from bookings booking join accounts account on account.id=booking.member_account_id join member_profiles profile on profile.account_id=account.id left join attendance on attendance.booking_id=booking.id where booking.class_session_id=:sessionId and booking.status='BOOKED' order by account.full_name, account.id", nativeQuery=true)
+	List<AttendanceMemberView> findBookedAttendanceMembers(@Param("sessionId") UUID sessionId);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("select booking from Booking booking where booking.id = :id")
 	Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
@@ -60,4 +63,5 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		String getPhone();
 		String getProfileImageUrl();
 	}
+	interface AttendanceMemberView { UUID getAttendanceId(); UUID getBookingId(); UUID getMemberId(); String getMemberCode(); String getFullName(); }
 }
