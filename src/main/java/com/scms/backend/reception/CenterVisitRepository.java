@@ -7,8 +7,10 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
-interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> {
+public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> {
 
 	@Query(value = """
 		select id from memberships
@@ -20,4 +22,26 @@ interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> {
 		limit 1
 		""", nativeQuery = true)
 	Optional<UUID> findCurrentMembership(@Param("memberId") UUID memberId, @Param("at") Instant at);
+
+	Optional<CenterVisit> findByCheckedInByAccountIdAndIdempotencyKey(UUID checkedInByAccountId,
+		String idempotencyKey);
+
+	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(
+		UUID memberAccountId);
+
+	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(
+		UUID memberAccountId);
+
+	Page<CenterVisit> findByCheckedOutAtIsNull(Pageable pageable);
+
+	@Query(value = """
+		select id from center_visits
+		where member_account_id = :memberId
+		and checked_in_at < :sessionEnd
+		and (checked_out_at is null or checked_out_at > :sessionStart)
+		order by checked_in_at desc, id
+		limit 1
+		""", nativeQuery = true)
+	Optional<UUID> findOverlappingVisitId(@Param("memberId") UUID memberId,
+		@Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd);
 }

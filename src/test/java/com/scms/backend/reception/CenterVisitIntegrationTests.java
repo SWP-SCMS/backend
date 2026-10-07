@@ -1,6 +1,9 @@
 package com.scms.backend.reception;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -8,6 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.scms.backend.account.Account;
@@ -51,6 +57,22 @@ class CenterVisitIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired JwtEncoder jwtEncoder;
+	@Autowired CenterVisitRepository visits;
+
+	@Test
+	void identityVerificationIsRequired() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
+		membership(member.getAccountId(), receptionist.getId());
+
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\"}")
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode()
+			+ "\",\"identityVerified\":false}")
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
+	}
 
 	@Test
 	void receptionistCreatesSeparateVisitsByMemberCodeOrPhone() throws Exception {
@@ -58,19 +80,132 @@ class CenterVisitIntegrationTests {
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
 		UUID membershipId = membership(member.getAccountId(), receptionist.getId());
 
-		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\"}")
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}")
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.memberId").value(member.getAccountId().toString()))
 			.andExpect(jsonPath("$.memberCode").value(member.getMemberCode()))
 			.andExpect(jsonPath("$.membershipId").value(membershipId.toString()))
 			.andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
-		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\"}")
+		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}")
 			.andExpect(status().isCreated());
 
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id = ?",
 			Long.class, member.getAccountId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select count(distinct id) from center_visits where member_account_id = ?",
 			Long.class, member.getAccountId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=? and checked_out_at is null",
+			Long.class, member.getAccountId())).isOne();
+	}
+
+	@Test
+	void idempotencyReplaysAndRejectsReuseForAnotherMember() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile first = member(AccountStatus.ACTIVE, "photo");
+		MemberProfile second = member(AccountStatus.ACTIVE, "photo");
+		membership(first.getAccountId(), receptionist.getId());
+		membership(second.getAccountId(), receptionist.getId());
+
+		checkIn(receptionist, request(first), "visit-key")
+			.andExpect(status().isCreated()).andExpect(jsonPath("$.created").value(true));
+		Instant checkedInAt = jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
+			Instant.class, first.getAccountId());
+		checkIn(receptionist, request(first), " visit-key ")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false));
+		assertThat(jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
+			Instant.class, first.getAccountId())).isEqualTo(checkedInAt);
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?",
+			Long.class, first.getAccountId())).isOne();
+		checkIn(receptionist, request(second), "visit-key")
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+	}
+
+	@Test
+	void concurrentSameKeyCreatesOneVisit() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile member = member(AccountStatus.ACTIVE, "photo");
+		membership(member.getAccountId(), receptionist.getId());
+		String token = token(receptionist);
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		Callable<Integer> request = () -> {
+			ready.countDown();
+			start.await();
+			return mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+				.header("Idempotency-Key", "concurrent-key")
+				.contentType(MediaType.APPLICATION_JSON).content(request(member)))
+				.andReturn().getResponse().getStatus();
+		};
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(request);
+			var second = executor.submit(request);
+			ready.await();
+			start.countDown();
+			assertThat(java.util.List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 201);
+		}
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?",
+			Long.class, member.getAccountId())).isOne();
+	}
+
+	@Test
+	void memberAndReceptionistCheckoutReplayOriginalTimestampAndRespectOwnership() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile owner = member(AccountStatus.ACTIVE, "photo");
+		MemberProfile other = member(AccountStatus.ACTIVE, "photo");
+		membership(owner.getAccountId(), receptionist.getId());
+		checkIn(receptionist, request(owner), null).andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/v1/members/me/center-visits/current").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
+			.andExpect(status().isOk());
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(other.getAccount())))
+			.andExpect(status().isNotFound());
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("MEMBER"));
+		Instant checkout = jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
+			Instant.class, owner.getAccountId());
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
+			.andExpect(status().isOk());
+		assertThat(jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
+			Instant.class, owner.getAccountId())).isEqualTo(checkout);
+
+		checkIn(receptionist, request(owner), "reentry").andExpect(status().isCreated());
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"));
+	}
+
+	@Test
+	void openVisitsArePaginatedAndOverlapUsesHalfOpenIntervals() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile first = member(AccountStatus.ACTIVE, "photo");
+		MemberProfile second = member(AccountStatus.ACTIVE, "photo");
+		UUID firstMembership = membership(first.getAccountId(), receptionist.getId());
+		membership(second.getAccountId(), receptionist.getId());
+		checkIn(receptionist, request(first), null).andExpect(status().isCreated());
+		checkIn(receptionist, request(second), null).andExpect(status().isCreated());
+
+		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=0&size=1").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
+			.andExpect(jsonPath("$.totalElements").value(greaterThanOrEqualTo(2)));
+
+		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?",
+			java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")),
+			java.sql.Timestamp.from(Instant.parse("2026-10-05T02:00:00Z")), receptionist.getId(), first.getAccountId());
+		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
+			Instant.parse("2026-10-05T11:00:00Z"))).isEmpty();
+		UUID overlap = UUID.randomUUID();
+		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at,checked_out_at,checked_out_by_account_id,checkout_source) values(?,?,?,?,?,?,?,'RECEPTIONIST')",
+			overlap, first.getAccountId(), firstMembership, receptionist.getId(),
+			java.sql.Timestamp.from(Instant.parse("2026-10-05T09:30:00Z")),
+			java.sql.Timestamp.from(Instant.parse("2026-10-05T10:30:00Z")), receptionist.getId());
+		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
+			Instant.parse("2026-10-05T11:00:00Z"))).contains(overlap);
 	}
 
 	@Test
@@ -84,10 +219,20 @@ class CenterVisitIntegrationTests {
 	}
 
 	private org.springframework.test.web.servlet.ResultActions checkIn(Account actor, String body) throws Exception {
-		return mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1")
+		return checkIn(actor, body, null);
+	}
+
+	private org.springframework.test.web.servlet.ResultActions checkIn(Account actor, String body, String key)
+			throws Exception {
+		var request = post("/api/v1/reception/center-visits").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(actor))
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(body));
+			.contentType(MediaType.APPLICATION_JSON).content(body);
+		if (key != null) request.header("Idempotency-Key", key);
+		return mockMvc.perform(request);
+	}
+
+	private String request(MemberProfile member) {
+		return "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}";
 	}
 
 	private MemberProfile member(AccountStatus status, String image) {

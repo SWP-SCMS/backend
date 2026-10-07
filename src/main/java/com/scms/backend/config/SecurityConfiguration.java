@@ -82,6 +82,7 @@ public class SecurityConfiguration {
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/center-visits/**").hasRole("RECEPTIONIST")
+				.requestMatchers("/members/me/center-visits/**").hasRole("MEMBER")
 				.requestMatchers("/manager/staff-accounts/**").hasRole("MANAGER")
 				.requestMatchers("/manager/disciplines", "/manager/disciplines/**").hasRole("MANAGER")
 				.requestMatchers("/manager/classes", "/manager/classes/**").hasRole("MANAGER")
