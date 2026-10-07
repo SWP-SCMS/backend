@@ -66,7 +66,24 @@ class AttendanceServiceTests {
 			assertThat(item.recordedAt()).isEqualTo(session.getStartTime());
 		});
 		verify(attendance, never()).save(any());
-		verify(lifecycle).catchUp(now);
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceListSynthesizesMissingAbsentWithoutWriting() {
+		ClassSession session = session(now, now.plusSeconds(3600));
+		UUID coachId = session.getTeachingCoach().getId();
+		UUID bookingId = UUID.randomUUID();
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member(null, bookingId,
+			UUID.randomUUID())));
+		when(attendance.findByBookingId(bookingId)).thenReturn(Optional.empty());
+
+		AttendanceResponse result = service.list(coachId, session.getId()).getFirst();
+
+		assertThat(result.status()).isEqualTo(AttendanceStatus.ABSENT);
+		assertThat(result.recordedAt()).isEqualTo(session.getStartTime());
+		verify(attendance, never()).save(any());
+		verify(lifecycle, never()).catchUp(any());
 	}
 
 	@Test void coachCannotMarkPresentWithoutCenterVisit() {
