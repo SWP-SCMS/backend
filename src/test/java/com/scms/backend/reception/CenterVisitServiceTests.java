@@ -2,6 +2,7 @@ package com.scms.backend.reception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
@@ -98,6 +99,49 @@ class CenterVisitServiceTests {
 		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
 		assertThat(response.created()).isFalse();
 		verify(visits, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void keyedRequestThatMissesBeforeLockReplaysWinnerAfterLock() {
+		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount(AccountStatus.SUSPENDED)));
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
+			.thenReturn(Optional.empty(), Optional.of(existing));
+
+		CenterVisitResponse response = assertDoesNotThrow(() -> service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true), "request-1"));
+
+		assertThat(response.id()).isEqualTo(existing.getId());
+		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
+		assertThat(response.created()).isFalse();
+		var order = inOrder(visits, accounts);
+		order.verify(visits).findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1");
+		order.verify(accounts).findByIdForUpdate(memberId);
+		order.verify(visits).findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1");
+		verify(visits, never()).findCurrentMembership(any(), any());
+		verify(visits, never())
+			.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
+		verify(visits, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void keyedRequestThatMissesBeforeLockRejectsWinnerForDifferentMember() {
+		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+			receptionistId, now.minusSeconds(30), "request-1");
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
+			.thenReturn(Optional.empty(), Optional.of(existing));
+
+		assertCode(() -> service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true), "request-1"), "IDEMPOTENCY_KEY_REUSED");
+		verify(visits, never()).findCurrentMembership(any(), any());
+		verify(visits, never())
+			.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
+		verify(visits, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
 	}
 
 	@Test
@@ -237,7 +281,11 @@ class CenterVisitServiceTests {
 	}
 
 	private Account memberAccount() {
-		return new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0901000001",
+		return memberAccount(AccountStatus.ACTIVE);
+	}
+
+	private Account memberAccount(AccountStatus status) {
+		return new Account(memberId, AccountRole.MEMBER, status, "Member", "0901000001",
 			"member@example.test", LocalDate.of(1990, 1, 1), "password");
 	}
 

@@ -3,6 +3,7 @@ package com.scms.backend.reception;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -45,20 +46,16 @@ class CenterVisitService {
 		}
 		String key = normalizeKey(idempotencyKey);
 		ReceptionMemberSearchResponse member = members.search(receptionistId, request.memberId(), request.phone());
-		if (key != null) {
-			var replay = visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, key);
-			if (replay.isPresent()) {
-				if (!replay.get().getMemberAccountId().equals(member.accountId())) {
-					throw CenterVisitException.idempotencyKeyReused();
-				}
-				return CenterVisitResponse.from(replay.get(), member.memberId(), false);
-			}
-		}
+		var replay = findReplay(receptionistId, key, member);
+		if (replay.isPresent()) return replay.get();
 		if (member.status() != AccountStatus.ACTIVE) throw CenterVisitException.memberNotActive();
 		if (member.profileImageUrl() == null || member.profileImageUrl().isBlank()) {
 			throw CenterVisitException.profileImageRequired();
 		}
-		if (lockMember(member.accountId()).getStatus() != AccountStatus.ACTIVE) {
+		Account lockedMember = lockMember(member.accountId());
+		replay = findReplay(receptionistId, key, member);
+		if (replay.isPresent()) return replay.get();
+		if (lockedMember.getStatus() != AccountStatus.ACTIVE) {
 			throw CenterVisitException.memberNotActive();
 		}
 
@@ -83,6 +80,17 @@ class CenterVisitService {
 			visit.getId(), Map.of("identityVerified", true, "memberId", member.accountId().toString(),
 				"membershipId", membershipId.toString(), "visitId", visit.getId().toString())));
 		return CenterVisitResponse.from(visit, member.memberId(), true);
+	}
+
+	private Optional<CenterVisitResponse> findReplay(UUID receptionistId, String key,
+			ReceptionMemberSearchResponse member) {
+		if (key == null) return Optional.empty();
+		return visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, key).map(visit -> {
+			if (!visit.getMemberAccountId().equals(member.accountId())) {
+				throw CenterVisitException.idempotencyKeyReused();
+			}
+			return CenterVisitResponse.from(visit, member.memberId(), false);
+		});
 	}
 
 	@Transactional(readOnly = true)
