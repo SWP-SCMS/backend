@@ -15,6 +15,8 @@ import org.springframework.data.repository.query.Param;
 public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID>,
 		JpaSpecificationExecutor<ClassSession> {
 
+	java.util.Optional<ClassSession> findByIdAndTeachingCoach_Id(UUID id, UUID coachId);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);

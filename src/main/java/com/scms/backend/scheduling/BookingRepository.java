@@ -1,6 +1,7 @@
 package com.scms.backend.scheduling;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -10,6 +11,18 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface BookingRepository extends JpaRepository<Booking, UUID> {
+
+	@Query(value = """
+		select account.id as "memberId", profile.member_code as "memberCode",
+			account.full_name as "fullName", account.phone as "phone",
+			profile.profile_image_url as "profileImageUrl"
+		from bookings booking
+		join accounts account on account.id = booking.member_account_id
+		join member_profiles profile on profile.account_id = account.id
+		where booking.class_session_id = :sessionId and booking.status = 'BOOKED'
+		order by account.full_name, account.id
+		""", nativeQuery = true)
+	List<BookedMemberView> findBookedMembersBySessionId(@Param("sessionId") UUID sessionId);
 
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("select booking from Booking booking where booking.id = :id")
@@ -39,4 +52,12 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	boolean existsBookedOverlap(@Param("memberId") UUID memberId, @Param("startTime") Instant startTime,
 		@Param("endTime") Instant endTime);
+
+	interface BookedMemberView {
+		UUID getMemberId();
+		String getMemberCode();
+		String getFullName();
+		String getPhone();
+		String getProfileImageUrl();
+	}
 }
