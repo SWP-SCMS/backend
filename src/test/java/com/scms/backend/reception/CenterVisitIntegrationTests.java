@@ -1,7 +1,6 @@
 package com.scms.backend.reception;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -109,6 +108,8 @@ class CenterVisitIntegrationTests {
 			.andExpect(status().isCreated()).andExpect(jsonPath("$.created").value(true));
 		Instant checkedInAt = jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
 			Instant.class, first.getAccountId());
+		jdbc.update("update accounts set status='SUSPENDED' where id=?", first.getAccountId());
+		jdbc.update("update member_profiles set profile_image_url=null where account_id=?", first.getAccountId());
 		checkIn(receptionist, request(first), " visit-key ")
 			.andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false));
 		assertThat(jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
@@ -177,22 +178,66 @@ class CenterVisitIntegrationTests {
 		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"));
+		Instant receptionistCheckout = jdbc.queryForObject("""
+			select checked_out_at from center_visits where member_account_id=?
+			order by checked_in_at desc, id desc limit 1
+			""", Instant.class, owner.getAccountId());
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"));
+		assertThat(jdbc.queryForObject("""
+			select checked_out_at from center_visits where member_account_id=?
+			order by checked_in_at desc, id desc limit 1
+			""", Instant.class, owner.getAccountId())).isEqualTo(receptionistCheckout);
 	}
 
 	@Test
 	void openVisitsArePaginatedAndOverlapUsesHalfOpenIntervals() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		jdbc.update("""
+			update center_visits
+			set checked_out_at=greatest(checked_in_at,current_timestamp), checked_out_by_account_id=?,
+				checkout_source='RECEPTIONIST'
+			where checked_out_at is null
+			""", receptionist.getId());
 		MemberProfile first = member(AccountStatus.ACTIVE, "photo");
 		MemberProfile second = member(AccountStatus.ACTIVE, "photo");
+		MemberProfile third = member(AccountStatus.ACTIVE, "photo");
 		UUID firstMembership = membership(first.getAccountId(), receptionist.getId());
 		membership(second.getAccountId(), receptionist.getId());
+		membership(third.getAccountId(), receptionist.getId());
 		checkIn(receptionist, request(first), null).andExpect(status().isCreated());
 		checkIn(receptionist, request(second), null).andExpect(status().isCreated());
+		checkIn(receptionist, request(third), null).andExpect(status().isCreated());
+		Instant firstTime = Instant.parse("2026-10-06T01:00:00Z");
+		Instant secondTime = Instant.parse("2026-10-06T02:00:00Z");
+		Instant thirdTime = Instant.parse("2026-10-06T03:00:00Z");
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
+			java.sql.Timestamp.from(firstTime), first.getAccountId());
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
+			java.sql.Timestamp.from(secondTime), second.getAccountId());
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
+			java.sql.Timestamp.from(thirdTime), third.getAccountId());
+		jdbc.update("""
+			update center_visits set checked_out_at=?, checked_out_by_account_id=?, checkout_source='RECEPTIONIST'
+			where member_account_id=?
+			""", java.sql.Timestamp.from(secondTime.plusSeconds(60)), receptionist.getId(), second.getAccountId());
+		UUID firstVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?",
+			UUID.class, first.getAccountId());
+		UUID thirdVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?",
+			UUID.class, third.getAccountId());
 
 		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=0&size=1").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
-			.andExpect(jsonPath("$.totalElements").value(greaterThanOrEqualTo(2)));
+			.andExpect(jsonPath("$.content[0].id").value(firstVisit.toString()))
+			.andExpect(jsonPath("$.totalElements").value(2))
+			.andExpect(jsonPath("$.totalPages").value(2));
+		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=1&size=1").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
+			.andExpect(jsonPath("$.content[0].id").value(thirdVisit.toString()))
+			.andExpect(jsonPath("$.totalElements").value(2));
 
 		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?",
 			java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")),

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -87,7 +88,6 @@ class CenterVisitServiceTests {
 	void sameIdempotencyKeyAndMemberReplaysWithoutSaving() {
 		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
-		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
 			.thenReturn(Optional.of(existing));
 
@@ -101,11 +101,28 @@ class CenterVisitServiceTests {
 	}
 
 	@Test
+	void keyedReplaySurvivesMemberSuspensionAndRemovedImage() {
+		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
+		when(members.search(receptionistId, "MB-100001", null))
+			.thenReturn(member(AccountStatus.SUSPENDED, "  "));
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
+			.thenReturn(Optional.of(existing));
+
+		CenterVisitResponse response = service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true), "request-1");
+
+		assertThat(response.id()).isEqualTo(existing.getId());
+		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
+		assertThat(response.created()).isFalse();
+		verify(accounts, never()).findByIdForUpdate(any());
+		verify(visits, never()).findCurrentMembership(any(), any());
+	}
+
+	@Test
 	void sameIdempotencyKeyForAnotherMemberIsRejected() {
 		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
 			receptionistId, now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
-		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
 			.thenReturn(Optional.of(existing));
 
@@ -128,6 +145,9 @@ class CenterVisitServiceTests {
 		assertThat(open.getCheckedOutAt()).isEqualTo(now);
 		assertThat(open.getCheckedOutByAccountId()).isEqualTo(receptionistId);
 		assertThat(open.getCheckoutSource()).isEqualTo(CheckoutSource.AUTO_REENTRY);
+		var order = inOrder(visits);
+		order.verify(visits).flush();
+		order.verify(visits).saveAndFlush(any(CenterVisit.class));
 	}
 
 	@Test

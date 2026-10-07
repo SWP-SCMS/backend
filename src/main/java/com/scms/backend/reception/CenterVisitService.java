@@ -45,13 +45,6 @@ class CenterVisitService {
 		}
 		String key = normalizeKey(idempotencyKey);
 		ReceptionMemberSearchResponse member = members.search(receptionistId, request.memberId(), request.phone());
-		if (member.status() != AccountStatus.ACTIVE) throw CenterVisitException.memberNotActive();
-		if (member.profileImageUrl() == null || member.profileImageUrl().isBlank()) {
-			throw CenterVisitException.profileImageRequired();
-		}
-		if (lockMember(member.accountId()).getStatus() != AccountStatus.ACTIVE) {
-			throw CenterVisitException.memberNotActive();
-		}
 		if (key != null) {
 			var replay = visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, key);
 			if (replay.isPresent()) {
@@ -61,12 +54,22 @@ class CenterVisitService {
 				return CenterVisitResponse.from(replay.get(), member.memberId(), false);
 			}
 		}
+		if (member.status() != AccountStatus.ACTIVE) throw CenterVisitException.memberNotActive();
+		if (member.profileImageUrl() == null || member.profileImageUrl().isBlank()) {
+			throw CenterVisitException.profileImageRequired();
+		}
+		if (lockMember(member.accountId()).getStatus() != AccountStatus.ACTIVE) {
+			throw CenterVisitException.memberNotActive();
+		}
 
 		Instant now = clock.instant();
 		UUID membershipId = visits.findCurrentMembership(member.accountId(), now)
 			.orElseThrow(CenterVisitException::membershipRequired);
 		visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId())
-			.ifPresent(open -> close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now));
+			.ifPresent(open -> {
+				close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now);
+				visits.flush();
+			});
 		CenterVisit visit = new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId,
 			receptionistId, now, key);
 		try {
