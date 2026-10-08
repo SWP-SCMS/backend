@@ -127,7 +127,7 @@ class SepayService {
 	}
 
 	private SepayPaymentResponse response(Map<String, Object> order, Map<String, Object> payment, Instant expiresAt) {
-		String reference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
+		String reference = (String) payment.get("bank_transfer_content");
 		String amount = new BigDecimal(payment.get("amount").toString()).toBigIntegerExact().toString();
 		String qr = "https://qr.sepay.vn/img?bank=" + enc(bankCode) + "&acc=" + enc(bankAccount)
 			+ "&template=compact&amount=" + amount + "&des=" + enc(reference)

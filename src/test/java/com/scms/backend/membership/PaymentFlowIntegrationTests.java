@@ -206,6 +206,24 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void sepayRetryPreservesExactPersistedTransferContent() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String persistedContent = "  SCMS-EXACT CONTENT  ";
+		pendingPayment(order, 12000, persistedContent);
+
+		JsonNode response = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+
+		assertThat(response.path("paymentReference").asText()).isEqualTo(persistedContent);
+		assertThat(response.path("transferContent").asText()).isEqualTo(persistedContent);
+		assertThat(queryParameters(response.path("qrUrl").asText())).containsEntry("des", persistedContent);
+	}
+
+	@Test
 	void sepayWebhookValidatesEveryTrustedFieldAndIsIdempotent() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
