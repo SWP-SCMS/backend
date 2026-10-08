@@ -71,7 +71,8 @@ class SessionLifecycleIntegrationTests {
 		ClassSession cancelledSession = session(resources(manager, account(AccountRole.COACH, "Cancelled coach")),
 			manager, NOW, NOW.plusSeconds(3600));
 		cancelledSession.cancel(NOW.minusSeconds(1), "cancelled");
-		sessions.saveAndFlush(cancelledSession);
+		jdbc.update("update class_sessions set status='CANCELLED', cancelled_at=?, cancellation_reason='cancelled', updated_at=current_timestamp where id=?",
+			java.sql.Timestamp.from(NOW.minusSeconds(1)), cancelledSession.getId());
 		booking(cancelledSession, cancelledSessionMember, manager);
 		Booking cancelledBooking = booking(exact, cancelledMember, manager);
 		cancelledBooking.cancel(manager.getId(), "MEMBER", NOW.minusSeconds(1));
