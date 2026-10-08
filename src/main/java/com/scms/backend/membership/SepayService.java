@@ -69,7 +69,7 @@ class SepayService {
 		Map<String, Object> payment = pendingPayment(orderId);
 		Instant expiresAt;
 		if (payment == null) {
-			expiresAt = clock.instant().plus(24, ChronoUnit.HOURS);
+			expiresAt = clock.instant().plus(24, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
 			db.update("update membership_orders set expires_at=?,payment_method='BANK_TRANSFER',updated_at=current_timestamp where id=?",
 				Timestamp.from(expiresAt), orderId);
 			String reference = reference(order);
@@ -133,8 +133,9 @@ class SepayService {
 			+ "&template=compact&amount=" + amount + "&des=" + enc(reference)
 			+ (bankAccountName.isBlank() ? "" : "&accountName=" + enc(bankAccountName));
 		return new SepayPaymentResponse((UUID) payment.get("id"), (UUID) payment.get("order_id"),
-			String.valueOf(order.get("order_number")), new BigDecimal(amount).toBigIntegerExact(), "VND", "SEPAY",
-			reference, qr, expiresAt, PaymentFulfillmentService.string(payment, "status"));
+			String.valueOf(order.get("order_number")), new BigDecimal(amount).toBigIntegerExact(),
+			PaymentFulfillmentService.string(payment, "currency_code"), "SEPAY", reference, reference, bankCode,
+			bankAccount, bankAccountName, qr, expiresAt, PaymentFulfillmentService.string(payment, "status"));
 	}
 
 	private String reference(Map<String, Object> order) { return "SCMS-" + order.get("order_number"); }

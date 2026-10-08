@@ -9,11 +9,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigInteger;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -64,6 +71,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired PaymentService paymentService;
+	@Autowired ObjectMapper objectMapper;
 
 	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
@@ -140,21 +148,61 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
-	void sepayCreationIsIdempotentAndQrUsesSnapshot() throws Exception {
+	void sepayCreationReturnsManualFallbackWithoutLoadingQr() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
 		UUID offer = offer(manager, "BASIC", 12000, false);
 		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
 
-		String first = sepay(member.getAccount(), order).andExpect(status().isOk())
+		String response = sepay(member.getAccount(), order).andExpect(status().isOk())
 			.andExpect(jsonPath("$.amount").value(12000)).andExpect(jsonPath("$.status").value("PENDING"))
 			.andReturn().getResponse().getContentAsString();
-		String second = sepay(member.getAccount(), order).andExpect(status().isOk()).andReturn()
-			.getResponse().getContentAsString();
+		JsonNode json = objectMapper.readTree(response);
+		String persistedContent = db.queryForObject(
+			"select bank_transfer_content from payments where order_id=?", String.class, order);
 
-		assertThat(JsonPath.<String>read(second, "$.paymentId")).isEqualTo(JsonPath.read(first, "$.paymentId"));
-		assertThat(JsonPath.<String>read(first, "$.qrUrl")).contains("amount=12000", "acc=123456789");
+		assertThat(json.path("transferContent").asText()).isEqualTo(persistedContent);
+		assertThat(json.path("paymentReference").asText()).isEqualTo(persistedContent);
+		assertThat(json.path("bankCode").asText()).isEqualTo("MB");
+		assertThat(json.path("bankAccountNumber").asText()).isEqualTo("123456789");
+		assertThat(json.path("bankAccountName").asText()).isEqualTo("SCMS GYM");
+		assertThat(json.path("currency").asText()).isEqualTo("VND");
+		assertThat(json.path("expiresAt").asText()).isNotBlank();
+		assertThat(response).doesNotContain("hook-secret", "webhookApiKey", "secretKey", "authorization", "credential");
+	}
+
+	@Test
+	void sepayRetryReturnsTheSameFallbackSnapshotAndOnePayment() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+
+		JsonNode first = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		JsonNode second = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+
+		assertThat(second).isEqualTo(first);
 		assertThat(count("select count(*) from payments where order_id=? and status='PENDING'", order)).isOne();
+	}
+
+	@Test
+	void sepayQrParametersMatchReturnedFallback() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+
+		JsonNode response = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		Map<String, String> query = queryParameters(response.path("qrUrl").asText());
+
+		assertThat(query).containsEntry("bank", response.path("bankCode").asText())
+			.containsEntry("acc", response.path("bankAccountNumber").asText())
+			.containsEntry("accountName", response.path("bankAccountName").asText())
+			.containsEntry("amount", response.path("amount").asText())
+			.containsEntry("des", response.path("transferContent").asText());
 	}
 
 	@Test
@@ -598,6 +646,16 @@ class PaymentFlowIntegrationTests {
 
 	private long count(String sql, Object... args) {
 		return db.queryForObject(sql, Long.class, args);
+	}
+
+	private Map<String, String> queryParameters(String url) {
+		return Arrays.stream(URI.create(url).getRawQuery().split("&"))
+			.map(parameter -> parameter.split("=", 2))
+			.collect(Collectors.toMap(parameter -> decode(parameter[0]), parameter -> decode(parameter[1])));
+	}
+
+	private String decode(String value) {
+		return URLDecoder.decode(value, StandardCharsets.UTF_8);
 	}
 
 	private String bearer(Account account) {
