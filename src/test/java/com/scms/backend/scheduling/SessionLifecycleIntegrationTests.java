@@ -227,7 +227,7 @@ class SessionLifecycleIntegrationTests {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
-		jdbc.update("insert into membership_offers(id,plan_code,name,price_amount,duration_days,status,created_by_account_id) values(?,'PLUS',?,1000,30,'ACTIVE',?)",
+		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,duration_days,status,created_by_account_id) values(?,'PLUS',?,'Session lifecycle test offer',1000,30,'ACTIVE',?)",
 			offerId, "Offer " + offerId, actorId);
 		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at) values(?,?,?, ?,?,'Plus','PLUS',1000,'VND',30,'CASH','PAID',?)",
 			orderId, "ORD-" + orderId, memberId, actorId, offerId, java.sql.Timestamp.from(NOW.minusSeconds(7200)));
