@@ -231,6 +231,8 @@ class SessionLifecycleIntegrationTests {
 			offerId, "Offer " + offerId, actorId);
 		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at) values(?,?,?, ?,?,'Plus','PLUS',1000,'VND',30,'CASH','PAID',?)",
 			orderId, "ORD-" + orderId, memberId, actorId, offerId, java.sql.Timestamp.from(NOW.minusSeconds(7200)));
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at) values(?,?,'CASH','PAID',1000,'VND',?,?)",
+			UUID.randomUUID(), orderId, actorId, java.sql.Timestamp.from(NOW.minusSeconds(7200)));
 		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?, 'PLUS','Plus',1000,'VND',30,'ACTIVE',?,?)",
 			membershipId, memberId, orderId, offerId, java.sql.Timestamp.from(NOW.minusSeconds(86400)),
 			java.sql.Timestamp.from(NOW.plusSeconds(86400)));
