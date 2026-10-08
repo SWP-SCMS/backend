@@ -1,12 +1,16 @@
 package com.scms.backend.scheduling;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -17,10 +21,12 @@ public class DisciplineService {
 
 	private final DisciplineRepository disciplines;
 	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
 
-	DisciplineService(DisciplineRepository disciplines, AccountRepository accounts) {
+	DisciplineService(DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits) {
 		this.disciplines = disciplines;
 		this.accounts = accounts;
+		this.audits = audits;
 	}
 
 	@Transactional(readOnly = true)
@@ -54,6 +60,8 @@ public class DisciplineService {
 		catch (DataIntegrityViolationException exception) {
 			throw new DuplicateDisciplineException();
 		}
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "DISCIPLINE_CREATED", "DISCIPLINE",
+			discipline.getId(), snapshot(discipline)));
 		return DisciplineResponse.from(discipline);
 	}
 
@@ -64,6 +72,7 @@ public class DisciplineService {
 			throw new DisciplineValidationException("request", "at least one field is required");
 		}
 		Discipline discipline = find(disciplineId);
+		Map<String, Object> before = snapshot(discipline);
 		String name = request.name() == null ? discipline.getName() : normalizeName(request.name());
 		if (!name.equals(discipline.getName()) && disciplines.existsByNameAndIdNot(name, disciplineId)) {
 			throw new DuplicateDisciplineException();
@@ -72,13 +81,25 @@ public class DisciplineService {
 			? discipline.getDescription() : normalizeDescription(request.description());
 		DisciplineStatus status = request.status() == null ? discipline.getStatus() : request.status();
 		discipline.update(name, description, status);
+		Map<String, Object> after = snapshot(discipline);
+		if (before.equals(after)) return DisciplineResponse.from(discipline);
 		try {
 			disciplines.saveAndFlush(discipline);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw new DuplicateDisciplineException();
 		}
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "DISCIPLINE_UPDATED", "DISCIPLINE",
+			disciplineId, null, before, after));
 		return DisciplineResponse.from(discipline);
+	}
+
+	private Map<String, Object> snapshot(Discipline discipline) {
+		Map<String, Object> data = new HashMap<>();
+		data.put("name", discipline.getName());
+		data.put("description", discipline.getDescription());
+		data.put("status", discipline.getStatus().name());
+		return data;
 	}
 
 	private Discipline find(UUID id) {

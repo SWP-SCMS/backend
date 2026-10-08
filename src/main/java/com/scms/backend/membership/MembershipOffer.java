@@ -118,6 +118,10 @@ public class MembershipOffer {
 		return currencyCode;
 	}
 
+	UUID getCreatedByAccountId() {
+		return createdByAccountId;
+	}
+
 	public int getDurationDays() {
 		return durationDays;
 	}

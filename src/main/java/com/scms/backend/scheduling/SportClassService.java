@@ -1,12 +1,16 @@
 package com.scms.backend.scheduling;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -18,11 +22,14 @@ public class SportClassService {
 	private final SportClassRepository classes;
 	private final DisciplineRepository disciplines;
 	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
 
-	SportClassService(SportClassRepository classes, DisciplineRepository disciplines, AccountRepository accounts) {
+	SportClassService(SportClassRepository classes, DisciplineRepository disciplines, AccountRepository accounts,
+			AuditEventRepository audits) {
 		this.classes = classes;
 		this.disciplines = disciplines;
 		this.accounts = accounts;
+		this.audits = audits;
 	}
 
 	@Transactional(readOnly = true)
@@ -54,6 +61,8 @@ public class SportClassService {
 		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, name, request.classType(),
 			normalizeDescription(request.description()), SportClassStatus.ACTIVE);
 		flush(sportClass);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SPORT_CLASS_CREATED", "SPORT_CLASS",
+			sportClass.getId(), snapshot(sportClass)));
 		return SportClassResponse.from(sportClass);
 	}
 
@@ -65,6 +74,7 @@ public class SportClassService {
 			throw SportClassException.validation("request", "at least one field is required");
 		}
 		SportClass sportClass = findClass(classId);
+		Map<String, Object> before = snapshot(sportClass);
 		String name = request.name() == null ? sportClass.getName() : normalizeName(request.name());
 		if (!name.equals(sportClass.getName()) && classes.existsByDisciplineIdAndNameAndIdNot(
 				sportClass.getDiscipline().getId(), name, classId)) {
@@ -75,8 +85,22 @@ public class SportClassService {
 			? sportClass.getDescription() : normalizeDescription(request.description());
 		SportClassStatus status = request.status() == null ? sportClass.getStatus() : request.status();
 		sportClass.update(name, classType, description, status);
+		Map<String, Object> after = snapshot(sportClass);
+		if (before.equals(after)) return SportClassResponse.from(sportClass);
 		flush(sportClass);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SPORT_CLASS_UPDATED", "SPORT_CLASS",
+			classId, null, before, after));
 		return SportClassResponse.from(sportClass);
+	}
+
+	private Map<String, Object> snapshot(SportClass sportClass) {
+		Map<String, Object> data = new HashMap<>();
+		data.put("disciplineId", sportClass.getDiscipline().getId().toString());
+		data.put("name", sportClass.getName());
+		data.put("classType", sportClass.getClassType().name());
+		data.put("description", sportClass.getDescription());
+		data.put("status", sportClass.getStatus().name());
+		return data;
 	}
 
 	private void validateCreate(SportClassCreateRequest request) {

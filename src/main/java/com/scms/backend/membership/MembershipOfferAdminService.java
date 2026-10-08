@@ -1,11 +1,15 @@
 package com.scms.backend.membership;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,11 +18,14 @@ public class MembershipOfferAdminService {
 	private final MembershipOfferRepository offers;
 	private final MembershipPlanRepository plans;
 	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
 
-	MembershipOfferAdminService(MembershipOfferRepository offers, MembershipPlanRepository plans, AccountRepository accounts) {
+	MembershipOfferAdminService(MembershipOfferRepository offers, MembershipPlanRepository plans,
+			AccountRepository accounts, AuditEventRepository audits) {
 		this.offers = offers;
 		this.plans = plans;
 		this.accounts = accounts;
+		this.audits = audits;
 	}
 
 	@Transactional
@@ -27,7 +34,10 @@ public class MembershipOfferAdminService {
 		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plans.findById(request.planCode()).orElseThrow(),
 			request.name().trim(), request.description().trim(), request.priceAmount(), "VND", request.durationDays(),
 			request.status() == null ? MembershipOfferStatus.ACTIVE : request.status(), managerId);
-		return MembershipOfferAdminResponse.from(offers.save(offer));
+		offers.save(offer);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "MEMBERSHIP_OFFER_CREATED", "MEMBERSHIP_OFFER",
+			offer.getId(), snapshot(offer)));
+		return MembershipOfferAdminResponse.from(offer);
 	}
 
 	@Transactional(readOnly = true)
@@ -37,9 +47,28 @@ public class MembershipOfferAdminService {
 	MembershipOfferAdminResponse update(UUID managerId, UUID id, MembershipOfferPatchRequest request) {
 		ensureManager(managerId); validatePatch(request);
 		MembershipOffer offer = offers.findById(id).orElseThrow(MembershipOfferNotFoundException::new);
+		Map<String, Object> before = snapshot(offer);
 		offer.patch(trim(request.name()), trim(request.description()), request.priceAmount(), request.durationDays());
 		if (request.status() != null) offer.changeStatus(request.status());
+		Map<String, Object> after = snapshot(offer);
+		if (!before.equals(after)) {
+			audits.save(new AuditEvent(UUID.randomUUID(), managerId, "MEMBERSHIP_OFFER_UPDATED", "MEMBERSHIP_OFFER",
+				id, null, before, after));
+		}
 		return MembershipOfferAdminResponse.from(offer);
+	}
+
+	private Map<String, Object> snapshot(MembershipOffer offer) {
+		Map<String, Object> data = new HashMap<>();
+		data.put("planCode", offer.getPlan().getPlanCode().name());
+		data.put("name", offer.getName());
+		data.put("description", offer.getDescription());
+		data.put("priceAmount", offer.getPriceAmount());
+		data.put("currencyCode", offer.getCurrencyCode());
+		data.put("durationDays", offer.getDurationDays());
+		data.put("status", offer.getStatus().name());
+		data.put("createdByAccountId", offer.getCreatedByAccountId().toString());
+		return data;
 	}
 
 	private void ensureManager(UUID id) { if (!accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
