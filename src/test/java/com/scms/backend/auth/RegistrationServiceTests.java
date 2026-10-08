@@ -15,7 +15,7 @@ import java.time.ZoneOffset;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +38,7 @@ class RegistrationServiceTests {
 	private AuditEventRepository auditEventRepository;
 
 	@Mock
-	private NotificationRepository notificationRepository;
+	private NotificationWriter notificationWriter;
 
 	@Mock
 	private PasswordEncoder passwordEncoder;
@@ -52,7 +52,7 @@ class RegistrationServiceTests {
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-09-29T00:00:00Z"), ZoneOffset.UTC);
 		registrationService = new RegistrationService(accountRepository, memberProfileRepository,
-			auditEventRepository, notificationRepository, passwordEncoder, clock, identifierAvailability);
+			auditEventRepository, notificationWriter, passwordEncoder, clock, identifierAvailability);
 	}
 
 	@Test
@@ -72,7 +72,7 @@ class RegistrationServiceTests {
 
 		verify(memberProfileRepository, never()).saveAndFlush(any());
 		verify(auditEventRepository, never()).save(any());
-		verify(notificationRepository, never()).save(any());
+		verify(notificationWriter, never()).write(any(), any(), any(), any(), any(), any());
 	}
 
 	@Test

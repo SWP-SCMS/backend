@@ -2,6 +2,7 @@ package com.scms.backend.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,7 +17,7 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,7 +31,7 @@ class StaffAccountCreateServiceTests {
 	@Mock AccountRepository accounts;
 	@Mock AccountIdentifierAvailability identifiers;
 	@Mock AuditEventRepository audits;
-	@Mock NotificationRepository notifications;
+	@Mock NotificationWriter notifications;
 	@Mock PasswordEncoder encoder;
 
 	@Test
@@ -50,6 +51,7 @@ class StaffAccountCreateServiceTests {
 		verify(encoder).encode("0901234567");
 		verify(accounts).saveAndFlush(any());
 		verify(audits).save(any());
-		verify(notifications).save(any());
+		verify(notifications).write(eq("ACCOUNT_CREATED:" + response.accountId()), eq(response.accountId()),
+			eq("ACCOUNT_CREATED"), eq("ACCOUNT"), eq(response.accountId()), any());
 	}
 }

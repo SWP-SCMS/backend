@@ -16,8 +16,8 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.RegistrationResponse;
 import com.scms.backend.auth.RegistrationValidationException;
+import com.scms.backend.notification.NotificationWriter;
 
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -35,18 +35,18 @@ public class ReceptionMemberService {
 	private final AccountIdentifierAvailability identifierAvailability;
 	private final PasswordEncoder passwordEncoder;
 	private final Clock clock;
-	private final ApplicationEventPublisher eventPublisher;
+	private final NotificationWriter notificationWriter;
 
 	ReceptionMemberService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
 			AuditEventRepository auditEventRepository, AccountIdentifierAvailability identifierAvailability,
-			PasswordEncoder passwordEncoder, Clock clock, ApplicationEventPublisher eventPublisher) {
+			PasswordEncoder passwordEncoder, Clock clock, NotificationWriter notificationWriter) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.auditEventRepository = auditEventRepository;
 		this.identifierAvailability = identifierAvailability;
 		this.passwordEncoder = passwordEncoder;
 		this.clock = clock;
-		this.eventPublisher = eventPublisher;
+		this.notificationWriter = notificationWriter;
 	}
 
 	@Transactional
@@ -76,9 +76,10 @@ public class ReceptionMemberService {
 			"role", account.getRole().name(),
 			"status", account.getStatus().name());
 
-		eventPublisher.publishEvent(new MemberCreatedEvent(accountId, memberId));
 		auditEventRepository.saveAndFlush(new AuditEvent(UUID.randomUUID(), receptionistAccountId, ACCOUNT_CREATED,
 			ACCOUNT, accountId, accountSnapshot));
+		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, ACCOUNT_CREATED, ACCOUNT, accountId,
+			Map.of("memberId", memberId));
 
 		return new RegistrationResponse(accountId, memberId, account.getFullName(), account.getPhone(),
 			account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus());

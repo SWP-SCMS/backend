@@ -18,13 +18,13 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class BookingServiceTests {
@@ -33,7 +33,7 @@ class BookingServiceTests {
 	@Mock ClassSessionRepository sessions;
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
-	@Mock ApplicationEventPublisher events;
+	@Mock NotificationWriter notifications;
 	@Mock SessionLifecycleService lifecycle;
 	BookingService service;
 
@@ -44,7 +44,7 @@ class BookingServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new BookingService(bookings, sessions, accounts, audits, events, lifecycle,
+		service = new BookingService(bookings, sessions, accounts, audits, notifications, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 		memberId = UUID.randomUUID();
 		receptionistId = UUID.randomUUID();
@@ -73,9 +73,8 @@ class BookingServiceTests {
 		assertThat(response.status()).isEqualTo(BookingStatus.BOOKED);
 		verify(lifecycle).catchUp(now);
 		verify(audits).save(org.mockito.ArgumentMatchers.any());
-		ArgumentCaptor<BookingCreatedEvent> event = ArgumentCaptor.forClass(BookingCreatedEvent.class);
-		verify(events).publishEvent(event.capture());
-		assertThat(event.getValue().memberId()).isEqualTo(memberId);
+		verify(notifications).write("BOOKING_CREATED:" + response.id(), memberId, "BOOKING_CREATED", "BOOKING",
+			response.id(), java.util.Map.of("sessionId", session.getId().toString()));
 	}
 
 	@Test
@@ -128,7 +127,8 @@ class BookingServiceTests {
 		assertThat(response.cancelledAt()).isEqualTo(now);
 		assertThat(response.cancellationSource()).isEqualTo("MEMBER");
 		verify(audits).save(org.mockito.ArgumentMatchers.any());
-		verify(events).publishEvent(org.mockito.ArgumentMatchers.any(BookingCancelledEvent.class));
+		verify(notifications).write("BOOKING_CANCELLED:" + booking.getId(), memberId, "BOOKING_CANCELLED", "BOOKING",
+			booking.getId(), java.util.Map.of("sessionId", cancellableSession.getId().toString()));
 	}
 
 	@Test

@@ -11,7 +11,7 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
-import org.springframework.context.ApplicationEventPublisher;
+import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,18 +23,18 @@ public class BookingService {
 	private final ClassSessionRepository sessions;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
-	private final ApplicationEventPublisher events;
+	private final NotificationWriter notifications;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	BookingService(BookingRepository bookings, ClassSessionRepository sessions, AccountRepository accounts,
-			AuditEventRepository audits, ApplicationEventPublisher events, SessionLifecycleService lifecycle,
+			AuditEventRepository audits, NotificationWriter notifications, SessionLifecycleService lifecycle,
 			Clock clock) {
 		this.bookings = bookings;
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
-		this.events = events;
+		this.notifications = notifications;
 		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
@@ -79,7 +79,8 @@ public class BookingService {
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "BOOKING_CREATED", "BOOKING", booking.getId(),
 			Map.of("sessionId", sessionId.toString(), "membershipId", membershipId.toString(),
 				"status", BookingStatus.BOOKED.name())));
-		events.publishEvent(new BookingCreatedEvent(booking.getId(), sessionId, memberId));
+		notifications.write("BOOKING_CREATED:" + booking.getId(), memberId, "BOOKING_CREATED", "BOOKING",
+			booking.getId(), Map.of("sessionId", sessionId.toString()));
 		return BookingResponse.from(booking);
 	}
 
@@ -110,7 +111,8 @@ public class BookingService {
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "BOOKING_CANCELLED", "BOOKING", bookingId,
 			source + " cancellation", Map.of("status", BookingStatus.BOOKED.name()),
 			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", source)));
-		events.publishEvent(new BookingCancelledEvent(bookingId, session.getId(), memberId));
+		notifications.write("BOOKING_CANCELLED:" + bookingId, memberId, "BOOKING_CANCELLED", "BOOKING", bookingId,
+			Map.of("sessionId", session.getId().toString()));
 		return BookingResponse.from(booking);
 	}
 

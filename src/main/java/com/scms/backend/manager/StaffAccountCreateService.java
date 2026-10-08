@@ -13,8 +13,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.notification.Notification;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,17 +26,17 @@ public class StaffAccountCreateService {
 	private final AccountRepository accountRepository;
 	private final AccountIdentifierAvailability identifierAvailability;
 	private final AuditEventRepository auditRepository;
-	private final NotificationRepository notificationRepository;
+	private final NotificationWriter notificationWriter;
 	private final PasswordEncoder passwordEncoder;
 	private final Clock clock;
 
 	StaffAccountCreateService(AccountRepository accountRepository, AccountIdentifierAvailability identifierAvailability,
-			AuditEventRepository auditRepository, NotificationRepository notificationRepository,
+			AuditEventRepository auditRepository, NotificationWriter notificationWriter,
 			PasswordEncoder passwordEncoder, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.identifierAvailability = identifierAvailability;
 		this.auditRepository = auditRepository;
-		this.notificationRepository = notificationRepository;
+		this.notificationWriter = notificationWriter;
 		this.passwordEncoder = passwordEncoder;
 		this.clock = clock;
 	}
@@ -61,8 +60,8 @@ public class StaffAccountCreateService {
 			"role", account.getRole().name(), "status", account.getStatus().name());
 		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, "ACCOUNT_CREATED", "ACCOUNT", accountId,
 			snapshot));
-		notificationRepository.save(new Notification(UUID.randomUUID(), accountId, "ACCOUNT_CREATED", "ACCOUNT", accountId,
-			Map.of("accountId", accountId.toString(), "role", account.getRole().name())));
+		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, "ACCOUNT_CREATED", "ACCOUNT", accountId,
+			Map.of("accountId", accountId.toString(), "role", account.getRole().name()));
 		return new StaffAccountResponse(accountId, account.getRole(), account.getStatus(), account.getFullName(),
 			account.getPhone(), account.getEmail(), account.getBirthDate());
 	}
