@@ -57,6 +57,21 @@ class ClassSessionCancellationIntegrationTests {
 		UUID membershipId = insertMembership(manager.getId(), member.getId());
 		insertMembership(manager.getId(), otherMember.getId());
 
+		installNotificationFailure();
+		try {
+			assertThatThrownBy(() -> bookingService.book(member.getId(), session.getId()))
+				.hasStackTraceContaining("forced notification failure");
+		}
+		finally {
+			dropNotificationFailure();
+		}
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ?", Long.class,
+			session.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CREATED' "
+			+ "and actor_account_id = ?", Long.class, member.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'BOOKING_CREATED' "
+			+ "and recipient_account_id = ?", Long.class, member.getId())).isZero();
+
 		BookingResponse response = bookingService.book(member.getId(), session.getId());
 
 		assertThat(response.membershipId()).isEqualTo(membershipId);
@@ -70,6 +85,21 @@ class ClassSessionCancellationIntegrationTests {
 			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("BOOKING_DUPLICATE");
 		assertThatThrownBy(() -> bookingService.book(otherMember.getId(), session.getId()))
 			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("SESSION_FULL");
+
+		installNotificationFailure();
+		try {
+			assertThatThrownBy(() -> bookingService.cancel(member.getId(), response.id()))
+				.hasStackTraceContaining("forced notification failure");
+		}
+		finally {
+			dropNotificationFailure();
+		}
+		assertThat(jdbc.queryForObject("select status from bookings where id = ?", String.class, response.id()))
+			.isEqualTo("BOOKED");
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CANCELLED' "
+			+ "and target_id = ?", Long.class, response.id())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notifications where event_key = ?", Long.class,
+			"BOOKING_CANCELLED:" + response.id())).isZero();
 
 		BookingResponse cancelled = bookingService.cancel(member.getId(), response.id());
 		BookingResponse rebooked = bookingService.book(member.getId(), session.getId());
@@ -158,6 +188,24 @@ class ClassSessionCancellationIntegrationTests {
 			assertThat(count.getBookedCount()).isEqualTo(2);
 		});
 
+		installNotificationFailure();
+		try {
+			assertThatThrownBy(() -> service.cancel(manager.getId(), session.getId(),
+				new ClassSessionCancellationRequest("Coach unavailable")))
+				.hasStackTraceContaining("forced notification failure");
+		}
+		finally {
+			dropNotificationFailure();
+		}
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
+			session.getId())).isEqualTo("SCHEDULED");
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'",
+			Long.class, session.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' "
+			+ "and target_id = ?", Long.class, session.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'SESSION_CANCELLED' "
+			+ "and target_id = ?", Long.class, session.getId())).isZero();
+
 		service.cancel(manager.getId(), session.getId(), new ClassSessionCancellationRequest("Coach unavailable"));
 
 		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
@@ -230,5 +278,17 @@ class ClassSessionCancellationIntegrationTests {
 		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name,
 			"09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test",
 			LocalDate.of(1990, 1, 1), "{noop}password"));
+	}
+
+	private void installNotificationFailure() {
+		jdbc.execute("create function fail_notification() returns trigger language plpgsql as $$ begin "
+			+ "raise exception 'forced notification failure'; end; $$");
+		jdbc.execute("create trigger fail_notification before insert on notifications "
+			+ "for each row execute function fail_notification()");
+	}
+
+	private void dropNotificationFailure() {
+		jdbc.execute("drop trigger fail_notification on notifications");
+		jdbc.execute("drop function fail_notification()");
 	}
 }

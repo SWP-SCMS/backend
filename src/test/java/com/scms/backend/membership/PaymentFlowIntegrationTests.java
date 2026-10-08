@@ -63,6 +63,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
+	@Autowired PaymentService paymentService;
 
 	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
@@ -100,6 +101,42 @@ class PaymentFlowIntegrationTests {
 
 		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isConflict());
 		assertThat(count("select count(*) from memberships where member_account_id=?", member.getAccountId())).isOne();
+	}
+
+	@Test
+	void notificationFailureRollsBackPaidPaymentFulfillment() {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(receptionist, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		UUID payment = pendingPayment(order, 12000, "ROLLBACK-" + order);
+		db.execute("create function fail_payment_notification() returns trigger language plpgsql as $$ begin "
+			+ "raise exception 'forced notification failure'; end; $$");
+		db.execute("create trigger fail_payment_notification before insert on notifications "
+			+ "for each row execute function fail_payment_notification()");
+		try {
+			assertThatThrownBy(() -> paymentService.reconcile(receptionist.getId(), payment,
+				new PaymentActionRequest(PaymentActionRequest.ReconciliationStatus.PAID, BigInteger.valueOf(12000),
+					"ROLLBACK-" + order, "rollback-transaction", "bank statement", "manual confirmation")))
+				.hasStackTraceContaining("forced notification failure");
+		}
+		finally {
+			db.execute("drop trigger fail_payment_notification on notifications");
+			db.execute("drop function fail_payment_notification()");
+		}
+		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+			.isEqualTo("PENDING_PAYMENT");
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("PENDING");
+		assertThat(count("select count(*) from memberships where member_account_id=?", member.getAccountId()))
+			.isZero();
+		assertThat(count("select count(*) from receipts where member_account_id=?", member.getAccountId()))
+			.isZero();
+		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?",
+			payment)).isZero();
+		assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
+			.isZero();
 	}
 
 	@Test

@@ -1,6 +1,8 @@
 package com.scms.backend.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -8,6 +10,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -19,6 +22,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -32,7 +36,7 @@ class OperationalIntegrityIntegrationTests {
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
-	@Autowired AccountRepository accounts;
+	@MockitoSpyBean AccountRepository accounts;
 	@Autowired MemberStatusService memberStatuses;
 	@Autowired StaffStatusService staffStatuses;
 	@Autowired JdbcTemplate db;
@@ -67,31 +71,42 @@ class OperationalIntegrityIntegrationTests {
 		Account second = account(AccountRole.MANAGER);
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch targetsLoaded = new CountDownLatch(2);
+		doAnswer(invocation -> {
+			Object target = invocation.callRealMethod();
+			targetsLoaded.countDown();
+			assertThat(targetsLoaded.await(10, TimeUnit.SECONDS)).isTrue();
+			return target;
+		}).when(accounts).findById(any(UUID.class));
 
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var firstAttempt = executor.submit(() -> deactivateTogether(first.getId(), second.getId(), ready, start));
 			var secondAttempt = executor.submit(() -> deactivateTogether(second.getId(), first.getId(), ready, start));
 			ready.await();
 			start.countDown();
-			int successes = (firstAttempt.get() ? 1 : 0) + (secondAttempt.get() ? 1 : 0);
-			assertThat(successes).isOne();
+			StaffStatusConflictException firstFailure = firstAttempt.get();
+			StaffStatusConflictException secondFailure = secondAttempt.get();
+			assertThat(firstFailure == null ^ secondFailure == null).isTrue();
+			assertThat(firstFailure != null ? firstFailure : secondFailure)
+				.hasMessage("The last active Manager cannot be deactivated");
 		}
 
 		assertThat(db.queryForObject("select count(*) from accounts where role='MANAGER' and status='ACTIVE'",
 			Long.class)).isOne();
 	}
 
-	private boolean deactivateTogether(UUID actorId, UUID targetId, CountDownLatch ready, CountDownLatch start)
+	private StaffStatusConflictException deactivateTogether(UUID actorId, UUID targetId, CountDownLatch ready,
+			CountDownLatch start)
 			throws InterruptedException {
 		ready.countDown();
 		start.await();
 		try {
 			staffStatuses.deactivate(actorId, targetId,
 				new StaffStatusChangeRequest(AccountStatus.INACTIVE, "Concurrent manager test"));
-			return true;
+			return null;
 		}
-		catch (RuntimeException exception) {
-			return false;
+		catch (StaffStatusConflictException exception) {
+			return exception;
 		}
 	}
 
