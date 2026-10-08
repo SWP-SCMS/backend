@@ -68,7 +68,8 @@ class SessionLifecycleIntegrationTests {
 		Resources resources = resources(manager, coach);
 		ClassSession exact = session(resources, manager, NOW, NOW.plusSeconds(3600));
 		Booking exactBooking = booking(exact, bookedMember, manager);
-		ClassSession cancelledSession = session(resources, manager, NOW, NOW.plusSeconds(3600));
+		ClassSession cancelledSession = session(resources(manager, account(AccountRole.COACH, "Cancelled coach")),
+			manager, NOW, NOW.plusSeconds(3600));
 		cancelledSession.cancel(NOW.minusSeconds(1), "cancelled");
 		sessions.saveAndFlush(cancelledSession);
 		booking(cancelledSession, cancelledSessionMember, manager);
