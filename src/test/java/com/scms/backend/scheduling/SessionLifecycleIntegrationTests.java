@@ -194,8 +194,15 @@ class SessionLifecycleIntegrationTests {
 
 	private Booking booking(ClassSession session, MemberProfile member, Account actor) {
 		UUID membershipId = membership(member.getAccountId(), actor.getId());
-		return bookings.saveAndFlush(new Booking(UUID.randomUUID(), session.getId(), member.getAccountId(),
-			membershipId, actor.getId(), NOW.minusSeconds(3600)));
+		jdbc.update("update class_sessions set start_time=current_timestamp + interval '1 hour', end_time=current_timestamp + interval '2 hours', status='SCHEDULED' where id=?", session.getId());
+		try {
+			return bookings.saveAndFlush(new Booking(UUID.randomUUID(), session.getId(), member.getAccountId(),
+				membershipId, actor.getId(), NOW.minusSeconds(3600)));
+		} finally {
+			jdbc.update("update class_sessions set start_time=?, end_time=?, status=? where id=?",
+				java.sql.Timestamp.from(session.getStartTime()), java.sql.Timestamp.from(session.getEndTime()),
+				session.getStatus().name(), session.getId());
+		}
 	}
 
 	private ClassSession session(Resources resources, Account manager, Instant start, Instant end) {
