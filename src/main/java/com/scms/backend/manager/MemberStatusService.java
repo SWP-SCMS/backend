@@ -69,7 +69,7 @@ public class MemberStatusService {
 		return jdbcTemplate.update("""
 			update bookings b
 			set status = 'CANCELLED', cancelled_by_account_id = ?,
-				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?, version = version + 1
+				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?, version = b.version + 1
 			from class_sessions s
 			where b.class_session_id = s.id and b.member_account_id = ?
 				and b.status = 'BOOKED' and s.start_time > ?

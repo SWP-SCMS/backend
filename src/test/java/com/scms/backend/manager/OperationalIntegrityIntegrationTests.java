@@ -1,9 +1,6 @@
 package com.scms.backend.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -22,7 +19,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -36,7 +32,7 @@ class OperationalIntegrityIntegrationTests {
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
-	@MockitoSpyBean AccountRepository accounts;
+	@Autowired AccountRepository accounts;
 	@Autowired MemberStatusService memberStatuses;
 	@Autowired StaffStatusService staffStatuses;
 	@Autowired JdbcTemplate db;
@@ -71,14 +67,6 @@ class OperationalIntegrityIntegrationTests {
 		Account second = account(AccountRole.MANAGER);
 		CountDownLatch ready = new CountDownLatch(2);
 		CountDownLatch start = new CountDownLatch(1);
-		CountDownLatch targetsLoaded = new CountDownLatch(2);
-		doAnswer(invocation -> {
-			Object target = invocation.callRealMethod();
-			targetsLoaded.countDown();
-			assertThat(targetsLoaded.await(10, TimeUnit.SECONDS)).isTrue();
-			return target;
-		}).when(accounts).findById(any(UUID.class));
-
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var firstAttempt = executor.submit(() -> deactivateTogether(first.getId(), second.getId(), ready, start));
 			var secondAttempt = executor.submit(() -> deactivateTogether(second.getId(), first.getId(), ready, start));
@@ -131,6 +119,10 @@ class OperationalIntegrityIntegrationTests {
 			values(?,?,?,?,?,'Plus','PLUS',12000,'VND',30,'CASH','PAID',?)
 			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId,
 			Timestamp.from(now));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,processed_by_account_id)
+			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId, Timestamp.from(now), managerId);
 		db.update("""
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
 				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)

@@ -65,7 +65,7 @@ class MemberStatusServiceTests {
 		assertThat(member.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
 		ArgumentCaptor<String> cancellationSql = ArgumentCaptor.forClass(String.class);
 		verify(jdbc).update(cancellationSql.capture(), any(), any(), any(), any(), any());
-		assertThat(cancellationSql.getValue()).contains("version = version + 1");
+		assertThat(cancellationSql.getValue()).contains("version = b.version + 1");
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getReason()).isEqualTo("Policy violation");
