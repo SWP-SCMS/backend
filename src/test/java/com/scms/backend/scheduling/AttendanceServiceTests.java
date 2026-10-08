@@ -121,6 +121,44 @@ class AttendanceServiceTests {
 			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("ATTENDANCE_WINDOW_CLOSED");
 	}
 
+	@Test void attendanceAllowsOneNanosecondBeforeThirtyMinuteLimit() {
+		ClassSession session = session(now.minusSeconds(5400), now.minusSeconds(1800).plusNanos(1));
+		UUID coachId = session.getTeachingCoach().getId();
+		Attendance row = attendance(session.getId());
+		var member = member(row.getId(), row.getBookingId(), UUID.randomUUID());
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
+
+		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(),
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
+
+		assertThat(result.memberId()).isEqualTo(member.getMemberId());
+	}
+
+	@Test void unauthorizedOrMalformedUpdateDoesNotRunLifecycleCatchUp() {
+		UUID coachId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		UUID attendanceId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(false);
+
+		assertThatThrownBy(() -> service.update(coachId, sessionId, attendanceId,
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
+			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+		verify(lifecycle, never()).catchUp(any());
+
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(sessions.findByIdAndTeachingCoach_Id(sessionId, coachId))
+			.thenReturn(Optional.of(session(now, now.plusSeconds(3600))));
+
+		assertThatThrownBy(() -> service.update(coachId, sessionId, attendanceId,
+			new AttendanceUpdateRequest(null)))
+			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("VALIDATION_ERROR");
+		verify(lifecycle, never()).catchUp(any());
+	}
+
 	@Test void attendanceUpdateAtExactStartIsAllowed() {
 		ClassSession session = session(now, now.plusSeconds(3600));
 		UUID coachId = session.getTeachingCoach().getId();
