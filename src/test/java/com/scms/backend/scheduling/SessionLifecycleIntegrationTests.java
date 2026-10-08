@@ -196,14 +196,15 @@ class SessionLifecycleIntegrationTests {
 
 	private Booking booking(ClassSession session, MemberProfile member, Account actor) {
 		UUID membershipId = membership(member.getAccountId(), actor.getId());
-		jdbc.update("update class_sessions set start_time=current_timestamp + interval '1 hour', end_time=current_timestamp + interval '2 hours', status='SCHEDULED' where id=?", session.getId());
+		jdbc.update("update class_sessions set start_time=current_timestamp + interval '1 hour', end_time=current_timestamp + interval '2 hours', status='SCHEDULED', cancelled_at=null, cancellation_reason=null, updated_at=current_timestamp where id=?", session.getId());
 		try {
 			return bookings.saveAndFlush(new Booking(UUID.randomUUID(), session.getId(), member.getAccountId(),
 				membershipId, actor.getId(), NOW.minusSeconds(3600)));
 		} finally {
-			jdbc.update("update class_sessions set start_time=?, end_time=?, status=? where id=?",
+			jdbc.update("update class_sessions set start_time=?, end_time=?, status=?, cancelled_at=?, cancellation_reason=?, updated_at=current_timestamp where id=?",
 				java.sql.Timestamp.from(session.getStartTime()), java.sql.Timestamp.from(session.getEndTime()),
-				session.getStatus().name(), session.getId());
+				session.getStatus().name(), session.getCancelledAt() == null ? null
+					: java.sql.Timestamp.from(session.getCancelledAt()), session.getCancellationReason(), session.getId());
 		}
 	}
 
