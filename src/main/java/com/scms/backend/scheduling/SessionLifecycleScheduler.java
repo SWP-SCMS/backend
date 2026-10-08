@@ -23,7 +23,8 @@ class SessionLifecycleScheduler {
 		lifecycle.catchUp(clock.instant());
 	}
 
-	@Scheduled(fixedDelayString = "${scms.session-lifecycle-delay-ms:30000}")
+	@Scheduled(fixedDelayString = "${scms.session-lifecycle-delay-ms:30000}",
+		initialDelayString = "${scms.session-lifecycle-delay-ms:30000}")
 	void catchUpOnSchedule() {
 		lifecycle.catchUp(clock.instant());
 	}

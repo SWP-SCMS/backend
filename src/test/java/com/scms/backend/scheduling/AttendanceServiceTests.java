@@ -119,6 +119,18 @@ class AttendanceServiceTests {
 		assertThatThrownBy(() -> service.update(coachId, session.getId(), row.getId(),
 			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
 			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("ATTENDANCE_WINDOW_CLOSED");
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceBeforeStartDoesNotRunLifecycleCatchUp() {
+		ClassSession session = session(now.plusNanos(1), now.plusSeconds(3600));
+		UUID coachId = session.getTeachingCoach().getId();
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+
+		assertThatThrownBy(() -> service.update(coachId, session.getId(), UUID.randomUUID(),
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
+			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("ATTENDANCE_WINDOW_CLOSED");
+		verify(lifecycle, never()).catchUp(any());
 	}
 
 	@Test void attendanceAllowsOneNanosecondBeforeThirtyMinuteLimit() {

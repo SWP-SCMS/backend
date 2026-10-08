@@ -171,6 +171,27 @@ class SessionLifecycleIntegrationTests {
 			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("CENTER_VISIT_REQUIRED");
 	}
 
+	@Test
+	void attendanceTriggerUsesHalfOpenVisitOverlapAcrossMidnight() {
+		Account manager = account(AccountRole.MANAGER, "Midnight manager");
+		MemberProfile member = member("Midnight member");
+		ClassSession session = session(resources(manager, account(AccountRole.COACH, "Midnight coach")), manager,
+			Instant.parse("2026-10-07T17:30:00Z"), Instant.parse("2026-10-07T18:30:00Z"));
+		Booking booking = booking(session, member, manager);
+		lifecycle.catchUp(NOW);
+		Attendance row = attendance.findByBookingId(booking.getId()).orElseThrow();
+		UUID visitId = visit(member.getAccountId(), booking.getMembershipId(), manager.getId(),
+			Instant.parse("2026-10-07T16:45:00Z"), Instant.parse("2026-10-07T18:00:00Z"));
+
+		assertThat(jdbc.update("update attendance set status='PRESENT', center_visit_id=?, "
+			+ "recorded_by_account_id=?, recording_source='COACH' where id=?", visitId, manager.getId(),
+			row.getId())).isOne();
+		UUID nonOverlappingVisitId = visit(member.getAccountId(), booking.getMembershipId(), manager.getId(),
+			Instant.parse("2026-10-07T16:00:00Z"), session.getStartTime());
+		assertThatThrownBy(() -> jdbc.update("update attendance set center_visit_id=? where id=?",
+			nonOverlappingVisitId, row.getId())).rootCause().hasMessageContaining("must overlap the Session");
+	}
+
 	private Booking booking(ClassSession session, MemberProfile member, Account actor) {
 		UUID membershipId = membership(member.getAccountId(), actor.getId());
 		return bookings.saveAndFlush(new Booking(UUID.randomUUID(), session.getId(), member.getAccountId(),
