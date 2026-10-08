@@ -26,15 +26,18 @@ public class ClassSessionCancellationService {
 	private final AuditEventRepository audits;
 	private final JdbcTemplate jdbc;
 	private final ApplicationEventPublisher events;
+	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	ClassSessionCancellationService(ClassSessionRepository sessions, AccountRepository accounts,
-			AuditEventRepository audits, JdbcTemplate jdbc, ApplicationEventPublisher events, Clock clock) {
+			AuditEventRepository audits, JdbcTemplate jdbc, ApplicationEventPublisher events,
+			SessionLifecycleService lifecycle, Clock clock) {
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
 		this.jdbc = jdbc;
 		this.events = events;
+		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
 
@@ -43,8 +46,7 @@ public class ClassSessionCancellationService {
 		ensureActiveManager(managerId);
 		String reason = validate(request);
 		Instant now = clock.instant();
-		sessions.advanceScheduledToInProgress(now);
-		sessions.advanceInProgressToCompleted(now);
+		lifecycle.catchUp(now);
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {

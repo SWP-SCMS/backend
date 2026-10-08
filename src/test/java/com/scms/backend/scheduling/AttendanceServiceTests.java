@@ -21,6 +21,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.reception.CenterVisitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,44 +36,73 @@ class AttendanceServiceTests {
 	@Mock AttendanceRepository attendance;
 	@Mock AuditEventRepository audits;
 	@Mock AccountRepository accounts;
+	@Mock CenterVisitRepository visits;
+	@Mock SessionLifecycleService lifecycle;
 	AttendanceService service;
 	private final Instant now = Instant.parse("2026-10-07T03:00:00Z");
 
 	@BeforeEach void setUp() {
 		when(accounts.existsByIdAndRoleAndStatus(any(), any(), any())).thenReturn(true);
-		service = new AttendanceService(sessions, bookings, attendance, audits, accounts,
+		service = new AttendanceService(sessions, bookings, attendance, audits, accounts, visits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
-	@Test void coachGetsAbsentDefaultsForBookedMembersAtSessionStart() {
+	@Test void attendanceListIsReadOnlyAndUsesBookingMemberIdentity() {
 		ClassSession session = session(now.minusSeconds(1), now.plusSeconds(3600));
 		UUID coachId = session.getTeachingCoach().getId();
+		UUID memberId = UUID.randomUUID();
+		UUID bookingId = UUID.randomUUID();
+		UUID attendanceId = UUID.randomUUID();
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
-		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member(UUID.randomUUID())));
-		when(attendance.findByBookingId(any())).thenAnswer(inv -> Optional.of(new Attendance(UUID.randomUUID(), inv.getArgument(0), UUID.randomUUID(), AttendanceStatus.ABSENT, now, null, null, "SYSTEM")));
-		when(attendance.save(any())).thenAnswer(inv -> inv.getArgument(0));
+		when(bookings.findBookedAttendanceMembers(session.getId()))
+			.thenReturn(List.of(member(attendanceId, bookingId, memberId)));
+		when(attendance.findByBookingId(bookingId)).thenReturn(Optional.of(new Attendance(attendanceId,
+			bookingId, AttendanceStatus.ABSENT, session.getStartTime(), null, null, "SYSTEM")));
 
 		var result = service.list(coachId, session.getId());
 
-		assertThat(result).singleElement().extracting(AttendanceResponse::status)
-			.isEqualTo(AttendanceStatus.ABSENT);
-		verify(attendance).save(any());
+		assertThat(result).singleElement().satisfies(item -> {
+			assertThat(item.memberId()).isEqualTo(memberId);
+			assertThat(item.recordedAt()).isEqualTo(session.getStartTime());
+		});
+		verify(attendance, never()).save(any());
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceListSynthesizesMissingAbsentWithoutWriting() {
+		ClassSession session = session(now, now.plusSeconds(3600));
+		UUID coachId = session.getTeachingCoach().getId();
+		UUID bookingId = UUID.randomUUID();
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member(null, bookingId,
+			UUID.randomUUID())));
+		when(attendance.findByBookingId(bookingId)).thenReturn(Optional.empty());
+
+		AttendanceResponse result = service.list(coachId, session.getId()).getFirst();
+
+		assertThat(result.status()).isEqualTo(AttendanceStatus.ABSENT);
+		assertThat(result.recordedAt()).isEqualTo(session.getStartTime());
+		verify(attendance, never()).save(any());
+		verify(lifecycle, never()).catchUp(any());
 	}
 
 	@Test void coachCannotMarkPresentWithoutCenterVisit() {
 		ClassSession session = session(now.minusSeconds(1), now.plusSeconds(3600));
 		UUID coachId = session.getTeachingCoach().getId();
 		Attendance row = attendance(session.getId());
+		UUID memberId = UUID.randomUUID();
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
 		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
 		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(new BookingRepository.AttendanceMemberView() {
 			public UUID getAttendanceId() { return row.getId(); }
 			public UUID getBookingId() { return row.getBookingId(); }
-			public UUID getMemberId() { return row.getMemberId(); }
+			public UUID getMemberId() { return memberId; }
 			public String getMemberCode() { return "MB-1"; }
 			public String getFullName() { return "Member"; }
 		}));
-		when(attendance.findCurrentCenterVisit(row.getMemberId(), session.getStartTime(), now)).thenReturn(Optional.empty());
+		when(visits.findOverlappingVisitId(any(), org.mockito.ArgumentMatchers.eq(session.getStartTime()),
+			org.mockito.ArgumentMatchers.eq(session.getEndTime()), org.mockito.ArgumentMatchers.eq(now)))
+			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.update(coachId, session.getId(), row.getId(),
 			new AttendanceUpdateRequest(AttendanceStatus.PRESENT)))
@@ -81,7 +111,7 @@ class AttendanceServiceTests {
 	}
 
 	@Test void attendanceLocksThirtyMinutesAfterSessionEnd() {
-		ClassSession session = session(now.minusSeconds(3601), now.minusSeconds(1801));
+		ClassSession session = session(now.minusSeconds(5400), now.minusSeconds(1800));
 		UUID coachId = session.getTeachingCoach().getId();
 		Attendance row = attendance(session.getId());
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
@@ -89,6 +119,91 @@ class AttendanceServiceTests {
 		assertThatThrownBy(() -> service.update(coachId, session.getId(), row.getId(),
 			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
 			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("ATTENDANCE_WINDOW_CLOSED");
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceBeforeStartDoesNotRunLifecycleCatchUp() {
+		ClassSession session = session(now.plusNanos(1), now.plusSeconds(3600));
+		UUID coachId = session.getTeachingCoach().getId();
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+
+		assertThatThrownBy(() -> service.update(coachId, session.getId(), UUID.randomUUID(),
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
+			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("ATTENDANCE_WINDOW_CLOSED");
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceAllowsOneNanosecondBeforeThirtyMinuteLimit() {
+		ClassSession session = session(now.minusSeconds(5400), now.minusSeconds(1800).plusNanos(1));
+		UUID coachId = session.getTeachingCoach().getId();
+		Attendance row = attendance(session.getId());
+		var member = member(row.getId(), row.getBookingId(), UUID.randomUUID());
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
+
+		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(),
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
+
+		assertThat(result.memberId()).isEqualTo(member.getMemberId());
+	}
+
+	@Test void unauthorizedOrMalformedUpdateDoesNotRunLifecycleCatchUp() {
+		UUID coachId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		UUID attendanceId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(false);
+
+		assertThatThrownBy(() -> service.update(coachId, sessionId, attendanceId,
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT)))
+			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+		verify(lifecycle, never()).catchUp(any());
+
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(sessions.findByIdAndTeachingCoach_Id(sessionId, coachId))
+			.thenReturn(Optional.of(session(now, now.plusSeconds(3600))));
+
+		assertThatThrownBy(() -> service.update(coachId, sessionId, attendanceId,
+			new AttendanceUpdateRequest(null)))
+			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("VALIDATION_ERROR");
+		verify(lifecycle, never()).catchUp(any());
+	}
+
+	@Test void attendanceUpdateAtExactStartIsAllowed() {
+		ClassSession session = session(now, now.plusSeconds(3600));
+		UUID coachId = session.getTeachingCoach().getId();
+		Attendance row = attendance(session.getId());
+		var member = member(row.getId(), row.getBookingId(), UUID.randomUUID());
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
+
+		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(),
+			new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
+
+		assertThat(result.memberId()).isEqualTo(member.getMemberId());
+		verify(lifecycle).catchUp(now);
+	}
+
+	@Test void presentUsesOverlappingVisitForBookedMember() {
+		ClassSession session = session(now.minusSeconds(1800), now.plusSeconds(1800));
+		UUID coachId = session.getTeachingCoach().getId();
+		Attendance row = attendance(session.getId());
+		UUID memberId = UUID.randomUUID();
+		UUID visitId = UUID.randomUUID();
+		var member = member(row.getId(), row.getBookingId(), memberId);
+		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
+		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
+		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
+		when(visits.findOverlappingVisitId(memberId, session.getStartTime(), session.getEndTime(), now))
+			.thenReturn(Optional.of(visitId));
+
+		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(),
+			new AttendanceUpdateRequest(AttendanceStatus.PRESENT));
+
+		assertThat(result.centerVisitId()).isEqualTo(visitId);
 	}
 
 	@Test void inactiveCoachCannotReadAttendance() {
@@ -98,16 +213,17 @@ class AttendanceServiceTests {
 			.isInstanceOf(InvalidAuthenticatedAccountException.class);
 	}
 
-	private BookingRepository.AttendanceMemberView member(UUID id) { return new BookingRepository.AttendanceMemberView() {
-		public UUID getAttendanceId() { return null; }
-		public UUID getBookingId() { return id; }
-		public UUID getMemberId() { return id; }
+	private BookingRepository.AttendanceMemberView member(UUID attendanceId, UUID bookingId, UUID memberId) {
+		return new BookingRepository.AttendanceMemberView() {
+		public UUID getAttendanceId() { return attendanceId; }
+		public UUID getBookingId() { return bookingId; }
+		public UUID getMemberId() { return memberId; }
 		public String getMemberCode() { return "MB-1"; }
 		public String getFullName() { return "Member"; }
 	}; }
 
 	private Attendance attendance(UUID sessionId) {
-		return new Attendance(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), AttendanceStatus.ABSENT,
+		return new Attendance(UUID.randomUUID(), UUID.randomUUID(), AttendanceStatus.ABSENT,
 			now, null, null, "SYSTEM");
 	}
 	private ClassSession session(Instant start, Instant end) {

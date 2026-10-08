@@ -19,6 +19,7 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,13 +37,15 @@ class ClassSessionListServiceTests {
 	@Mock SportClassRepository classes;
 	@Mock RoomRepository rooms;
 	@Mock AccountRepository accounts;
+	@Mock AuditEventRepository audits;
+	@Mock SessionLifecycleService lifecycle;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-06T03:00:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionService(sessions, classes, rooms, accounts,
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -61,8 +64,7 @@ class ClassSessionListServiceTests {
 			session.getSportClass().getId(), session.getTeachingCoach().getId(), session.getRoom().getId(),
 			ClassSessionStatus.SCHEDULED, pageable);
 
-		verify(sessions).advanceScheduledToInProgress(now);
-		verify(sessions).advanceInProgressToCompleted(now);
+		verify(lifecycle).catchUp(now);
 		assertThat(result.content()).singleElement().satisfies(item -> {
 			assertThat(item.id()).isEqualTo(session.getId());
 			assertThat(item.status()).isEqualTo(ClassSessionStatus.SCHEDULED);
@@ -78,7 +80,7 @@ class ClassSessionListServiceTests {
 
 		assertThatThrownBy(() -> service.list(managerId, null, null, null, null, null, null,
 			PageRequest.of(0, 20))).isInstanceOf(InvalidAuthenticatedAccountException.class);
-		verify(sessions, never()).advanceScheduledToInProgress(any());
+		verify(lifecycle, never()).catchUp(any());
 	}
 
 	@Test

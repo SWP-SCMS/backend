@@ -35,13 +35,14 @@ class CoachTeachingScheduleServiceTests {
 	@Mock ClassSessionRepository sessions;
 	@Mock BookingRepository bookings;
 	@Mock AccountRepository accounts;
+	@Mock SessionLifecycleService lifecycle;
 	CoachTeachingScheduleService service;
 
 	private final Instant now = Instant.parse("2026-10-06T08:00:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new CoachTeachingScheduleService(sessions, bookings, accounts,
+		service = new CoachTeachingScheduleService(sessions, bookings, accounts, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -59,6 +60,7 @@ class CoachTeachingScheduleServiceTests {
 
 		assertThat(result.content()).singleElement()
 			.extracting(ClassSessionResponse::coachId).isEqualTo(coachId);
+		verify(lifecycle).catchUp(now);
 	}
 
 	@Test

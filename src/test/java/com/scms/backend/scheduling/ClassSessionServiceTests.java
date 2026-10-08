@@ -19,6 +19,7 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,13 +33,15 @@ class ClassSessionServiceTests {
 	@Mock SportClassRepository classes;
 	@Mock RoomRepository rooms;
 	@Mock AccountRepository accounts;
+	@Mock AuditEventRepository audits;
+	@Mock SessionLifecycleService lifecycle;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-05T00:00:00Z");
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionService(sessions, classes, rooms, accounts,
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 

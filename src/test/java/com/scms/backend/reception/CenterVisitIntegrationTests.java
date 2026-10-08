@@ -243,14 +243,14 @@ class CenterVisitIntegrationTests {
 			java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")),
 			java.sql.Timestamp.from(Instant.parse("2026-10-05T02:00:00Z")), receptionist.getId(), first.getAccountId());
 		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
-			Instant.parse("2026-10-05T11:00:00Z"))).isEmpty();
+			Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
 		UUID overlap = UUID.randomUUID();
 		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at,checked_out_at,checked_out_by_account_id,checkout_source) values(?,?,?,?,?,?,?,'RECEPTIONIST')",
 			overlap, first.getAccountId(), firstMembership, receptionist.getId(),
 			java.sql.Timestamp.from(Instant.parse("2026-10-05T09:30:00Z")),
 			java.sql.Timestamp.from(Instant.parse("2026-10-05T10:30:00Z")), receptionist.getId());
 		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
-			Instant.parse("2026-10-05T11:00:00Z"))).contains(overlap);
+			Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).contains(overlap);
 	}
 
 	@Test
