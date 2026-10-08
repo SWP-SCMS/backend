@@ -3,6 +3,8 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,8 @@ import java.util.UUID;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,6 +31,7 @@ class RoomServiceTests {
 
 	@Mock RoomRepository rooms;
 	@Mock AccountRepository accounts;
+	@Mock AuditEventRepository audits;
 	@InjectMocks RoomService service;
 
 	@Test
@@ -40,6 +45,15 @@ class RoomServiceTests {
 		assertThat(result.name()).isEqualTo("Studio A");
 		assertThat(result.capacity()).isEqualTo(20);
 		assertThat(result.status()).isEqualTo(RoomStatus.ACTIVE);
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("ROOM_CREATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("ROOM");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(result.id());
+		assertThat(audit.getValue().getBeforeData()).isNull();
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Studio A", "capacity", 20, "status", "ACTIVE"));
 	}
 
 	@Test
@@ -122,6 +136,30 @@ class RoomServiceTests {
 		assertThat(result.name()).isEqualTo("Studio B");
 		assertThat(result.capacity()).isEqualTo(25);
 		assertThat(result.status()).isEqualTo(RoomStatus.INACTIVE);
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("ROOM_UPDATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("ROOM");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(room.getId());
+		assertThat(audit.getValue().getBeforeData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Studio A", "capacity", 20, "status", "ACTIVE"));
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Studio B", "capacity", 25, "status", "INACTIVE"));
+	}
+
+	@Test
+	void normalizedNoOpPatchWritesNoAudit() {
+		UUID managerId = activeManager();
+		Room room = room(20);
+		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+		when(rooms.existsActiveSessionOverCapacity(room.getId(), 20)).thenReturn(false);
+
+		RoomResponse result = service.update(managerId, room.getId(),
+			new RoomPatchRequest(" Studio A ", 20, RoomStatus.ACTIVE));
+
+		assertThat(result).isEqualTo(RoomResponse.from(room));
+		verify(audits, never()).save(any());
 	}
 
 	@Test

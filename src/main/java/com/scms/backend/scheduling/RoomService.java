@@ -1,12 +1,15 @@
 package com.scms.backend.scheduling;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -17,10 +20,12 @@ public class RoomService {
 
 	private final RoomRepository rooms;
 	private final AccountRepository accounts;
+	private final AuditEventRepository audits;
 
-	RoomService(RoomRepository rooms, AccountRepository accounts) {
+	RoomService(RoomRepository rooms, AccountRepository accounts, AuditEventRepository audits) {
 		this.rooms = rooms;
 		this.accounts = accounts;
+		this.audits = audits;
 	}
 
 	@Transactional(readOnly = true)
@@ -45,6 +50,8 @@ public class RoomService {
 		if (rooms.existsByName(name)) throw RoomException.duplicateName();
 		Room room = new Room(UUID.randomUUID(), name, capacity, RoomStatus.ACTIVE);
 		flush(room);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_CREATED", "ROOM", room.getId(),
+			snapshot(room)));
 		return RoomResponse.from(room);
 	}
 
@@ -55,6 +62,7 @@ public class RoomService {
 			throw RoomException.validation("request", "at least one field is required");
 		}
 		Room room = findRoom(roomId);
+		Map<String, Object> before = snapshot(room);
 		String name = request.name() == null ? room.getName() : normalizeName(request.name());
 		if (!name.equals(room.getName()) && rooms.existsByNameAndIdNot(name, roomId)) {
 			throw RoomException.duplicateName();
@@ -65,8 +73,16 @@ public class RoomService {
 		}
 		RoomStatus status = request.status() == null ? room.getStatus() : request.status();
 		room.update(name, capacity, status);
+		Map<String, Object> after = snapshot(room);
+		if (before.equals(after)) return RoomResponse.from(room);
 		flush(room);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_UPDATED", "ROOM", roomId,
+			null, before, after));
 		return RoomResponse.from(room);
+	}
+
+	private Map<String, Object> snapshot(Room room) {
+		return Map.of("name", room.getName(), "capacity", room.getCapacity(), "status", room.getStatus().name());
 	}
 
 	private Room findRoom(UUID roomId) {

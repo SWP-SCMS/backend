@@ -3,6 +3,8 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,8 @@ import java.util.UUID;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +34,9 @@ class DisciplineServiceTests {
 
 	@Mock
 	private AccountRepository accounts;
+
+	@Mock
+	private AuditEventRepository audits;
 
 	@InjectMocks
 	private DisciplineService service;
@@ -49,6 +56,15 @@ class DisciplineServiceTests {
 		ArgumentCaptor<Discipline> saved = ArgumentCaptor.forClass(Discipline.class);
 		verify(disciplines).saveAndFlush(saved.capture());
 		assertThat(saved.getValue().getId()).isNotNull();
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("DISCIPLINE_CREATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("DISCIPLINE");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(result.id());
+		assertThat(audit.getValue().getBeforeData()).isNull();
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Yoga", "description", "Mobility and balance", "status", "ACTIVE"));
 	}
 
 	@Test
@@ -58,6 +74,18 @@ class DisciplineServiceTests {
 		assertThatThrownBy(() -> service.create(managerId, new DisciplineCreateRequest("   ", null)))
 			.isInstanceOf(DisciplineValidationException.class)
 			.hasMessage("must be non-blank and at most 150 characters");
+	}
+
+	@Test
+	void createAuditIncludesNullDescription() {
+		UUID managerId = activeManager();
+		when(disciplines.existsByName("Yoga")).thenReturn(false);
+
+		service.create(managerId, new DisciplineCreateRequest("Yoga", null));
+
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getAfterData()).containsEntry("description", null);
 	}
 
 	@Test
@@ -117,6 +145,29 @@ class DisciplineServiceTests {
 		assertThat(result.name()).isEqualTo("Pilates");
 		assertThat(result.description()).isEqualTo("Core control");
 		assertThat(result.status()).isEqualTo(DisciplineStatus.INACTIVE);
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("DISCIPLINE_UPDATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("DISCIPLINE");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(disciplineId);
+		assertThat(audit.getValue().getBeforeData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Yoga", "description", "Old", "status", "ACTIVE"));
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
+			"name", "Pilates", "description", "Core control", "status", "INACTIVE"));
+	}
+
+	@Test
+	void normalizedNoOpPatchWritesNoAudit() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", "Mobility", DisciplineStatus.ACTIVE);
+		when(disciplines.findById(discipline.getId())).thenReturn(Optional.of(discipline));
+
+		DisciplineResponse result = service.update(managerId, discipline.getId(),
+			new DisciplinePatchRequest("  Yoga  ", " Mobility ", DisciplineStatus.ACTIVE));
+
+		assertThat(result).isEqualTo(DisciplineResponse.from(discipline));
+		verify(audits, never()).save(any());
 	}
 
 	@Test

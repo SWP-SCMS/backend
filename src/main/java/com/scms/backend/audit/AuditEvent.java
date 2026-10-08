@@ -1,6 +1,8 @@
 package com.scms.backend.audit;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -69,8 +71,8 @@ public class AuditEvent {
 		this.targetType = Objects.requireNonNull(targetType);
 		this.targetId = Objects.requireNonNull(targetId);
 		this.reason = reason;
-		this.beforeData = beforeData == null ? null : Map.copyOf(beforeData);
-		this.afterData = Map.copyOf(Objects.requireNonNull(afterData));
+		this.beforeData = beforeData == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(beforeData));
+		this.afterData = Collections.unmodifiableMap(new LinkedHashMap<>(Objects.requireNonNull(afterData)));
 	}
 
 	public UUID getId() {
