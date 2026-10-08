@@ -2,6 +2,8 @@ package com.scms.backend.membership;
 
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -28,6 +30,7 @@ class SepayController {
 	}
 
 	@PostMapping("/payments/sepay/webhook")
+	@SecurityRequirements
 	ResponseEntity<PaymentResultResponse> webhook(
 			@RequestHeader(name = "Authorization", required = false) String authorization,
 			@Valid @RequestBody SepayWebhookRequest request) {

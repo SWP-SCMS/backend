@@ -4,6 +4,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -23,6 +27,7 @@ class PaymentController {
 	PaymentController(PaymentService service) { this.service = service; }
 
 	@PostMapping("/reception/members/{memberId}/cash-payments")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<PaymentResultResponse> cash(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberId,
 			@RequestBody CashPaymentRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(service.cash(id(jwt), memberId, request));
@@ -85,8 +90,12 @@ class PaymentController {
 	}
 
 	@GetMapping("/manager/reports/membership-revenue")
+	@Operation(description = "Requires MANAGER role. Revenue instants are UTC ISO-8601 and use the half-open [from,to) range.")
 	ResponseEntity<RevenueReportResponse> report(@AuthenticationPrincipal Jwt jwt,
-			@RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
+			@Parameter(description = "UTC ISO-8601 instant; inclusive lower bound of the half-open [from,to) range.",
+				example = "2026-10-07T17:00:00Z") @RequestParam(required = false) Instant from,
+			@Parameter(description = "UTC ISO-8601 instant; exclusive upper bound of the half-open [from,to) range.",
+				example = "2026-10-08T17:00:00Z") @RequestParam(required = false) Instant to,
 			@RequestParam(defaultValue = "false") boolean includeTestData) {
 		return ResponseEntity.ok(service.report(id(jwt), from, to, includeTestData));
 	}

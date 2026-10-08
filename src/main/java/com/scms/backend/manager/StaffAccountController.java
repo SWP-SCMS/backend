@@ -9,6 +9,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 @RestController
 @RequestMapping("/manager/staff-accounts")
@@ -38,6 +40,7 @@ public class StaffAccountController {
 	}
 
 	@PostMapping
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<StaffAccountResponse> create(@AuthenticationPrincipal Jwt jwt,
 			@RequestBody StaffAccountCreateRequest request) {
 		return ResponseEntity.status(201)
@@ -74,6 +77,7 @@ public class StaffAccountController {
 	}
 
 	@PostMapping("/{accountId}/reset-password")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
 	ResponseEntity<Void> resetPassword(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID accountId) {
 		resetPasswordService.managerReset(UUID.fromString(jwt.getSubject()), accountId);
 		return ResponseEntity.noContent().build();

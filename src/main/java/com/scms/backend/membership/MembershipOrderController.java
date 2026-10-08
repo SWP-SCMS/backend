@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 @RestController
 public class MembershipOrderController {
@@ -25,6 +26,7 @@ public class MembershipOrderController {
 	}
 
 	@PostMapping("/members/me/membership-orders")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<MembershipOrderResponse> createForMember(@AuthenticationPrincipal Jwt jwt,
 			@Valid @RequestBody MembershipOrderCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(service.createForMember(accountId(jwt), request));
@@ -36,6 +38,7 @@ public class MembershipOrderController {
 	}
 
 	@PostMapping("/reception/members/{memberId}/membership-orders")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<MembershipOrderResponse> createForReceptionist(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable String memberId,
 			@Valid @RequestBody MembershipOrderCreateRequest request) {

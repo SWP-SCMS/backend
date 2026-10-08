@@ -46,20 +46,40 @@ import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.core.MethodParameter;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
 @RestControllerAdvice
-public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler implements ResponseBodyAdvice<Object> {
 
 	private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+	@Override
+	public boolean supports(MethodParameter returnType,
+			Class<? extends HttpMessageConverter<?>> converterType) {
+		return true;
+	}
+
+	@Override
+	public Object beforeBodyWrite(Object body, MethodParameter returnType,
+			MediaType selectedContentType, Class<? extends HttpMessageConverter<?>> selectedConverterType,
+			ServerHttpRequest request, ServerHttpResponse response) {
+		return body instanceof ProblemDetail problem
+			? ProblemDetails.complete(problem, request.getURI().getPath()) : body;
+	}
 
 	@Override
 	protected ResponseEntity<Object> handleMethodArgumentNotValid(MethodArgumentNotValidException exception,
@@ -268,7 +288,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Class request failed");
 		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
+		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
 		return problem;
@@ -279,7 +299,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Room request failed");
 		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
+		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
 		return problem;
@@ -290,7 +310,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Recurring schedule request failed");
 		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
+		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
 		return problem;

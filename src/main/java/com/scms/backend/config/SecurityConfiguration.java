@@ -9,6 +9,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import com.scms.backend.auth.ActiveAccountJwtValidator;
 import com.scms.backend.auth.AuthProperties;
+import com.scms.backend.common.error.SecurityProblemDetailHandler;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -53,7 +54,8 @@ public class SecurityConfiguration {
 	}
 
 	@Bean
-	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain securityFilterChain(HttpSecurity http,
+			SecurityProblemDetailHandler problemHandler) throws Exception {
 		http
 			.csrf(csrf -> csrf.disable())
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -62,6 +64,9 @@ public class SecurityConfiguration {
 			.formLogin(formLogin -> formLogin.disable())
 			.logout(logout -> logout.disable())
 			.requestCache(requestCache -> requestCache.disable())
+			.exceptionHandling(exceptions -> exceptions
+				.authenticationEntryPoint(problemHandler)
+				.accessDeniedHandler(problemHandler))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
@@ -113,6 +118,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
+				.authenticationEntryPoint(problemHandler)
+				.accessDeniedHandler(problemHandler)
 				.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
 		return http.build();
 	}
