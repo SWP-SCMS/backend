@@ -13,11 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationWriter {
 
 	private final NotificationRepository repository;
-	private final ObjectMapper objectMapper;
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
-	NotificationWriter(NotificationRepository repository, ObjectMapper objectMapper) {
+	NotificationWriter(NotificationRepository repository) {
 		this.repository = repository;
-		this.objectMapper = objectMapper;
 	}
 
 	@Transactional(propagation = Propagation.MANDATORY)

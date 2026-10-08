@@ -8,7 +8,6 @@ import static org.mockito.Mockito.verify;
 import java.util.Map;
 import java.util.UUID;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class NotificationWriterTests {
@@ -16,7 +15,7 @@ class NotificationWriterTests {
 	@Test
 	void writesPendingNotificationWithStableEventKeyAndJsonPayload() {
 		NotificationRepository repository = mock(NotificationRepository.class);
-		NotificationWriter writer = new NotificationWriter(repository, new ObjectMapper());
+		NotificationWriter writer = new NotificationWriter(repository);
 		UUID recipientId = UUID.randomUUID();
 		UUID bookingId = UUID.randomUUID();
 
