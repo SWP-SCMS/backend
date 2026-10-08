@@ -95,7 +95,8 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 		assertThat(count("select count(*) from audit_events where target_id=?", payment)).isOne();
-		assertThat(count("select count(*) from notifications where target_id=?", payment)).isOne();
+		assertThat(count("select count(*) from notifications where event_key=? and target_id=?",
+			"PAYMENT_PAID:" + payment, payment)).isOne();
 
 		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isConflict());
 		assertThat(count("select count(*) from memberships where member_account_id=?", member.getAccountId())).isOne();
@@ -185,10 +186,13 @@ class PaymentFlowIntegrationTests {
 			.andExpect(status().isBadRequest());
 		reconcile(receptionist, payment, paidReconciliation(12001, "MANUAL-" + order, "manual-1"))
 			.andExpect(status().isBadRequest());
+		reconcile(receptionist, payment, "{\"status\":\"FAILED\",\"reason\":\"too early\",\"evidence\":\"proof\"}")
+			.andExpect(status().isConflict());
 		reconcile(receptionist, payment, paidReconciliation(12000, "MANUAL-" + order, "manual-1"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
 		reconcile(receptionist, payment, "{\"status\":\"FAILED\",\"reason\":\"late\",\"evidence\":\"proof\"}")
 			.andExpect(status().isConflict());
+		cancelOrder(manager, order, "Paid order cannot be cancelled").andExpect(status().isConflict());
 
 		MemberProfile expiredMember = member();
 		UUID expiredOrder = order(expiredMember.getAccountId(), expiredMember.getAccountId(), offer, 12000, false,

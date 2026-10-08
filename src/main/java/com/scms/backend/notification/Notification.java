@@ -27,6 +27,9 @@ public class Notification {
 	@Column(name = "recipient_account_id", nullable = false, updatable = false)
 	private UUID recipientAccountId;
 
+	@Column(name = "event_key", nullable = false, length = 200, updatable = false)
+	private String eventKey;
+
 	@Column(name = "notification_type", nullable = false, length = 80, updatable = false)
 	private String notificationType;
 
@@ -66,6 +69,7 @@ public class Notification {
 	public Notification(UUID id, UUID recipientAccountId, String notificationType, String targetType, UUID targetId,
 			Map<String, Object> payload) {
 		this.id = Objects.requireNonNull(id);
+		this.eventKey = "legacy:" + id;
 		this.recipientAccountId = Objects.requireNonNull(recipientAccountId);
 		this.notificationType = Objects.requireNonNull(notificationType);
 		this.targetType = Objects.requireNonNull(targetType);
@@ -80,6 +84,10 @@ public class Notification {
 
 	public UUID getRecipientAccountId() {
 		return recipientAccountId;
+	}
+
+	public String getEventKey() {
+		return eventKey;
 	}
 
 	public String getNotificationType() {

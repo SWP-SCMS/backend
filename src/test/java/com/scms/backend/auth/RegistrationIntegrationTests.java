@@ -142,6 +142,7 @@ class RegistrationIntegrationTests {
 		});
 		assertThat(notificationRepository.findAll()).singleElement().satisfies(notification -> {
 			assertThat(notification.getRecipientAccountId()).isEqualTo(accountId);
+			assertThat(notification.getEventKey()).isEqualTo("ACCOUNT_CREATED:" + accountId);
 			assertThat(notification.getNotificationType()).isEqualTo("ACCOUNT_CREATED");
 			assertThat(notification.getTargetType()).isEqualTo("ACCOUNT");
 			assertThat(notification.getTargetId()).isEqualTo(accountId);

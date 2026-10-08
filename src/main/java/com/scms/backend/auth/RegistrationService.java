@@ -13,8 +13,7 @@ import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.notification.Notification;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,18 +29,18 @@ public class RegistrationService {
 	private final AccountRepository accountRepository;
 	private final MemberProfileRepository memberProfileRepository;
 	private final AuditEventRepository auditEventRepository;
-	private final NotificationRepository notificationRepository;
+	private final NotificationWriter notificationWriter;
 	private final PasswordEncoder passwordEncoder;
 	private final Clock clock;
 	private final AccountIdentifierAvailability identifierAvailability;
 
 	RegistrationService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
-			AuditEventRepository auditEventRepository, NotificationRepository notificationRepository,
+			AuditEventRepository auditEventRepository, NotificationWriter notificationWriter,
 			PasswordEncoder passwordEncoder, Clock clock, AccountIdentifierAvailability identifierAvailability) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.auditEventRepository = auditEventRepository;
-		this.notificationRepository = notificationRepository;
+		this.notificationWriter = notificationWriter;
 		this.passwordEncoder = passwordEncoder;
 		this.clock = clock;
 		this.identifierAvailability = identifierAvailability;
@@ -78,8 +77,8 @@ public class RegistrationService {
 			"status", account.getStatus().name());
 		auditEventRepository.save(new AuditEvent(UUID.randomUUID(), ACCOUNT_CREATED, ACCOUNT, accountId,
 			accountSnapshot));
-		notificationRepository.save(new Notification(UUID.randomUUID(), accountId, ACCOUNT_CREATED, ACCOUNT,
-			accountId, Map.of("memberId", memberId)));
+		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, ACCOUNT_CREATED, ACCOUNT, accountId,
+			Map.of("memberId", memberId));
 
 		return new RegistrationResponse(accountId, memberId, account.getFullName(), account.getPhone(),
 			account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus());

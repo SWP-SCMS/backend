@@ -10,7 +10,7 @@ import java.util.UUID;
 
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
-import org.springframework.context.ApplicationEventPublisher;
+import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,12 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
 class PaymentFulfillmentService {
 	private final JdbcTemplate db;
 	private final AuditEventRepository audits;
-	private final ApplicationEventPublisher events;
+	private final NotificationWriter notifications;
 	private final Clock clock;
 
 	PaymentFulfillmentService(JdbcTemplate db, AuditEventRepository audits,
-			ApplicationEventPublisher events, Clock clock) {
-		this.db = db; this.audits = audits; this.events = events; this.clock = clock;
+			NotificationWriter notifications, Clock clock) {
+		this.db = db; this.audits = audits; this.notifications = notifications; this.clock = clock;
 	}
 
 	@Transactional
@@ -119,7 +119,8 @@ class PaymentFulfillmentService {
 			row.get("payment_amount"), row.get("payment_currency"), row.get("payment_method"));
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "PAYMENT_PAID", "PAYMENT", paymentId,
 			reason, Map.of("status", "PENDING"), Map.of("status", "PAID", "evidence", evidence == null ? "" : evidence)));
-		events.publishEvent(new PaymentCompletedEvent(memberId, paymentId, uuid(row, "order_id")));
+		notifications.write("PAYMENT_PAID:" + paymentId, memberId, "PAYMENT_PAID", "PAYMENT", paymentId,
+			Map.of("orderId", uuid(row, "order_id").toString(), "status", "PAID"));
 		return new PaymentResultResponse(paymentId, uuid(row, "order_id"), "PAID",
 			string(row, "payment_method"), membershipId, receiptId, now);
 	}

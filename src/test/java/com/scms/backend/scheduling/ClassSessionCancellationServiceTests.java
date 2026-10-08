@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,12 +20,12 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,7 +35,7 @@ class ClassSessionCancellationServiceTests {
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
 	@Mock JdbcTemplate jdbc;
-	@Mock ApplicationEventPublisher events;
+	@Mock NotificationWriter notifications;
 	@Mock SessionLifecycleService lifecycle;
 	ClassSessionCancellationService service;
 
@@ -42,7 +43,7 @@ class ClassSessionCancellationServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new ClassSessionCancellationService(sessions, accounts, audits, jdbc, events, lifecycle,
+		service = new ClassSessionCancellationService(sessions, accounts, audits, jdbc, notifications, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -75,7 +76,10 @@ class ClassSessionCancellationServiceTests {
 			"SESSION_CANCELLED".equals(audit.getAction())
 				&& managerId.equals(audit.getActorAccountId())
 				&& "Coach unavailable".equals(audit.getReason())));
-		verify(events).publishEvent(new ClassSessionCancelledEvent(session.getId(), List.of(memberA, memberB)));
+		verify(notifications).write("SESSION_CANCELLED:" + session.getId() + ":" + memberA, memberA,
+			"SESSION_CANCELLED", "CLASS_SESSION", session.getId(), Map.of("sessionId", session.getId().toString()));
+		verify(notifications).write("SESSION_CANCELLED:" + session.getId() + ":" + memberB, memberB,
+			"SESSION_CANCELLED", "CLASS_SESSION", session.getId(), Map.of("sessionId", session.getId().toString()));
 	}
 
 	@Test

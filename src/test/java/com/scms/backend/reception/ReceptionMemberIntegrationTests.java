@@ -114,7 +114,7 @@ class ReceptionMemberIntegrationTests {
 	}
 
 	@Test
-	void activeReceptionistCreatesNormalizedMemberAuditAndPostCommitNotification() throws Exception {
+	void activeReceptionistCreatesNormalizedMemberAuditAndDurableNotification() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		long accountsBefore = accountRepository.count();
 		long profilesBefore = memberProfileRepository.count();
@@ -179,6 +179,7 @@ class ReceptionMemberIntegrationTests {
 
 		Notification notification = notificationFor(accountId);
 		assertThat(notification.getRecipientAccountId()).isEqualTo(accountId);
+		assertThat(notification.getEventKey()).isEqualTo("ACCOUNT_CREATED:" + accountId);
 		assertThat(notification.getNotificationType()).isEqualTo("ACCOUNT_CREATED");
 		assertThat(notification.getTargetType()).isEqualTo("ACCOUNT");
 		assertThat(notification.getTargetId()).isEqualTo(accountId);
@@ -362,7 +363,7 @@ class ReceptionMemberIntegrationTests {
 	}
 
 	@Test
-	void notificationFailureAfterCommitDoesNotRollbackMemberOrChangeCreatedResponse() throws Exception {
+	void notificationFailureRollsBackMemberProfileAndAudit() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		long accountsBefore = accountRepository.count();
 		long profilesBefore = memberProfileRepository.count();
@@ -370,23 +371,19 @@ class ReceptionMemberIntegrationTests {
 		long notificationsBefore = notificationRepository.count();
 		installFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure",
 			"forced notification failure", "P0001");
-		MvcResult result;
 		try {
-			result = createMember(accessToken(receptionist),
+			createMember(accessToken(receptionist),
 				validRequest("0901000070", "notification-failure-us15@example.com", ""))
-				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.memberId", matchesPattern("MB-[0-9]+")))
-				.andReturn();
+				.andExpect(status().isInternalServerError())
+				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 		}
 		finally {
 			dropFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure");
 		}
 
-		UUID accountId = UUID.fromString(JsonPath.read(result.getResponse().getContentAsString(), "$.accountId"));
-		assertThat(accountRepository.findById(accountId)).isPresent();
-		assertThat(memberProfileRepository.findById(accountId)).isPresent();
-		assertThat(auditFor(accountId)).isNotNull();
-		assertCounts(accountsBefore + 1, profilesBefore + 1, auditsBefore + 1, notificationsBefore);
+		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(accountRepository.findByEmailIgnoreCaseAndStatus("notification-failure-us15@example.com",
+			AccountStatus.ACTIVE)).isEmpty();
 	}
 
 	private static Stream<Arguments> invalidRequiredRequests() {

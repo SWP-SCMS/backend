@@ -13,7 +13,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import org.springframework.context.ApplicationEventPublisher;
+import com.scms.backend.notification.NotificationWriter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,18 +25,18 @@ public class ClassSessionCancellationService {
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final JdbcTemplate jdbc;
-	private final ApplicationEventPublisher events;
+	private final NotificationWriter notifications;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
 	ClassSessionCancellationService(ClassSessionRepository sessions, AccountRepository accounts,
-			AuditEventRepository audits, JdbcTemplate jdbc, ApplicationEventPublisher events,
+			AuditEventRepository audits, JdbcTemplate jdbc, NotificationWriter notifications,
 			SessionLifecycleService lifecycle, Clock clock) {
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
 		this.jdbc = jdbc;
-		this.events = events;
+		this.notifications = notifications;
 		this.lifecycle = lifecycle;
 		this.clock = clock;
 	}
@@ -68,7 +68,8 @@ public class ClassSessionCancellationService {
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_CANCELLED", "CLASS_SESSION", sessionId,
 			reason, Map.of("status", ClassSessionStatus.SCHEDULED.name()),
 			Map.of("status", ClassSessionStatus.CANCELLED.name(), "cancelledBookings", cancelledBookings)));
-		if (!memberIds.isEmpty()) events.publishEvent(new ClassSessionCancelledEvent(sessionId, memberIds));
+		memberIds.forEach(memberId -> notifications.write("SESSION_CANCELLED:" + sessionId + ":" + memberId,
+			memberId, "SESSION_CANCELLED", "CLASS_SESSION", sessionId, Map.of("sessionId", sessionId.toString())));
 		return ClassSessionDetailResponse.from(session);
 	}
 

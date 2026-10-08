@@ -23,8 +23,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.notification.Notification;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +38,7 @@ class MemberStatusServiceTests {
 
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
-	@Mock NotificationRepository notifications;
+	@Mock NotificationWriter notifications;
 	@Mock JdbcTemplate jdbc;
 	private MemberStatusService service;
 	private final UUID managerId = UUID.randomUUID();
@@ -64,13 +63,15 @@ class MemberStatusServiceTests {
 		assertThat(response.status()).isEqualTo(AccountStatus.SUSPENDED);
 		assertThat(response.cancelledFutureBookings()).isEqualTo(2);
 		assertThat(member.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
+		ArgumentCaptor<String> cancellationSql = ArgumentCaptor.forClass(String.class);
+		verify(jdbc).update(cancellationSql.capture(), any(), any(), any(), any(), any());
+		assertThat(cancellationSql.getValue()).contains("version = version + 1");
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getReason()).isEqualTo("Policy violation");
 		assertThat(audit.getValue().getBeforeData()).containsEntry("status", "ACTIVE");
-		ArgumentCaptor<Notification> notification = ArgumentCaptor.forClass(Notification.class);
-		verify(notifications).save(notification.capture());
-		assertThat(notification.getValue().getNotificationType()).isEqualTo("MEMBER_SUSPENDED");
+		verify(notifications).write(anyString(), eq(memberId), eq("MEMBER_SUSPENDED"), eq("ACCOUNT"), eq(memberId),
+			any());
 	}
 
 	@Test

@@ -13,8 +13,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.notification.Notification;
-import com.scms.backend.notification.NotificationRepository;
+import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -25,15 +24,15 @@ public class MemberStatusService {
 
 	private final AccountRepository accountRepository;
 	private final AuditEventRepository auditRepository;
-	private final NotificationRepository notificationRepository;
+	private final NotificationWriter notificationWriter;
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
 
 	MemberStatusService(AccountRepository accountRepository, AuditEventRepository auditRepository,
-			NotificationRepository notificationRepository, JdbcTemplate jdbcTemplate, Clock clock) {
+			NotificationWriter notificationWriter, JdbcTemplate jdbcTemplate, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.auditRepository = auditRepository;
-		this.notificationRepository = notificationRepository;
+		this.notificationWriter = notificationWriter;
 		this.jdbcTemplate = jdbcTemplate;
 		this.clock = clock;
 	}
@@ -60,8 +59,8 @@ public class MemberStatusService {
 		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, action, "ACCOUNT", memberId,
 			request.reason().trim(), Map.of("status", before.name()), Map.of("status", request.status().name(),
 				"cancelledFutureBookings", cancelledBookings)));
-		notificationRepository.save(new Notification(UUID.randomUUID(), memberId, action, "ACCOUNT", memberId,
-			Map.of("status", request.status().name())));
+		notificationWriter.write(action + ":" + memberId + ":" + UUID.randomUUID(), memberId, action, "ACCOUNT",
+			memberId, Map.of("status", request.status().name()));
 		return new MemberStatusChangeResponse(memberId, request.status(), cancelledBookings);
 	}
 
@@ -70,7 +69,7 @@ public class MemberStatusService {
 		return jdbcTemplate.update("""
 			update bookings b
 			set status = 'CANCELLED', cancelled_by_account_id = ?,
-				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?
+				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?, version = version + 1
 			from class_sessions s
 			where b.class_session_id = s.id and b.member_account_id = ?
 				and b.status = 'BOOKED' and s.start_time > ?
