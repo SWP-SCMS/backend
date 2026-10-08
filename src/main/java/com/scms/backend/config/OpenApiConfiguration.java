@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.info.Info;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
 import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem.HttpMethod;
 import io.swagger.v3.oas.models.media.ArraySchema;
 import io.swagger.v3.oas.models.media.Content;
@@ -56,8 +57,30 @@ public class OpenApiConfiguration {
 				if (method != HttpMethod.GET) {
 					operation.getResponses().addApiResponse("409", reference("Conflict"));
 				}
+				applyKnownResponseVariants(path, method, operation);
 			}));
 		};
+	}
+
+	private void applyKnownResponseVariants(String path, HttpMethod method, Operation operation) {
+		if (method == HttpMethod.GET && path.equals("/reception/members/search")) {
+			operation.getResponses().addApiResponse("404", reference("NotFound"));
+		}
+		if (method == HttpMethod.GET && path.equals("/coach/class-sessions/{sessionId}/attendance")) {
+			operation.getResponses().addApiResponse("409", reference("Conflict"));
+		}
+		if (method == HttpMethod.POST && path.equals("/reception/center-visits")) {
+			ApiResponse ok = operation.getResponses().get("200");
+			operation.getResponses().addApiResponse("201",
+				new ApiResponse().description("Created").content(ok.getContent()));
+		}
+		if (method == HttpMethod.GET && (path.equals("/members/me/membership-orders/pending")
+				|| path.equals("/reception/members/{memberId}/membership-orders/pending"))) {
+			operation.getResponses().addApiResponse("204", new ApiResponse().description("No pending order."));
+		}
+		if (method == HttpMethod.POST && path.equals("/reception/membership-orders/{orderId}/cash")) {
+			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
+		}
 	}
 
 	private Schema<?> problemSchema() {
@@ -88,6 +111,9 @@ public class OpenApiConfiguration {
 			return path.equals("/payments/sepay/webhook")
 				? "Public SePay provider webhook; authenticated by the configured provider API key."
 				: "Public authentication operation.";
+		}
+		if (path.equals("/reception/members/{memberId}/receipts")) {
+			return "Requires MANAGER or RECEPTIONIST role; member access is role-scoped.";
 		}
 		if (path.startsWith("/manager/")) return "Requires MANAGER role.";
 		if (path.startsWith("/reception/")) return "Requires RECEPTIONIST role; member access is role-scoped.";
