@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import jakarta.validation.Valid;
 
@@ -23,6 +25,7 @@ public class BookingController {
 	}
 
 	@PostMapping("/members/class-sessions/{sessionId}/bookings")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<BookingResponse> book(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId) {
 		return ResponseEntity.status(201).body(service.book(UUID.fromString(jwt.getSubject()), sessionId));
 	}
@@ -33,6 +36,7 @@ public class BookingController {
 	}
 
 	@PostMapping("/reception/members/{memberId}/bookings")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<BookingResponse> bookForMember(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId,
 			@Valid @RequestBody ReceptionBookingRequest request) {
 		return ResponseEntity.status(201).body(service.bookForMember(UUID.fromString(jwt.getSubject()), memberId,
