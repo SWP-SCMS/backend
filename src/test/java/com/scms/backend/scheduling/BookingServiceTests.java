@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -25,6 +26,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class BookingServiceTests {
@@ -220,6 +223,37 @@ class BookingServiceTests {
 		assertThatThrownBy(() -> service.cancelForMember(receptionistId, memberId, booking.getId()))
 			.isInstanceOf(BookingException.class)
 			.extracting("code").isEqualTo("BOOKING_NOT_FOUND");
+	}
+
+	@Test
+	void memberBookingScheduleIsLimitedToTheAuthenticatedMember() {
+		Booking booking = booking(session);
+		when(bookings.findByMemberAccountId(memberId, PageRequest.of(0, 20)))
+			.thenReturn(new PageImpl<>(List.of(booking), PageRequest.of(0, 20), 1));
+		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+
+		BookingSchedulePageResponse response = service.listForMember(memberId, null, PageRequest.of(0, 20));
+
+		assertThat(response.content()).hasSize(1);
+		assertThat(response.content().getFirst().memberId()).isEqualTo(memberId);
+		assertThat(response.content().getFirst().sessionId()).isEqualTo(session.getId());
+	}
+
+	@Test
+	void receptionistScheduleCanFilterBookingStatusForRequestedMember() {
+		when(accounts.findById(memberId)).thenReturn(Optional.of(
+			account(memberId, AccountRole.MEMBER, AccountStatus.SUSPENDED, "Member")));
+		Booking booking = booking(session);
+		when(bookings.findByMemberAccountIdAndStatus(memberId, BookingStatus.BOOKED, PageRequest.of(0, 20)))
+			.thenReturn(new PageImpl<>(List.of(booking), PageRequest.of(0, 20), 1));
+		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+
+		BookingSchedulePageResponse response = service.listForReceptionist(receptionistId, memberId,
+			BookingStatus.BOOKED, PageRequest.of(0, 20));
+
+		assertThat(response.content()).hasSize(1);
+		assertThat(response.content().getFirst().status()).isEqualTo(BookingStatus.BOOKED);
+		verify(bookings).findByMemberAccountIdAndStatus(memberId, BookingStatus.BOOKED, PageRequest.of(0, 20));
 	}
 
 	private void assertCode(String code) {

@@ -13,6 +13,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -95,6 +96,36 @@ public class BookingService {
 		return cancel(receptionistId, memberId, bookingId, "RECEPTIONIST");
 	}
 
+	@Transactional
+	BookingSchedulePageResponse listForMember(UUID memberId, BookingStatus status, Pageable pageable) {
+		ensureActiveMember(memberId);
+		lifecycle.catchUp(clock.instant());
+		var page = status == null ? bookings.findByMemberAccountId(memberId, pageable)
+			: bookings.findByMemberAccountIdAndStatus(memberId, status, pageable);
+		return toSchedulePage(page);
+	}
+
+	@Transactional
+	BookingSchedulePageResponse listForReceptionist(UUID receptionistId, UUID memberId, BookingStatus status,
+			Pageable pageable) {
+		ensureActiveReceptionist(receptionistId);
+		ensureMemberExists(memberId);
+		lifecycle.catchUp(clock.instant());
+		var page = status == null ? bookings.findByMemberAccountId(memberId, pageable)
+			: bookings.findByMemberAccountIdAndStatus(memberId, status, pageable);
+		return toSchedulePage(page);
+	}
+
+	private BookingSchedulePageResponse toSchedulePage(org.springframework.data.domain.Page<Booking> page) {
+		var content = page.getContent().stream()
+			.map(booking -> sessions.findById(booking.getClassSessionId())
+				.map(session -> BookingScheduleResponse.from(booking, session))
+				.orElseThrow(BookingException::sessionNotFound))
+			.toList();
+		return new BookingSchedulePageResponse(content, page.getNumber(), page.getSize(), page.getTotalElements(),
+			page.getTotalPages());
+	}
+
 	private BookingResponse cancel(UUID actorId, UUID memberId, UUID bookingId, String source) {
 		ensureActiveMember(memberId);
 		Booking booking = bookings.findByIdForUpdate(bookingId).orElseThrow(BookingException::notFound);
@@ -128,5 +159,10 @@ public class BookingService {
 		if (actor.getRole() != AccountRole.RECEPTIONIST || actor.getStatus() != AccountStatus.ACTIVE) {
 			throw BookingException.actorNotActiveReceptionist();
 		}
+	}
+
+	private void ensureMemberExists(UUID memberId) {
+		var member = accounts.findById(memberId).orElseThrow(BookingException::notFound);
+		if (member.getRole() != AccountRole.MEMBER) throw BookingException.notFound();
 	}
 }

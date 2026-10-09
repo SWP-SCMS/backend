@@ -143,18 +143,30 @@ class MembershipOfferIntegrationTests {
 			.andExpect(jsonPath("$[0].name").value("Reception Offer"));
 	}
 
+	@Test
+	void anonymousUserCanListOnlyActiveOffers() throws Exception {
+		Account creator = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE);
+		insertOffer(UUID.randomUUID(), "BASIC", "Public Offer", "Visible", 12000, 30, "ACTIVE", creator);
+		insertOffer(UUID.randomUUID(), "PLUS", "Hidden Offer", "Not visible", 24000, 30, "INACTIVE", creator);
+
+		mockMvc.perform(get(OFFER_PATH).contextPath("/api/v1"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].name").value("Public Offer"));
+	}
+
 	@ParameterizedTest
 	@EnumSource(value = AccountRole.class, names = {"COACH", "MANAGER"})
-	void coachAndManagerAreForbidden(AccountRole role) throws Exception {
+	void anyAuthenticatedRoleCanListPublicOffers(AccountRole role) throws Exception {
 		Account account = createAccount(role, AccountStatus.ACTIVE);
 
-		getOffers(accessToken(account), null).andExpect(status().isForbidden());
+		getOffers(accessToken(account), null).andExpect(status().isOk());
 	}
 
 	@Test
-	void missingAndInvalidBearerTokensAreUnauthorized() throws Exception {
+	void anonymousAndInvalidBearerTokensHaveDifferentContracts() throws Exception {
 		mockMvc.perform(get(OFFER_PATH).contextPath("/api/v1"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().isOk());
 		getOffers("not-a-jwt", null).andExpect(status().isUnauthorized());
 	}
 

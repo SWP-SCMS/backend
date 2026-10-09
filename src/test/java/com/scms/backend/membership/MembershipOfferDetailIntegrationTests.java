@@ -142,16 +142,16 @@ class MembershipOfferDetailIntegrationTests {
 
 	@ParameterizedTest
 	@EnumSource(value = AccountRole.class, names = {"COACH", "MANAGER"})
-	void coachAndManagerAreForbidden(AccountRole role) throws Exception {
+	void anyAuthenticatedRoleCanReadPublicOfferDetail(AccountRole role) throws Exception {
 		Account account = createAccount(role, AccountStatus.ACTIVE);
 
-		getOffer(accessToken(account), UUID.randomUUID().toString()).andExpect(status().isForbidden());
+		getOffer(accessToken(account), UUID.randomUUID().toString()).andExpect(status().isNotFound());
 	}
 
 	@Test
-	void missingAndInvalidBearerTokensAreUnauthorized() throws Exception {
+	void anonymousAndInvalidBearerTokensHaveDifferentContracts() throws Exception {
 		mockMvc.perform(get(OFFER_PATH + UUID.randomUUID()).contextPath("/api/v1"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().isNotFound());
 		getOffer("not-a-jwt", UUID.randomUUID().toString()).andExpect(status().isUnauthorized());
 	}
 

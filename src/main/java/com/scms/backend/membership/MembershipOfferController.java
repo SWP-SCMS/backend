@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 @RestController
 @RequestMapping("/membership-offers")
@@ -21,12 +22,14 @@ public class MembershipOfferController {
 	}
 
 	@GetMapping
+	@SecurityRequirements
 	ResponseEntity<List<MembershipOfferResponse>> listActiveOffers(
 			@RequestParam(name = "planCode", required = false) String planCode) {
 		return ResponseEntity.ok(service.listActiveOffers(planCode));
 	}
 
 	@GetMapping("/{offerId}")
+	@SecurityRequirements
 	ResponseEntity<MembershipOfferResponse> getActiveOffer(@PathVariable UUID offerId) {
 		return ResponseEntity.ok(service.getActiveOffer(offerId));
 	}

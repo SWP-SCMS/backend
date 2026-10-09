@@ -63,10 +63,39 @@ class SecurityProblemDetailTests {
 			.andExpect(jsonPath("$.errors").doesNotExist());
 	}
 
+	@Test
+	void membershipOffersArePublic() throws Exception {
+		mockMvc.perform(get("/membership-offers"))
+			.andExpect(status().isOk());
+		mockMvc.perform(get("/membership-offers/{offerId}", "00000000-0000-0000-0000-000000000001"))
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void bookingViewsAreRoleScoped() throws Exception {
+		mockMvc.perform(get("/members/me/bookings").with(user("receptionist").roles("RECEPTIONIST")))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/reception/members/{memberId}/bookings", "00000000-0000-0000-0000-000000000001")
+			.with(user("member").roles("MEMBER")))
+			.andExpect(status().isForbidden());
+	}
+
 	@RestController
 	static class TestController {
-		@GetMapping({ "/protected", "/manager/members" })
+		@GetMapping({ "/protected", "/manager/members", "/membership-offers" })
 		void protectedResource() {
+		}
+
+		@GetMapping("/membership-offers/{offerId}")
+		void publicOfferDetail() {
+		}
+
+		@GetMapping("/members/me/bookings")
+		void memberBookings() {
+		}
+
+		@GetMapping("/reception/members/{memberId}/bookings")
+		void receptionBookings() {
 		}
 	}
 }

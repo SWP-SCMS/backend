@@ -119,7 +119,7 @@ public class OpenApiConfiguration {
 		if (path.startsWith("/reception/")) return "Requires RECEPTIONIST role; member access is role-scoped.";
 		if (path.startsWith("/coach/")) return "Requires COACH role; session access is ownership-scoped.";
 		if (path.startsWith("/members/")) return "Requires MEMBER role; resource ownership is limited to the authenticated member.";
-		if (path.startsWith("/membership-offers")) return "Requires MEMBER or RECEPTIONIST role.";
+		if (path.startsWith("/membership-offers")) return "Public catalog; only ACTIVE membership offers are returned.";
 		return "Requires an authenticated account; access is role- and ownership-scoped.";
 	}
 }

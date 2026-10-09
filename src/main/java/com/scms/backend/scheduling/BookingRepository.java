@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -39,6 +41,10 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	Optional<UUID> findEligiblePlusMembership(@Param("memberId") UUID memberId,
 		@Param("sessionStart") Instant sessionStart);
+
+	Page<Booking> findByMemberAccountId(UUID memberAccountId, Pageable pageable);
+
+	Page<Booking> findByMemberAccountIdAndStatus(UUID memberAccountId, BookingStatus status, Pageable pageable);
 
 	boolean existsByMemberAccountIdAndClassSessionIdAndStatus(UUID memberAccountId, UUID classSessionId,
 		BookingStatus status);
