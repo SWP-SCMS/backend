@@ -9,11 +9,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.math.BigInteger;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -37,6 +50,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
@@ -59,11 +73,14 @@ class PaymentFlowIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
 	@Autowired MockMvc mockMvc;
-	@Autowired JdbcTemplate db;
+	@MockitoSpyBean JdbcTemplate db;
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired PaymentService paymentService;
+	@Autowired PaymentFulfillmentService fulfillment;
+	@Autowired Clock clock;
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
@@ -140,21 +157,185 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
-	void sepayCreationIsIdempotentAndQrUsesSnapshot() throws Exception {
+	void sepayCreationReturnsManualFallbackWithoutLoadingQr() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
 		UUID offer = offer(manager, "BASIC", 12000, false);
 		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
 
-		String first = sepay(member.getAccount(), order).andExpect(status().isOk())
+		String response = sepay(member.getAccount(), order).andExpect(status().isOk())
 			.andExpect(jsonPath("$.amount").value(12000)).andExpect(jsonPath("$.status").value("PENDING"))
 			.andReturn().getResponse().getContentAsString();
-		String second = sepay(member.getAccount(), order).andExpect(status().isOk()).andReturn()
-			.getResponse().getContentAsString();
+		JsonNode json = objectMapper.readTree(response);
+		String persistedContent = db.queryForObject(
+			"select bank_transfer_content from payments where order_id=?", String.class, order);
 
-		assertThat(JsonPath.<String>read(second, "$.paymentId")).isEqualTo(JsonPath.read(first, "$.paymentId"));
-		assertThat(JsonPath.<String>read(first, "$.qrUrl")).contains("amount=12000", "acc=123456789");
+		assertThat(json.path("transferContent").asText()).isEqualTo(persistedContent);
+		assertThat(json.path("paymentReference").asText()).isEqualTo(persistedContent);
+		assertThat(json.path("bankCode").asText()).isEqualTo("MB");
+		assertThat(json.path("bankAccountNumber").asText()).isEqualTo("123456789");
+		assertThat(json.path("bankAccountName").asText()).isEqualTo("SCMS GYM");
+		assertThat(json.path("currency").asText()).isEqualTo("VND");
+		assertThat(json.path("expiresAt").asText()).isNotBlank();
+		assertThat(response).doesNotContain("hook-secret", "webhookApiKey", "secretKey", "authorization", "credential");
+		assertThat(db.queryForMap("""
+			select bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot
+			from payments where order_id=?
+			""", order)).containsEntry("bank_code_snapshot", "MB")
+			.containsEntry("bank_account_number_snapshot", "123456789")
+			.containsEntry("bank_account_name_snapshot", "SCMS GYM");
+	}
+
+	@Test
+	void sepayRetryReturnsTheSameFallbackSnapshotAndOnePayment() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+
+		JsonNode first = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		JsonNode second = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+
+		assertThat(second).isEqualTo(first);
 		assertThat(count("select count(*) from payments where order_id=? and status='PENDING'", order)).isOne();
+	}
+
+	@Test
+	void sepayQrParametersMatchReturnedFallback() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+
+		JsonNode response = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		Map<String, String> query = queryParameters(response.path("qrUrl").asText());
+
+		assertThat(query).containsEntry("bank", response.path("bankCode").asText())
+			.containsEntry("acc", response.path("bankAccountNumber").asText())
+			.containsEntry("accountName", response.path("bankAccountName").asText())
+			.containsEntry("amount", response.path("amount").asText())
+			.containsEntry("des", response.path("transferContent").asText());
+	}
+
+	@Test
+	void sepayDestinationSurvivesRestartAndConfigurationRotation() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		JsonNode first = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		SepayService rotated = new SepayService(db, accounts, fulfillment, clock,
+			"VCB", "new-account", "NEW GYM", "hook-secret");
+
+		SepayPaymentResponse retry = rotated.create(member.getAccountId(), order);
+
+		assertThat(retry.paymentId().toString()).isEqualTo(first.path("paymentId").asText());
+		assertThat(retry.bankCode()).isEqualTo("MB");
+		assertThat(retry.bankAccountNumber()).isEqualTo("123456789");
+		assertThat(retry.bankAccountName()).isEqualTo("SCMS GYM");
+		assertThat(retry.qrUrl()).isEqualTo(first.path("qrUrl").asText());
+		assertThat(count("select count(*) from payments where order_id=?", order)).isOne();
+	}
+
+	@Test
+	void sepayRetryPreservesExactPersistedTransferContent() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String persistedContent = "  SCMS-EXACT CONTENT  ";
+		pendingPayment(order, 12000, persistedContent);
+
+		JsonNode response = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+
+		assertThat(response.path("paymentReference").asText()).isEqualTo(persistedContent);
+		assertThat(response.path("transferContent").asText()).isEqualTo(persistedContent);
+		assertThat(queryParameters(response.path("qrUrl").asText())).containsEntry("des", persistedContent);
+		assertThat(db.queryForMap("""
+			select bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot
+			from payments where order_id=?
+			""", order)).containsEntry("bank_code_snapshot", "MB")
+			.containsEntry("bank_account_number_snapshot", "123456789")
+			.containsEntry("bank_account_name_snapshot", "SCMS GYM");
+	}
+
+	@Test
+	void sepayWebhookUsesPersistedAccountAfterConfigurationRotation() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		JsonNode created = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		SepayService rotated = new SepayService(db, accounts, fulfillment, clock,
+			"VCB", "new-account", "NEW GYM", "hook-secret");
+		String reference = created.path("paymentReference").asText();
+
+		PaymentResultResponse result = rotated.webhook("hook-secret", new SepayWebhookRequest(
+			9101L, reference, "PAY " + reference, BigInteger.valueOf(12000), "in", null, null, "123456789"));
+
+		assertThat(result.status()).isEqualTo("PAID");
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
+		assertThat(count("select count(*) from receipts where payment_id=?",
+			UUID.fromString(created.path("paymentId").asText()))).isOne();
+	}
+
+	@Test
+	void directLegacyWebhookFallsBackToCurrentConfiguredAccount() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String reference = "LEGACY-" + order;
+		UUID payment = pendingPayment(order, 12000, reference);
+
+		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
+	}
+
+	@Test
+	void legacyRetryRacingWebhookCompletesWithoutDeadlockOrDuplicateArtifacts() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String reference = "LEGACY-RACE-" + order;
+		UUID payment = pendingPayment(order, 12000, reference);
+		CountDownLatch start = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<MvcResult> retry = executor.submit(() -> {
+				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
+				return sepay(member.getAccount(), order).andReturn();
+			});
+			Future<MvcResult> webhook = executor.submit(() -> {
+				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
+				return webhook("hook-secret",
+					webhookBody(9103, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn();
+			});
+			start.countDown();
+
+			int retryStatus = retry.get(10, TimeUnit.SECONDS).getResponse().getStatus();
+			assertThat(retryStatus).isIn(200, 409);
+			assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+		}
+		finally {
+			start.countDown();
+			executor.shutdownNow();
+		}
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
 
 	@Test
@@ -598,6 +779,16 @@ class PaymentFlowIntegrationTests {
 
 	private long count(String sql, Object... args) {
 		return db.queryForObject(sql, Long.class, args);
+	}
+
+	private Map<String, String> queryParameters(String url) {
+		return Arrays.stream(URI.create(url).getRawQuery().split("&"))
+			.map(parameter -> parameter.split("=", 2))
+			.collect(Collectors.toMap(parameter -> decode(parameter[0]), parameter -> decode(parameter[1])));
+	}
+
+	private String decode(String value) {
+		return URLDecoder.decode(value, StandardCharsets.UTF_8);
 	}
 
 	private String bearer(Account account) {

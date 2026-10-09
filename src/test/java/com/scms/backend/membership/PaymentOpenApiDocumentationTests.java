@@ -51,6 +51,22 @@ class PaymentOpenApiDocumentationTests {
 			.isEmpty()).isFalse();
 	}
 
+	@Test
+	void sepayResponseDocumentsManualFallbackContract() throws Exception {
+		JsonNode document = objectMapper.readTree(mockMvc.perform(get("/v3/api-docs"))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		JsonNode properties = document.at("/components/schemas/SepayPaymentResponse/properties");
+
+		assertThat(properties.has("transferContent")).isTrue();
+		assertThat(properties.has("bankCode")).isTrue();
+		assertThat(properties.has("bankAccountNumber")).isTrue();
+		assertThat(properties.has("bankAccountName")).isTrue();
+		assertThat(properties.has("webhookApiKey")).isFalse();
+		assertThat(properties.has("secretKey")).isFalse();
+		assertThat(properties.has("authorization")).isFalse();
+		assertThat(properties.has("credential")).isFalse();
+	}
+
 	private void assertParameter(JsonNode operation, String name, String example) {
 		JsonNode parameter = StreamSupport.stream(operation.path("parameters").spliterator(), false)
 			.filter(node -> node.path("name").asText().equals(name))

@@ -90,7 +90,7 @@ class FoundationIntegrationTests {
 		assertThat(entityManagerFactory.isOpen()).isTrue();
 		assertThat(jdbcTemplate.queryForList(
 			"select version from flyway_schema_history where success order by installed_rank", String.class))
-			.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
+			.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13");
 		assertThat(jdbcTemplate.queryForObject("show timezone", String.class)).isIn("UTC", "Etc/UTC");
 	}
 

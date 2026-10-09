@@ -126,24 +126,28 @@ class PaymentFulfillmentService {
 	}
 
 	Map<String, Object> paymentForUpdate(UUID paymentId) {
-		return payment(paymentId, true);
+		try {
+			UUID orderId = db.queryForObject("select order_id from payments where id=?", UUID.class, paymentId);
+			db.queryForObject("select id from membership_orders where id=? for update", UUID.class, orderId);
+			db.queryForObject("select id from payments where id=? for update", UUID.class, paymentId);
+			return payment(paymentId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Payment was not found");
+		}
 	}
 
 	Map<String, Object> payment(UUID paymentId) {
-		return payment(paymentId, false);
-	}
-
-	private Map<String, Object> payment(UUID paymentId, boolean lock) {
 		try {
 			String sql = """
 				select p.id payment_id,p.order_id,p.method payment_method,p.status payment_status,
 					p.amount payment_amount,p.currency_code payment_currency,p.bank_transfer_content,
-					p.provider,p.provider_reference,p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
+					p.bank_account_number_snapshot,p.provider,p.provider_reference,
+					p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
 					o.status order_status,o.member_account_id,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot,o.expires_at
 				from payments p join membership_orders o on o.id=p.order_id where p.id=?
-				""" + (lock ? " for update" : "");
+				""";
 			return db.queryForMap(sql, paymentId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Payment was not found");

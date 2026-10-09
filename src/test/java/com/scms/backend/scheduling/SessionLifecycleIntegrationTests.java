@@ -244,8 +244,8 @@ class SessionLifecycleIntegrationTests {
 		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at) values(?,?,'CASH','PAID',1000,'VND',?,?)",
 			UUID.randomUUID(), orderId, actorId, java.sql.Timestamp.from(NOW.minusSeconds(7200)));
 		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?, 'PLUS','Plus',1000,'VND',30,'ACTIVE',?,?)",
-			membershipId, memberId, orderId, offerId, java.sql.Timestamp.from(NOW.minusSeconds(86400)),
-			java.sql.Timestamp.from(NOW.plusSeconds(86400)));
+			membershipId, memberId, orderId, offerId, java.sql.Timestamp.from(NOW.minusSeconds(365L * 86400)),
+			java.sql.Timestamp.from(NOW.plusSeconds(365L * 86400)));
 		return membershipId;
 	}
 

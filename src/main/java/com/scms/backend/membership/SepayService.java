@@ -52,9 +52,6 @@ class SepayService {
 		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
-		if (bankCode.isBlank() || bankAccount.isBlank()) {
-			throw PaymentException.validation("SePay bank configuration is missing");
-		}
 		Map<String, Object> order;
 		try {
 			order = db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update",
@@ -69,19 +66,37 @@ class SepayService {
 		Map<String, Object> payment = pendingPayment(orderId);
 		Instant expiresAt;
 		if (payment == null) {
-			expiresAt = clock.instant().plus(24, ChronoUnit.HOURS);
+			requireBankConfiguration();
+			expiresAt = clock.instant().plus(24, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
 			db.update("update membership_orders set expires_at=?,payment_method='BANK_TRANSFER',updated_at=current_timestamp where id=?",
 				Timestamp.from(expiresAt), orderId);
 			String reference = reference(order);
 			UUID paymentId = UUID.randomUUID();
 			db.update("""
 				insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,
+					bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot,
 					provider,provider_reference)
-				values(?,?,'BANK_TRANSFER','PENDING',?,'VND',?,'SEPAY',?)
-				""", paymentId, orderId, order.get("price_amount_snapshot"), reference, reference);
+				values(?,?,'BANK_TRANSFER','PENDING',?,'VND',?,?,?,?,'SEPAY',?)
+				""", paymentId, orderId, order.get("price_amount_snapshot"), reference,
+				bankCode, bankAccount, bankAccountName, reference);
 			payment = db.queryForMap("select * from payments where id=?", paymentId);
 		} else {
 			expiresAt = instant(order.get("expires_at"));
+			if (payment.get("bank_code_snapshot") == null
+					&& payment.get("bank_account_number_snapshot") == null
+					&& payment.get("bank_account_name_snapshot") == null) {
+				requireBankConfiguration();
+				int updated = db.update("""
+					update payments set bank_code_snapshot=?,bank_account_number_snapshot=?,
+						bank_account_name_snapshot=?,updated_at=current_timestamp
+					where id=? and status='PENDING' and bank_code_snapshot is null
+						and bank_account_number_snapshot is null and bank_account_name_snapshot is null
+					""", bankCode, bankAccount, bankAccountName, payment.get("id"));
+				if (updated != 1) throw PaymentException.conflict("Payment destination snapshot changed");
+				payment.put("bank_code_snapshot", bankCode);
+				payment.put("bank_account_number_snapshot", bankAccount);
+				payment.put("bank_account_name_snapshot", bankAccountName);
+			}
 		}
 		return response(order, payment, expiresAt);
 	}
@@ -112,7 +127,9 @@ class SepayService {
 		if (!PaymentFulfillmentService.amount(payment, "payment_amount").equals(request.transferAmount())) {
 			throw PaymentException.validation("SePay transfer amount does not match Payment");
 		}
-		if (request.accountNumber() == null || !bankAccount.equals(request.accountNumber().trim())) {
+		String expectedAccount = PaymentFulfillmentService.string(payment, "bank_account_number_snapshot");
+		if (expectedAccount == null) expectedAccount = bankAccount;
+		if (request.accountNumber() == null || !expectedAccount.equals(request.accountNumber().trim())) {
 			throw PaymentException.validation("SePay bank account does not match configured account");
 		}
 		String providerTransactionId = String.valueOf(request.id());
@@ -127,17 +144,25 @@ class SepayService {
 	}
 
 	private SepayPaymentResponse response(Map<String, Object> order, Map<String, Object> payment, Instant expiresAt) {
-		String reference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
+		String reference = (String) payment.get("bank_transfer_content");
+		String snapshotBankCode = (String) payment.get("bank_code_snapshot");
+		String snapshotBankAccount = (String) payment.get("bank_account_number_snapshot");
+		String snapshotBankAccountName = (String) payment.get("bank_account_name_snapshot");
 		String amount = new BigDecimal(payment.get("amount").toString()).toBigIntegerExact().toString();
-		String qr = "https://qr.sepay.vn/img?bank=" + enc(bankCode) + "&acc=" + enc(bankAccount)
+		String qr = "https://qr.sepay.vn/img?bank=" + enc(snapshotBankCode) + "&acc=" + enc(snapshotBankAccount)
 			+ "&template=compact&amount=" + amount + "&des=" + enc(reference)
-			+ (bankAccountName.isBlank() ? "" : "&accountName=" + enc(bankAccountName));
+			+ "&accountName=" + enc(snapshotBankAccountName);
 		return new SepayPaymentResponse((UUID) payment.get("id"), (UUID) payment.get("order_id"),
-			String.valueOf(order.get("order_number")), new BigDecimal(amount).toBigIntegerExact(), "VND", "SEPAY",
-			reference, qr, expiresAt, PaymentFulfillmentService.string(payment, "status"));
+			String.valueOf(order.get("order_number")), new BigDecimal(amount).toBigIntegerExact(),
+			PaymentFulfillmentService.string(payment, "currency_code"), "SEPAY", reference, reference, snapshotBankCode,
+			snapshotBankAccount, snapshotBankAccountName, qr, expiresAt, PaymentFulfillmentService.string(payment, "status"));
 	}
 
 	private String reference(Map<String, Object> order) { return "SCMS-" + order.get("order_number"); }
+	private void requireBankConfiguration() {
+		if (bankCode.isBlank() || bankAccount.isBlank() || bankAccountName.isBlank())
+			throw PaymentException.validation("SePay bank configuration is missing");
+	}
 	private String enc(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
 	private Instant instant(Object value) {
 		if (value == null) return null;
