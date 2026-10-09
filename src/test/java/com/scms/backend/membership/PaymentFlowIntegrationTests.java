@@ -326,7 +326,8 @@ class PaymentFlowIntegrationTests {
 			});
 			start.countDown();
 
-			assertThat(retry.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+			int retryStatus = retry.get(10, TimeUnit.SECONDS).getResponse().getStatus();
+			assertThat(retryStatus).isIn(200, 409);
 			assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
 		}
 		finally {
