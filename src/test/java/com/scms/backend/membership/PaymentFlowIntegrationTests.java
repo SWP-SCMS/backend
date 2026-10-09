@@ -83,7 +83,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired PaymentService paymentService;
 	@Autowired PaymentFulfillmentService fulfillment;
 	@Autowired Clock clock;
-	@Autowired ObjectMapper objectMapper;
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
