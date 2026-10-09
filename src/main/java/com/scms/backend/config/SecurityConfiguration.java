@@ -72,8 +72,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
 				.requestMatchers("/docs", "/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*")
-					.hasAnyRole("MEMBER", "RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*").permitAll()
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/membership-orders/pending").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/reception/members/*/membership-orders")
@@ -101,6 +100,8 @@ public class SecurityConfiguration {
 					.hasRole("COACH")
 				.requestMatchers(HttpMethod.POST, "/members/class-sessions/*/bookings").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.PATCH, "/members/me/bookings/*/cancel").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/members/me/bookings").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/reception/members/*/bookings").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
 				.requestMatchers("/reception/membership-orders/**").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders/*/payments/sepay",

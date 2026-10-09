@@ -96,8 +96,10 @@ class GeneratedOpenApiTests {
 		"PATCH /reception/members/{memberAccountId}/center-visits/current/checkout",
 		"GET /reception/center-visits/open",
 		"POST /members/class-sessions/{sessionId}/bookings",
+		"GET /members/me/bookings",
 		"PATCH /members/me/bookings/{bookingId}/cancel",
 		"POST /reception/members/{memberId}/bookings",
+		"GET /reception/members/{memberId}/bookings",
 		"PATCH /reception/members/{memberId}/bookings/{bookingId}/cancel",
 		"GET /manager/disciplines",
 		"POST /manager/disciplines",
@@ -206,6 +208,7 @@ class GeneratedOpenApiTests {
 		for (String publicOperation : List.of(
 			"/paths/~1auth~1login/post", "/paths/~1auth~1refresh/post",
 			"/paths/~1auth~1logout/post", "/paths/~1auth~1register/post",
+			"/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get",
 			"/paths/~1payments~1sepay~1webhook/post")) {
 			assertThat(document.at(publicOperation + "/security").isArray()).as(publicOperation).isTrue();
 			assertThat(document.at(publicOperation + "/security")).as(publicOperation).isEmpty();
