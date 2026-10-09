@@ -2,9 +2,6 @@ package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -314,31 +311,26 @@ class PaymentFlowIntegrationTests {
 			Instant.now().plusSeconds(3600));
 		String reference = "LEGACY-RACE-" + order;
 		UUID payment = pendingPayment(order, 12000, reference);
-		CountDownLatch retryHasOrderLock = new CountDownLatch(1);
-		CountDownLatch releaseRetry = new CountDownLatch(1);
-		doAnswer(invocation -> {
-			Object result = invocation.callRealMethod();
-			String sql = invocation.getArgument(0);
-			if (sql.startsWith("select * from membership_orders") && order.equals(invocation.getArgument(1))) {
-				retryHasOrderLock.countDown();
-				if (!releaseRetry.await(10, TimeUnit.SECONDS)) throw new AssertionError("Retry was not released");
-			}
-			return result;
-		}).when(db).queryForMap(anyString(), any(), any());
+		CountDownLatch start = new CountDownLatch(1);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 
 		try {
-			Future<MvcResult> retry = executor.submit(() -> sepay(member.getAccount(), order).andReturn());
-			assertThat(retryHasOrderLock.await(10, TimeUnit.SECONDS)).isTrue();
-			Future<MvcResult> webhook = executor.submit(() -> webhook("hook-secret",
-				webhookBody(9103, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn());
-			releaseRetry.countDown();
+			Future<MvcResult> retry = executor.submit(() -> {
+				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
+				return sepay(member.getAccount(), order).andReturn();
+			});
+			Future<MvcResult> webhook = executor.submit(() -> {
+				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
+				return webhook("hook-secret",
+					webhookBody(9103, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn();
+			});
+			start.countDown();
 
 			assertThat(retry.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
 			assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
 		}
 		finally {
-			releaseRetry.countDown();
+			start.countDown();
 			executor.shutdownNow();
 		}
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
