@@ -12,6 +12,7 @@ import java.math.BigInteger;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -71,6 +72,8 @@ class PaymentFlowIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired PaymentService paymentService;
+	@Autowired PaymentFulfillmentService fulfillment;
+	@Autowired Clock clock;
 	@Autowired ObjectMapper objectMapper;
 
 	@Test
@@ -169,6 +172,12 @@ class PaymentFlowIntegrationTests {
 		assertThat(json.path("currency").asText()).isEqualTo("VND");
 		assertThat(json.path("expiresAt").asText()).isNotBlank();
 		assertThat(response).doesNotContain("hook-secret", "webhookApiKey", "secretKey", "authorization", "credential");
+		assertThat(db.queryForMap("""
+			select bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot
+			from payments where order_id=?
+			""", order)).containsEntry("bank_code_snapshot", "MB")
+			.containsEntry("bank_account_number_snapshot", "123456789")
+			.containsEntry("bank_account_name_snapshot", "SCMS GYM");
 	}
 
 	@Test
@@ -206,6 +215,27 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void sepayDestinationSurvivesRestartAndConfigurationRotation() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		JsonNode first = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		SepayService rotated = new SepayService(db, accounts, fulfillment, clock,
+			"VCB", "new-account", "NEW GYM", "hook-secret");
+
+		SepayPaymentResponse retry = rotated.create(member.getAccountId(), order);
+
+		assertThat(retry.paymentId().toString()).isEqualTo(first.path("paymentId").asText());
+		assertThat(retry.bankCode()).isEqualTo("MB");
+		assertThat(retry.bankAccountNumber()).isEqualTo("123456789");
+		assertThat(retry.bankAccountName()).isEqualTo("SCMS GYM");
+		assertThat(retry.qrUrl()).isEqualTo(first.path("qrUrl").asText());
+		assertThat(count("select count(*) from payments where order_id=?", order)).isOne();
+	}
+
+	@Test
 	void sepayRetryPreservesExactPersistedTransferContent() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
@@ -221,6 +251,49 @@ class PaymentFlowIntegrationTests {
 		assertThat(response.path("paymentReference").asText()).isEqualTo(persistedContent);
 		assertThat(response.path("transferContent").asText()).isEqualTo(persistedContent);
 		assertThat(queryParameters(response.path("qrUrl").asText())).containsEntry("des", persistedContent);
+		assertThat(db.queryForMap("""
+			select bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot
+			from payments where order_id=?
+			""", order)).containsEntry("bank_code_snapshot", "MB")
+			.containsEntry("bank_account_number_snapshot", "123456789")
+			.containsEntry("bank_account_name_snapshot", "SCMS GYM");
+	}
+
+	@Test
+	void sepayWebhookUsesPersistedAccountAfterConfigurationRotation() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		JsonNode created = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		SepayService rotated = new SepayService(db, accounts, fulfillment, clock,
+			"VCB", "new-account", "NEW GYM", "hook-secret");
+		String reference = created.path("paymentReference").asText();
+
+		PaymentResultResponse result = rotated.webhook("hook-secret", new SepayWebhookRequest(
+			9101L, reference, "PAY " + reference, BigInteger.valueOf(12000), "in", null, null, "123456789"));
+
+		assertThat(result.status()).isEqualTo("PAID");
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
+		assertThat(count("select count(*) from receipts where payment_id=?",
+			UUID.fromString(created.path("paymentId").asText()))).isOne();
+	}
+
+	@Test
+	void directLegacyWebhookFallsBackToCurrentConfiguredAccount() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String reference = "LEGACY-" + order;
+		UUID payment = pendingPayment(order, 12000, reference);
+
+		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
 
 	@Test

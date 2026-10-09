@@ -138,7 +138,8 @@ class PaymentFulfillmentService {
 			String sql = """
 				select p.id payment_id,p.order_id,p.method payment_method,p.status payment_status,
 					p.amount payment_amount,p.currency_code payment_currency,p.bank_transfer_content,
-					p.provider,p.provider_reference,p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
+					p.bank_account_number_snapshot,p.provider,p.provider_reference,
+					p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
 					o.status order_status,o.member_account_id,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot,o.expires_at
