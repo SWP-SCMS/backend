@@ -2,6 +2,9 @@ package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,6 +21,11 @@ import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -45,6 +53,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
@@ -67,7 +76,7 @@ class PaymentFlowIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
 	@Autowired MockMvc mockMvc;
-	@Autowired JdbcTemplate db;
+	@MockitoSpyBean JdbcTemplate db;
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
@@ -293,6 +302,47 @@ class PaymentFlowIntegrationTests {
 		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
 
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
+	}
+
+	@Test
+	void legacyRetryRacingWebhookCompletesWithoutDeadlockOrDuplicateArtifacts() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+			Instant.now().plusSeconds(3600));
+		String reference = "LEGACY-RACE-" + order;
+		UUID payment = pendingPayment(order, 12000, reference);
+		CountDownLatch retryHasOrderLock = new CountDownLatch(1);
+		CountDownLatch releaseRetry = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			Object result = invocation.callRealMethod();
+			String sql = invocation.getArgument(0);
+			if (sql.startsWith("select * from membership_orders") && order.equals(invocation.getArgument(1))) {
+				retryHasOrderLock.countDown();
+				if (!releaseRetry.await(10, TimeUnit.SECONDS)) throw new AssertionError("Retry was not released");
+			}
+			return result;
+		}).when(db).queryForMap(anyString(), any(), any());
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+
+		try {
+			Future<MvcResult> retry = executor.submit(() -> sepay(member.getAccount(), order).andReturn());
+			assertThat(retryHasOrderLock.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> webhook = executor.submit(() -> webhook("hook-secret",
+				webhookBody(9103, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn());
+			assertThat(waitForDatabaseLock()).isTrue();
+			releaseRetry.countDown();
+
+			assertThat(retry.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+			assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+		}
+		finally {
+			releaseRetry.countDown();
+			executor.shutdownNow();
+		}
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
 
@@ -737,6 +787,19 @@ class PaymentFlowIntegrationTests {
 
 	private long count(String sql, Object... args) {
 		return db.queryForObject(sql, Long.class, args);
+	}
+
+	private boolean waitForDatabaseLock() throws InterruptedException {
+		Instant deadline = Instant.now().plusSeconds(10);
+		while (Instant.now().isBefore(deadline)) {
+			Integer blocked = db.queryForObject("""
+				select count(*) from pg_stat_activity
+				where datname=current_database() and pid<>pg_backend_pid() and wait_event_type='Lock'
+				""", Integer.class);
+			if (blocked != null && blocked > 0) return true;
+			Thread.sleep(25);
+		}
+		return false;
 	}
 
 	private Map<String, String> queryParameters(String url) {
