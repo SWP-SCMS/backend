@@ -39,6 +39,8 @@ import com.scms.backend.scheduling.RoomException;
 import com.scms.backend.scheduling.RecurringScheduleException;
 import com.scms.backend.scheduling.BookingException;
 import com.scms.backend.scheduling.AttendanceException;
+import com.scms.backend.notification.NotificationNotFoundException;
+import com.scms.backend.notification.NotificationValidationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -414,6 +416,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
 		problem.setTitle("Membership offer validation failed");
 		problem.setProperty("code", "MEMBERSHIP_OFFER_VALIDATION_ERROR");
+		return problem;
+	}
+
+	@ExceptionHandler(NotificationNotFoundException.class)
+	ProblemDetail handleNotificationNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested notification was not found.");
+		problem.setTitle("Notification not found");
+		problem.setProperty("code", "NOTIFICATION_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(NotificationValidationException.class)
+	ProblemDetail handleNotificationValidation(NotificationValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		return problem;
 	}
 

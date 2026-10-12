@@ -1,13 +1,32 @@
 package com.scms.backend.notification;
 
 import java.util.UUID;
+import java.util.Optional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface NotificationRepository extends JpaRepository<Notification, UUID> {
+
+	Page<Notification> findByRecipientAccountId(UUID recipientAccountId, Pageable pageable);
+
+	Page<Notification> findByRecipientAccountIdAndReadAtIsNull(UUID recipientAccountId, Pageable pageable);
+
+	long countByRecipientAccountIdAndReadAtIsNull(UUID recipientAccountId);
+
+	Optional<Notification> findByIdAndRecipientAccountId(UUID id, UUID recipientAccountId);
+
+	@Modifying
+	@Query("update Notification n set n.readAt = :readAt where n.id = :id and n.recipientAccountId = :recipientId and n.readAt is null")
+	int markRead(@Param("id") UUID id, @Param("recipientId") UUID recipientId, @Param("readAt") java.time.Instant readAt);
+
+	@Modifying
+	@Query("update Notification n set n.readAt = :readAt where n.recipientAccountId = :recipientId and n.readAt is null")
+	int markAllRead(@Param("recipientId") UUID recipientId, @Param("readAt") java.time.Instant readAt);
 
 	@Modifying
 	@Query(value = """
