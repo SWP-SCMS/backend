@@ -2,6 +2,7 @@ package com.scms.backend.audit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -20,6 +21,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Container;
@@ -55,12 +57,8 @@ class AuditHistoryIntegrationTests {
 
 		UUID matchingId = UUID.randomUUID();
 		UUID boundaryId = UUID.randomUUID();
-		audits.saveAndFlush(new AuditEvent(matchingId, actorId, "PAYMENT_PAID", "Attendance", targetId,
-			"confirmed", Map.of("status", "PENDING"), Map.of("status", "PAID")));
-		jdbc.update("update audit_events set created_at = ? where id = ?", from.plusSeconds(1), matchingId);
-		audits.saveAndFlush(new AuditEvent(boundaryId, actorId, "PAYMENT_PAID", "Attendance", targetId,
-			"boundary", Map.of("status", "PENDING"), Map.of("status", "PAID")));
-		jdbc.update("update audit_events set created_at = ? where id = ?", to, boundaryId);
+		insertAuditEvent(matchingId, actorId, targetId, "confirmed", from.plusSeconds(1));
+		insertAuditEvent(boundaryId, actorId, targetId, "boundary", to);
 
 		AuditHistoryPageResponse result = service.list(managerId, actorId, "payment_paid", "attendance", targetId,
 			from, to, PageRequest.of(0, 20));
@@ -76,7 +74,17 @@ class AuditHistoryIntegrationTests {
 			Map.of("status", "ACTIVE")));
 
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> jdbc.update("delete from audit_events where id = ?", eventId))
-			.isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+			.isInstanceOf(UncategorizedSQLException.class)
+			.hasMessageContaining("audit_events is append-only");
+	}
+
+	private void insertAuditEvent(UUID id, UUID actorId, UUID targetId, String reason, Instant createdAt) {
+		jdbc.update("""
+				insert into audit_events
+				(id, actor_account_id, action, target_type, target_id, reason, before_data, after_data, created_at)
+				values (?, ?, 'PAYMENT_PAID', 'Attendance', ?, ?, '{"status":"PENDING"}'::jsonb,
+				'{"status":"PAID"}'::jsonb, ?)
+				""", id, actorId, targetId, reason, Timestamp.from(createdAt));
 	}
 
 	private UUID createAccount(AccountRole role) {
