@@ -116,6 +116,7 @@ public class SecurityConfiguration {
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers("/payments/**").hasAnyRole("MANAGER", "RECEPTIONIST")
 				.requestMatchers("/manager/reports/**").hasRole("MANAGER")
+				.requestMatchers("/manager/audit-events", "/manager/audit-events/**").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
