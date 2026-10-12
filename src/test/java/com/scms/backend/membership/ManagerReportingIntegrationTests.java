@@ -108,7 +108,7 @@ class ManagerReportingIntegrationTests {
 			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
 			offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
 			duration_days_snapshot,payment_method,status,expires_at,paid_at,created_at,is_test_data)
-			values (?,?,?,?,?,'Report Offer','BASIC',10000,'VND',30,'CASH','PAID',?,?,?,?,?)
+			values (?,?,?,?,?,'Report Offer','BASIC',10000,'VND',30,'CASH','PAID',?,?,?,?)
 			""", order, "ORD-" + order, member, manager, offer, Timestamp.from(now.plus(1, ChronoUnit.DAYS)),
 			Timestamp.from(created), Timestamp.from(created), testData);
 		db.update("""
