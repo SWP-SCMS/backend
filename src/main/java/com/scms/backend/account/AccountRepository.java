@@ -28,6 +28,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 
 	boolean existsByIdAndRoleAndStatus(UUID id, AccountRole role, AccountStatus status);
 
+	boolean existsByRole(AccountRole role);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from Account a where a.role = com.scms.backend.account.AccountRole.MANAGER and a.status = com.scms.backend.account.AccountStatus.ACTIVE")
 	List<Account> findActiveManagersForUpdate();

@@ -94,3 +94,22 @@ kết nối Supabase.
 - Quyền hiện tại của role Supabase `anon` và `authenticated` đang quá rộng, đồng thời RLS đang tắt. Việc thu
   hẹp quyền và bật/chốt chính sách RLS là security follow-up bắt buộc trước deployment; foundation này không
   thay đổi quyền Supabase và không thêm migration riêng cho provider.
+
+## Provision Manager đầu tiên (US54)
+
+Chỉ bật provisioning khi database chưa có Account `MANAGER`. Cấu hình các biến môi trường sau rồi khởi động
+backend một lần:
+
+```ini
+INITIAL_MANAGER_ENABLED=true
+INITIAL_MANAGER_FULL_NAME=Initial Manager
+INITIAL_MANAGER_PHONE=0901234567
+INITIAL_MANAGER_EMAIL=manager@example.com
+INITIAL_MANAGER_BIRTH_DATE=1990-01-01
+INITIAL_MANAGER_PASSWORD=replace-with-12-to-72-characters
+```
+
+Backend tạo đúng một Manager `ACTIVE`, lưu mật khẩu bằng BCrypt và ghi Audit không chứa mật khẩu hoặc hash.
+Các instance khởi động đồng thời dùng PostgreSQL advisory lock để không tạo trùng. Sau lần đăng nhập thành công,
+đặt `INITIAL_MANAGER_ENABLED=false`, xóa `INITIAL_MANAGER_PASSWORD` khỏi môi trường rồi dùng API Manager hiện có
+để tạo các Manager tiếp theo.
