@@ -97,7 +97,7 @@ class ManagerReportingIntegrationTests {
 		UUID id = UUID.randomUUID();
 		db.update("""
 			insert into membership_offers(id,plan_code,name,description,price_amount,duration_days,status,created_by_account_id)
-			values (?,'BASIC',?,'Reporting fixture',10000,30,'ACTIVE',?)
+			values (?,'PLUS',?,'Reporting fixture',10000,30,'ACTIVE',?)
 			""", id, "Report Offer " + id, manager);
 		return id;
 	}
@@ -111,7 +111,7 @@ class ManagerReportingIntegrationTests {
 			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
 			offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
 			duration_days_snapshot,payment_method,status,expires_at,paid_at,created_at,is_test_data)
-			values (?,?,?,?,?,'Report Offer','BASIC',10000,'VND',30,'CASH','PAID',?,?,?,?)
+			values (?,?,?,?,?,'Report Offer','PLUS',10000,'VND',30,'CASH','PAID',?,?,?,?)
 			""", order, "ORD-" + order, member, manager, offer, Timestamp.from(now.plus(1, ChronoUnit.DAYS)),
 			Timestamp.from(created), Timestamp.from(created), testData);
 		db.update("""
@@ -121,7 +121,7 @@ class ManagerReportingIntegrationTests {
 		db.update("""
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
 			price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at,created_at)
-			values (?,?,?,?,'BASIC','Report Offer',10000,'VND',30,'ACTIVE',?,?,?)
+			values (?,?,?,?,'PLUS','Report Offer',10000,'VND',30,'ACTIVE',?,?,?)
 			""", membership, member, order, offer, Timestamp.from(now.minus(1, ChronoUnit.DAYS)),
 			Timestamp.from(now.plus(29, ChronoUnit.DAYS)), Timestamp.from(created));
 		return membership;
