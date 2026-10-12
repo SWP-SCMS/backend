@@ -86,9 +86,18 @@ class SecurityProblemDetailTests {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	void managerDashboardIsManagerOnly() throws Exception {
+		mockMvc.perform(get("/manager/dashboard").with(user("member").roles("MEMBER")))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/manager/dashboard").with(user("manager").roles("MANAGER")))
+			.andExpect(status().isOk());
+	}
+
 	@RestController
 	static class TestController {
-		@GetMapping({ "/protected", "/manager/members", "/manager/audit-events", "/membership-offers" })
+		@GetMapping({ "/protected", "/manager/members", "/manager/audit-events", "/manager/dashboard",
+			"/membership-offers" })
 		void protectedResource() {
 		}
 
