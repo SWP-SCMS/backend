@@ -47,12 +47,15 @@ class ManagerReportingIntegrationTests {
 		UUID testMembership = membership(testMember, manager, offer, true, now);
 		UUID sportClass = sportClass();
 		UUID room = room();
-		UUID session = session(sportClass, coach, room, manager, now.minus(4, ChronoUnit.HOURS), 4);
+		Instant reportSessionStart = now.minus(4, ChronoUnit.HOURS);
+		UUID session = session(sportClass, coach, room, manager, now.plus(1, ChronoUnit.DAYS), 4, "SCHEDULED");
 		session(sportClass, coach, room, manager, now.minus(6, ChronoUnit.HOURS), 6);
 		session(sportClass, coach, room, manager, to, 20);
 		UUID normalBooking = booking(session, member, membership, manager, "BOOKED");
 		booking(session, member, membership, manager, "CANCELLED");
 		UUID testBooking = booking(session, testMember, testMembership, manager, "BOOKED");
+		db.update("update class_sessions set start_time=?, end_time=?, status='COMPLETED' where id=?",
+			Timestamp.from(reportSessionStart), Timestamp.from(reportSessionStart.plus(1, ChronoUnit.HOURS)), session);
 		UUID visit = visit(member, membership, manager, now.minus(5, ChronoUnit.HOURS), now.minus(3, ChronoUnit.HOURS));
 		attendance(normalBooking, "PRESENT", visit);
 		attendance(testBooking, "ABSENT", null);
@@ -141,13 +144,18 @@ class ManagerReportingIntegrationTests {
 	}
 
 	private UUID session(UUID sportClass, UUID coach, UUID room, UUID manager, Instant start, int capacity) {
+		return session(sportClass, coach, room, manager, start, capacity, "COMPLETED");
+	}
+
+	private UUID session(UUID sportClass, UUID coach, UUID room, UUID manager, Instant start, int capacity,
+			String status) {
 		UUID id = UUID.randomUUID();
 		db.update("""
 			insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,
 			capacity,status,created_by_account_id,created_at)
-			values (?,?,?,?,?,?,?,'COMPLETED',?,?)
+			values (?,?,?,?,?,?,?,?,?,?)
 			""", id, sportClass, coach, room, Timestamp.from(start), Timestamp.from(start.plus(1, ChronoUnit.HOURS)),
-			capacity, manager, Timestamp.from(start.minus(1, ChronoUnit.DAYS)));
+			capacity, status, manager, Timestamp.from(start.minus(1, ChronoUnit.DAYS)));
 		return id;
 	}
 
