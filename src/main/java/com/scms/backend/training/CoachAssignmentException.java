@@ -1,0 +1,73 @@
+package com.scms.backend.training;
+
+import org.springframework.http.HttpStatus;
+
+public class CoachAssignmentException extends RuntimeException {
+
+	private final HttpStatus status;
+	private final String code;
+	private final String field;
+
+	private CoachAssignmentException(HttpStatus status, String code, String message, String field) {
+		super(message);
+		this.status = status;
+		this.code = code;
+		this.field = field;
+	}
+
+	private CoachAssignmentException(HttpStatus status, String code, String message) {
+		this(status, code, message, null);
+	}
+
+	public static CoachAssignmentException memberNotFound() {
+		return new CoachAssignmentException(HttpStatus.NOT_FOUND, "MEMBER_NOT_FOUND", "The requested Member was not found.");
+	}
+
+	public static CoachAssignmentException coachNotFound() {
+		return new CoachAssignmentException(HttpStatus.NOT_FOUND, "COACH_NOT_FOUND", "The requested Coach was not found.");
+	}
+
+	public static CoachAssignmentException memberNotActive() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "MEMBER_NOT_ACTIVE", "Coach assignment requires an active Member account.");
+	}
+
+	public static CoachAssignmentException coachNotActive() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_NOT_ACTIVE", "Coach assignment requires an active Coach account.");
+	}
+
+	public static CoachAssignmentException plusMembershipRequired() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED", "Coach assignment requires an active PLUS Membership.");
+	}
+
+	public static CoachAssignmentException alreadyAssignedToThisCoach() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ALREADY_ASSIGNED", "The Member is already actively assigned to this Coach.");
+	}
+
+	public static CoachAssignmentException activeAssignmentNotFound() {
+		return new CoachAssignmentException(HttpStatus.NOT_FOUND, "COACH_ASSIGNMENT_NOT_FOUND", "No active Coach assignment was found for this Member.");
+	}
+
+	public static CoachAssignmentException actorNotActiveManager() {
+		return new CoachAssignmentException(HttpStatus.FORBIDDEN, "ACTOR_NOT_ACTIVE_MANAGER", "This action requires an active Manager account.");
+	}
+
+	public static CoachAssignmentException concurrentConflict() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_CONFLICT", "The Coach assignment could not be confirmed because state changed concurrently.");
+	}
+
+	public static CoachAssignmentException validationError(String field, String message) {
+		return new CoachAssignmentException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, field);
+	}
+
+	public HttpStatus getStatus() {
+		return status;
+	}
+
+	public String getCode() {
+		return code;
+	}
+
+	public String getField() {
+		return field;
+	}
+}
