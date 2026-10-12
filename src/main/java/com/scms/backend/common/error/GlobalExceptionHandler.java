@@ -9,6 +9,7 @@ import com.scms.backend.auth.DuplicateAccountException;
 import com.scms.backend.auth.CurrentPasswordIncorrectException;
 import com.scms.backend.auth.ChangePasswordValidationException;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditHistoryValidationException;
 import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
@@ -430,6 +431,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 
 	@ExceptionHandler(NotificationValidationException.class)
 	ProblemDetail handleNotificationValidation(NotificationValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+
+	@ExceptionHandler(AuditHistoryValidationException.class)
+	ProblemDetail handleAuditHistoryValidation(AuditHistoryValidationException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
 			"One or more request fields are invalid.");
 		problem.setTitle("Validation failed");

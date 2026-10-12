@@ -126,7 +126,8 @@ class GeneratedOpenApiTests {
 		"PATCH /coach/class-sessions/{sessionId}/attendance/{attendanceId}",
 		"GET /notifications",
 		"PATCH /notifications/{notificationId}/read",
-		"PATCH /notifications/read-all"
+		"PATCH /notifications/read-all",
+		"GET /manager/audit-events"
 	);
 
 	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(
