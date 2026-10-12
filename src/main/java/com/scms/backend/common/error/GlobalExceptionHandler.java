@@ -22,6 +22,7 @@ import com.scms.backend.membership.MembershipOfferNotFoundException;
 import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
 import com.scms.backend.membership.PendingMembershipOrderExistsException;
 import com.scms.backend.membership.PaymentException;
+import com.scms.backend.membership.ReportingValidationException;
 import com.scms.backend.membership.SepayValidationException;
 import com.scms.backend.membership.MembershipOfferValidationException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
@@ -454,6 +455,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
 		problem.setTitle("Payment request failed");
 		problem.setProperty("code", exception.code());
+		return problem;
+	}
+
+	@ExceptionHandler(ReportingValidationException.class)
+	ProblemDetail handleReportingValidation(ReportingValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
+		problem.setTitle("Validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		return problem;
 	}
 
