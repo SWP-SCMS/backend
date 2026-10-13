@@ -4,13 +4,11 @@ info:
   version: "1.0"
   description: |
     US40 – Coach - Assigned Member List
-    US41 – Coach - Member Training Profile
 
     Business rules:
     - BR-COA-03: A Coach may be assigned to multiple Members simultaneously.
     - BR-COA-05: Expired PLUS memberships end the assignment; history remains viewable.
-    - BR-COA-06: Only an ACTIVE Coach can access these endpoints.
-    - BR-COA-07: Personal Coach may view Member Profile and fitness goal within assigned scope.
+    - BR-COA-06: Only an ACTIVE Coach can access this endpoint.
     - BR-RPT-06: Coach may only see Members within their assigned coaching scope.
     - BR-SEC-04: Role + ownership enforced at backend.
 
@@ -60,49 +58,6 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
         "403":
           description: Authenticated account is not an active Coach.
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetail"
-
-  /coach/members/{memberId}:
-    get:
-      operationId: coachGetMemberTrainingProfile
-      summary: "US41 – Get the full training profile of an assigned Member"
-      description: |
-        Returns the full profile and fitness goal data for a Member who has an ACTIVE
-        Personal Coach Assignment with the authenticated Coach (BR-COA-07).
-        Returns 404 if no such active assignment exists (BR-RPT-06).
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: memberId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: Full training profile of the assigned Member.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CoachMemberTrainingProfileResponse"
-        "401":
-          description: Not authenticated.
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetail"
-        "403":
-          description: Authenticated account is not an active Coach.
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemDetail"
-        "404":
-          description: No active coaching assignment exists for this Member.
           content:
             application/problem+json:
               schema:
@@ -174,54 +129,6 @@ components:
         totalPages:
           type: integer
           minimum: 0
-
-    CoachMemberTrainingProfileResponse:
-      type: object
-      required:
-        - memberAccountId
-        - memberId
-        - fullName
-        - phone
-        - email
-        - birthDate
-        - status
-        - assignmentId
-        - assignedSince
-      properties:
-        memberAccountId:
-          type: string
-          format: uuid
-        memberId:
-          type: string
-          description: System-generated member code.
-        fullName:
-          type: string
-        phone:
-          type: string
-        email:
-          type: string
-          format: email
-        birthDate:
-          type: string
-          format: date
-        status:
-          type: string
-          enum: [ACTIVE, SUSPENDED]
-        profileImageUrl:
-          type: ["string", "null"]
-        fitnessGoal:
-          type: ["string", "null"]
-          description: Fitness goal data per BR-COA-07.
-        emergencyContactName:
-          type: ["string", "null"]
-        emergencyContactPhone:
-          type: ["string", "null"]
-        assignmentId:
-          type: string
-          format: uuid
-        assignedSince:
-          type: string
-          format: date-time
 
     ProblemDetail:
       type: object
