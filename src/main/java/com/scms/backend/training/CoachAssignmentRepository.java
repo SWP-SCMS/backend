@@ -17,6 +17,9 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	Optional<CoachAssignment> findByMemberAccountIdAndStatus(UUID memberAccountId, CoachAssignmentStatus status);
 
+	Optional<CoachAssignment> findByMemberAccountIdAndCoachAccountIdAndStatus(UUID memberAccountId,
+			UUID coachAccountId, CoachAssignmentStatus status);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from CoachAssignment a where a.memberAccountId = :memberAccountId and a.status = :status")
 	Optional<CoachAssignment> findByMemberAccountIdAndStatusForUpdate(@Param("memberAccountId") UUID memberAccountId,
@@ -25,6 +28,9 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 	Page<CoachAssignment> findByMemberAccountIdOrderByCreatedAtDesc(UUID memberAccountId, Pageable pageable);
 
 	boolean existsByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
+
+	Page<CoachAssignment> findByCoachAccountIdAndStatusOrderByCreatedAtDesc(UUID coachAccountId,
+			CoachAssignmentStatus status, Pageable pageable);
 
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
