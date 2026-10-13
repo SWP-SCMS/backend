@@ -98,4 +98,40 @@ class CoachAssignedMemberControllerTests {
 			.andExpect(status().isBadRequest());
 	}
 
+	// US41 detail
+
+	@Test
+	void getMemberTrainingProfile_returns200_whenActiveAssignment() throws Exception {
+		var profile = new CoachMemberTrainingProfileResponse(
+			MEMBER_ID, "MBR-000001", "Test Member",
+			"0901234567", "member@test.com",
+			java.time.LocalDate.of(1990, 1, 1), AccountStatus.ACTIVE,
+			null, "Build muscle", null, null,
+			UUID.randomUUID(), Instant.now());
+
+		when(service.getMemberTrainingProfile(eq(COACH_ID), eq(MEMBER_ID))).thenReturn(profile);
+
+		mockMvc.perform(get("/coach/members/" + MEMBER_ID)
+				.with(jwt().jwt(b -> b.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.memberId").value("MBR-000001"))
+			.andExpect(jsonPath("$.fullName").value("Test Member"))
+			.andExpect(jsonPath("$.fitnessGoal").value("Build muscle"));
+	}
+
+	@Test
+	void getMemberTrainingProfile_returns401_whenUnauthenticated() throws Exception {
+		mockMvc.perform(get("/coach/members/" + MEMBER_ID))
+			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void getMemberTrainingProfile_returns403_whenReceptionist() throws Exception {
+		mockMvc.perform(get("/coach/members/" + MEMBER_ID)
+				.with(jwt().jwt(b -> b.subject(UUID.randomUUID().toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"))))
+			.andExpect(status().isForbidden());
+	}
+
 }
