@@ -26,6 +26,9 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	boolean existsByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
+	Page<CoachAssignment> findByCoachAccountIdAndStatusOrderByCreatedAtDesc(UUID coachAccountId,
+			CoachAssignmentStatus status, Pageable pageable);
+
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
 	@Query(value = """
