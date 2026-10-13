@@ -98,6 +98,31 @@ class CoachAssignedMemberIntegrationTests {
 				.isEqualTo("ENDED");
 	}
 
+	@Test
+	void getMemberTrainingProfile_usesAssignmentCreatedByUs39AndReturnsUs41Profile() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager US41");
+		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Coach US41");
+		Account otherCoach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Other Coach US41");
+		Account member = createMember("Member US41", "Improve endurance");
+		Instant now = Instant.now();
+		createMembership(member.getId(), manager.getId(), now.minusSeconds(3600), now.plusSeconds(86400));
+
+		CoachAssignmentResponse assignment = assignmentService.assign(manager.getId(), member.getId(),
+				new CoachAssignmentAssignRequest(coach.getId(), "US39 to US41 integration"));
+
+		CoachMemberTrainingProfileResponse profile = assignedMemberService
+				.getMemberTrainingProfile(coach.getId(), member.getId());
+
+		assertThat(profile.memberAccountId()).isEqualTo(member.getId());
+		assertThat(profile.fullName()).isEqualTo("Member US41");
+		assertThat(profile.fitnessGoal()).isEqualTo("Improve endurance");
+		assertThat(profile.assignmentId()).isEqualTo(assignment.id());
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> assignedMemberService
+				.getMemberTrainingProfile(otherCoach.getId(), member.getId()))
+				.isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+	}
+
 	private Account createAccount(AccountRole role, AccountStatus status, String name) {
 		UUID id = UUID.randomUUID();
 		String unique = id.toString().substring(0, 8);

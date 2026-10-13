@@ -16,15 +16,19 @@ import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US40 - Coach - Assigned Member List
+ * US41 - Coach - Member Training Profile
  *
  * BR-COA-03: Coach may have multiple ACTIVE assignments.
  * BR-COA-05: Reconcile expired PLUS memberships before listing.
  * BR-COA-06: Only ACTIVE Coach can access.
+ * BR-COA-07: Personal Coach may view Member Profile and fitness goal in their assigned scope.
  * BR-RPT-06: Coach may only see Members within their assigned coaching scope.
  * BR-SEC-04: Role + ownership enforced at backend.
  */
@@ -78,6 +82,32 @@ public class CoachAssignedMemberService {
 
 		return new CoachAssignedMemberPageResponse(content, page.getNumber(), page.getSize(),
 				page.getTotalElements(), page.getTotalPages());
+	}
+
+	/**
+	 * US41: Get the full training profile of a Member assigned to this Coach.
+	 * Only accessible when there is an ACTIVE assignment between the Coach and the Member.
+	 */
+	@Transactional
+	public CoachMemberTrainingProfileResponse getMemberTrainingProfile(UUID coachId, UUID memberId) {
+		ensureActiveCoach(coachId);
+		assignments.endActiveAssignmentIfPlusExpired(memberId, clock.instant());
+
+		CoachAssignment assignment = assignments
+				.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId, CoachAssignmentStatus.ACTIVE)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+						"No active coaching assignment found for this member"));
+
+		Account account = accounts.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
+		if (account.getRole() != AccountRole.MEMBER) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+		}
+
+		MemberProfile profile = profiles.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member profile not found"));
+
+		return CoachMemberTrainingProfileResponse.from(assignment, account, profile);
 	}
 
 	private void ensureActiveCoach(UUID coachId) {

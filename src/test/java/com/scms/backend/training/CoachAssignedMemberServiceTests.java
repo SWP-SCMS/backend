@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -31,6 +32,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class CoachAssignedMemberServiceTests {
@@ -124,5 +127,91 @@ class CoachAssignedMemberServiceTests {
 		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPlus(now);
 		verify(assignments, never()).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
 				coachId, CoachAssignmentStatus.ACTIVE, pageable);
+	}
+
+	@Test
+	void getMemberTrainingProfile_returnsProfileWithinActiveCoachAssignmentScope() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member One",
+				"0901000001", "member@example.com", LocalDate.of(1995, 1, 1), "hash");
+		CoachAssignment assignment = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
+				CoachAssignmentStatus.ACTIVE, now.minusSeconds(3600), now.minusSeconds(3600));
+
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+				.thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
+		when(profiles.findById(memberId)).thenReturn(Optional.of(profile));
+		when(profile.getMemberCode()).thenReturn("MBR-000001");
+		when(profile.getProfileImageUrl()).thenReturn("https://cdn.example/member.png");
+		when(profile.getFitnessGoal()).thenReturn("Build strength");
+		when(profile.getEmergencyContactName()).thenReturn("Emergency Contact");
+		when(profile.getEmergencyContactPhone()).thenReturn("0901999999");
+
+		CoachMemberTrainingProfileResponse result = service.getMemberTrainingProfile(coachId, memberId);
+
+		assertThat(result.memberAccountId()).isEqualTo(memberId);
+		assertThat(result.memberId()).isEqualTo("MBR-000001");
+		assertThat(result.fullName()).isEqualTo("Member One");
+		assertThat(result.phone()).isEqualTo("0901000001");
+		assertThat(result.email()).isEqualTo("member@example.com");
+		assertThat(result.birthDate()).isEqualTo(LocalDate.of(1995, 1, 1));
+		assertThat(result.fitnessGoal()).isEqualTo("Build strength");
+		assertThat(result.emergencyContactName()).isEqualTo("Emergency Contact");
+		assertThat(result.emergencyContactPhone()).isEqualTo("0901999999");
+		assertThat(result.assignmentId()).isEqualTo(assignment.getId());
+		assertThat(result.assignedSince()).isEqualTo(now.minusSeconds(3600));
+
+		InOrder lifecycleThenOwnershipCheck = inOrder(assignments);
+		lifecycleThenOwnershipCheck.verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+		lifecycleThenOwnershipCheck.verify(assignments).findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE);
+	}
+
+	@Test
+	void getMemberTrainingProfile_rejectsCoachOutsideActiveAssignmentScope() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+				.thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.getMemberTrainingProfile(coachId, memberId))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
+
+		verify(accounts, never()).findById(memberId);
+		verify(profiles, never()).findById(memberId);
+	}
+
+	@Test
+	void getMemberTrainingProfile_rejectsAccountThatIsNotAnActiveCoachBeforeReadingMemberData() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+				.thenReturn(false);
+
+		assertThatThrownBy(() -> service.getMemberTrainingProfile(coachId, memberId))
+				.isInstanceOf(InvalidAuthenticatedAccountException.class);
+
+		verify(assignments, never()).endActiveAssignmentIfPlusExpired(memberId, now);
+		verify(assignments, never()).findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE);
+	}
+
+	@Test
+	void getMemberTrainingProfile_returnsNotFoundWhenMemberProfileIsMissing() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member One",
+				"0901000001", "member@example.com", LocalDate.of(1995, 1, 1), "hash");
+		CoachAssignment assignment = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
+				CoachAssignmentStatus.ACTIVE, now.minusSeconds(3600), now.minusSeconds(3600));
+
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+				.thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
+		when(profiles.findById(memberId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.getMemberTrainingProfile(coachId, memberId))
+				.isInstanceOfSatisfying(ResponseStatusException.class,
+						exception -> assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
 	}
 }
