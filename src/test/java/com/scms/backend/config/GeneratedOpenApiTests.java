@@ -133,6 +133,7 @@ class GeneratedOpenApiTests {
 		"GET /coach/members",
 		"POST /coach/members/{memberId}/training-plans",
 		"PUT /coach/members/{memberId}/training-plans/{planId}",
+		"GET /members/me/training-plans",
 		"GET /notifications",
 		"PATCH /notifications/{notificationId}/read",
 		"PATCH /notifications/read-all",
