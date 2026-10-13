@@ -71,6 +71,38 @@ class TrainingPlanIntegrationTests {
 				Long.class, response.id())).isEqualTo(1L);
 	}
 
+	@Test
+	void updatePreservesVersionOneAndAppendsVersionTwo() {
+		Account manager = createAccount(AccountRole.MANAGER, "Manager US43");
+		Account coach = createAccount(AccountRole.COACH, "Coach US43");
+		Account member = createAccount(AccountRole.MEMBER, "Member US43");
+		Instant now = Instant.now();
+		createPlusMembership(member.getId(), manager.getId(), now.minusSeconds(3600), now.plusSeconds(86400));
+		assignments.assign(manager.getId(), member.getId(),
+				new CoachAssignmentAssignRequest(coach.getId(), "US43 integration assignment"));
+		TrainingPlanResponse created = trainingPlans.create(coach.getId(), member.getId(),
+				new CreateTrainingPlanRequest("Foundation", Map.of("goal", "Foundation")));
+
+		TrainingPlanResponse updated = trainingPlans.update(coach.getId(), member.getId(), created.id(),
+				new UpdateTrainingPlanRequest("Progressive strength", Map.of("goal", "Progressive overload")));
+
+		assertThat(updated.versionNumber()).isEqualTo(2);
+		assertThat(jdbc.queryForObject("select title from training_plans where id = ?", String.class, created.id()))
+				.isEqualTo("Progressive strength");
+		assertThat(jdbc.queryForObject(
+				"select count(*) from training_plan_versions where training_plan_id = ?", Long.class, created.id()))
+				.isEqualTo(2L);
+		assertThat(jdbc.queryForObject(
+				"select content ->> 'goal' from training_plan_versions where id = ?", String.class,
+				created.versionId())).isEqualTo("Foundation");
+		assertThat(jdbc.queryForObject(
+				"select content ->> 'goal' from training_plan_versions where id = ?", String.class,
+				updated.versionId())).isEqualTo("Progressive overload");
+		assertThat(jdbc.queryForObject(
+				"select count(*) from audit_events where action = 'TRAINING_PLAN_UPDATED' and target_id = ?",
+				Long.class, created.id())).isEqualTo(1L);
+	}
+
 	private Account createAccount(AccountRole role, String name) {
 		UUID id = UUID.randomUUID();
 		String unique = id.toString().substring(0, 8);

@@ -28,6 +28,21 @@ public class TrainingPlanException extends RuntimeException {
 				"No active coaching assignment was found for this Member and Coach.");
 	}
 
+	static TrainingPlanException planNotFound() {
+		return new TrainingPlanException(HttpStatus.NOT_FOUND, "TRAINING_PLAN_NOT_FOUND",
+				"The requested Training Plan was not found for this Member.");
+	}
+
+	static TrainingPlanException planNotActive() {
+		return new TrainingPlanException(HttpStatus.CONFLICT, "TRAINING_PLAN_NOT_ACTIVE",
+				"Only an active Training Plan can be updated.");
+	}
+
+	static TrainingPlanException versionHistoryNotFound() {
+		return new TrainingPlanException(HttpStatus.CONFLICT, "TRAINING_PLAN_VERSION_NOT_FOUND",
+				"The Training Plan has no version history to update.");
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 }

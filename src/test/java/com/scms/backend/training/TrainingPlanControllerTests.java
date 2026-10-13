@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -89,6 +90,35 @@ class TrainingPlanControllerTests {
 						.authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"title\":\"Plan\",\"content\":{}}"))
+				.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void updateReturns200WithNextVersionForCoach() throws Exception {
+		UUID planId = UUID.randomUUID();
+		TrainingPlanResponse response = new TrainingPlanResponse(planId, MEMBER_ID, UUID.randomUUID(),
+				"Progressive strength", TrainingPlanStatus.ACTIVE, COACH_ID,
+				Instant.parse("2026-10-13T06:00:00Z"), UUID.randomUUID(), 2,
+				Map.of("goal", "Progressive overload"));
+		when(service.update(eq(COACH_ID), eq(MEMBER_ID), eq(planId), any())).thenReturn(response);
+
+		mockMvc.perform(put("/coach/members/{memberId}/training-plans/{planId}", MEMBER_ID, planId)
+				.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"title\":\"Progressive strength\",\"content\":{\"goal\":\"Progressive overload\"}}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.id").value(planId.toString()))
+				.andExpect(jsonPath("$.versionNumber").value(2));
+	}
+
+	@Test
+	void updateReturns403ForMemberRole() throws Exception {
+		mockMvc.perform(put("/coach/members/{memberId}/training-plans/{planId}", MEMBER_ID, UUID.randomUUID())
+				.with(jwt().jwt(builder -> builder.subject(UUID.randomUUID().toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"title\":\"Updated\",\"content\":{}}"))
 				.andExpect(status().isForbidden());
 	}
 }
