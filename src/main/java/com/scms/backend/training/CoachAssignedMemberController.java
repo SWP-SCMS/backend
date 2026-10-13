@@ -8,15 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * US40 - Coach - Assigned Member List: GET /coach/members.
- * US41 - Coach - Member Training Profile: GET /coach/members/{memberId}.
- */
+/** US40 - Coach - Assigned Member List: GET /coach/members. */
 @RestController
 @RequestMapping("/coach/members")
 public class CoachAssignedMemberController {
@@ -39,13 +35,6 @@ public class CoachAssignedMemberController {
 		}
 		var pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
 		return ResponseEntity.ok(service.listAssignedMembers(coachId(jwt), pageable));
-	}
-
-	/** US41: get full training profile of an assigned Member. */
-	@GetMapping("/{memberId}")
-	public ResponseEntity<CoachMemberTrainingProfileResponse> getProfile(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable UUID memberId) {
-		return ResponseEntity.ok(service.getMemberTrainingProfile(coachId(jwt), memberId));
 	}
 
 	private UUID coachId(Jwt jwt) {
