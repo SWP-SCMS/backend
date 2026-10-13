@@ -43,6 +43,7 @@ import com.scms.backend.scheduling.BookingException;
 import com.scms.backend.scheduling.AttendanceException;
 import com.scms.backend.notification.NotificationNotFoundException;
 import com.scms.backend.notification.NotificationValidationException;
+import com.scms.backend.training.CoachAssignmentException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -465,6 +466,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		problem.setTitle("Validation failed");
 		problem.setProperty("code", "VALIDATION_ERROR");
 		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		return problem;
+	}
+	@ExceptionHandler(CoachAssignmentException.class)
+	ProblemDetail handleCoachAssignment(CoachAssignmentException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Coach assignment request failed");
+		problem.setProperty("code", exception.getCode());
+		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
 		return problem;
 	}
 

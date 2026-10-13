@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Personal Coach Assignment
+  version: v4.2
+servers:
+  - url: /api/v1
+paths:
+  /manager/members/{memberId}/coach-assignment:
+    post:
+      summary: Assign or reassign personal coach to a Member
+      operationId: assignCoach
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoachAssignmentAssignRequest'
+      responses:
+        '201':
+          description: Coach assigned or reassigned successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      summary: Get current active Coach assignment for a Member
+      operationId: getActiveCoachAssignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current active Coach assignment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachAssignmentResponse'
+        '204':
+          description: No active Coach assignment found.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /manager/members/{memberId}/coach-assignments:
+    get:
+      summary: Get Coach assignment history for a Member
+      operationId: listCoachAssignmentHistory
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Paginated Coach assignment history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachAssignmentPageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /manager/members/{memberId}/coach-assignment/end:
+    patch:
+      summary: End current active Coach assignment for a Member
+      operationId: endCoachAssignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoachAssignmentEndRequest'
+      responses:
+        '200':
+          description: Coach assignment ended successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachAssignmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: >-
+        VALIDATION_ERROR for missing/invalid coachAccountId, invalid UUID, page < 0, size < 1, or blank end reason.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Unauthorized:
+      description: >-
+        Authentication required or bearer token is missing, expired, or invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Forbidden:
+      description: >-
+        Authenticated user is not an active Manager; code is ACTOR_NOT_ACTIVE_MANAGER.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    NotFound:
+      description: >-
+        Target resource not found: MEMBER_NOT_FOUND, COACH_NOT_FOUND, or COACH_ASSIGNMENT_NOT_FOUND.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+    Conflict:
+      description: >-
+        Business rule conflicts: PLUS_MEMBERSHIP_REQUIRED, MEMBER_NOT_ACTIVE, COACH_NOT_ACTIVE,
+        COACH_ALREADY_ASSIGNED, or COACH_ASSIGNMENT_CONFLICT.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetail'
+
+  schemas:
+    CoachAssignmentAssignRequest:
+      type: object
+      required:
+        - coachAccountId
+      additionalProperties: false
+      properties:
+        coachAccountId:
+          type: string
+          format: uuid
+        reason:
+          type: [string, "null"]
+          maxLength: 1000
+
+    CoachAssignmentEndRequest:
+      type: object
+      required:
+        - reason
+      additionalProperties: false
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    CoachAssignmentResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - coachAccountId
+        - assignedByAccountId
+        - status
+        - startsAt
+        - createdAt
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberAccountId:
+          type: string
+          format: uuid
+        coachAccountId:
+          type: string
+          format: uuid
+        coachFullName:
+          type: [string, "null"]
+        coachPhone:
+          type: [string, "null"]
+        coachEmail:
+          type: [string, "null"]
+        assignedByAccountId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACTIVE, ENDED]
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: [string, "null"]
+          format: date-time
+        endReason:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    CoachAssignmentPageResponse:
+      type: object
+      required:
+        - content
+        - page
+        - size
+        - totalElements
+        - totalPages
+      additionalProperties: false
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoachAssignmentResponse'
+        page:
+          type: integer
+          minimum: 0
+        size:
+          type: integer
+          minimum: 1
+        totalElements:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+
+    ProblemDetail:
+      type: object
+      required:
+        - title
+        - status
+        - detail
+        - instance
+        - code
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - MEMBER_NOT_FOUND
+            - COACH_NOT_FOUND
+            - MEMBER_NOT_ACTIVE
+            - COACH_NOT_ACTIVE
+            - PLUS_MEMBERSHIP_REQUIRED
+            - COACH_ALREADY_ASSIGNED
+            - COACH_ASSIGNMENT_NOT_FOUND
+            - ACTOR_NOT_ACTIVE_MANAGER
+            - COACH_ASSIGNMENT_CONFLICT
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        traceId:
+          type: string

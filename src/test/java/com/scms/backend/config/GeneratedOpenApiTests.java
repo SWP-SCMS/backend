@@ -133,7 +133,11 @@ class GeneratedOpenApiTests {
 		"GET /notifications",
 		"PATCH /notifications/{notificationId}/read",
 		"PATCH /notifications/read-all",
-		"GET /manager/audit-events"
+		"GET /manager/audit-events",
+		"POST /manager/members/{memberId}/coach-assignment",
+		"GET /manager/members/{memberId}/coach-assignment",
+		"GET /manager/members/{memberId}/coach-assignments",
+		"PATCH /manager/members/{memberId}/coach-assignment/end"
 	);
 
 	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(
@@ -142,7 +146,8 @@ class GeneratedOpenApiTests {
 		"POST /manager/staff-accounts/{accountId}/reset-password",
 		"POST /reception/members/{memberId}/reset-password",
 		"GET /members/me/membership-orders/pending",
-		"GET /reception/members/{memberId}/membership-orders/pending"
+		"GET /reception/members/{memberId}/membership-orders/pending",
+		"GET /manager/members/{memberId}/coach-assignment"
 	);
 
 	private static final Set<String> HTTP_METHODS = Set.of(

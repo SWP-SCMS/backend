@@ -78,6 +78,9 @@ public class OpenApiConfiguration {
 				|| path.equals("/reception/members/{memberId}/membership-orders/pending"))) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No pending order."));
 		}
+		if (method == HttpMethod.GET && path.equals("/manager/members/{memberId}/coach-assignment")) {
+			operation.getResponses().addApiResponse("204", new ApiResponse().description("No active Coach assignment found."));
+		}
 		if (method == HttpMethod.POST && path.equals("/reception/membership-orders/{orderId}/cash")) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 		}
