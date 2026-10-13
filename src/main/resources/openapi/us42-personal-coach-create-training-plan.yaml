@@ -1,0 +1,128 @@
+openapi: "3.1.0"
+info:
+  title: SCMS – Personal Coach Training Plan API
+  version: "1.0"
+  description: US42 – Personal Coach - Create Training Plan
+paths:
+  /coach/members/{memberId}/training-plans:
+    post:
+      operationId: createPersonalTrainingPlan
+      summary: Create a Training Plan and its initial immutable version
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrainingPlanRequest"
+      responses:
+        "201":
+          description: Training Plan created with Version 1.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainingPlanResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CreateTrainingPlanRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        content:
+          type: object
+          additionalProperties: true
+    TrainingPlanResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - coachAssignmentId
+        - title
+        - status
+        - createdByAccountId
+        - createdAt
+        - versionId
+        - versionNumber
+        - content
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        coachAssignmentId: { type: string, format: uuid }
+        title: { type: string }
+        status: { type: string, enum: [ACTIVE, ARCHIVED] }
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        versionId: { type: string, format: uuid }
+        versionNumber: { type: integer, minimum: 1 }
+        content:
+          type: object
+          additionalProperties: true
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - ACTOR_NOT_ACTIVE_COACH
+            - PLUS_MEMBERSHIP_REQUIRED
+            - COACH_ASSIGNMENT_NOT_FOUND
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active Coach role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    NotFound:
+      description: No active assignment exists for this Coach and Member.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Conflict:
+      description: The Member does not have an active PLUS Membership.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }

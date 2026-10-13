@@ -44,6 +44,7 @@ import com.scms.backend.scheduling.AttendanceException;
 import com.scms.backend.notification.NotificationNotFoundException;
 import com.scms.backend.notification.NotificationValidationException;
 import com.scms.backend.training.CoachAssignmentException;
+import com.scms.backend.training.TrainingPlanException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -476,6 +477,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
+		return problem;
+	}
+
+	@ExceptionHandler(TrainingPlanException.class)
+	ProblemDetail handleTrainingPlan(TrainingPlanException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Training Plan request failed");
+		problem.setProperty("code", exception.getCode());
 		return problem;
 	}
 
