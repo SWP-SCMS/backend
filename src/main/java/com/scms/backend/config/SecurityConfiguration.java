@@ -100,6 +100,7 @@ public class SecurityConfiguration {
 					.hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/coach/members").hasRole("COACH")
 				.requestMatchers(HttpMethod.POST, "/coach/members/*/training-plans").hasRole("COACH")
+				.requestMatchers(HttpMethod.PUT, "/coach/members/*/training-plans/*").hasRole("COACH")
 				.requestMatchers(HttpMethod.POST, "/members/class-sessions/*/bookings").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.PATCH, "/members/me/bookings/*/cancel").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/bookings").hasRole("MEMBER")

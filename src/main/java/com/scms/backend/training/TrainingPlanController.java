@@ -12,8 +12,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 
-/** US42 - Personal Coach - Create Training Plan. */
+/** US42-US43 - Personal Coach - Create and version Training Plans. */
 @RestController
 @RequestMapping("/coach/members/{memberId}/training-plans")
 public class TrainingPlanController {
@@ -29,5 +30,12 @@ public class TrainingPlanController {
 			@PathVariable UUID memberId, @Valid @RequestBody CreateTrainingPlanRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(service.create(UUID.fromString(jwt.getSubject()), memberId, request));
+	}
+
+	@PutMapping("/{planId}")
+	public ResponseEntity<TrainingPlanResponse> update(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID planId,
+			@Valid @RequestBody UpdateTrainingPlanRequest request) {
+		return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), memberId, planId, request));
 	}
 }

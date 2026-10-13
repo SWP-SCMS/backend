@@ -61,6 +61,11 @@ public class TrainingPlan {
 		this.updatedAt = createdAt;
 	}
 
+	public void update(String title, Instant updatedAt) {
+		this.title = Objects.requireNonNull(title);
+		this.updatedAt = Objects.requireNonNull(updatedAt);
+	}
+
 	public UUID getId() { return id; }
 	public UUID getMemberAccountId() { return memberAccountId; }
 	public UUID getCoachAssignmentId() { return coachAssignmentId; }

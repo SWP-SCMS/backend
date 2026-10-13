@@ -38,19 +38,9 @@ public class TrainingPlanService {
 
 	@Transactional
 	public TrainingPlanResponse create(UUID coachId, UUID memberId, CreateTrainingPlanRequest request) {
-		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
-			throw TrainingPlanException.actorNotActiveCoach();
-		}
-
+		ensureActiveCoach(coachId);
 		Instant now = clock.instant();
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
-		if (!assignments.hasActivePlusMembership(memberId, now)) {
-			throw TrainingPlanException.plusMembershipRequired();
-		}
-
-		CoachAssignment assignment = assignments
-				.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId, CoachAssignmentStatus.ACTIVE)
-				.orElseThrow(TrainingPlanException::activeAssignmentNotFound);
+		CoachAssignment assignment = currentAssignment(coachId, memberId, now);
 
 		TrainingPlan plan = plans.saveAndFlush(new TrainingPlan(UUID.randomUUID(), memberId, assignment.getId(),
 				request.title().trim(), coachId, now));
@@ -68,5 +58,57 @@ public class TrainingPlanService {
 				plan.getId(), afterData));
 
 		return TrainingPlanResponse.from(plan, version);
+	}
+
+	@Transactional
+	public TrainingPlanResponse update(UUID coachId, UUID memberId, UUID planId,
+			UpdateTrainingPlanRequest request) {
+		ensureActiveCoach(coachId);
+		Instant now = clock.instant();
+		currentAssignment(coachId, memberId, now);
+
+		TrainingPlan plan = plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)
+				.orElseThrow(TrainingPlanException::planNotFound);
+		if (plan.getStatus() != TrainingPlanStatus.ACTIVE) {
+			throw TrainingPlanException.planNotActive();
+		}
+
+		TrainingPlanVersion previous = versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)
+				.orElseThrow(TrainingPlanException::versionHistoryNotFound);
+		String previousTitle = plan.getTitle();
+		plan.update(request.title().trim(), now);
+		plans.saveAndFlush(plan);
+
+		TrainingPlanVersion next = versions.saveAndFlush(new TrainingPlanVersion(UUID.randomUUID(), planId,
+				previous.getVersionNumber() + 1, request.content(), coachId, now));
+
+		Map<String, Object> beforeData = new LinkedHashMap<>();
+		beforeData.put("title", previousTitle);
+		beforeData.put("versionId", previous.getId().toString());
+		beforeData.put("versionNumber", previous.getVersionNumber());
+		Map<String, Object> afterData = new LinkedHashMap<>();
+		afterData.put("title", plan.getTitle());
+		afterData.put("versionId", next.getId().toString());
+		afterData.put("versionNumber", next.getVersionNumber());
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_PLAN_UPDATED", "TRAINING_PLAN",
+				planId, null, beforeData, afterData));
+
+		return TrainingPlanResponse.from(plan, next);
+	}
+
+	private void ensureActiveCoach(UUID coachId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw TrainingPlanException.actorNotActiveCoach();
+		}
+	}
+
+	private CoachAssignment currentAssignment(UUID coachId, UUID memberId, Instant now) {
+		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
+		if (!assignments.hasActivePlusMembership(memberId, now)) {
+			throw TrainingPlanException.plusMembershipRequired();
+		}
+		return assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE)
+				.orElseThrow(TrainingPlanException::activeAssignmentNotFound);
 	}
 }
