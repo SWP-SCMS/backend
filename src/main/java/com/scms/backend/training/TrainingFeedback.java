@@ -62,8 +62,28 @@ public class TrainingFeedback {
 		this.updatedAt = createdAt;
 	}
 
+	public static TrainingFeedback forClassSessionResult(UUID id, UUID memberAccountId,
+			UUID trainingResultId, String content, UUID createdByAccountId, Instant createdAt) {
+		TrainingFeedback feedback = new TrainingFeedback();
+		feedback.id = Objects.requireNonNull(id);
+		feedback.memberAccountId = Objects.requireNonNull(memberAccountId);
+		feedback.trainingResultId = Objects.requireNonNull(trainingResultId);
+		feedback.content = feedback.requireContent(content);
+		feedback.createdByAccountId = Objects.requireNonNull(createdByAccountId);
+		feedback.createdAt = Objects.requireNonNull(createdAt);
+		feedback.updatedAt = createdAt;
+		return feedback;
+	}
+
 	public void update(UUID trainingPlanVersionId, UUID trainingResultId, String content, Instant updatedAt) {
 		setContext(trainingPlanVersionId, trainingResultId);
+		this.content = requireContent(content);
+		this.updatedAt = Objects.requireNonNull(updatedAt);
+	}
+
+	public void updateClassSessionResult(UUID trainingResultId, String content, Instant updatedAt) {
+		this.trainingPlanVersionId = null;
+		this.trainingResultId = Objects.requireNonNull(trainingResultId);
 		this.content = requireContent(content);
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}

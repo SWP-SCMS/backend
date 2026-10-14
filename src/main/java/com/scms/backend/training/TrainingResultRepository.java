@@ -24,6 +24,16 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 
 	@Query("""
 		select r from TrainingResult r
+		where r.id = :id
+		  and r.memberAccountId = :memberId
+		  and r.classSessionId = :sessionId
+		  and r.coachAssignmentId is null
+		""")
+	Optional<TrainingResult> findSessionByIdAndMemberAccountId(@Param("id") UUID id,
+			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
+
+	@Query("""
+		select r from TrainingResult r
 		where r.memberAccountId = :memberId
 		order by r.activityAt desc, r.id desc
 		""")

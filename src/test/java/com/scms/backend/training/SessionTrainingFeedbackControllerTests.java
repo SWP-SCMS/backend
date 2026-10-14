@@ -1,0 +1,111 @@
+package com.scms.backend.training;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.Instant;
+import java.util.UUID;
+
+import com.scms.backend.auth.ActiveAccountJwtValidator;
+import com.scms.backend.common.error.SecurityProblemDetailHandler;
+import com.scms.backend.config.SecurityConfiguration;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+@WebMvcTest(controllers = SessionTrainingFeedbackController.class)
+@AutoConfigureMockMvc
+@Import({ SecurityConfiguration.class, SecurityProblemDetailHandler.class })
+@TestPropertySource(properties = {
+	"scms.cors.allowed-origins=http://localhost:5173",
+	"scms.security.jwt-secret=test-only-jwt-secret-at-least-32-bytes-long"
+})
+class SessionTrainingFeedbackControllerTests {
+
+	@Autowired MockMvc mockMvc;
+	@MockitoBean SessionTrainingFeedbackService service;
+	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
+
+	private static final UUID COACH_ID = UUID.randomUUID();
+	private static final UUID SESSION_ID = UUID.randomUUID();
+	private static final UUID MEMBER_ID = UUID.randomUUID();
+	private static final UUID RESULT_ID = UUID.randomUUID();
+	private static final Instant NOW = Instant.parse("2026-10-15T08:00:00Z");
+
+	@Test
+	void createReturns201ForCoach() throws Exception {
+		when(service.create(eq(COACH_ID), eq(SESSION_ID), eq(MEMBER_ID), any()))
+			.thenReturn(response(UUID.randomUUID(), "Good form"));
+
+		mockMvc.perform(post("/coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+			SESSION_ID, MEMBER_ID)
+			.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_COACH")))
+			.contentType(MediaType.APPLICATION_JSON).content(requestJson("Good form")))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.classSessionId").value(SESSION_ID.toString()))
+			.andExpect(jsonPath("$.trainingResultId").value(RESULT_ID.toString()))
+			.andExpect(jsonPath("$.content").value("Good form"));
+	}
+
+	@Test
+	void updateReturns200ForCoach() throws Exception {
+		UUID feedbackId = UUID.randomUUID();
+		when(service.update(eq(COACH_ID), eq(SESSION_ID), eq(MEMBER_ID), eq(feedbackId), any()))
+			.thenReturn(response(feedbackId, "Updated"));
+
+		mockMvc.perform(put("/coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}",
+			SESSION_ID, MEMBER_ID, feedbackId)
+			.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_COACH")))
+			.contentType(MediaType.APPLICATION_JSON).content(requestJson("Updated")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.id").value(feedbackId.toString()))
+			.andExpect(jsonPath("$.content").value("Updated"));
+	}
+
+	@Test
+	void createRejectsMissingResultOrBlankContent() throws Exception {
+		mockMvc.perform(post("/coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+			SESSION_ID, MEMBER_ID)
+			.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_COACH")))
+			.contentType(MediaType.APPLICATION_JSON).content("{\"content\":\" \"}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+	}
+
+	@Test
+	void endpointsRejectMemberRole() throws Exception {
+		mockMvc.perform(post("/coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+			SESSION_ID, MEMBER_ID)
+			.with(jwt().jwt(builder -> builder.subject(UUID.randomUUID().toString()))
+				.authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))
+			.contentType(MediaType.APPLICATION_JSON).content(requestJson("Denied")))
+			.andExpect(status().isForbidden());
+	}
+
+	private SessionTrainingFeedbackResponse response(UUID id, String content) {
+		return new SessionTrainingFeedbackResponse(id, MEMBER_ID, SESSION_ID, RESULT_ID, content,
+			COACH_ID, NOW, NOW);
+	}
+
+	private String requestJson(String content) {
+		return """
+			{"trainingResultId":"%s","content":"%s"}
+			""".formatted(RESULT_ID, content);
+	}
+}

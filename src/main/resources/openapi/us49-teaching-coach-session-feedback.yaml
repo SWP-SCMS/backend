@@ -1,0 +1,140 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Group and Yoga Session Feedback API
+  version: "1.0"
+  description: |
+    US49 - Teaching Coach - Group / Yoga Session Feedback.
+    Feedback must reference a Session Training Result for the Member in the addressed Group or Yoga Session.
+    Only the Session's ACTIVE Teaching Coach may create or update it.
+paths:
+  /coach/class-sessions/{sessionId}/members/{memberId}/feedback:
+    post:
+      operationId: createSessionTrainingFeedback
+      summary: Create Feedback for a Group or Yoga Session Training Result
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionTrainingFeedbackRequest" }
+      responses:
+        "201":
+          description: Session Training Feedback created and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingFeedbackResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}:
+    put:
+      operationId: updateSessionTrainingFeedback
+      summary: Edit Session Training Feedback and preserve audit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+        - name: feedbackId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionTrainingFeedbackRequest" }
+      responses:
+        "200":
+          description: Session Training Feedback updated and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingFeedbackResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    SessionTrainingFeedbackRequest:
+      type: object
+      required: [trainingResultId, content]
+      properties:
+        trainingResultId: { type: string, format: uuid }
+        content: { type: string, minLength: 1 }
+    SessionTrainingFeedbackResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - classSessionId
+        - trainingResultId
+        - content
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        classSessionId: { type: string, format: uuid }
+        trainingResultId: { type: string, format: uuid }
+        content: { type: string }
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - ACTOR_NOT_ACTIVE_COACH
+            - SESSION_NOT_FOUND
+            - TRAINING_RESULT_NOT_FOUND
+            - TRAINING_FEEDBACK_NOT_FOUND
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active Coach role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    NotFound:
+      description: Session, Result, or Feedback was not found in the Teaching Coach's scope.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
