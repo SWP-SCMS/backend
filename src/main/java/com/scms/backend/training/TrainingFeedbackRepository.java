@@ -1,5 +1,6 @@
 package com.scms.backend.training;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -10,6 +11,15 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedback, UUID> {
+
+	@Query("""
+		select f as feedback, r.classSessionId as classSessionId
+		from TrainingFeedback f
+		left join TrainingResult r on r.id = f.trainingResultId
+		where f.memberAccountId = :memberId
+		order by f.createdAt desc, f.id desc
+		""")
+	List<MemberFeedbackHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
@@ -34,4 +44,9 @@ public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedba
 		""")
 	Optional<TrainingFeedback> findSessionByIdAndMemberAccountIdForUpdate(@Param("id") UUID id,
 			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
+
+	interface MemberFeedbackHistoryView {
+		TrainingFeedback getFeedback();
+		UUID getClassSessionId();
+	}
 }
