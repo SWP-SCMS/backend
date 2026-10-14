@@ -1,0 +1,145 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Personal Training Result API
+  version: "1.0"
+  description: US45 - Personal Coach - Record Personal Training Result
+paths:
+  /coach/members/{memberId}/training-results:
+    post:
+      operationId: createPersonalTrainingResult
+      summary: Record a personal Training Result
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalTrainingResultRequest" }
+      responses:
+        "201":
+          description: Personal Training Result created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingResultResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /coach/members/{memberId}/training-results/{resultId}:
+    put:
+      operationId: updatePersonalTrainingResult
+      summary: Update a personal Training Result and preserve its audit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+        - name: resultId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalTrainingResultRequest" }
+      responses:
+        "200":
+          description: Personal Training Result updated and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingResultResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    PersonalTrainingResultRequest:
+      type: object
+      required: [trainingPlanVersionId, activityAt, content]
+      properties:
+        trainingPlanVersionId: { type: string, format: uuid }
+        activityAt: { type: string, format: date-time }
+        content:
+          type: object
+          additionalProperties: true
+    TrainingResultResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - coachAssignmentId
+        - trainingPlanVersionId
+        - activityAt
+        - content
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        coachAssignmentId: { type: string, format: uuid }
+        trainingPlanVersionId: { type: string, format: uuid }
+        activityAt: { type: string, format: date-time }
+        content:
+          type: object
+          additionalProperties: true
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - ACTOR_NOT_ACTIVE_COACH
+            - PLUS_MEMBERSHIP_REQUIRED
+            - COACH_ASSIGNMENT_NOT_FOUND
+            - TRAINING_PLAN_VERSION_NOT_FOUND
+            - TRAINING_RESULT_NOT_FOUND
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active Coach role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    NotFound:
+      description: Assignment, Plan Version, or Result was not found in the requested scope.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Conflict:
+      description: The Member does not have an active PLUS Membership.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
