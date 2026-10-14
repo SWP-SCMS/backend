@@ -1,0 +1,141 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Group and Yoga Session Training Result API
+  version: "1.0"
+  description: US46 - Teaching Coach - Record Group / Yoga Session Result
+paths:
+  /coach/class-sessions/{sessionId}/members/{memberId}/training-results:
+    post:
+      operationId: createSessionTrainingResult
+      summary: Record a Training Result for a booked Member in a Group or Yoga Session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionTrainingResultRequest" }
+      responses:
+        "201":
+          description: Session Training Result created and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingResultResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}:
+    put:
+      operationId: updateSessionTrainingResult
+      summary: Update a Session Training Result and preserve its audit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+        - name: resultId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SessionTrainingResultRequest" }
+      responses:
+        "200":
+          description: Session Training Result updated and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingResultResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    SessionTrainingResultRequest:
+      type: object
+      required: [activityAt, content]
+      properties:
+        activityAt: { type: string, format: date-time }
+        content:
+          type: object
+          additionalProperties: true
+    SessionTrainingResultResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - classSessionId
+        - activityAt
+        - content
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        classSessionId: { type: string, format: uuid }
+        activityAt: { type: string, format: date-time }
+        content:
+          type: object
+          additionalProperties: true
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - ACTOR_NOT_ACTIVE_COACH
+            - SESSION_NOT_FOUND
+            - SESSION_MEMBER_NOT_FOUND
+            - TRAINING_RESULT_NOT_FOUND
+  responses:
+    BadRequest:
+      description: Invalid request.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active Coach role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    NotFound:
+      description: Session, booked Member, or Result was not found in the Teaching Coach's scope.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }

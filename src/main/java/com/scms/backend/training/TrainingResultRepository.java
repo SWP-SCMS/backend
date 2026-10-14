@@ -21,4 +21,15 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 		""")
 	Optional<TrainingResult> findPersonalByIdAndMemberAccountIdForUpdate(@Param("id") UUID id,
 			@Param("memberId") UUID memberId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select r from TrainingResult r
+		where r.id = :id
+		  and r.memberAccountId = :memberId
+		  and r.classSessionId = :sessionId
+		  and r.coachAssignmentId is null
+		""")
+	Optional<TrainingResult> findSessionByIdAndMemberAccountIdForUpdate(@Param("id") UUID id,
+			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
 }

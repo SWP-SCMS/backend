@@ -17,6 +17,18 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 
 	java.util.Optional<ClassSession> findByIdAndTeachingCoach_Id(UUID id, UUID coachId);
 
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+	@Query("""
+		select session from ClassSession session
+		where session.id = :id
+		  and session.teachingCoach.id = :coachId
+		  and session.sportClass.classType in (
+			com.scms.backend.scheduling.SportClassType.GROUP,
+			com.scms.backend.scheduling.SportClassType.YOGA)
+		""")
+	java.util.Optional<ClassSession> findOwnedGroupOrYogaByIdForRead(@Param("id") UUID id,
+		@Param("coachId") UUID coachId);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
