@@ -43,6 +43,21 @@ public class TrainingFeedbackException extends RuntimeException {
 				"The Personal Training Feedback was not found for this Member.");
 	}
 
+	static TrainingFeedbackException sessionNotFound() {
+		return new TrainingFeedbackException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND",
+				"The Group or Yoga Session was not found in this Teaching Coach's scope.");
+	}
+
+	static TrainingFeedbackException sessionResultNotFound() {
+		return new TrainingFeedbackException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND",
+				"The Session Training Result was not found for this Member.");
+	}
+
+	static TrainingFeedbackException sessionFeedbackNotFound() {
+		return new TrainingFeedbackException(HttpStatus.NOT_FOUND, "TRAINING_FEEDBACK_NOT_FOUND",
+				"The Session Training Feedback was not found for this Member and Session.");
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 }
