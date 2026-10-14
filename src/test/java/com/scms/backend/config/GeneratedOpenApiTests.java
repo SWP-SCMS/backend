@@ -139,6 +139,7 @@ class GeneratedOpenApiTests {
 		"PUT /coach/members/{memberId}/feedback/{feedbackId}",
 		"POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
 		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}",
+		"GET /members/me/training-results",
 		"GET /notifications",
 		"PATCH /notifications/{notificationId}/read",
 		"PATCH /notifications/read-all",
