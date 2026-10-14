@@ -1,0 +1,149 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Personal Training Feedback API
+  version: "1.0"
+  description: |
+    US48 - Personal Coach - Create / Edit Feedback.
+    An ACTIVE Personal Coach with the Member's current ACTIVE assignment and PLUS Membership
+    may create or edit Feedback for exactly one owned Training Plan Version or Personal Training Result.
+    Per BR-FDB-03, Group/Yoga Session Feedback is outside US48 and follows Teaching Coach ownership in US49.
+paths:
+  /coach/members/{memberId}/feedback:
+    post:
+      operationId: createPersonalTrainingFeedback
+      summary: Create Feedback for personal Training
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalTrainingFeedbackRequest" }
+      responses:
+        "201":
+          description: Personal Training Feedback created and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingFeedbackResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /coach/members/{memberId}/feedback/{feedbackId}:
+    put:
+      operationId: updatePersonalTrainingFeedback
+      summary: Edit personal Training Feedback and preserve audit history
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+        - name: feedbackId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PersonalTrainingFeedbackRequest" }
+      responses:
+        "200":
+          description: Personal Training Feedback updated and audited.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingFeedbackResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    PersonalTrainingFeedbackRequest:
+      type: object
+      required: [content]
+      properties:
+        trainingPlanVersionId: { type: string, format: uuid }
+        trainingResultId: { type: string, format: uuid }
+        content: { type: string, minLength: 1 }
+      oneOf:
+        - required: [trainingPlanVersionId]
+          not: { required: [trainingResultId] }
+        - required: [trainingResultId]
+          not: { required: [trainingPlanVersionId] }
+    TrainingFeedbackResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - coachAssignmentId
+        - content
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        coachAssignmentId: { type: string, format: uuid }
+        trainingPlanVersionId: { type: string, format: uuid }
+        trainingResultId: { type: string, format: uuid }
+        content: { type: string }
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - MALFORMED_REQUEST
+            - ACTOR_NOT_ACTIVE_COACH
+            - PLUS_MEMBERSHIP_REQUIRED
+            - COACH_ASSIGNMENT_NOT_FOUND
+            - TRAINING_PLAN_VERSION_NOT_FOUND
+            - TRAINING_RESULT_NOT_FOUND
+            - TRAINING_FEEDBACK_NOT_FOUND
+  responses:
+    BadRequest:
+      description: Invalid request or Feedback context.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active Coach role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    NotFound:
+      description: Assignment, Training context, or Feedback was not found in the Member scope.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Conflict:
+      description: The Member does not have an active PLUS Membership.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }

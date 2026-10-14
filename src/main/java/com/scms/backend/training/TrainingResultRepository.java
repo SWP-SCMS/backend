@@ -11,6 +11,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrainingResultRepository extends JpaRepository<TrainingResult, UUID> {
 
+	@Query("""
+		select r from TrainingResult r
+		where r.id = :id
+		  and r.memberAccountId = :memberId
+		  and r.coachAssignmentId is not null
+		  and r.classSessionId is null
+		""")
+	Optional<TrainingResult> findPersonalByIdAndMemberAccountId(@Param("id") UUID id,
+			@Param("memberId") UUID memberId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select r from TrainingResult r
