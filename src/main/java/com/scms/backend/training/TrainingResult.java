@@ -26,7 +26,7 @@ public class TrainingResult {
 	@Column(name = "member_account_id", nullable = false, updatable = false)
 	private UUID memberAccountId;
 
-	@Column(name = "coach_assignment_id", nullable = false, updatable = false)
+	@Column(name = "coach_assignment_id", updatable = false)
 	private UUID coachAssignmentId;
 
 	@Column(name = "training_plan_version_id")
@@ -72,9 +72,29 @@ public class TrainingResult {
 		this.updatedAt = createdAt;
 	}
 
+	public static TrainingResult forClassSession(UUID id, UUID memberAccountId, UUID classSessionId,
+			Instant activityAt, Map<String, Object> content, UUID createdByAccountId, Instant createdAt) {
+		TrainingResult result = new TrainingResult();
+		result.id = Objects.requireNonNull(id);
+		result.memberAccountId = Objects.requireNonNull(memberAccountId);
+		result.classSessionId = Objects.requireNonNull(classSessionId);
+		result.activityAt = Objects.requireNonNull(activityAt);
+		result.content = new LinkedHashMap<>(Objects.requireNonNull(content));
+		result.createdByAccountId = Objects.requireNonNull(createdByAccountId);
+		result.createdAt = Objects.requireNonNull(createdAt);
+		result.updatedAt = createdAt;
+		return result;
+	}
+
 	public void update(UUID trainingPlanVersionId, Instant activityAt, Map<String, Object> content,
 			Instant updatedAt) {
 		this.trainingPlanVersionId = Objects.requireNonNull(trainingPlanVersionId);
+		this.activityAt = Objects.requireNonNull(activityAt);
+		this.content = new LinkedHashMap<>(Objects.requireNonNull(content));
+		this.updatedAt = Objects.requireNonNull(updatedAt);
+	}
+
+	public void updateClassSessionResult(Instant activityAt, Map<String, Object> content, Instant updatedAt) {
 		this.activityAt = Objects.requireNonNull(activityAt);
 		this.content = new LinkedHashMap<>(Objects.requireNonNull(content));
 		this.updatedAt = Objects.requireNonNull(updatedAt);
