@@ -1,5 +1,6 @@
 package com.scms.backend.training;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -10,6 +11,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TrainingResultRepository extends JpaRepository<TrainingResult, UUID> {
+
+	@Query("""
+		select r from TrainingResult r
+		where r.memberAccountId = :memberId
+		order by r.activityAt desc, r.id desc
+		""")
+	List<TrainingResult> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""

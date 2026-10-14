@@ -1,0 +1,75 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Member Training Result History API
+  version: "1.0"
+  description: |
+    US47 - Member - View Training Result.
+    The authenticated MEMBER can view only their own Personal and Group/Yoga Training Results.
+    Historical Results remain visible after PLUS Membership expiry or Personal Coach Assignment end.
+paths:
+  /members/me/training-results:
+    get:
+      operationId: memberViewTrainingResultHistory
+      summary: View the authenticated Member's Training Result history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Own Training Results ordered by activity time, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MemberTrainingResultResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    MemberTrainingResultResponse:
+      type: object
+      required:
+        - id
+        - memberAccountId
+        - coachAssignmentId
+        - trainingPlanVersionId
+        - classSessionId
+        - activityAt
+        - content
+        - createdByAccountId
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        coachAssignmentId: { type: ["string", "null"], format: uuid }
+        trainingPlanVersionId: { type: ["string", "null"], format: uuid }
+        classSessionId: { type: ["string", "null"], format: uuid }
+        activityAt: { type: string, format: date-time }
+        content:
+          type: object
+          additionalProperties: true
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
+  responses:
+    Unauthorized:
+      description: Authentication required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Forbidden:
+      description: Active MEMBER role required.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
