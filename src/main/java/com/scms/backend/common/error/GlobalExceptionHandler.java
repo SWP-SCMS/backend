@@ -44,6 +44,7 @@ import com.scms.backend.scheduling.AttendanceException;
 import com.scms.backend.notification.NotificationNotFoundException;
 import com.scms.backend.notification.NotificationValidationException;
 import com.scms.backend.training.CoachAssignmentException;
+import com.scms.backend.training.TrainingFeedbackException;
 import com.scms.backend.training.TrainingPlanException;
 import com.scms.backend.training.TrainingResultException;
 
@@ -493,6 +494,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	ProblemDetail handleTrainingResult(TrainingResultException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Training Result request failed");
+		problem.setProperty("code", exception.getCode());
+		return problem;
+	}
+
+	@ExceptionHandler(TrainingFeedbackException.class)
+	ProblemDetail handleTrainingFeedback(TrainingFeedbackException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Training Feedback request failed");
 		problem.setProperty("code", exception.getCode());
 		return problem;
 	}
