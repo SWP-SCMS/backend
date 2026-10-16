@@ -2,6 +2,7 @@ package com.scms.backend.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -124,5 +126,47 @@ class CoachAssignedMemberServiceTests {
 		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPlus(now);
 		verify(assignments, never()).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
 				coachId, CoachAssignmentStatus.ACTIVE, pageable);
+	}
+
+	@Test
+	void getMemberTrainingProfile_requiresCurrentAssignmentAndReturnsProfile() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member One",
+				"0901000001", "member@example.com", LocalDate.of(1995, 1, 1), "hash");
+		CoachAssignment assignment = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
+				CoachAssignmentStatus.ACTIVE, now.minusSeconds(3600), now.minusSeconds(3600));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
+		when(profiles.findById(memberId)).thenReturn(Optional.of(profile));
+		when(profile.getMemberCode()).thenReturn("MBR-000001");
+
+		CoachMemberTrainingProfileResponse result = service.getMemberTrainingProfile(coachId, memberId);
+
+		assertThat(result.memberAccountId()).isEqualTo(memberId);
+		assertThat(result.assignmentId()).isEqualTo(assignment.getId());
+		assertThat(result.memberId()).isEqualTo("MBR-000001");
+		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+	}
+
+	@Test
+	void getMemberTrainingProfile_rejectsCoachOutsideAssignmentScope() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.getMemberTrainingProfile(coachId, memberId))
+				.isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+				.hasMessageContaining("No active coaching assignment");
+		verify(accounts, never()).findById(memberId);
+	}
+
+	@Test
+	void getMemberTrainingProfile_rejectsNonActiveCoachBeforeReadingAssignment() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(false);
+
+		assertThatThrownBy(() -> service.getMemberTrainingProfile(coachId, memberId))
+				.isInstanceOf(InvalidAuthenticatedAccountException.class);
+		verify(assignments, never()).findByMemberAccountIdAndCoachAccountIdAndStatus(any(), any(), any());
 	}
 }

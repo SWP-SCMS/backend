@@ -34,6 +34,11 @@ public class SportClassException extends RuntimeException {
 			"An inactive discipline cannot be used to create a class.");
 	}
 
+	static SportClassException unsupportedType() {
+		return new SportClassException(HttpStatus.BAD_REQUEST, "CLASS_TYPE_UNSUPPORTED", "classType",
+			"New classes must use GROUP or PT_1_1.");
+	}
+
 	static SportClassException duplicateName() {
 		return new SportClassException(HttpStatus.CONFLICT, "CLASS_NAME_CONFLICT", null,
 			"A class with this name already exists in the discipline.");

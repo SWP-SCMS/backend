@@ -36,6 +36,7 @@ class NotificationDurabilityIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
 	@Autowired NotificationWriter writer;
+	@Autowired NotificationOutboxDispatcher dispatcher;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate db;
 	@Autowired PlatformTransactionManager transactionManager;
@@ -51,6 +52,9 @@ class NotificationDurabilityIntegrationTests {
 
 		transactions.executeWithoutResult(status -> write(repeatedKey, recipientId));
 		transactions.executeWithoutResult(status -> write(repeatedKey, recipientId));
+		assertThat(outboxCount(repeatedKey)).isOne();
+		assertThat(count(repeatedKey)).isZero();
+		dispatcher.dispatchAvailable();
 		assertThat(count(repeatedKey)).isOne();
 
 		String concurrentKey = "BOOKING_CREATED:" + UUID.randomUUID();
@@ -71,9 +75,50 @@ class NotificationDurabilityIntegrationTests {
 			for (var future : futures) future.get();
 		}
 
+		dispatcher.dispatchAvailable();
 		assertThat(count(concurrentKey)).isOne();
 		assertThat(db.queryForObject("select delivery_status from notifications where event_key=?", String.class,
 			concurrentKey)).isEqualTo("PENDING");
+		assertThat(db.queryForObject("select status from notification_outbox where event_key=?", String.class,
+			concurrentKey)).isEqualTo("SENT");
+	}
+
+	@Test
+	void inboxFailureLeavesCommittedOutboxEventForRetry() {
+		UUID recipientId = UUID.randomUUID();
+		accounts.saveAndFlush(new Account(recipientId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Before dispatch",
+			"09" + recipientId.toString().replace("-", "").substring(0, 8), recipientId + "@example.test",
+			LocalDate.of(1990, 1, 1), "unused"));
+		String eventKey = "MEMBER_SUSPENDED:" + recipientId + ":audit-1";
+		db.execute("""
+			create function fail_notification_inbox() returns trigger language plpgsql as $$
+			begin raise exception 'forced inbox failure'; end $$
+			""");
+		db.execute("create trigger fail_notification_inbox before insert on notifications "
+			+ "for each row execute function fail_notification_inbox()");
+		try {
+			new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+				db.update("update accounts set full_name='Business committed' where id=?", recipientId);
+				write(eventKey, recipientId);
+			});
+			dispatcher.dispatchAvailable();
+		}
+		finally {
+			db.execute("drop trigger fail_notification_inbox on notifications");
+			db.execute("drop function fail_notification_inbox()");
+		}
+
+		assertThat(db.queryForObject("select full_name from accounts where id=?", String.class, recipientId))
+			.isEqualTo("Business committed");
+		assertThat(db.queryForObject("select status from notification_outbox where event_key=?", String.class,
+			eventKey)).isEqualTo("FAILED");
+		assertThat(count(eventKey)).isZero();
+
+		db.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?", eventKey);
+		dispatcher.dispatchAvailable();
+		assertThat(count(eventKey)).isOne();
+		assertThat(db.queryForObject("select status from notification_outbox where event_key=?", String.class,
+			eventKey)).isEqualTo("SENT");
 	}
 
 	private void write(String eventKey, UUID recipientId) {
@@ -82,5 +127,9 @@ class NotificationDurabilityIntegrationTests {
 
 	private long count(String eventKey) {
 		return db.queryForObject("select count(*) from notifications where event_key=?", Long.class, eventKey);
+	}
+
+	private long outboxCount(String eventKey) {
+		return db.queryForObject("select count(*) from notification_outbox where event_key=?", Long.class, eventKey);
 	}
 }

@@ -1,6 +1,8 @@
 package com.scms.backend.training;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -19,6 +21,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,18 +45,21 @@ class MemberTrainingFeedbackControllerTests {
 		UUID sessionId = UUID.randomUUID();
 		UUID resultId = UUID.randomUUID();
 		Instant now = Instant.parse("2026-10-15T08:00:00Z");
-		when(service.viewOwnHistory(memberId)).thenReturn(List.of(new MemberTrainingFeedbackResponse(
+		var response = new MemberTrainingFeedbackResponse(
 			UUID.randomUUID(), memberId, null, null, resultId, sessionId, "Session feedback",
-			UUID.randomUUID(), now, now)));
+			UUID.randomUUID(), now, now);
+		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
+				new MemberTrainingFeedbackPageResponse(List.of(response), 0, 20, 1, 1));
 
 		mockMvc.perform(get("/members/me/feedback")
 			.with(jwt().jwt(token -> token.subject(memberId.toString()))
 				.authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].memberAccountId").value(memberId.toString()))
-			.andExpect(jsonPath("$[0].classSessionId").value(sessionId.toString()))
-			.andExpect(jsonPath("$[0].trainingResultId").value(resultId.toString()))
-			.andExpect(jsonPath("$[0].content").value("Session feedback"));
+			.andExpect(jsonPath("$.content[0].memberAccountId").value(memberId.toString()))
+			.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
+			.andExpect(jsonPath("$.content[0].trainingResultId").value(resultId.toString()))
+			.andExpect(jsonPath("$.content[0].content").value("Session feedback"))
+			.andExpect(jsonPath("$.totalElements").value(1));
 	}
 
 	@Test

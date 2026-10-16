@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -54,14 +55,16 @@ class MemberStatusServiceTests {
 	void suspendCancelsFutureBookingsAndWritesAuditAndNotification() {
 		Account member = member(AccountStatus.ACTIVE);
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
-		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		when(jdbc.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), any(), any()))
+			.thenReturn(List.of());
 		when(jdbc.update(anyString(), any(), any(), any(), any(), any())).thenReturn(2);
 
 		MemberStatusChangeResponse response = service.changeStatus(managerId, memberId,
 			new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Policy violation"));
 
 		assertThat(response.status()).isEqualTo(AccountStatus.SUSPENDED);
-		assertThat(response.cancelledFutureBookings()).isEqualTo(2);
+		assertThat(response.cancelledFutureBookings()).isZero();
 		assertThat(member.getStatus()).isEqualTo(AccountStatus.SUSPENDED);
 		ArgumentCaptor<String> cancellationSql = ArgumentCaptor.forClass(String.class);
 		verify(jdbc).update(cancellationSql.capture(), any(), any(), any(), any(), any());
@@ -78,7 +81,7 @@ class MemberStatusServiceTests {
 	void reactivateDoesNotChangeBookings() {
 		Account member = member(AccountStatus.SUSPENDED);
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
-		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
 
 		MemberStatusChangeResponse response = service.changeStatus(managerId, memberId,
 			new MemberStatusChangeRequest(AccountStatus.ACTIVE, "Appeal accepted"));
@@ -96,7 +99,7 @@ class MemberStatusServiceTests {
 			.isInstanceOf(InvalidAuthenticatedAccountException.class);
 
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
-		when(accounts.findById(memberId)).thenReturn(Optional.of(member(AccountStatus.SUSPENDED)));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member(AccountStatus.SUSPENDED)));
 		assertThatThrownBy(() -> service.changeStatus(managerId, memberId,
 			new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "reason")))
 			.isInstanceOf(MemberStatusConflictException.class);

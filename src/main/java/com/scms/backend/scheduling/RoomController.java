@@ -21,9 +21,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class RoomController {
 
 	private final RoomService service;
+	private final RoomSuspensionService suspensionService;
 
-	RoomController(RoomService service) {
+	RoomController(RoomService service, RoomSuspensionService suspensionService) {
 		this.service = service;
+		this.suspensionService = suspensionService;
 	}
 
 	@GetMapping
@@ -46,6 +48,19 @@ public class RoomController {
 	ResponseEntity<RoomResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId,
 			@RequestBody RoomPatchRequest request) {
 		return ResponseEntity.ok(service.update(accountId(jwt), roomId, request));
+	}
+
+	@GetMapping("/{roomId}/suspensions")
+	ResponseEntity<List<RoomSuspensionResponse>> listSuspensions(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID roomId) {
+		return ResponseEntity.ok(suspensionService.list(accountId(jwt), roomId));
+	}
+
+	@PostMapping("/{roomId}/suspensions")
+	@ResponseStatus(HttpStatus.CREATED)
+	ResponseEntity<RoomSuspensionResponse> suspend(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId,
+			@RequestBody RoomSuspensionCreateRequest request) {
+		return ResponseEntity.status(201).body(suspensionService.create(accountId(jwt), roomId, request));
 	}
 
 	private UUID accountId(Jwt jwt) {

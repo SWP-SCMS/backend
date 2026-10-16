@@ -91,6 +91,17 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void sessionLongerThanNinetyMinutesIsRejected() {
+		UUID managerId = activeManager();
+
+		assertThatThrownBy(() -> service.create(managerId, request(UUID.randomUUID(), UUID.randomUUID(),
+			UUID.randomUUID(), now.plusSeconds(3600), now.plusSeconds(3600 + 91 * 60), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("field").isEqualTo("endTime");
+		verify(classes, never()).findById(any());
+	}
+
+	@Test
 	void capacityCannotExceedActiveRoom() {
 		Fixture fixture = activeFixture(10);
 

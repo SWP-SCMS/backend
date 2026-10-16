@@ -118,7 +118,7 @@ class SepayService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("SePay Payment was not found");
 		}
-		Map<String, Object> payment = fulfillment.paymentForUpdate(paymentId);
+		Map<String, Object> payment = fulfillment.payment(paymentId);
 		String expectedReference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
 		if (!request.code().trim().equals(expectedReference)
 				|| request.content() == null || !request.content().trim().contains(expectedReference)) {

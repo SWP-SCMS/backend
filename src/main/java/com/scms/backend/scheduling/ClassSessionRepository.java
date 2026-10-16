@@ -17,7 +17,7 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 
 	java.util.Optional<ClassSession> findByIdAndTeachingCoach_Id(UUID id, UUID coachId);
 
-	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_READ)
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select session from ClassSession session
 		where session.id = :id
@@ -82,6 +82,16 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 		group by class_session_id
 		""", nativeQuery = true)
 	List<BookingCountView> countBookedBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
+
+	@Query("""
+		select session from ClassSession session
+		where session.id in :sessionIds
+		  and session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED
+		  and session.startTime > :now
+		order by session.startTime, session.id
+		""")
+	List<ClassSession> findFutureScheduledByIds(@Param("sessionIds") Collection<UUID> sessionIds,
+			@Param("now") Instant now);
 
 	interface BookingCountView {
 		UUID getSessionId();

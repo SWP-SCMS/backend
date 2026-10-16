@@ -85,17 +85,15 @@ public class RegistrationService {
 	}
 
 	private void validatePassword(String password) {
-		if (password == null || password.isBlank()) {
-			throw new RegistrationValidationException("password", "must not be blank");
-		}
-		if (password.length() < 8) {
-			throw new RegistrationValidationException("password", "size must be at least 8");
-		}
+		PasswordConstraints.validate("password", password, RegistrationValidationException::new);
 	}
 
 	private void validateBirthDate(LocalDate birthDate) {
-		if (birthDate.isAfter(LocalDate.now(clock))) {
+		if (birthDate == null || birthDate.isAfter(LocalDate.now(clock))) {
 			throw new RegistrationValidationException("birthDate", "must not be in the future");
+		}
+		if (birthDate.plusYears(16).isAfter(LocalDate.now(clock))) {
+			throw new RegistrationValidationException("birthDate", "member must be at least 16 years old");
 		}
 	}
 

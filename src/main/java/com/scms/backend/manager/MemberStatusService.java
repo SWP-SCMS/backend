@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.sql.Timestamp;
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -41,7 +42,8 @@ public class MemberStatusService {
 	MemberStatusChangeResponse changeStatus(UUID managerId, UUID memberId, MemberStatusChangeRequest request) {
 		ensureActiveManager(managerId);
 		validate(request);
-		Account member = accountRepository.findById(memberId)
+		Account member = accountRepository.findByIdForUpdate(memberId)
+			.or(() -> accountRepository.findById(memberId))
 			.filter(account -> account.getRole() == AccountRole.MEMBER)
 			.orElseThrow(MemberAccountNotFoundException::new);
 		AccountStatus before = member.getStatus();
@@ -49,9 +51,18 @@ public class MemberStatusService {
 			throw new MemberStatusConflictException("Member is already " + before);
 		}
 
-		int cancelledBookings = request.status() == AccountStatus.SUSPENDED
+		List<CancelledBooking> cancelled = request.status() == AccountStatus.SUSPENDED
 			? cancelFutureBookings(memberId, managerId)
-			: 0;
+			: List.of();
+		int cancelledBookings = cancelled.size();
+		for (CancelledBooking booking : cancelled) {
+			auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, "BOOKING_CANCELLED", "BOOKING",
+				booking.id(), "Member suspended", Map.of("status", "BOOKED"),
+				Map.of("status", "CANCELLED", "cancellationSource", "MEMBER_SUSPENDED")));
+			notificationWriter.write("BOOKING_CANCELLED:" + booking.id(), memberId, "BOOKING_CANCELLED",
+				"BOOKING", booking.id(), Map.of("sessionId", booking.sessionId().toString(),
+					"cancellationSource", "MEMBER_SUSPENDED"));
+		}
 		member.changeMemberStatus(request.status());
 		accountRepository.flush();
 
@@ -64,9 +75,16 @@ public class MemberStatusService {
 		return new MemberStatusChangeResponse(memberId, request.status(), cancelledBookings);
 	}
 
-	private int cancelFutureBookings(UUID memberId, UUID managerId) {
+	private List<CancelledBooking> cancelFutureBookings(UUID memberId, UUID managerId) {
 		Instant now = clock.instant();
-		return jdbcTemplate.update("""
+		List<CancelledBooking> affected = jdbcTemplate.query("""
+			select b.id, b.class_session_id from bookings b
+			join class_sessions s on s.id=b.class_session_id
+			where b.member_account_id=? and b.status='BOOKED' and s.start_time > ?
+			for update of b
+			""", (rs, row) -> new CancelledBooking(rs.getObject("id", UUID.class),
+				rs.getObject("class_session_id", UUID.class)), memberId, Timestamp.from(now));
+		jdbcTemplate.update("""
 			update bookings b
 			set status = 'CANCELLED', cancelled_by_account_id = ?,
 				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?, version = b.version + 1
@@ -74,7 +92,10 @@ public class MemberStatusService {
 			where b.class_session_id = s.id and b.member_account_id = ?
 				and b.status = 'BOOKED' and s.start_time > ?
 			""", managerId, Timestamp.from(now), Timestamp.from(now), memberId, Timestamp.from(now));
+		return affected;
 	}
+
+	private record CancelledBooking(UUID id, UUID sessionId) { }
 
 	private void ensureActiveManager(UUID managerId) {
 		if (!accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)) {

@@ -14,6 +14,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -48,6 +49,9 @@ class CoachAssignmentIntegrationTests {
 
 	@Autowired
 	private JdbcTemplate jdbc;
+
+	@Autowired
+	private NotificationOutboxDispatcher notificationOutboxDispatcher;
 
 	private Account createAccount(AccountRole role, AccountStatus status, String name) {
 		UUID id = UUID.randomUUID();
@@ -120,6 +124,7 @@ class CoachAssignmentIntegrationTests {
 		assertThat(auditsA.get(0).get("actor_account_id")).isEqualTo(manager.getId());
 
 		// Verify notifications (Member & Coach A)
+		notificationOutboxDispatcher.dispatchAvailable();
 		Integer notifCountA = jdbc.queryForObject(
 				"select count(*) from notifications where target_id = ? and notification_type = 'TRAINING_COACH_ASSIGNED'",
 				Integer.class, responseA.id());

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.jpa.repository.Query;
 
 @ExtendWith(MockitoExtension.class)
 class SessionTrainingResultServiceTests {
@@ -53,6 +54,17 @@ class SessionTrainingResultServiceTests {
 	}
 
 	@Test
+	void createLookupLocksOnlyCanonicalSessionResult() throws NoSuchMethodException {
+		Query query = TrainingResultRepository.class
+			.getMethod("findSessionByClassSessionIdAndMemberAccountIdForUpdate", UUID.class, UUID.class)
+			.getAnnotation(Query.class);
+
+		assertThat(query.nativeQuery()).isTrue();
+		assertThat(query.value()).contains("class_session_id = :sessionId", "member_account_id = :memberId",
+			"coach_assignment_id is null", "legacy_duplicate = false", "for update");
+	}
+
+	@Test
 	void createPersistsSessionResultWithoutPersonalAssignmentAndAuditsIt() {
 		permitTeachingCoach();
 		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
@@ -71,6 +83,23 @@ class SessionTrainingResultServiceTests {
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("TRAINING_RESULT_CREATED");
 		assertThat(audit.getValue().getAfterData()).containsEntry("classSessionId", sessionId.toString());
+	}
+
+	@Test
+	void createReturnsExistingSessionResultWithoutDuplicatingIt() {
+		permitTeachingCoach();
+		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
+			BookingStatus.BOOKED)).thenReturn(true);
+		TrainingResult existing = TrainingResult.forClassSession(UUID.randomUUID(), memberId, sessionId,
+			now.minusSeconds(600), Map.of("notes", "Already recorded"), coachId, now.minusSeconds(600));
+		when(results.findSessionByClassSessionIdAndMemberAccountIdForUpdate(sessionId, memberId))
+			.thenReturn(Optional.of(existing));
+
+		SessionTrainingResultResponse response = service.create(coachId, sessionId, memberId, request("Retry"));
+
+		assertThat(response.id()).isEqualTo(existing.getId());
+		verify(results, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
 	}
 
 	@Test

@@ -13,14 +13,21 @@ paths:
       summary: View the authenticated Member's Training Feedback history
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       responses:
         "200":
-          description: Own Training Feedback ordered by creation time, newest first.
+          description: Own Training Feedback ordered by creation time, newest first, in a page.
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/MemberTrainingFeedbackResponse" }
+              schema: { $ref: "#/components/schemas/MemberTrainingFeedbackPageResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 components:
@@ -51,6 +58,17 @@ components:
         createdByAccountId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    MemberTrainingFeedbackPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/MemberTrainingFeedbackResponse" }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     ProblemDetail:
       type: object
       required: [title, status, detail, instance, code]

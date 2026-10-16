@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.Map;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -21,7 +22,6 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.notification.NotificationDeliveryStatus;
 import com.scms.backend.notification.NotificationRepository;
 import jakarta.persistence.EntityManager;
 
@@ -140,18 +140,19 @@ class RegistrationIntegrationTests {
 			assertThat(event.getAfterData()).containsEntry("memberId", memberId);
 			assertThat(event.getAfterData().toString()).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 		});
-		assertThat(notificationRepository.findAll()).singleElement().satisfies(notification -> {
-			assertThat(notification.getRecipientAccountId()).isEqualTo(accountId);
-			assertThat(notification.getEventKey()).isEqualTo("ACCOUNT_CREATED:" + accountId);
-			assertThat(notification.getNotificationType()).isEqualTo("ACCOUNT_CREATED");
-			assertThat(notification.getTargetType()).isEqualTo("ACCOUNT");
-			assertThat(notification.getTargetId()).isEqualTo(accountId);
-			assertThat(notification.getDeliveryStatus()).isEqualTo(NotificationDeliveryStatus.PENDING);
-			assertThat(notification.getDeliveryAttemptCount()).isZero();
-			assertThat(notification.getPayload()).containsEntry("memberId", memberId);
-			assertThat(notification.getPayload().toString()).doesNotContain(PASSWORD)
-				.doesNotContain(account.getPasswordHash());
-		});
+		Map<String, Object> notification = jdbcTemplate.queryForMap(
+			"select recipient_account_id, event_key, notification_type, target_type, target_id, status, "
+				+ "attempt_count, payload::text payload from notification_outbox where event_key = ?",
+			"ACCOUNT_CREATED:" + accountId);
+		assertThat(notification.get("recipient_account_id")).isEqualTo(accountId);
+		assertThat(notification.get("event_key")).isEqualTo("ACCOUNT_CREATED:" + accountId);
+		assertThat(notification.get("notification_type")).isEqualTo("ACCOUNT_CREATED");
+		assertThat(notification.get("target_type")).isEqualTo("ACCOUNT");
+		assertThat(notification.get("target_id")).isEqualTo(accountId);
+		assertThat(notification.get("status")).isEqualTo("PENDING");
+		assertThat(notification.get("attempt_count")).isEqualTo(0);
+		assertThat(notification.get("payload").toString()).contains(memberId).doesNotContain(PASSWORD)
+			.doesNotContain(account.getPasswordHash());
 		assertThat(responseBody).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 		assertThat(databaseTextFor(accountId)).doesNotContain(PASSWORD);
 	}
@@ -204,6 +205,7 @@ class RegistrationIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 
 		performRegistration("{}")
 			.andExpect(status().isBadRequest())
@@ -253,6 +255,7 @@ class RegistrationIntegrationTests {
 			.andExpect(jsonPath("$.errors.birthDate[0]").value("must not be in the future"));
 
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 	}
 
 	@Test
@@ -265,6 +268,7 @@ class RegistrationIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 
 		performRegistration(request("Duplicate Email", "0900000003", "  DUPLICATE@EXAMPLE.COM  ", null, null))
 			.andExpect(status().isConflict())
@@ -277,6 +281,7 @@ class RegistrationIntegrationTests {
 
 		assertThat(emailOwner.getStatus()).isEqualTo(AccountStatus.ACTIVE);
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 	}
 
 	@Test
@@ -291,7 +296,7 @@ class RegistrationIntegrationTests {
 		assertThat(accountRepository.count()).isEqualTo(2);
 		assertThat(memberProfileRepository.count()).isEqualTo(1);
 		assertThat(auditEventRepository.count()).isEqualTo(1);
-		assertThat(notificationRepository.count()).isEqualTo(1);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(1L);
 	}
 
 	private org.springframework.test.web.servlet.ResultActions performRegistration(String body) throws Exception {

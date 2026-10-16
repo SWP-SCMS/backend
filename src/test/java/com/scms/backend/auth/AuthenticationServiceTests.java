@@ -1,10 +1,14 @@
 package com.scms.backend.auth;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountStatus;
@@ -51,5 +55,26 @@ class AuthenticationServiceTests {
 			.hasMessage("Invalid credentials");
 
 		verify(passwordEncoder).matches("candidate-password", "dummy-hash");
+	}
+
+	@Test
+	void overlongUtf8PasswordIsRejectedBeforeBcrypt() {
+		assertThatThrownBy(() -> authenticationService.login(
+			new LoginRequest("member@example.test", "á".repeat(37))))
+			.isInstanceOf(InvalidCredentialsException.class);
+
+		verify(passwordEncoder, never()).matches(anyString(), anyString());
+	}
+
+	@Test
+	void overlongUtf8CurrentPasswordReturnsValidationErrorBeforeBcrypt() {
+		assertThatThrownBy(() -> authenticationService.changePassword(UUID.randomUUID(),
+			new ChangePasswordRequest("á".repeat(37), "valid-new-password"), null))
+			.isInstanceOf(ChangePasswordValidationException.class)
+			.hasMessage("must be at most 72 UTF-8 bytes")
+			.extracting("field").isEqualTo("currentPassword");
+
+		verify(accountRepository, never()).findByIdForUpdate(any());
+		verify(passwordEncoder, never()).matches(anyString(), anyString());
 	}
 }

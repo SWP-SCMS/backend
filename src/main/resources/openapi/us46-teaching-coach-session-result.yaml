@@ -7,7 +7,7 @@ paths:
   /coach/class-sessions/{sessionId}/members/{memberId}/training-results:
     post:
       operationId: createSessionTrainingResult
-      summary: Record a Training Result for a booked Member in a Group or Yoga Session
+      summary: Record an idempotent Training Result for a booked Member in a Group or Yoga Session
       security:
         - bearerAuth: []
       parameters:
@@ -20,7 +20,7 @@ paths:
             schema: { $ref: "#/components/schemas/SessionTrainingResultRequest" }
       responses:
         "201":
-          description: Session Training Result created and audited.
+          description: Session Training Result created and audited; repeated writes for the same session and Member return the existing result.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionTrainingResultResponse" }

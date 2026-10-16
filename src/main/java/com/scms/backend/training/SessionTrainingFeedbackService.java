@@ -41,6 +41,11 @@ public class SessionTrainingFeedbackService {
 			SessionTrainingFeedbackRequest request) {
 		requireOwnedGroupOrYogaSession(coachId, sessionId);
 		requireSessionResult(request.trainingResultId(), sessionId, memberId);
+		TrainingFeedback existing = feedback.findSessionByTrainingResultIdAndMemberAccountIdForUpdate(
+				request.trainingResultId(), memberId).orElse(null);
+		if (existing != null) {
+			return SessionTrainingFeedbackResponse.from(existing, sessionId);
+		}
 		Instant now = clock.instant();
 		TrainingFeedback created = feedback.saveAndFlush(TrainingFeedback.forClassSessionResult(
 			UUID.randomUUID(), memberId, request.trainingResultId(), request.content(), coachId, now));
@@ -73,7 +78,7 @@ public class SessionTrainingFeedbackService {
 	}
 
 	private void requireSessionResult(UUID resultId, UUID sessionId, UUID memberId) {
-		results.findSessionByIdAndMemberAccountId(resultId, sessionId, memberId)
+		results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId)
 			.orElseThrow(TrainingFeedbackException::sessionResultNotFound);
 	}
 

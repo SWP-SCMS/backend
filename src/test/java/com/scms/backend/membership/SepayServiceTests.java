@@ -195,7 +195,7 @@ class SepayServiceTests {
 			Instant.parse("2026-10-08T00:00:00Z"));
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
-		when(fulfillment.paymentForUpdate(paymentId)).thenReturn(payment);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
 		when(fulfillment.fulfill(paymentId, null, "9001", "SePay webhook transaction 9001",
 			"SePay incoming transfer confirmed")).thenReturn(expected);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
@@ -221,7 +221,7 @@ class SepayServiceTests {
 			Instant.parse("2026-10-08T00:00:00Z"));
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
-		when(fulfillment.paymentForUpdate(paymentId)).thenReturn(payment);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
 		when(fulfillment.fulfill(paymentId, null, "9001", "SePay webhook transaction 9001",
 			"SePay incoming transfer confirmed")).thenReturn(expected);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",

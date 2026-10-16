@@ -80,6 +80,14 @@ public class DisciplineService {
 		String description = request.description() == null
 			? discipline.getDescription() : normalizeDescription(request.description());
 		DisciplineStatus status = request.status() == null ? discipline.getStatus() : request.status();
+		if (discipline.getStatus() != DisciplineStatus.INACTIVE && status == DisciplineStatus.INACTIVE) {
+			List<UUID> blockingSessionIds = disciplines.findBlockingSessionIds(disciplineId);
+			if (!blockingSessionIds.isEmpty()) {
+				throw new DisciplineValidationException("affectedSessionIds",
+					"Discipline cannot be disabled while sessions are in progress or scheduled in the future: "
+						+ blockingSessionIds);
+			}
+		}
 		discipline.update(name, description, status);
 		Map<String, Object> after = snapshot(discipline);
 		if (before.equals(after)) return DisciplineResponse.from(discipline);

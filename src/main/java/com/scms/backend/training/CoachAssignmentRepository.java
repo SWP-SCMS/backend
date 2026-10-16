@@ -25,12 +25,17 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 	Optional<CoachAssignment> findByMemberAccountIdAndStatusForUpdate(@Param("memberAccountId") UUID memberAccountId,
 			@Param("status") CoachAssignmentStatus status);
 
-	Page<CoachAssignment> findByMemberAccountIdOrderByCreatedAtDesc(UUID memberAccountId, Pageable pageable);
+	@Query("select a from CoachAssignment a where a.memberAccountId = :memberAccountId "
+			+ "order by a.createdAt desc, a.id desc")
+	Page<CoachAssignment> findByMemberAccountIdOrderByCreatedAtDesc(@Param("memberAccountId") UUID memberAccountId,
+			Pageable pageable);
 
 	boolean existsByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
-	Page<CoachAssignment> findByCoachAccountIdAndStatusOrderByCreatedAtDesc(UUID coachAccountId,
-			CoachAssignmentStatus status, Pageable pageable);
+	@Query("select a from CoachAssignment a where a.coachAccountId = :coachAccountId "
+			+ "and a.status = :status order by a.createdAt desc, a.id desc")
+	Page<CoachAssignment> findByCoachAccountIdAndStatusOrderByCreatedAtDesc(@Param("coachAccountId") UUID coachAccountId,
+			@Param("status") CoachAssignmentStatus status, Pageable pageable);
 
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 

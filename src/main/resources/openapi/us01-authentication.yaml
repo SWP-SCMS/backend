@@ -115,6 +115,7 @@ components:
         password:
           type: string
           format: password
+          description: Must be no more than 72 UTF-8 bytes when supplied.
     AuthResponse:
       type: object
       required:

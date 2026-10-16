@@ -72,4 +72,16 @@ public class ClassSessionController {
 			@RequestBody ClassSessionCancellationRequest request) {
 		return ResponseEntity.ok(cancellationService.cancel(UUID.fromString(jwt.getSubject()), id, request));
 	}
+
+	@PostMapping("/cancellation-preview")
+	ResponseEntity<ClassSessionCancellationPreviewResponse> cancellationPreview(@AuthenticationPrincipal Jwt jwt,
+			@RequestBody ClassSessionCancellationBatchRequest request) {
+		return ResponseEntity.ok(cancellationService.preview(UUID.fromString(jwt.getSubject()), request));
+	}
+
+	@PostMapping("/bulk-cancel")
+	ResponseEntity<ClassSessionCancellationBatchResponse> bulkCancel(@AuthenticationPrincipal Jwt jwt,
+			@RequestBody ClassSessionCancellationBatchRequest request) {
+		return ResponseEntity.ok(cancellationService.cancelBulk(UUID.fromString(jwt.getSubject()), request));
+	}
 }

@@ -155,6 +155,18 @@ class RecurringScheduleServiceTests {
 		verify(schedules, never()).saveAndFlush(any());
 	}
 
+	@Test
+	void recurringSessionLongerThanNinetyMinutesIsRejected() {
+		UUID managerId = manager(AccountStatus.ACTIVE);
+
+		assertThatThrownBy(() -> service.create(managerId, new RecurringScheduleCreateRequest(
+			UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), LocalDate.of(2026, 10, 6), List.of(2),
+			LocalTime.of(9, 0), LocalTime.of(10, 31), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("field").isEqualTo("endTime");
+		verify(schedules, never()).saveAndFlush(any());
+	}
+
 	private void stubActiveResources(SportClass sportClass, Room room, Account coach) {
 		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
 		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));

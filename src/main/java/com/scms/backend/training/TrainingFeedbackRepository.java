@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -20,6 +21,28 @@ public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedba
 		order by f.createdAt desc, f.id desc
 		""")
 	List<MemberFeedbackHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
+
+	@Query(value = """
+		select f as feedback, r.classSessionId as classSessionId
+		from TrainingFeedback f
+		left join TrainingResult r on r.id = f.trainingResultId
+		where f.memberAccountId = :memberId
+		order by f.createdAt desc, f.id desc
+		""", countQuery = "select count(f) from TrainingFeedback f where f.memberAccountId = :memberId")
+	Page<MemberFeedbackHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId,
+			org.springframework.data.domain.Pageable pageable);
+
+	@Query(value = """
+		select * from feedback
+		where training_result_id = :resultId
+		  and member_account_id = :memberId
+		  and coach_assignment_id is null
+		  and training_plan_version_id is null
+		  and legacy_duplicate = false
+		for update
+		""", nativeQuery = true)
+	Optional<TrainingFeedback> findSessionByTrainingResultIdAndMemberAccountIdForUpdate(
+			@Param("resultId") UUID resultId, @Param("memberId") UUID memberId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""

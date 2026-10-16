@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
@@ -61,7 +62,7 @@ public class RoomService {
 		if (request == null || (request.name() == null && request.capacity() == null && request.status() == null)) {
 			throw RoomException.validation("request", "at least one field is required");
 		}
-		Room room = findRoom(roomId);
+		Room room = findRoomForUpdate(roomId);
 		Map<String, Object> before = snapshot(room);
 		String name = request.name() == null ? room.getName() : normalizeName(request.name());
 		if (!name.equals(room.getName()) && rooms.existsByNameAndIdNot(name, roomId)) {
@@ -72,6 +73,10 @@ public class RoomService {
 			throw RoomException.capacityConflict();
 		}
 		RoomStatus status = request.status() == null ? room.getStatus() : request.status();
+		if (room.getStatus() != RoomStatus.INACTIVE && status == RoomStatus.INACTIVE) {
+			List<UUID> blockingSessionIds = rooms.findBlockingSessionIds(roomId);
+			if (!blockingSessionIds.isEmpty()) throw RoomException.activeSessionsConflict(blockingSessionIds);
+		}
 		room.update(name, capacity, status);
 		Map<String, Object> after = snapshot(room);
 		if (before.equals(after)) return RoomResponse.from(room);
@@ -87,6 +92,12 @@ public class RoomService {
 
 	private Room findRoom(UUID roomId) {
 		return rooms.findById(roomId).orElseThrow(RoomException::notFound);
+	}
+
+	private Room findRoomForUpdate(UUID roomId) {
+		Optional<Room> result = rooms.findByIdForUpdate(roomId);
+		if (result == null || result.isEmpty()) result = rooms.findById(roomId);
+		return result.orElseThrow(RoomException::notFound);
 	}
 
 	private void flush(Room room) {

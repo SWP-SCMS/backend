@@ -1,0 +1,135 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Scheduling Changes
+  version: v4.2
+servers:
+  - url: /api/v1
+paths:
+  /manager/rooms/{roomId}/suspensions:
+    get:
+      summary: List room suspension intervals
+      operationId: listRoomSuspensions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {$ref: '#/components/parameters/RoomId'}
+      responses:
+        '200':
+          description: Suspension intervals ordered by start time.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/RoomSuspensionResponse'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      summary: Suspend a room for a future interval
+      operationId: createRoomSuspension
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {$ref: '#/components/parameters/RoomId'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RoomSuspensionCreateRequest'}}}
+      responses:
+        '201':
+          description: Room suspension created.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RoomSuspensionResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /manager/class-sessions/cancellation-preview:
+    post:
+      summary: Preview future scheduled sessions eligible for cancellation
+      operationId: previewClassSessionCancellation
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionCancellationBatchRequest'}}}
+      responses:
+        '200':
+          description: Eligible future session IDs.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionCancellationPreviewResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /manager/class-sessions/bulk-cancel:
+    post:
+      summary: Cancel future scheduled sessions
+      operationId: bulkCancelClassSessions
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionCancellationBatchRequest'}}}
+      responses:
+        '200':
+          description: Sessions cancelled with existing booking cancellation, audit, and notification behavior.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionCancellationBatchResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  parameters:
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    RoomSuspensionCreateRequest:
+      type: object
+      required: [startTime, endTime]
+      properties:
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        reason: {type: [string, 'null'], maxLength: 1000}
+    RoomSuspensionResponse:
+      type: object
+      required: [id, roomId, startTime, endTime, createdBy]
+      properties:
+        id: {type: string, format: uuid}
+        roomId: {type: string, format: uuid}
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        reason: {type: [string, 'null']}
+        createdBy: {type: string, format: uuid}
+    ClassSessionCancellationBatchRequest:
+      type: object
+      properties:
+        sessionIds: {type: array, minItems: 1, uniqueItems: true, items: {type: string, format: uuid}}
+        classId: {type: string, format: uuid}
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        reason: {type: string, minLength: 1, maxLength: 1000, description: Required by bulk-cancel; optional for preview.}
+    ClassSessionCancellationPreviewResponse:
+      type: object
+      required: [count, sessionIds]
+      properties:
+        count: {type: integer, minimum: 0}
+        sessionIds: {type: array, items: {type: string, format: uuid}}
+    ClassSessionCancellationBatchResponse:
+      type: object
+      required: [cancelledCount, sessionIds]
+      properties:
+        cancelledCount: {type: integer, minimum: 0}
+        sessionIds: {type: array, items: {type: string, format: uuid}}
+    SportClassCreateRequest:
+      type: object
+      required: [disciplineId, name, classType]
+      properties:
+        disciplineId: {type: string, format: uuid}
+        name: {type: string, maxLength: 150}
+        classType: {type: string, enum: [GROUP, PT_1_1]}
+    SportClassResponse:
+      type: object
+      properties:
+        classType: {type: string, enum: [GROUP, PT_1_1, YOGA], description: YOGA is retained for legacy reads.}
+  responses:
+    BadRequest: {description: Invalid request.}
+    Unauthorized: {description: Authentication required.}
+    Forbidden: {description: Manager role required.}
+    NotFound: {description: Resource not found.}
+    Conflict: {description: Request conflicts with current scheduling state.}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

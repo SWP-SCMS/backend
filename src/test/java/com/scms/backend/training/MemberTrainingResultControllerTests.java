@@ -1,6 +1,8 @@
 package com.scms.backend.training;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,6 +22,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,17 +45,20 @@ class MemberTrainingResultControllerTests {
 		UUID memberId = UUID.randomUUID();
 		UUID sessionId = UUID.randomUUID();
 		Instant activityAt = Instant.parse("2026-10-14T07:00:00Z");
-		when(service.viewOwnHistory(memberId)).thenReturn(List.of(new MemberTrainingResultResponse(
+		var response = new MemberTrainingResultResponse(
 			UUID.randomUUID(), memberId, null, null, sessionId, activityAt, Map.of("notes", "Yoga"),
-			UUID.randomUUID(), activityAt, activityAt)));
+			UUID.randomUUID(), activityAt, activityAt);
+		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
+				new MemberTrainingResultPageResponse(List.of(response), 0, 20, 1, 1));
 
 		mockMvc.perform(get("/members/me/training-results")
 			.with(jwt().jwt(token -> token.subject(memberId.toString()))
 				.authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].memberAccountId").value(memberId.toString()))
-			.andExpect(jsonPath("$[0].classSessionId").value(sessionId.toString()))
-			.andExpect(jsonPath("$[0].content.notes").value("Yoga"));
+			.andExpect(jsonPath("$.content[0].memberAccountId").value(memberId.toString()))
+			.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
+			.andExpect(jsonPath("$.content[0].content.notes").value("Yoga"))
+			.andExpect(jsonPath("$.totalElements").value(1));
 	}
 
 	@Test

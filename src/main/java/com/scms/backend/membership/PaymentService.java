@@ -17,6 +17,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ class PaymentService {
 	@Transactional
 	PaymentResultResponse cash(UUID actor, String memberCode, CashPaymentRequest request) {
 		ensure(actor, AccountRole.RECEPTIONIST);
+		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
 		if (request == null || request.offerId() == null) throw PaymentException.validation("offerId is required");
 		Map<String,Object> member;
 		Map<String,Object> offer;
@@ -51,19 +53,29 @@ class PaymentService {
 			throw PaymentException.notFound("Active Member or Membership Offer was not found");
 		}
 		UUID memberId=(UUID)member.get("account_id");
+		accounts.findByIdForUpdate(memberId)
+			.filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(() -> PaymentException.notFound("Active Member or Membership Offer was not found"));
 		if (count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId)>0)
 			throw PaymentException.conflict("Member already has an active membership");
 		if (count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId)>0)
 			throw PaymentException.conflict("Member already has a pending membership order");
 		UUID orderId=UUID.randomUUID(); UUID paymentId=UUID.randomUUID();
 		String orderNumber="ORD-"+orderId.toString().replace("-","").toUpperCase();
-		db.update("""
-			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
-				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
-				duration_days_snapshot,payment_method,status)
-			values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT')
-			""", orderId,orderNumber,memberId,actor,request.offerId(),offer.get("name"),offer.get("plan_code"),
-			offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"));
+		try {
+			db.update("""
+				insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
+					offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
+					duration_days_snapshot,payment_method,status)
+				values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT')
+				""", orderId,orderNumber,memberId,actor,request.offerId(),offer.get("name"),offer.get("plan_code"),
+				offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"));
+		} catch (DataIntegrityViolationException exception) {
+			if (MembershipOrderConstraintDetector.isPendingMemberConstraint(exception)) {
+				throw PaymentException.conflict("Member already has a pending membership order");
+			}
+			throw exception;
+		}
 		return fulfillment.fulfillCash(paymentId, orderId, actor, "Cash received by receptionist",
 			"Cash payment confirmed");
 	}
@@ -73,7 +85,7 @@ class PaymentService {
 		ensureAny(actor);
 		if (request == null || request.status() == null || blank(request.reason()) || blank(request.evidence()))
 			throw PaymentException.validation("status, evidence and reason are required");
-		Map<String,Object> payment=fulfillment.paymentForUpdate(paymentId);
+		Map<String,Object> payment=fulfillment.payment(paymentId);
 		if (request.status() == PaymentActionRequest.ReconciliationStatus.PAID) {
 			if (request.receivedAmount()==null || blank(request.transferContent()) || blank(request.providerTransactionId()))
 				throw PaymentException.validation("receivedAmount, transferContent and providerTransactionId are required for PAID");
@@ -84,6 +96,7 @@ class PaymentService {
 				throw PaymentException.validation("transferContent does not match Payment");
 			return fulfillment.fulfill(paymentId,actor,request.providerTransactionId().trim(),request.evidence().trim(),request.reason().trim());
 		}
+		payment=fulfillment.paymentForUpdate(paymentId);
 		String status=PaymentFulfillmentService.string(payment,"payment_status");
 		if (!"PENDING".equals(status)) throw PaymentException.conflict("Payment is terminal");
 		Object expires=payment.get("expires_at");
@@ -204,7 +217,10 @@ class PaymentService {
 
 	@Transactional(readOnly=true)
 	List<ReceiptResponse> receiptsForReceptionist(UUID actor, String memberCode) {
-		ensureAny(actor);
+		Account account = active(actor);
+		if (account.getRole() != AccountRole.RECEPTIONIST && account.getRole() != AccountRole.MANAGER) {
+			throw PaymentException.forbidden();
+		}
 		if (blank(memberCode)) throw PaymentException.validation("memberId is required");
 		UUID memberId;
 		try {
@@ -215,14 +231,18 @@ class PaymentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Member was not found");
 		}
+		String ownership = account.getRole() == AccountRole.RECEPTIONIST
+			? " and p.processed_by_account_id=?" : "";
+		Object[] args = account.getRole() == AccountRole.RECEPTIONIST
+			? new Object[] { memberId, actor } : new Object[] { memberId };
 		return db.query("""
 			select r.*,o.offer_name_snapshot,a.full_name member_name,m.member_code from receipts r
 			join membership_orders o on o.id=r.order_id
 			join accounts a on a.id=r.member_account_id
 			join member_profiles m on m.account_id=a.id
-			where r.member_account_id=? order by r.issued_at desc,r.id desc
-			""",
-			(rs,row)->receipt(rs),memberId);
+			join payments p on p.id=r.payment_id
+			where r.member_account_id=?""" + ownership + " order by r.issued_at desc,r.id desc",
+			(rs,row)->receipt(rs),args);
 	}
 
 	@Transactional(readOnly=true)
@@ -230,13 +250,15 @@ class PaymentService {
 		Account account=active(actor);
 		try {
 			Map<String,Object> row=db.queryForMap("""
-				select r.*,o.offer_name_snapshot,a.full_name member_name,m.member_code from receipts r
+				select r.*,o.offer_name_snapshot,a.full_name member_name,m.member_code,p.processed_by_account_id from receipts r
 				join membership_orders o on o.id=r.order_id
 				join accounts a on a.id=r.member_account_id
 				join member_profiles m on m.account_id=a.id
+				join payments p on p.id=r.payment_id
 				where r.id=?
 				""",receiptId);
 			if (account.getRole()==AccountRole.MEMBER && !actor.equals(row.get("member_account_id"))) throw PaymentException.forbidden();
+			if (account.getRole()==AccountRole.RECEPTIONIST && !actor.equals(row.get("processed_by_account_id"))) throw PaymentException.forbidden();
 			if (account.getRole()==AccountRole.COACH)
 				throw PaymentException.forbidden();
 			return receipt(row);

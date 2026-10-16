@@ -37,7 +37,9 @@ public class StaffStatusService {
 			throw new InvalidAuthenticatedAccountException();
 		}
 		validate(request);
-		Account target = accounts.findById(accountId)
+		var activeManagers = accounts.findActiveManagersForUpdate();
+		Account target = accounts.findByIdForUpdate(accountId)
+			.or(() -> accounts.findById(accountId))
 			.filter(account -> account.getRole() != AccountRole.MEMBER)
 			.orElseThrow(StaffAccountNotFoundException::new);
 		if (managerId.equals(accountId)) {
@@ -46,7 +48,7 @@ public class StaffStatusService {
 		if (target.getStatus() == AccountStatus.INACTIVE) {
 			throw new StaffStatusConflictException("Staff account is already INACTIVE");
 		}
-		if (target.getRole() == AccountRole.MANAGER && accounts.findActiveManagersForUpdate().size() <= 1) {
+		if (target.getRole() == AccountRole.MANAGER && activeManagers.size() <= 1) {
 			throw new StaffStatusConflictException("The last active Manager cannot be deactivated");
 		}
 		if (target.getRole() == AccountRole.COACH) {
@@ -63,9 +65,18 @@ public class StaffStatusService {
 	}
 
 	private void ensureCoachHasNoOutstandingWork(UUID coachId) {
+		jdbc.update("""
+			update coach_assignments ca set status='ENDED', end_reason='PLUS membership expired',
+				ends_at=greatest(ca.starts_at, coalesce((select max(m.ends_at) from memberships m
+				where m.member_account_id=ca.member_account_id and m.plan_code_snapshot='PLUS'), current_timestamp)),
+				updated_at=current_timestamp, version=ca.version+1
+			where ca.coach_account_id=? and ca.status='ACTIVE' and not exists (
+				select 1 from memberships m where m.member_account_id=ca.member_account_id
+				and m.status='ACTIVE' and m.plan_code_snapshot='PLUS' and m.starts_at <= current_timestamp and m.ends_at > current_timestamp)
+			""", coachId);
 		Boolean hasFutureSessions = jdbc.queryForObject("""
 			select exists(select 1 from class_sessions where teaching_coach_account_id = ?
-				and start_time > ? and status in ('SCHEDULED', 'IN_PROGRESS'))
+				and end_time > ? and status in ('SCHEDULED', 'IN_PROGRESS'))
 			""", Boolean.class, coachId, Timestamp.from(clock.instant()));
 		Boolean hasActiveAssignments = jdbc.queryForObject("""
 			select exists(select 1 from coach_assignments where coach_account_id = ? and status = 'ACTIVE')

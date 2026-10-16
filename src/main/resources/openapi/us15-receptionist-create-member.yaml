@@ -103,7 +103,7 @@ components:
         birthDate:
           type: string
           format: date
-          description: Must not be in the future.
+          description: Must not be in the future; the member must be at least 16 years old.
         profileImageUrl:
           type:
             - string

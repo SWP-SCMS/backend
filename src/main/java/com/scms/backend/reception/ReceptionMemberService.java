@@ -86,8 +86,11 @@ public class ReceptionMemberService {
 	}
 
 	private void validateBirthDate(LocalDate birthDate) {
-		if (birthDate.isAfter(LocalDate.now(clock))) {
+		if (birthDate == null || birthDate.isAfter(LocalDate.now(clock))) {
 			throw new RegistrationValidationException("birthDate", "must not be in the future");
+		}
+		if (birthDate.plusYears(16).isAfter(LocalDate.now(clock))) {
+			throw new RegistrationValidationException("birthDate", "member must be at least 16 years old");
 		}
 	}
 }

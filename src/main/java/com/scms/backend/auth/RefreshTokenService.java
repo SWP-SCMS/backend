@@ -22,12 +22,15 @@ public class RefreshTokenService {
 	private static final int TOKEN_BYTES = 32;
 
 	private final RefreshTokenRepository repository;
+	private final com.scms.backend.account.AccountRepository accounts;
 	private final AuthProperties properties;
 	private final Clock clock;
 	private final SecureRandom secureRandom = new SecureRandom();
 
-	RefreshTokenService(RefreshTokenRepository repository, AuthProperties properties, Clock clock) {
+	RefreshTokenService(RefreshTokenRepository repository, com.scms.backend.account.AccountRepository accounts,
+			AuthProperties properties, Clock clock) {
 		this.repository = repository;
+		this.accounts = accounts;
 		this.properties = properties;
 		this.clock = clock;
 	}
@@ -42,10 +45,14 @@ public class RefreshTokenService {
 		if (rawToken == null || rawToken.isBlank()) {
 			throw new InvalidRefreshTokenException();
 		}
+		RefreshToken candidate = repository.findByTokenHash(hash(rawToken))
+			.orElseThrow(InvalidRefreshTokenException::new);
+		var account = accounts.findByIdForUpdate(candidate.getAccount().getId())
+			.orElseThrow(InvalidRefreshTokenException::new);
 		RefreshToken current = repository.findByTokenHashForUpdate(hash(rawToken))
 			.orElseThrow(InvalidRefreshTokenException::new);
 		Instant now = clock.instant();
-		if (!current.isUsableAt(now) || current.getAccount().getStatus() != AccountStatus.ACTIVE) {
+		if (!current.isUsableAt(now) || account.getStatus() != AccountStatus.ACTIVE) {
 			throw new InvalidRefreshTokenException();
 		}
 

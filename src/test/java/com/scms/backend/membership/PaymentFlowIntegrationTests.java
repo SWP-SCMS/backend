@@ -34,6 +34,7 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -79,6 +80,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired PaymentService paymentService;
 	@Autowired PaymentFulfillmentService fulfillment;
+	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
 	@Autowired Clock clock;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -113,6 +115,7 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 		assertThat(count("select count(*) from audit_events where target_id=?", payment)).isOne();
+		notificationOutboxDispatcher.dispatchAvailable();
 		assertThat(count("select count(*) from notifications where event_key=? and target_id=?",
 			"PAYMENT_PAID:" + payment, payment)).isOne();
 
@@ -121,7 +124,7 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
-	void notificationFailureRollsBackPaidPaymentFulfillment() {
+	void notificationDeliveryFailureDoesNotRollBackPaidPaymentFulfillment() {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile member = member();
 		UUID offer = offer(receptionist, "BASIC", 12000, false);
@@ -133,27 +136,29 @@ class PaymentFlowIntegrationTests {
 		db.execute("create trigger fail_payment_notification before insert on notifications "
 			+ "for each row execute function fail_payment_notification()");
 		try {
-			assertThatThrownBy(() -> paymentService.reconcile(receptionist.getId(), payment,
+			paymentService.reconcile(receptionist.getId(), payment,
 				new PaymentActionRequest(PaymentActionRequest.ReconciliationStatus.PAID, BigInteger.valueOf(12000),
-					"ROLLBACK-" + order, "rollback-transaction", "bank statement", "manual confirmation")))
-				.hasStackTraceContaining("forced notification failure");
+					"ROLLBACK-" + order, "rollback-transaction", "bank statement", "manual confirmation"));
+			notificationOutboxDispatcher.dispatchAvailable();
 		}
 		finally {
 			db.execute("drop trigger fail_payment_notification on notifications");
 			db.execute("drop function fail_payment_notification()");
 		}
 		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
-			.isEqualTo("PENDING_PAYMENT");
+			.isEqualTo("PAID");
 		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
-			.isEqualTo("PENDING");
+			.isEqualTo("PAID");
 		assertThat(count("select count(*) from memberships where member_account_id=?", member.getAccountId()))
-			.isZero();
+			.isOne();
 		assertThat(count("select count(*) from receipts where member_account_id=?", member.getAccountId()))
-			.isZero();
+			.isOne();
 		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?",
-			payment)).isZero();
+			payment)).isOne();
 		assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
 			.isZero();
+		assertThat(db.queryForObject("select status from notification_outbox where event_key=?", String.class,
+			"PAYMENT_PAID:" + payment)).isEqualTo("FAILED");
 	}
 
 	@Test
@@ -519,7 +524,7 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
-	void receptionistCanReadBankTransferReceiptAndPaymentResult() throws Exception {
+	void webhookReceiptIsHiddenFromReceptionistButVisibleToManager() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile member = member();
@@ -534,7 +539,8 @@ class PaymentFlowIntegrationTests {
 			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 		UUID receipt = UUID.fromString(JsonPath.read(paid, "$.receiptId"));
 
-		getAuthorized(receptionist, "/api/v1/receipts/" + receipt)
+		getAuthorized(receptionist, "/api/v1/receipts/" + receipt).andExpect(status().isForbidden());
+		getAuthorized(manager, "/api/v1/receipts/" + receipt)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.paymentMethod").value("BANK_TRANSFER"));
 		getAuthorized(receptionist, "/api/v1/payments/" + payment + "/result")
 			.andExpect(status().isOk()).andExpect(jsonPath("$.method").value("BANK_TRANSFER"));
@@ -570,9 +576,10 @@ class PaymentFlowIntegrationTests {
 		UUID bankReceipt = UUID.fromString(JsonPath.read(bankPaid, "$.receiptId"));
 		db.update("update accounts set status='SUSPENDED' where id=?", bankMember.getAccountId());
 		getAuthorized(receptionist, "/api/v1/reception/members/" + bankMember.getMemberCode() + "/receipts")
+			.andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+		getAuthorized(manager, "/api/v1/reception/members/" + bankMember.getMemberCode() + "/receipts")
 			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(bankReceipt.toString()))
-			.andExpect(jsonPath("$[0].paymentMethod").value("BANK_TRANSFER"))
-			.andExpect(jsonPath("$[0].offerName").value("Snapshot"));
+			.andExpect(jsonPath("$[0].paymentMethod").value("BANK_TRANSFER"));
 
 		getAuthorized(receptionist, "/api/v1/reception/members/" + noReceiptMember.getMemberCode() + "/receipts")
 			.andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());

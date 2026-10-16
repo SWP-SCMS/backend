@@ -47,8 +47,13 @@ public class ResetPasswordService {
 	@Transactional
 	public void receptionistResetMember(UUID actorId, String memberCode) {
 		ensureActive(actorId, AccountRole.RECEPTIONIST);
-		Account target = profiles.findVisibleMemberByCode(memberCode, AccountRole.MEMBER, java.util.List.of(AccountStatus.ACTIVE))
-			.map(profile -> profile.getAccount())
+		UUID targetId = profiles.findVisibleMemberByCode(memberCode, AccountRole.MEMBER,
+			java.util.List.of(AccountStatus.ACTIVE))
+			.map(profile -> profile.getAccountId())
+			.orElseThrow(MemberAccountNotFoundException::new);
+		Account target = accounts.findByIdForUpdate(targetId)
+			.filter(account -> account.getRole() == AccountRole.MEMBER
+				&& account.getStatus() == AccountStatus.ACTIVE)
 			.orElseThrow(MemberAccountNotFoundException::new);
 		reset(actorId, target);
 	}
@@ -62,7 +67,8 @@ public class ResetPasswordService {
 	}
 
 	private Account target(UUID id) {
-		return accounts.findById(id).filter(account -> account.getStatus() == AccountStatus.ACTIVE)
+		return accounts.findByIdForUpdate(id).or(() -> accounts.findById(id))
+			.filter(account -> account.getStatus() == AccountStatus.ACTIVE)
 			.orElseThrow(StaffAccountNotFoundException::new);
 	}
 

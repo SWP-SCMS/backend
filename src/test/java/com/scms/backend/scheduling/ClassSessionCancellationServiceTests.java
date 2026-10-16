@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -27,6 +28,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 
 @ExtendWith(MockitoExtension.class)
 class ClassSessionCancellationServiceTests {
@@ -106,6 +109,31 @@ class ClassSessionCancellationServiceTests {
 			.extracting("code").isEqualTo("SESSION_NOT_SCHEDULED");
 		verify(jdbc, never()).update(org.mockito.ArgumentMatchers.anyString(),
 			org.mockito.ArgumentMatchers.<Object[]>any());
+	}
+
+	@Test
+	void previewSupportsClassAndTimeFiltersWithoutRequiringAReason() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		when(sessions.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of(session));
+
+		ClassSessionCancellationPreviewResponse result = service.preview(managerId,
+			new ClassSessionCancellationBatchRequest(null, session.getSportClass().getId(),
+				now.plusSeconds(1800), now.plusSeconds(10800), null));
+
+		assertThat(result.count()).isOne();
+		assertThat(result.sessionIds()).containsExactly(session.getId());
+	}
+
+	@Test
+	void previewRequiresAtLeastOneFilter() {
+		UUID managerId = activeManager();
+
+		assertThatThrownBy(() -> service.preview(managerId,
+			new ClassSessionCancellationBatchRequest(null, null)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("field").isEqualTo("selector");
+		verify(sessions, never()).findAll(any(Specification.class), any(Sort.class));
 	}
 
 	private UUID activeManager() {

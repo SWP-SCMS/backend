@@ -1,8 +1,10 @@
 package com.scms.backend.scheduling;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -138,7 +140,7 @@ public class ClassSessionService {
 			throw RecurringScheduleException.validation("request", "coachId or roomId is required");
 		}
 		advanceStatuses();
-		ClassSession session = sessions.findById(sessionId)
+		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
 			throw RecurringScheduleException.sessionNotScheduled();
@@ -154,6 +156,9 @@ public class ClassSessionService {
 			session.getCapacity());
 		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, session.getStartTime(),
 				session.getEndTime())) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		if (rooms.existsSuspensionOverlap(roomId, session.getStartTime(), session.getEndTime())) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		session.updateAssignment(resources.coach(), resources.room());
@@ -187,6 +192,9 @@ public class ClassSessionService {
 		if (endTime == null || !endTime.isAfter(startTime)) {
 			throw RecurringScheduleException.validation("endTime", "must be later than startTime");
 		}
+		if (Duration.between(startTime, endTime).compareTo(Duration.ofMinutes(90)) > 0) {
+			throw RecurringScheduleException.validation("endTime", "a Session cannot be longer than 90 minutes");
+		}
 	}
 
 	Resources validateResources(UUID classId, UUID coachId, UUID roomId, Integer capacity) {
@@ -202,19 +210,24 @@ public class ClassSessionService {
 				|| sportClass.getDiscipline().getStatus() != DisciplineStatus.ACTIVE) {
 			throw RecurringScheduleException.inactive("class");
 		}
-		Account coach = accounts.findById(coachId)
+		Optional<Account> coachResult = accounts.findByIdForUpdate(coachId);
+		if (coachResult == null || coachResult.isEmpty()) coachResult = accounts.findById(coachId);
+		Account coach = coachResult
 			.orElseThrow(() -> RecurringScheduleException.notFound("coach"));
 		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE) {
 			throw RecurringScheduleException.coachInvalid();
 		}
-		Room room = rooms.findById(roomId).orElseThrow(() -> RecurringScheduleException.notFound("room"));
+		Optional<Room> roomResult = rooms.findByIdForUpdate(roomId);
+		if (roomResult == null || roomResult.isEmpty()) roomResult = rooms.findById(roomId);
+		Room room = roomResult.orElseThrow(() -> RecurringScheduleException.notFound("room"));
 		if (room.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
 		if (capacity > room.getCapacity()) throw RecurringScheduleException.capacityConflict();
 		return new Resources(sportClass, coach, room);
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime) {
-		if (sessions.existsOverlap(resources.coach().getId(), resources.room().getId(), startTime, endTime)) {
+		if (sessions.existsOverlap(resources.coach().getId(), resources.room().getId(), startTime, endTime)
+				|| rooms.existsSuspensionOverlap(resources.room().getId(), startTime, endTime)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 	}
