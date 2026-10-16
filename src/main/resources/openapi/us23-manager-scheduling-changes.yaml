@@ -5,6 +5,18 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /manager/classes/types:
+    get:
+      summary: List supported sport class types
+      operationId: listSupportedSportClassTypes
+      description: Returns values accepted for new and updated classes. Legacy YOGA is intentionally excluded.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Supported class types.
+          content: {application/json: {schema: {type: array, items: {type: string, enum: [GROUP, PT_1_1]}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /manager/rooms/{roomId}/suspensions:
     get:
       summary: List room suspension intervals
@@ -32,6 +44,44 @@ paths:
         '201':
           description: Room suspension created.
           content: {application/json: {schema: {$ref: '#/components/schemas/RoomSuspensionResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /manager/rooms/{roomId}/impact-preview:
+    post:
+      summary: Preview sessions affected by room suspension or permanent disable
+      operationId: previewRoomImpact
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {$ref: '#/components/parameters/RoomId'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RoomImpactPreviewRequest'}}}
+      responses:
+        '200':
+          description: Affected active, future, or in-progress sessions.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RoomImpactPreviewResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /manager/rooms/{roomId}/impact-apply:
+    post:
+      summary: Resolve room impacts and apply suspension or permanent disable
+      operationId: applyRoomImpact
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {$ref: '#/components/parameters/RoomId'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RoomImpactPreviewRequest'}}}
+      responses:
+        '200':
+          description: Updated room after all resolutions have been applied atomically.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RoomResponse'}}}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
@@ -94,6 +144,56 @@ components:
         endTime: {type: string, format: date-time}
         reason: {type: [string, 'null']}
         createdBy: {type: string, format: uuid}
+    RoomImpactPreviewRequest:
+      type: object
+      properties:
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        permanentDisable: {type: boolean, default: false}
+        reason: {type: [string, 'null'], maxLength: 1000}
+        resolutions:
+          type: array
+          items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
+    RoomSessionResolutionRequest:
+      type: object
+      required: [sessionId, action]
+      properties:
+        sessionId: {type: string, format: uuid}
+        action: {type: string, enum: [MOVE, RESCHEDULE, CANCEL]}
+        targetRoomId: {type: [string, 'null'], format: uuid}
+        startTime: {type: [string, 'null'], format: date-time}
+        endTime: {type: [string, 'null'], format: date-time}
+        reason: {type: [string, 'null'], maxLength: 1000}
+    RoomImpactPreviewResponse:
+      type: object
+      required: [count, sessions]
+      properties:
+        count: {type: integer, minimum: 0}
+        sessions:
+          type: array
+          items: {$ref: '#/components/schemas/RoomImpactSession'}
+    RoomImpactSession:
+      type: object
+      required: [sessionId, classId, className, coachId, roomId, roomName, startTime, endTime, status, bookingCount]
+      properties:
+        sessionId: {type: string, format: uuid}
+        classId: {type: string, format: uuid}
+        className: {type: string}
+        coachId: {type: string, format: uuid}
+        roomId: {type: string, format: uuid}
+        roomName: {type: string}
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        status: {type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]}
+        bookingCount: {type: integer, format: int64, minimum: 0}
+    RoomResponse:
+      type: object
+      required: [id, name, capacity, status]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        capacity: {type: integer}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
     ClassSessionCancellationBatchRequest:
       type: object
       properties:
@@ -120,7 +220,11 @@ components:
       properties:
         disciplineId: {type: string, format: uuid}
         name: {type: string, maxLength: 150}
-        classType: {type: string, enum: [GROUP, PT_1_1]}
+        classType: {type: string, enum: [GROUP, PT_1_1], description: Only supported values for new classes.}
+    SportClassPatchRequest:
+      type: object
+      properties:
+        classType: {type: string, enum: [GROUP, PT_1_1], description: Only supported values for updates.}
     SportClassResponse:
       type: object
       properties:

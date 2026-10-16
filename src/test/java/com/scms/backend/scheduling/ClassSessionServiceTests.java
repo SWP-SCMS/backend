@@ -125,6 +125,31 @@ class ClassSessionServiceTests {
 		verify(sessions, never()).saveAndFlush(any());
 	}
 
+	@Test
+	void roomImpactRescheduleKeepsSessionAndBookingsAndUsesConflictChecks() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Impact Discipline", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Impact Class", SportClassType.GROUP,
+			null, SportClassStatus.ACTIVE);
+		Room room = new Room(UUID.randomUUID(), "Impact Room", 20, RoomStatus.ACTIVE);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		ClassSession session = new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+			room, now.plusSeconds(3600), now.plusSeconds(5400), 10, managerId);
+		Instant newStart = now.plusSeconds(7200);
+		Instant newEnd = now.plusSeconds(9000);
+		when(sessions.existsOverlapExcluding(session.getId(), coach.getId(), room.getId(),
+			newStart, newEnd)).thenReturn(false);
+		when(rooms.existsSuspensionOverlap(room.getId(), newStart, newEnd)).thenReturn(false);
+		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.rescheduleForRoomImpact(managerId, session, newStart, newEnd, "Room repair");
+
+		assertThat(session.getStartTime()).isEqualTo(newStart);
+		assertThat(session.getEndTime()).isEqualTo(newEnd);
+		verify(sessions).existsOverlapExcluding(session.getId(), coach.getId(), room.getId(),
+			newStart, newEnd);
+	}
+
 	private Fixture activeFixture(int roomCapacity) {
 		UUID managerId = activeManager();
 		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);

@@ -63,6 +63,18 @@ public class RoomController {
 		return ResponseEntity.status(201).body(suspensionService.create(accountId(jwt), roomId, request));
 	}
 
+	@PostMapping("/{roomId}/impact-preview")
+	ResponseEntity<RoomImpactPreviewResponse> impactPreview(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID roomId, @RequestBody RoomImpactPreviewRequest request) {
+		return ResponseEntity.ok(suspensionService.previewImpact(accountId(jwt), roomId, request));
+	}
+
+	@PostMapping("/{roomId}/impact-apply")
+	ResponseEntity<RoomResponse> impactApply(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId,
+			@RequestBody RoomImpactPreviewRequest request) {
+		return ResponseEntity.ok(suspensionService.applyImpact(accountId(jwt), roomId, request));
+	}
+
 	private UUID accountId(Jwt jwt) {
 		return UUID.fromString(jwt.getSubject());
 	}

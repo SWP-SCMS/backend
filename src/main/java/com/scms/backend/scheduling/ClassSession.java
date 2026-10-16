@@ -39,10 +39,10 @@ public class ClassSession {
 	@JoinColumn(name = "room_id", nullable = false)
 	private Room room;
 
-	@Column(name = "start_time", nullable = false, updatable = false)
+	@Column(name = "start_time", nullable = false)
 	private Instant startTime;
 
-	@Column(name = "end_time", nullable = false, updatable = false)
+	@Column(name = "end_time", nullable = false)
 	private Instant endTime;
 
 	@Column(nullable = false, updatable = false)
@@ -104,6 +104,11 @@ public class ClassSession {
 	void updateAssignment(Account coach, Room room) {
 		this.teachingCoach = coach;
 		this.room = room;
+	}
+
+	void updateSchedule(Instant startTime, Instant endTime) {
+		this.startTime = startTime;
+		this.endTime = endTime;
 	}
 
 	void cancel(Instant cancelledAt, String reason) {

@@ -93,6 +93,35 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	List<ClassSession> findFutureScheduledByIds(@Param("sessionIds") Collection<UUID> sessionIds,
 			@Param("now") Instant now);
 
+	@Query("""
+		select session from ClassSession session
+		where session.room.id = :roomId
+		  and ((:permanentDisable = true and (session.status = com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS
+			or (session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED and session.startTime > :now)))
+			or (:permanentDisable = false and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+			and session.startTime < :endTime and session.endTime > :startTime))
+		order by session.id
+		""")
+	List<ClassSession> findRoomImpacts(@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
+			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
+			@Param("now") Instant now);
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select session from ClassSession session
+		where session.room.id = :roomId
+		  and ((:permanentDisable = true and (session.status = com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS
+			or (session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED and session.startTime > :now)))
+			or (:permanentDisable = false and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+			and session.startTime < :endTime and session.endTime > :startTime))
+		order by session.id
+		""")
+	List<ClassSession> findRoomImpactsForUpdate(@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
+			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
+			@Param("now") Instant now);
+
 	interface BookingCountView {
 		UUID getSessionId();
 		long getBookedCount();
