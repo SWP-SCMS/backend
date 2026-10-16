@@ -231,6 +231,9 @@ class ReceptionClassSessionIntegrationTests {
 			+ "'PLUS', 12000, 'VND', 365, 'CASH', 'PAID', ?, ?)", orderId,
 			"US35-" + orderId.toString().replace("-", ""), memberId, managerId, offerId, "US35 " + suffix,
 			java.sql.Timestamp.from(Instant.parse("2030-01-02T00:00:00Z")), java.sql.Timestamp.from(NOW));
+		jdbc.update("insert into payments(id, order_id, method, status, amount, currency_code, "
+			+ "processed_by_account_id, paid_at) values (?, ?, 'CASH', 'PAID', 12000, 'VND', ?, ?)",
+			UUID.randomUUID(), orderId, managerId, java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into memberships(id, member_account_id, order_id, offer_id, plan_code_snapshot, "
 			+ "offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot, status, "
 			+ "starts_at, ends_at) values (?, ?, ?, ?, 'PLUS', ?, 12000, 'VND', 365, 'ACTIVE', "
