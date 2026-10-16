@@ -146,6 +146,54 @@ paths:
           $ref: '#/components/responses/MemberNotFound'
         '409':
           $ref: '#/components/responses/IdentifierConflict'
+  /reception/members/{memberId}/profile/image:
+    parameters:
+      - name: memberId
+        in: path
+        required: true
+        description: Immutable member_profiles.member_code, not an Account UUID.
+        schema:
+          type: string
+          pattern: '^MB-[0-9]+$'
+        example: MB-123
+    post:
+      summary: Upload a Member's profile image at reception
+      operationId: uploadReceptionMemberProfileImage
+      description: >-
+        An ACTIVE RECEPTIONIST can upload a JPEG or PNG for an ACTIVE or SUSPENDED MEMBER. The
+        server validates the decoded image, stores it with a UUID filename, and returns the updated
+        profile. The file is limited to 5 MiB; the client filename and MIME type are not trusted.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JPEG or PNG image, maximum 5 MiB.
+      responses:
+        '200':
+          description: Updated profile with the stored profileImageUrl
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+        '400':
+          $ref: '#/components/responses/PatchBadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/MemberNotFound'
+        '409':
+          $ref: '#/components/responses/IdentifierConflict'
 components:
   securitySchemes:
     BearerAuth:
