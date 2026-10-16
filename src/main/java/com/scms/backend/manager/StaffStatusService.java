@@ -37,6 +37,7 @@ public class StaffStatusService {
 			throw new InvalidAuthenticatedAccountException();
 		}
 		validate(request);
+		var activeManagers = accounts.findActiveManagersForUpdate();
 		Account target = accounts.findByIdForUpdate(accountId)
 			.or(() -> accounts.findById(accountId))
 			.filter(account -> account.getRole() != AccountRole.MEMBER)
@@ -47,7 +48,7 @@ public class StaffStatusService {
 		if (target.getStatus() == AccountStatus.INACTIVE) {
 			throw new StaffStatusConflictException("Staff account is already INACTIVE");
 		}
-		if (target.getRole() == AccountRole.MANAGER && accounts.findActiveManagersForUpdate().size() <= 1) {
+		if (target.getRole() == AccountRole.MANAGER && activeManagers.size() <= 1) {
 			throw new StaffStatusConflictException("The last active Manager cannot be deactivated");
 		}
 		if (target.getRole() == AccountRole.COACH) {
