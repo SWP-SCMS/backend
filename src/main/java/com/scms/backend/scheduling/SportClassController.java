@@ -31,6 +31,11 @@ public class SportClassController {
 		return ResponseEntity.ok(service.list(accountId(jwt)));
 	}
 
+	@GetMapping("/types")
+	ResponseEntity<List<SportClassType>> supportedTypes(@AuthenticationPrincipal Jwt jwt) {
+		return ResponseEntity.ok(service.supportedTypes(accountId(jwt)));
+	}
+
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<SportClassResponse> create(@AuthenticationPrincipal Jwt jwt,

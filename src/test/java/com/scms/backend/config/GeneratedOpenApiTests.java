@@ -118,6 +118,7 @@ class GeneratedOpenApiTests {
 		"GET /manager/rooms/{roomId}",
 		"PATCH /manager/rooms/{roomId}",
 		"GET /manager/rooms/{roomId}/suspensions",
+		"GET /manager/classes/types",
 		"POST /manager/rooms/{roomId}/suspensions",
 		"GET /manager/classes",
 		"POST /manager/classes",
@@ -284,6 +285,10 @@ class GeneratedOpenApiTests {
 		assertThat(deprecatedResponses.path("409").path("$ref").asText())
 			.isEqualTo("#/components/responses/Conflict");
 		assertThat(deprecatedResponses.properties().stream().map(java.util.Map.Entry::getKey))
+		assertThat(document.at("/paths/~1manager~1classes~1types/get/description").asText())
+			.contains("MANAGER");
+		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum")
+			.toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
 			.noneMatch(status -> status.matches("2\\d\\d"));
 
 		assertThat(document.at("/components/schemas/BookingResponse/properties/status/enum")).isNotEmpty();
