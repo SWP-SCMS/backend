@@ -123,6 +123,21 @@ class RoomServiceTests {
 	}
 
 	@Test
+	void patchCannotDeactivateRoomWithFutureSessions() {
+		UUID managerId = activeManager();
+		Room room = room(20);
+		UUID sessionId = UUID.randomUUID();
+		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
+		when(rooms.findBlockingSessionIds(room.getId())).thenReturn(List.of(sessionId));
+
+		assertThatThrownBy(() -> service.update(managerId, room.getId(),
+			new RoomPatchRequest(null, null, RoomStatus.INACTIVE)))
+			.isInstanceOf(RoomException.class)
+			.extracting("code").isEqualTo("ROOM_HAS_ACTIVE_SESSIONS");
+		verify(rooms, never()).saveAndFlush(any(Room.class));
+	}
+
+	@Test
 	void patchUpdatesProvidedFieldsAndCanDeactivate() {
 		UUID managerId = activeManager();
 		Room room = room(20);

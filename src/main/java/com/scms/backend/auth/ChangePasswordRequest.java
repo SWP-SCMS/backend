@@ -10,12 +10,10 @@ public record ChangePasswordRequest(
 		if (currentPassword == null || currentPassword.isBlank()) {
 			throw new ChangePasswordValidationException("currentPassword", "must not be blank");
 		}
-		if (newPassword == null || newPassword.isBlank()) {
-			throw new ChangePasswordValidationException("newPassword", "must not be blank");
+		if (!PasswordConstraints.fitsBcrypt(currentPassword)) {
+			throw new ChangePasswordValidationException("currentPassword", "must be at most 72 UTF-8 bytes");
 		}
-		if (newPassword.length() < 8) {
-			throw new ChangePasswordValidationException("newPassword", "size must be at least 8");
-		}
+		PasswordConstraints.validate("newPassword", newPassword, ChangePasswordValidationException::new);
 	}
 
 	@JsonAnySetter

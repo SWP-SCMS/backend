@@ -4,6 +4,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Instant;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -69,6 +70,7 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
+		membershipRepository.expireDue(Instant.now());
 		ensureActiveMember(member);
 		UUID memberAccountId = member.getAccountId();
 		if (membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.ACTIVE)) {

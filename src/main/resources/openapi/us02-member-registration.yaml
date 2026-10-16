@@ -77,11 +77,12 @@ components:
           type: string
           format: password
           minLength: 8
+          description: Must be at least 8 characters and no more than 72 UTF-8 bytes.
           writeOnly: true
         birthDate:
           type: string
           format: date
-          description: Must not be in the future.
+          description: Must not be in the future; the member must be at least 16 years old.
         profileImageUrl:
           type:
             - string

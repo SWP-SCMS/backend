@@ -48,6 +48,8 @@ class PaymentServiceReceiptAccessTests {
 		Account receptionist = new Account(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE,
 			"Receptionist", "0900000000", "receptionist@example.test", LocalDate.of(1990, 1, 1), "hash");
 		when(accounts.findById(receptionistId)).thenReturn(Optional.of(receptionist));
+		when(accounts.findById(managerId)).thenReturn(Optional.of(new Account(managerId, AccountRole.MANAGER,
+			AccountStatus.ACTIVE, "Manager", "0900000001", "manager@example.test", LocalDate.of(1990, 1, 1), "hash")));
 		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
 			.thenReturn(true);
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
@@ -70,6 +72,7 @@ class PaymentServiceReceiptAccessTests {
 			Map.entry("amount_snapshot", BigDecimal.valueOf(12000)),
 			Map.entry("currency_code_snapshot", "VND"),
 			Map.entry("payment_method_snapshot", "BANK_TRANSFER"),
+			Map.entry("processed_by_account_id", receptionistId),
 			Map.entry("issued_at", Timestamp.from(issuedAt))
 		));
 
@@ -108,7 +111,7 @@ class PaymentServiceReceiptAccessTests {
 			BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "BANK_TRANSFER", issuedAt.minusSeconds(60));
 		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
 		doReturn(List.of(cash, bank)).when(db).query(anyString(),
-			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId));
+			org.mockito.ArgumentMatchers.<RowMapper<ReceiptResponse>>any(), eq(memberId), eq(receptionistId));
 
 		List<ReceiptResponse> response = service.receiptsForReceptionist(receptionistId, " MB-100001 ");
 

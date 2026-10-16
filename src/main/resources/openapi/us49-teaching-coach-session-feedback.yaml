@@ -10,7 +10,7 @@ paths:
   /coach/class-sessions/{sessionId}/members/{memberId}/feedback:
     post:
       operationId: createSessionTrainingFeedback
-      summary: Create Feedback for a Group or Yoga Session Training Result
+      summary: Create idempotent Feedback for a Group or Yoga Session Training Result
       security:
         - bearerAuth: []
       parameters:
@@ -23,7 +23,7 @@ paths:
             schema: { $ref: "#/components/schemas/SessionTrainingFeedbackRequest" }
       responses:
         "201":
-          description: Session Training Feedback created and audited.
+          description: Session Training Feedback created and audited; repeated writes for the same session result return the existing feedback.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SessionTrainingFeedbackResponse" }

@@ -55,7 +55,7 @@ public class ManagerCoachAssignmentController {
 			throw CoachAssignmentException.validationError("page",
 					"page must be >= 0 and size must be between 1 and 100");
 		}
-		Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+		Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
 		return ResponseEntity.ok(service.listHistory(accountId(jwt), memberId, pageable));
 	}
 

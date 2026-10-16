@@ -81,6 +81,7 @@ public class SportClassService {
 			throw SportClassException.duplicateName();
 		}
 		SportClassType classType = request.classType() == null ? sportClass.getClassType() : request.classType();
+		if (request.classType() == SportClassType.YOGA) throw SportClassException.unsupportedType();
 		String description = request.description() == null
 			? sportClass.getDescription() : normalizeDescription(request.description());
 		SportClassStatus status = request.status() == null ? sportClass.getStatus() : request.status();
@@ -107,6 +108,7 @@ public class SportClassService {
 		if (request == null) throw SportClassException.validation("request", "must be a JSON object");
 		if (request.disciplineId() == null) throw SportClassException.validation("disciplineId", "is required");
 		if (request.classType() == null) throw SportClassException.validation("classType", "is required");
+		if (request.classType() == SportClassType.YOGA) throw SportClassException.unsupportedType();
 	}
 
 	private SportClass findClass(UUID id) {

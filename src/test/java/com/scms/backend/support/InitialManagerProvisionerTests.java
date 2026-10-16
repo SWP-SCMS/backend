@@ -95,6 +95,17 @@ class InitialManagerProvisionerTests {
 		verify(db, never()).execute(any(String.class));
 	}
 
+	@Test
+	void enabledProvisioningRejectsPasswordOver72Utf8BytesBeforeDatabaseAccess() {
+		InitialManagerProperties invalid = new InitialManagerProperties(true, "Manager", "0901234567",
+			"manager@example.com", LocalDate.of(1990, 1, 1), "🔒".repeat(19));
+
+		assertThatThrownBy(() -> provisioner(invalid).run())
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("INITIAL_MANAGER_PASSWORD");
+		verify(db, never()).execute(any(String.class));
+	}
+
 	private InitialManagerProvisioner provisioner(InitialManagerProperties properties) {
 		return new InitialManagerProvisioner(properties, accounts, identifiers, audits, encoder, db, clock);
 	}

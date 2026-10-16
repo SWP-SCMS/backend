@@ -3,6 +3,7 @@ package com.scms.backend.training;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,5 +22,13 @@ public class MemberTrainingFeedbackService {
 		return feedback.findHistoryByMemberAccountId(memberId).stream()
 			.map(view -> MemberTrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId()))
 			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public MemberTrainingFeedbackPageResponse viewOwnHistory(UUID memberId, Pageable pageable) {
+		var page = feedback.findHistoryByMemberAccountId(memberId, pageable);
+		return new MemberTrainingFeedbackPageResponse(page.getContent().stream()
+				.map(view -> MemberTrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId()))
+				.toList(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 }

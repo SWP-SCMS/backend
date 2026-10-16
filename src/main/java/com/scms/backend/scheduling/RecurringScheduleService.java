@@ -1,6 +1,7 @@
 package com.scms.backend.scheduling;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -97,6 +98,9 @@ public class RecurringScheduleService {
 		if (request.startTime() == null) throw RecurringScheduleException.validation("startTime", "is required");
 		if (request.endTime() == null || !request.endTime().isAfter(request.startTime())) {
 			throw RecurringScheduleException.validation("endTime", "must be later than startTime");
+		}
+		if (Duration.between(request.startTime(), request.endTime()).compareTo(Duration.ofMinutes(90)) > 0) {
+			throw RecurringScheduleException.validation("endTime", "a Session cannot be longer than 90 minutes");
 		}
 		if (request.capacity() == null || request.capacity() <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");

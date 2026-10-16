@@ -1,5 +1,6 @@
 package com.scms.backend.membership;
 
+import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class MembershipOfferAdminService {
+	private static final BigInteger MAX_AMOUNT = BigInteger.TEN.pow(19).subtract(BigInteger.ONE);
 	private final MembershipOfferRepository offers;
 	private final MembershipPlanRepository plans;
 	private final AccountRepository accounts;
@@ -74,7 +76,7 @@ public class MembershipOfferAdminService {
 	private void ensureManager(UUID id) { if (!accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
 	private void validate(MembershipOfferAdminRequest r, boolean create) {
 		if (r == null || (create && r.planCode() == null) || r.name() == null || r.name().trim().isEmpty()
-				|| r.description() == null || r.description().trim().isEmpty() || r.priceAmount() == null || r.priceAmount().signum() <= 0
+				|| r.description() == null || r.description().trim().isEmpty() || !validAmount(r.priceAmount())
 				|| r.durationDays() == null || r.durationDays() <= 0) throw new MembershipOfferValidationException("Invalid membership offer");
 	}
 	private void validatePatch(MembershipOfferPatchRequest r) {
@@ -83,8 +85,9 @@ public class MembershipOfferAdminService {
 		if (r.planCode() != null) throw new MembershipOfferValidationException("planCode cannot be changed");
 		if (r.name() != null && r.name().isBlank()) throw new MembershipOfferValidationException("name must not be blank");
 		if (r.description() != null && r.description().isBlank()) throw new MembershipOfferValidationException("description must not be blank");
-		if (r.priceAmount() != null && r.priceAmount().signum() <= 0) throw new MembershipOfferValidationException("priceAmount must be positive");
+		if (r.priceAmount() != null && !validAmount(r.priceAmount())) throw new MembershipOfferValidationException("priceAmount must be between 1 and 9999999999999999999");
 		if (r.durationDays() != null && r.durationDays() <= 0) throw new MembershipOfferValidationException("durationDays must be positive");
 	}
 	private String trim(String value) { return value == null ? null : value.trim(); }
+	private boolean validAmount(BigInteger value) { return value != null && value.signum() > 0 && value.compareTo(MAX_AMOUNT) <= 0; }
 }

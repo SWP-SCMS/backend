@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
@@ -14,6 +15,8 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.notification.NotificationWriter;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,6 +76,55 @@ public class ClassSessionCancellationService {
 		return ClassSessionDetailResponse.from(session);
 	}
 
+	@Transactional(readOnly = true)
+	ClassSessionCancellationPreviewResponse preview(UUID managerId, ClassSessionCancellationBatchRequest request) {
+		ensureActiveManager(managerId);
+		List<UUID> eligible = findEligible(request).stream()
+			.map(ClassSession::getId).toList();
+		return new ClassSessionCancellationPreviewResponse(eligible.size(), eligible);
+	}
+
+	@Transactional
+	ClassSessionCancellationBatchResponse cancelBulk(UUID managerId, ClassSessionCancellationBatchRequest request) {
+		ensureActiveManager(managerId);
+		String reason = validate(request == null ? null : new ClassSessionCancellationRequest(request.reason()));
+		List<UUID> requestedIds = validateSelector(request);
+		List<UUID> eligible = findEligible(request).stream()
+			.map(ClassSession::getId).toList();
+		if (requestedIds != null && eligible.size() != requestedIds.size()) {
+			throw RecurringScheduleException.validation("sessionIds",
+				"all sessionIds must identify future SCHEDULED Sessions; eligible IDs: " + eligible);
+		}
+		for (UUID sessionId : eligible) {
+			cancel(managerId, sessionId, new ClassSessionCancellationRequest(reason));
+		}
+		return new ClassSessionCancellationBatchResponse(eligible.size(), eligible);
+	}
+
+	private List<ClassSession> findEligible(ClassSessionCancellationBatchRequest request) {
+		validateSelector(request);
+		Instant now = clock.instant();
+		Specification<ClassSession> filter = (root, ignored, builder) -> builder.and(
+			builder.equal(root.get("status"), ClassSessionStatus.SCHEDULED),
+			builder.greaterThan(root.get("startTime"), now));
+		if (request.sessionIds() != null) {
+			filter = filter.and((root, ignored, builder) -> root.get("id").in(request.sessionIds()));
+		}
+		if (request.classId() != null) {
+			filter = filter.and((root, ignored, builder) ->
+				builder.equal(root.get("sportClass").get("id"), request.classId()));
+		}
+		if (request.from() != null) {
+			filter = filter.and((root, ignored, builder) ->
+				builder.greaterThan(root.get("endTime"), request.from()));
+		}
+		if (request.to() != null) {
+			filter = filter.and((root, ignored, builder) ->
+				builder.lessThan(root.get("startTime"), request.to()));
+		}
+		return sessions.findAll(filter, Sort.by("startTime").ascending().and(Sort.by("id").ascending()));
+	}
+
 	private void ensureActiveManager(UUID managerId) {
 		if (!accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
@@ -85,5 +137,25 @@ public class ClassSessionCancellationService {
 			throw RecurringScheduleException.validation("reason", "must be non-blank and at most 1000 characters");
 		}
 		return request.reason().trim();
+	}
+
+	private List<UUID> validateSelector(ClassSessionCancellationBatchRequest request) {
+		if (request == null) {
+			throw RecurringScheduleException.validation("selector", "at least one cancellation filter is required");
+		}
+		if (request.from() != null && request.to() != null && !request.to().isAfter(request.from())) {
+			throw RecurringScheduleException.validation("to", "must be later than from");
+		}
+		if (request.sessionIds() != null && (request.sessionIds().isEmpty()
+				|| request.sessionIds().stream().anyMatch(id -> id == null)
+				|| request.sessionIds().size() != new HashSet<>(request.sessionIds()).size())) {
+			throw RecurringScheduleException.validation("sessionIds", "must contain unique Session IDs");
+		}
+		if (request.sessionIds() == null && request.classId() == null
+				&& request.from() == null && request.to() == null) {
+			throw RecurringScheduleException.validation("selector",
+				"sessionIds, classId, from, or to is required");
+		}
+		return request.sessionIds();
 	}
 }

@@ -98,4 +98,27 @@ class CoachAssignedMemberControllerTests {
 			.andExpect(status().isBadRequest());
 	}
 
+	@Test
+	void getMemberProfile_returns200_forCoachInAssignmentScope() throws Exception {
+		var response = new CoachMemberTrainingProfileResponse(MEMBER_ID, "MBR-000001", "Test Member",
+				"0901234567", "member@test.com", java.time.LocalDate.of(1990, 1, 1),
+				AccountStatus.ACTIVE, null, "Build muscle", null, null, UUID.randomUUID(), Instant.now());
+		when(service.getMemberTrainingProfile(COACH_ID, MEMBER_ID)).thenReturn(response);
+
+		mockMvc.perform(get("/coach/members/{memberId}", MEMBER_ID)
+				.with(jwt().jwt(b -> b.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.memberId").value("MBR-000001"))
+			.andExpect(jsonPath("$.fitnessGoal").value("Build muscle"));
+	}
+
+	@Test
+	void getMemberProfile_returns403_forMemberRole() throws Exception {
+		mockMvc.perform(get("/coach/members/{memberId}", MEMBER_ID)
+				.with(jwt().jwt(b -> b.subject(UUID.randomUUID().toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+			.andExpect(status().isForbidden());
+	}
+
 }

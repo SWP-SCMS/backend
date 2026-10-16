@@ -45,6 +45,11 @@ public class SessionTrainingResultService {
 				BookingStatus.BOOKED)) {
 			throw TrainingResultException.sessionMemberNotFound();
 		}
+		TrainingResult existing = results.findSessionByClassSessionIdAndMemberAccountIdForUpdate(sessionId, memberId)
+				.orElse(null);
+		if (existing != null) {
+			return SessionTrainingResultResponse.from(existing);
+		}
 
 		Instant now = clock.instant();
 		TrainingResult result = results.saveAndFlush(TrainingResult.forClassSession(UUID.randomUUID(), memberId,

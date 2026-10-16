@@ -28,6 +28,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.jpa.repository.Query;
 
 @ExtendWith(MockitoExtension.class)
 class SessionTrainingFeedbackServiceTests {
@@ -52,9 +53,21 @@ class SessionTrainingFeedbackServiceTests {
 	}
 
 	@Test
+	void createLookupLocksOnlyCanonicalSessionFeedback() throws NoSuchMethodException {
+		Query query = TrainingFeedbackRepository.class
+			.getMethod("findSessionByTrainingResultIdAndMemberAccountIdForUpdate", UUID.class, UUID.class)
+			.getAnnotation(Query.class);
+
+		assertThat(query.nativeQuery()).isTrue();
+		assertThat(query.value()).contains("training_result_id = :resultId", "member_account_id = :memberId",
+			"coach_assignment_id is null", "training_plan_version_id is null", "legacy_duplicate = false",
+			"for update");
+	}
+
+	@Test
 	void createPersistsSessionFeedbackWithoutPersonalAssignmentAndAuditsIt() {
 		permitTeachingCoach();
-		when(results.findSessionByIdAndMemberAccountId(resultId, sessionId, memberId))
+		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.of(sessionResult()));
 		when(feedback.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -74,6 +87,24 @@ class SessionTrainingFeedbackServiceTests {
 	}
 
 	@Test
+	void createReturnsExistingSessionFeedbackWithoutDuplicatingIt() {
+		permitTeachingCoach();
+		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
+			.thenReturn(Optional.of(sessionResult()));
+		TrainingFeedback existing = TrainingFeedback.forClassSessionResult(UUID.randomUUID(), memberId,
+			resultId, "Already recorded", coachId, now.minusSeconds(600));
+		when(feedback.findSessionByTrainingResultIdAndMemberAccountIdForUpdate(resultId, memberId))
+			.thenReturn(Optional.of(existing));
+
+		SessionTrainingFeedbackResponse response = service.create(coachId, sessionId, memberId,
+			request("Retry"));
+
+		assertThat(response.id()).isEqualTo(existing.getId());
+		verify(feedback, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
 	void createRejectsCoachWhoDoesNotTeachSession() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 			.thenReturn(true);
@@ -88,7 +119,7 @@ class SessionTrainingFeedbackServiceTests {
 	@Test
 	void createRejectsPersonalOrAnotherSessionResult() {
 		permitTeachingCoach();
-		when(results.findSessionByIdAndMemberAccountId(resultId, sessionId, memberId))
+		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
@@ -100,7 +131,7 @@ class SessionTrainingFeedbackServiceTests {
 	@Test
 	void updateKeepsSessionScopeAndAuditsBeforeAndAfter() {
 		permitTeachingCoach();
-		when(results.findSessionByIdAndMemberAccountId(resultId, sessionId, memberId))
+		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.of(sessionResult()));
 		UUID feedbackId = UUID.randomUUID();
 		TrainingFeedback existing = TrainingFeedback.forClassSessionResult(feedbackId, memberId,

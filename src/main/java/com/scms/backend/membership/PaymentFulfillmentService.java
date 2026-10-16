@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
@@ -20,18 +21,21 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class PaymentFulfillmentService {
 	private final JdbcTemplate db;
+	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
 
-	PaymentFulfillmentService(JdbcTemplate db, AuditEventRepository audits,
+	PaymentFulfillmentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits,
 			NotificationWriter notifications, Clock clock) {
-		this.db = db; this.audits = audits; this.notifications = notifications; this.clock = clock;
+		this.db = db; this.accounts = accounts; this.audits = audits; this.notifications = notifications; this.clock = clock;
 	}
 
 	@Transactional
 	PaymentResultResponse fulfill(UUID paymentId, UUID actorId, String providerTransactionId,
 			String evidence, String reason) {
+		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
+		lockMember(memberIdForPayment(paymentId));
 		Map<String, Object> row = paymentForUpdate(paymentId);
 		String status = string(row, "payment_status");
 		if ("PAID".equals(status)) {
@@ -43,15 +47,26 @@ class PaymentFulfillmentService {
 		}
 		if (!"PENDING".equals(status)) throw PaymentException.conflict("Payment is terminal");
 		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))) throw PaymentException.conflict("Order is not payable");
+		if (providerTransactionId == null || providerTransactionId.isBlank()) {
+			throw PaymentException.validation("providerTransactionId is required");
+		}
+		String provider = string(row, "provider");
+		if (provider == null) provider = "SEPAY";
+		Integer duplicate = db.queryForObject(
+			"select count(*) from payments where provider=? and provider_transaction_id=? and id<>?",
+			Integer.class, provider, providerTransactionId, paymentId);
+		if (duplicate != null && duplicate > 0) {
+			throw PaymentException.conflict("Provider transaction was already used");
+		}
 		ensureNoActiveMembership(row);
 
 		Instant now = clock.instant();
 		try {
 			db.update("""
-				update payments set status='PAID', provider_transaction_id=?, evidence=?,
+				update payments set status='PAID', provider=?, provider_transaction_id=?, evidence=?,
 					processed_by_account_id=?, paid_at=?, updated_at=current_timestamp
 				where id=? and status='PENDING'
-				""", providerTransactionId, evidence, actorId, Timestamp.from(now), paymentId);
+				""", provider, providerTransactionId, evidence, actorId, Timestamp.from(now), paymentId);
 			db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",
 				Timestamp.from(now), uuid(row, "order_id"));
 			return createArtifacts(row, paymentId, actorId, evidence, reason, now);
@@ -62,6 +77,8 @@ class PaymentFulfillmentService {
 
 	@Transactional
 	PaymentResultResponse fulfillCash(UUID paymentId, UUID orderId, UUID actorId, String evidence, String reason) {
+		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
+		lockMember(memberIdForOrder(orderId));
 		Map<String, Object> row;
 		try {
 			row = db.queryForMap("""
@@ -89,6 +106,29 @@ class PaymentFulfillmentService {
 		} catch (DataIntegrityViolationException exception) {
 			throw PaymentException.conflict("Payment or Order was already fulfilled");
 		}
+	}
+
+	private UUID memberIdForPayment(UUID paymentId) {
+		try {
+			return db.queryForObject(
+				"select o.member_account_id from payments p join membership_orders o on o.id=p.order_id where p.id=?",
+				UUID.class, paymentId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Payment was not found");
+		}
+	}
+
+	private UUID memberIdForOrder(UUID orderId) {
+		try {
+			return db.queryForObject("select member_account_id from membership_orders where id=?", UUID.class, orderId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Membership Order was not found");
+		}
+	}
+
+	private void lockMember(UUID memberId) {
+		accounts.findByIdForUpdate(memberId)
+			.orElseThrow(() -> PaymentException.notFound("Member was not found"));
 	}
 
 	private void ensureNoActiveMembership(Map<String, Object> row) {

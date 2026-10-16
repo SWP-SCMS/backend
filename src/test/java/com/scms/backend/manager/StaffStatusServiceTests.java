@@ -38,7 +38,7 @@ class StaffStatusServiceTests {
 		UUID coachId = UUID.randomUUID();
 		Account coach = account(coachId, AccountRole.COACH);
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
-		when(accounts.findById(coachId)).thenReturn(java.util.Optional.of(coach));
+		when(accounts.findByIdForUpdate(coachId)).thenReturn(java.util.Optional.of(coach));
 		when(jdbc.queryForObject(any(String.class), eq(Boolean.class), any(), any())).thenReturn(false);
 		when(jdbc.queryForObject(any(String.class), eq(Boolean.class), any())).thenReturn(false);
 
@@ -55,7 +55,7 @@ class StaffStatusServiceTests {
 		UUID targetId = UUID.randomUUID();
 		Account target = account(targetId, AccountRole.MANAGER);
 		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
-		when(accounts.findById(targetId)).thenReturn(java.util.Optional.of(target));
+		when(accounts.findByIdForUpdate(targetId)).thenReturn(java.util.Optional.of(target));
 		when(accounts.findActiveManagersForUpdate()).thenReturn(List.of(target));
 
 		assertThatThrownBy(() -> service().deactivate(actorId, targetId,

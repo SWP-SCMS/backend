@@ -12,6 +12,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
+import com.scms.backend.auth.PasswordConstraints;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -83,7 +84,8 @@ public class InitialManagerProvisioner implements ApplicationRunner {
 			throw invalid("INITIAL_MANAGER_EMAIL");
 		if (properties.birthDate() == null || properties.birthDate().isAfter(LocalDate.now(clock)))
 			throw invalid("INITIAL_MANAGER_BIRTH_DATE");
-		if (properties.password() == null || properties.password().length() < 12 || properties.password().length() > 72)
+		if (properties.password() == null || properties.password().length() < 12
+				|| !PasswordConstraints.fitsBcrypt(properties.password()))
 			throw invalid("INITIAL_MANAGER_PASSWORD");
 	}
 

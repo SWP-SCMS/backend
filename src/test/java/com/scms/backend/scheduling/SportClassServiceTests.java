@@ -44,11 +44,11 @@ class SportClassServiceTests {
 		when(classes.saveAndFlush(any(SportClass.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		SportClassResponse result = service.create(managerId, new SportClassCreateRequest(
-			discipline.getId(), "  Beginner Yoga  ", SportClassType.YOGA, "  Foundation class  "));
+			discipline.getId(), "  Beginner Yoga  ", SportClassType.GROUP, "  Foundation class  "));
 
 		assertThat(result.disciplineId()).isEqualTo(discipline.getId());
 		assertThat(result.name()).isEqualTo("Beginner Yoga");
-		assertThat(result.classType()).isEqualTo(SportClassType.YOGA);
+		assertThat(result.classType()).isEqualTo(SportClassType.GROUP);
 		assertThat(result.description()).isEqualTo("Foundation class");
 		assertThat(result.status()).isEqualTo(SportClassStatus.ACTIVE);
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
@@ -59,7 +59,7 @@ class SportClassServiceTests {
 		assertThat(audit.getValue().getTargetId()).isEqualTo(result.id());
 		assertThat(audit.getValue().getBeforeData()).isNull();
 		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"disciplineId", discipline.getId().toString(), "name", "Beginner Yoga", "classType", "YOGA",
+			"disciplineId", discipline.getId().toString(), "name", "Beginner Yoga", "classType", "GROUP",
 			"description", "Foundation class", "status", "ACTIVE"));
 	}
 
@@ -70,7 +70,7 @@ class SportClassServiceTests {
 		when(disciplines.findById(discipline.getId())).thenReturn(Optional.of(discipline));
 
 		assertThatThrownBy(() -> service.create(managerId, new SportClassCreateRequest(
-			discipline.getId(), "Yoga", SportClassType.YOGA, null)))
+			discipline.getId(), "Yoga", SportClassType.GROUP, null)))
 			.isInstanceOf(SportClassException.class)
 			.extracting("code").isEqualTo("DISCIPLINE_INACTIVE");
 	}
@@ -83,7 +83,7 @@ class SportClassServiceTests {
 		when(classes.existsByDisciplineIdAndName(discipline.getId(), "Yoga")).thenReturn(false);
 
 		service.create(managerId, new SportClassCreateRequest(
-			discipline.getId(), "Yoga", SportClassType.YOGA, null));
+			discipline.getId(), "Yoga", SportClassType.GROUP, null));
 
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
@@ -98,7 +98,7 @@ class SportClassServiceTests {
 		when(classes.existsByDisciplineIdAndName(discipline.getId(), "Yoga")).thenReturn(true);
 
 		assertThatThrownBy(() -> service.create(managerId, new SportClassCreateRequest(
-			discipline.getId(), "Yoga", SportClassType.YOGA, null)))
+			discipline.getId(), "Yoga", SportClassType.GROUP, null)))
 			.isInstanceOf(SportClassException.class)
 			.extracting("code").isEqualTo("CLASS_NAME_CONFLICT");
 	}
@@ -187,7 +187,7 @@ class SportClassServiceTests {
 		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
 
 		SportClassResponse result = service.update(managerId, sportClass.getId(),
-			new SportClassPatchRequest(" Yoga ", SportClassType.YOGA, " Foundation ", SportClassStatus.ACTIVE));
+			new SportClassPatchRequest(" Yoga ", null, " Foundation ", SportClassStatus.ACTIVE));
 
 		assertThat(result).isEqualTo(SportClassResponse.from(sportClass));
 		verify(audits, never()).save(any());

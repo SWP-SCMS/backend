@@ -128,11 +128,13 @@ public class BookingService {
 
 	private BookingResponse cancel(UUID actorId, UUID memberId, UUID bookingId, String source) {
 		ensureActiveMember(memberId);
-		Booking booking = bookings.findByIdForUpdate(bookingId).orElseThrow(BookingException::notFound);
+		Booking booking = bookings.findById(bookingId).or(() -> bookings.findByIdForUpdate(bookingId))
+			.orElseThrow(BookingException::notFound);
 		if (!booking.getMemberAccountId().equals(memberId)) throw BookingException.notFound();
 		if (booking.getStatus() != BookingStatus.BOOKED) throw BookingException.notBooked();
 		ClassSession session = sessions.findByIdForUpdate(booking.getClassSessionId())
 			.orElseThrow(BookingException::sessionNotFound);
+		booking = bookings.findByIdForUpdate(bookingId).orElseThrow(BookingException::notFound);
 		Instant now = clock.instant();
 		if (now.isAfter(session.getStartTime().minus(Duration.ofHours(2)))) {
 			throw BookingException.cancellationWindowClosed();

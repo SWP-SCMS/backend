@@ -16,8 +16,10 @@ import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * US40 - Coach - Assigned Member List
@@ -78,6 +80,25 @@ public class CoachAssignedMemberService {
 
 		return new CoachAssignedMemberPageResponse(content, page.getNumber(), page.getSize(),
 				page.getTotalElements(), page.getTotalPages());
+	}
+
+	@Transactional
+	public CoachMemberTrainingProfileResponse getMemberTrainingProfile(UUID coachId, UUID memberId) {
+		ensureActiveCoach(coachId);
+		assignments.endActiveAssignmentIfPlusExpired(memberId, clock.instant());
+
+		CoachAssignment assignment = assignments
+				.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId, CoachAssignmentStatus.ACTIVE)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+						"No active coaching assignment found for this member"));
+		Account account = accounts.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found"));
+		if (account.getRole() != AccountRole.MEMBER) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Member not found");
+		}
+		MemberProfile profile = profiles.findById(memberId)
+				.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member profile not found"));
+		return CoachMemberTrainingProfileResponse.from(assignment, account, profile);
 	}
 
 	private void ensureActiveCoach(UUID coachId) {

@@ -32,13 +32,19 @@ public class AuthenticationService {
 
 	@Transactional
 	AuthSession login(LoginRequest request) {
+		if (!PasswordConstraints.fitsBcrypt(request.password())) {
+			throw new InvalidCredentialsException();
+		}
 		Optional<Account> candidate = findActiveAccount(request.identifier());
 		String passwordHash = candidate.map(Account::getPasswordHash).orElse(dummyPasswordHash);
 		boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
 		if (candidate.isEmpty() || !passwordMatches) {
 			throw new InvalidCredentialsException();
 		}
-		Account account = candidate.orElseThrow();
+		Account account = accountRepository.findByIdForUpdate(candidate.orElseThrow().getId())
+			.filter(value -> value.getStatus() == AccountStatus.ACTIVE)
+			.filter(value -> passwordEncoder.matches(request.password(), value.getPasswordHash()))
+			.orElseThrow(InvalidCredentialsException::new);
 		return issueSession(account, refreshTokenService.issue(account).value());
 	}
 
@@ -56,7 +62,7 @@ public class AuthenticationService {
 	@Transactional
 	void changePassword(UUID accountId, ChangePasswordRequest request, String rawRefreshToken) {
 		request.validate();
-		Account account = accountRepository.findById(accountId)
+		Account account = accountRepository.findByIdForUpdate(accountId)
 			.filter(candidate -> candidate.getStatus() == AccountStatus.ACTIVE)
 			.orElseThrow(InvalidAuthenticatedAccountException::new);
 		String currentPasswordHash = account.getPasswordHash();

@@ -13,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
+	@Query("select token from RefreshToken token join fetch token.account where token.tokenHash = :tokenHash")
+	Optional<RefreshToken> findByTokenHash(@Param("tokenHash") String tokenHash);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select token from RefreshToken token join fetch token.account where token.tokenHash = :tokenHash")
 	Optional<RefreshToken> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);

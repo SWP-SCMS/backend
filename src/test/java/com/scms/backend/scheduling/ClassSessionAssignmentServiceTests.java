@@ -89,7 +89,7 @@ class ClassSessionAssignmentServiceTests {
 	void unchangedAssignmentWritesNoAuditOrSession() {
 		UUID managerId = activeManager();
 		ClassSession session = session();
-		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
 		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(),
 			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
@@ -100,11 +100,24 @@ class ClassSessionAssignmentServiceTests {
 	}
 
 	@Test
+	void updateAssignmentLocksSessionBeforeCheckingIt() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+
+		service.updateAssignment(managerId, session.getId(),
+			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
+
+		verify(sessions).findByIdForUpdate(session.getId());
+		verify(sessions, never()).findById(session.getId());
+	}
+
+	@Test
 	void nonScheduledSessionCannotChangeAssignment() {
 		UUID managerId = activeManager();
 		ClassSession session = session();
 		ReflectionTestUtils.setField(session, "status", ClassSessionStatus.IN_PROGRESS);
-		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
 		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(),
 			new ClassSessionAssignmentRequest(UUID.randomUUID(), UUID.randomUUID())))
@@ -133,7 +146,7 @@ class ClassSessionAssignmentServiceTests {
 	}
 
 	private void stubAssignment(ClassSession session, Account coach, Room room) {
-		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 		when(classes.findById(session.getSportClass().getId())).thenReturn(Optional.of(session.getSportClass()));
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
 		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));

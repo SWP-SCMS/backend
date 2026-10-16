@@ -61,7 +61,8 @@ public class CoachAssignmentService {
 		}
 
 		UUID coachId = request.coachAccountId();
-		Account coach = accounts.findById(coachId).orElseThrow(CoachAssignmentException::coachNotFound);
+		Account coach = accounts.findByIdForUpdate(coachId).or(() -> accounts.findById(coachId))
+			.orElseThrow(CoachAssignmentException::coachNotFound);
 		if (coach.getRole() != AccountRole.COACH) {
 			throw CoachAssignmentException.coachNotFound();
 		}
