@@ -107,6 +107,7 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/bookings",
 		"GET /reception/members/{memberId}/bookings",
 		"PATCH /reception/members/{memberId}/bookings/{bookingId}/cancel",
+		"GET /reception/class-sessions",
 		"GET /manager/disciplines",
 		"POST /manager/disciplines",
 		"GET /manager/disciplines/{disciplineId}",

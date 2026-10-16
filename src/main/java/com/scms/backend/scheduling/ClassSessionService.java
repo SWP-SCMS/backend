@@ -96,6 +96,21 @@ public class ClassSessionService {
 		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
+		return futureSchedule(from, to, classId, pageable);
+	}
+
+	@Transactional
+	MemberClassSessionPageResponse receptionSchedule(UUID receptionistId, Instant from, Instant to, UUID classId,
+			Pageable pageable) {
+		if (!accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST,
+				AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		return futureSchedule(from, to, classId, pageable);
+	}
+
+	private MemberClassSessionPageResponse futureSchedule(Instant from, Instant to, UUID classId,
+			Pageable pageable) {
 		if (from != null && to != null && !to.isAfter(from)) {
 			throw RecurringScheduleException.validation("to", "must be later than from");
 		}

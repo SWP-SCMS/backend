@@ -81,6 +81,17 @@ class SecurityProblemDetailTests {
 	}
 
 	@Test
+	void receptionClassSessionCatalogueIsReceptionistOnly() throws Exception {
+		for (String role : new String[] { "MEMBER", "COACH", "MANAGER" }) {
+			mockMvc.perform(get("/reception/class-sessions").with(user(role.toLowerCase()).roles(role)))
+				.andExpect(status().isForbidden());
+		}
+		mockMvc.perform(get("/reception/class-sessions")
+			.with(user("receptionist").roles("RECEPTIONIST")))
+			.andExpect(status().isOk());
+	}
+
+	@Test
 	void auditHistoryIsManagerOnly() throws Exception {
 		mockMvc.perform(get("/manager/audit-events").with(user("member").roles("MEMBER")))
 			.andExpect(status().isForbidden());
@@ -111,6 +122,10 @@ class SecurityProblemDetailTests {
 
 		@GetMapping("/reception/members/{memberId}/bookings")
 		void receptionBookings() {
+		}
+
+		@GetMapping("/reception/class-sessions")
+		void receptionClassSessions() {
 		}
 	}
 }
