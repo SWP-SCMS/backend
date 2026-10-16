@@ -28,6 +28,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.Notification;
 import com.scms.backend.notification.NotificationDeliveryStatus;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
 import com.scms.backend.notification.NotificationRepository;
 import jakarta.persistence.EntityManager;
 
@@ -89,6 +90,9 @@ class ReceptionMemberIntegrationTests {
 
 	@Autowired
 	private NotificationRepository notificationRepository;
+
+	@Autowired
+	private NotificationOutboxDispatcher notificationOutboxDispatcher;
 
 	@Autowired
 	private PasswordEncoder passwordEncoder;
@@ -177,6 +181,7 @@ class ReceptionMemberIntegrationTests {
 		assertThat(audit.getAfterData().toString()).doesNotContain(member.getPasswordHash())
 			.doesNotContain(member.getPhone());
 
+		notificationOutboxDispatcher.dispatchAvailable();
 		Notification notification = notificationFor(accountId);
 		assertThat(notification.getRecipientAccountId()).isEqualTo(accountId);
 		assertThat(notification.getEventKey()).isEqualTo("ACCOUNT_CREATED:" + accountId);
@@ -363,7 +368,7 @@ class ReceptionMemberIntegrationTests {
 	}
 
 	@Test
-	void notificationFailureRollsBackMemberProfileAndAudit() throws Exception {
+	void notificationFailureDoesNotRollbackMemberProfileAndAudit() throws Exception {
 		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		long accountsBefore = accountRepository.count();
 		long profilesBefore = memberProfileRepository.count();
@@ -371,19 +376,24 @@ class ReceptionMemberIntegrationTests {
 		long notificationsBefore = notificationRepository.count();
 		installFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure",
 			"forced notification failure", "P0001");
+		UUID accountId;
 		try {
-			createMember(accessToken(receptionist),
+			MvcResult result = createMember(accessToken(receptionist),
 				validRequest("0901000070", "notification-failure-us15@example.com", ""))
-				.andExpect(status().isInternalServerError())
-				.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+				.andExpect(status().isCreated())
+				.andReturn();
+			accountId = UUID.fromString(JsonPath.read(result.getResponse().getContentAsString(), "$.accountId"));
+			notificationOutboxDispatcher.dispatchAvailable();
 		}
 		finally {
 			dropFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure");
 		}
 
-		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertCounts(accountsBefore + 1, profilesBefore + 1, auditsBefore + 1, notificationsBefore);
 		assertThat(accountRepository.findByEmailIgnoreCaseAndStatus("notification-failure-us15@example.com",
-			AccountStatus.ACTIVE)).isEmpty();
+			AccountStatus.ACTIVE)).isPresent();
+		assertThat(jdbcTemplate.queryForObject("select status from notification_outbox where event_key=?", String.class,
+			"ACCOUNT_CREATED:" + accountId)).isEqualTo("FAILED");
 	}
 
 	private static Stream<Arguments> invalidRequiredRequests() {

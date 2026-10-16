@@ -12,6 +12,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +40,7 @@ class ClassSessionCancellationIntegrationTests {
 	@Autowired SportClassRepository classes;
 	@Autowired RoomRepository rooms;
 	@Autowired JdbcTemplate jdbc;
+	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
 
 	@Test
 	void memberBookingIsPersistedAuditedNotifiedAndCannotOverbook() {
@@ -57,22 +59,26 @@ class ClassSessionCancellationIntegrationTests {
 		UUID membershipId = insertMembership(manager.getId(), member.getId());
 		insertMembership(manager.getId(), otherMember.getId());
 
+		BookingResponse response;
 		installNotificationFailure();
 		try {
-			assertThatThrownBy(() -> bookingService.book(member.getId(), session.getId()))
-				.hasStackTraceContaining("forced notification failure");
+			response = bookingService.book(member.getId(), session.getId());
+			notificationOutboxDispatcher.dispatchAvailable();
 		}
 		finally {
 			dropNotificationFailure();
 		}
-		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ?", Long.class,
-			session.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'", Long.class,
+			session.getId())).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CREATED' "
-			+ "and actor_account_id = ?", Long.class, member.getId())).isZero();
+			+ "and actor_account_id = ?", Long.class, member.getId())).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'BOOKING_CREATED' "
 			+ "and recipient_account_id = ?", Long.class, member.getId())).isZero();
-
-		BookingResponse response = bookingService.book(member.getId(), session.getId());
+		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class,
+			"BOOKING_CREATED:" + response.id())).isEqualTo("FAILED");
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?",
+			"BOOKING_CREATED:" + response.id());
+		notificationOutboxDispatcher.dispatchAvailable();
 
 		assertThat(response.membershipId()).isEqualTo(membershipId);
 		assertThat(jdbc.queryForObject("select count(*) from bookings where id = ? and status = 'BOOKED'",
@@ -86,23 +92,29 @@ class ClassSessionCancellationIntegrationTests {
 		assertThatThrownBy(() -> bookingService.book(otherMember.getId(), session.getId()))
 			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("SESSION_FULL");
 
+		BookingResponse cancelled;
 		installNotificationFailure();
 		try {
-			assertThatThrownBy(() -> bookingService.cancel(member.getId(), response.id()))
-				.hasStackTraceContaining("forced notification failure");
+			cancelled = bookingService.cancel(member.getId(), response.id());
+			notificationOutboxDispatcher.dispatchAvailable();
 		}
 		finally {
 			dropNotificationFailure();
 		}
 		assertThat(jdbc.queryForObject("select status from bookings where id = ?", String.class, response.id()))
-			.isEqualTo("BOOKED");
+			.isEqualTo("CANCELLED");
 		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CANCELLED' "
-			+ "and target_id = ?", Long.class, response.id())).isZero();
+			+ "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("select count(*) from notifications where event_key = ?", Long.class,
 			"BOOKING_CANCELLED:" + response.id())).isZero();
+		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class,
+			"BOOKING_CANCELLED:" + response.id())).isEqualTo("FAILED");
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?",
+			"BOOKING_CANCELLED:" + response.id());
+		notificationOutboxDispatcher.dispatchAvailable();
 
-		BookingResponse cancelled = bookingService.cancel(member.getId(), response.id());
 		BookingResponse rebooked = bookingService.book(member.getId(), session.getId());
+		notificationOutboxDispatcher.dispatchAvailable();
 
 		assertThat(cancelled.status()).isEqualTo(BookingStatus.CANCELLED);
 		assertThat(cancelled.cancellationSource()).isEqualTo("MEMBER");
@@ -134,6 +146,7 @@ class ClassSessionCancellationIntegrationTests {
 
 		BookingResponse booked = bookingService.bookForMember(receptionist.getId(), member.getId(), session.getId());
 		BookingResponse cancelled = bookingService.cancelForMember(receptionist.getId(), member.getId(), booked.id());
+		notificationOutboxDispatcher.dispatchAvailable();
 
 		assertThat(booked.memberId()).isEqualTo(member.getId());
 		assertThat(booked.bookedBy()).isEqualTo(receptionist.getId());
@@ -190,23 +203,24 @@ class ClassSessionCancellationIntegrationTests {
 
 		installNotificationFailure();
 		try {
-			assertThatThrownBy(() -> service.cancel(manager.getId(), session.getId(),
-				new ClassSessionCancellationRequest("Coach unavailable")))
-				.hasStackTraceContaining("forced notification failure");
+			service.cancel(manager.getId(), session.getId(),
+				new ClassSessionCancellationRequest("Coach unavailable"));
+			notificationOutboxDispatcher.dispatchAvailable();
 		}
 		finally {
 			dropNotificationFailure();
 		}
 		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
-			session.getId())).isEqualTo("SCHEDULED");
+			session.getId())).isEqualTo("CANCELLED");
 		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'",
-			Long.class, session.getId())).isEqualTo(2L);
+			Long.class, session.getId())).isZero();
 		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' "
-			+ "and target_id = ?", Long.class, session.getId())).isZero();
+			+ "and target_id = ?", Long.class, session.getId())).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'SESSION_CANCELLED' "
 			+ "and target_id = ?", Long.class, session.getId())).isZero();
-
-		service.cancel(manager.getId(), session.getId(), new ClassSessionCancellationRequest("Coach unavailable"));
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp "
+			+ "where event_key like ?", "SESSION_CANCELLED:" + session.getId() + ":%");
+		notificationOutboxDispatcher.dispatchAvailable();
 
 		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
 			session.getId())).isEqualTo("CANCELLED");

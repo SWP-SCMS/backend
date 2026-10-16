@@ -115,6 +115,7 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 		assertThat(count("select count(*) from audit_events where target_id=?", payment)).isOne();
+		notificationOutboxDispatcher.dispatchAvailable();
 		assertThat(count("select count(*) from notifications where event_key=? and target_id=?",
 			"PAYMENT_PAID:" + payment, payment)).isOne();
 
