@@ -189,8 +189,12 @@ class ReceptionClassSessionIntegrationTests {
 			null, coach, room, NOW.plusSeconds(10800), NOW.plusSeconds(14400), 3, manager.getId()));
 		ClassSession cancelledSession = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass,
 			null, coach, room, NOW.plusSeconds(14400), NOW.plusSeconds(18000), 2, manager.getId()));
-		cancelledSession.cancel(NOW, "Cancelled for test");
-		sessions.saveAndFlush(cancelledSession);
+		jdbc.update("""
+			update class_sessions
+			set status = 'CANCELLED', cancelled_at = ?, cancellation_reason = ?,
+				updated_at = current_timestamp
+			where id = ?
+			""", java.sql.Timestamp.from(NOW), "Cancelled for test", cancelledSession.getId());
 
 		UUID bookedMembershipId = createMembership(manager.getId(), member.getId(), "Booked");
 		UUID cancelledMembershipId = createMembership(manager.getId(), cancelledMember.getId(), "Cancelled");
