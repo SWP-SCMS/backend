@@ -84,6 +84,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.POST, "/reception/members").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/receipts")
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
+				.requestMatchers(HttpMethod.GET, "/reception/class-sessions").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/center-visits/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/members/me/center-visits/**").hasRole("MEMBER")
