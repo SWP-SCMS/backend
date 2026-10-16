@@ -67,6 +67,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
@@ -509,6 +510,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		problem.setTitle("Training Feedback request failed");
 		problem.setProperty("code", exception.getCode());
 		return problem;
+	}
+
+	@Override
+	protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException exception,
+		HttpHeaders headers, HttpStatusCode status, WebRequest request) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"The uploaded file is too large.");
+		problem.setTitle("Upload validation failed");
+		problem.setProperty("code", "VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of("file", List.of("must not exceed the configured upload limit")));
+		return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
 	}
 
 	@ExceptionHandler(Exception.class)

@@ -16,7 +16,9 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,17 +35,20 @@ public class RoomSuspensionService {
 	private final ClassSessionCancellationService cancellationService;
 	private final RoomService roomService;
 	private final SessionLifecycleService lifecycle;
+	private final JdbcTemplate jdbc;
+	private final NotificationWriter notifications;
 
 	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
 			AuditEventRepository audits, Clock clock) {
-		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null);
+		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
 			AuditEventRepository audits, Clock clock, ClassSessionRepository sessions,
 			ClassSessionService sessionService, ClassSessionCancellationService cancellationService,
-			RoomService roomService, SessionLifecycleService lifecycle) {
+			RoomService roomService, SessionLifecycleService lifecycle, JdbcTemplate jdbc,
+			NotificationWriter notifications) {
 		this.suspensions = suspensions;
 		this.rooms = rooms;
 		this.accounts = accounts;
@@ -54,6 +59,8 @@ public class RoomSuspensionService {
 		this.cancellationService = cancellationService;
 		this.roomService = roomService;
 		this.lifecycle = lifecycle;
+		this.jdbc = jdbc;
+		this.notifications = notifications;
 	}
 
 	@Transactional(readOnly = true)
@@ -97,10 +104,16 @@ public class RoomSuspensionService {
 		for (ClassSession session : affected) {
 			RoomSessionResolutionRequest resolution = resolutions.get(session.getId());
 			switch (resolution.action().trim().toUpperCase(java.util.Locale.ROOT)) {
-			case "MOVE" -> sessionService.moveForRoomImpact(managerId, session,
-				targetRooms.get(resolution.targetRoomId()), resolution.reason());
-			case "RESCHEDULE" -> sessionService.rescheduleForRoomImpact(managerId, session,
-				resolution.startTime(), resolution.endTime(), resolution.reason());
+			case "MOVE" -> {
+				sessionService.moveForRoomImpact(managerId, session,
+					targetRooms.get(resolution.targetRoomId()), resolution.reason());
+				notifyChangedSession(session, "SESSION_ROOM_CHANGED");
+			}
+			case "RESCHEDULE" -> {
+				sessionService.rescheduleForRoomImpact(managerId, session,
+					resolution.startTime(), resolution.endTime(), resolution.reason());
+				notifyChangedSession(session, "SESSION_RESCHEDULED");
+			}
 			case "CANCEL" -> cancellationService.cancel(managerId, session.getId(),
 				new ClassSessionCancellationRequest(resolution.reason()));
 			default -> throw RoomException.validation("resolutions.action", "must be MOVE, RESCHEDULE, or CANCEL");
@@ -223,6 +236,24 @@ public class RoomSuspensionService {
 		return sessions.countBookedBySessionIds(affected.stream().map(ClassSession::getId).toList()).stream()
 			.collect(java.util.stream.Collectors.toMap(ClassSessionRepository.BookingCountView::getSessionId,
 				ClassSessionRepository.BookingCountView::getBookedCount));
+	}
+
+	private void notifyChangedSession(ClassSession session, String notificationType) {
+		if (jdbc == null || notifications == null) return;
+		Map<String, Object> payload = Map.of(
+			"sessionId", session.getId().toString(),
+			"roomId", session.getRoom().getId().toString(),
+			"startTime", session.getStartTime().toString(),
+			"endTime", session.getEndTime().toString());
+		String eventPrefix = notificationType + ":" + session.getId();
+		notifications.write(eventPrefix + ":COACH", session.getTeachingCoach().getId(), notificationType,
+			"CLASS_SESSION", session.getId(), payload);
+		jdbc.queryForList("""
+			select member_account_id from bookings
+			where class_session_id = ? and status = 'BOOKED'
+			""", UUID.class, session.getId()).forEach(memberId ->
+			notifications.write(eventPrefix + ":MEMBER:" + memberId, memberId, notificationType,
+				"CLASS_SESSION", session.getId(), payload));
 	}
 
 	private String normalizeReason(String reason, boolean required) {

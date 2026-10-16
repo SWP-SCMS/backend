@@ -91,7 +91,7 @@ public class ClassSessionCancellationService {
 		List<UUID> requestedIds = validateSelector(request);
 		List<UUID> eligible = findEligible(request).stream()
 			.map(ClassSession::getId).toList();
-		if (requestedIds != null && eligible.size() != requestedIds.size()) {
+		if (requestedIds != null && !eligible.isEmpty() && eligible.size() != requestedIds.size()) {
 			throw RecurringScheduleException.validation("sessionIds",
 				"all sessionIds must identify future SCHEDULED Sessions; eligible IDs: " + eligible);
 		}

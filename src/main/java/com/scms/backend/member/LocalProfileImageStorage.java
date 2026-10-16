@@ -16,9 +16,11 @@ import javax.imageio.stream.ImageInputStream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Component
-public class LocalProfileImageStorage implements ProfileImageStorage {
+public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConfigurer {
 
 	private static final long DEFAULT_MAX_BYTES = 5L * 1024 * 1024;
 	private static final String URL_PREFIX = "/profile-images/";
@@ -99,6 +101,12 @@ public class LocalProfileImageStorage implements ProfileImageStorage {
 		catch (IOException exception) {
 			throw new IllegalStateException("Could not delete profile image", exception);
 		}
+	}
+
+	@Override
+	public void addResourceHandlers(ResourceHandlerRegistry registry) {
+		registry.addResourceHandler(URL_PREFIX + "**")
+			.addResourceLocations(directory.toUri().toString());
 	}
 
 	private void validateRequest(MultipartFile file) {

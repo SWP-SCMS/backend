@@ -96,8 +96,8 @@ class GeneratedOpenApiTests {
 		"POST /reception/members",
 		"GET /reception/members/search",
 		"GET /reception/members/{memberId}/profile",
-		"POST /reception/members/{memberId}/profile/image",
 		"PATCH /reception/members/{memberId}/profile",
+		"POST /reception/members/{memberId}/profile/image",
 		"POST /reception/center-visits",
 		"GET /members/me/center-visits/current",
 		"PATCH /members/me/center-visits/current/checkout",
@@ -118,9 +118,11 @@ class GeneratedOpenApiTests {
 		"GET /manager/rooms/{roomId}",
 		"PATCH /manager/rooms/{roomId}",
 		"GET /manager/rooms/{roomId}/suspensions",
-		"GET /manager/classes/types",
 		"POST /manager/rooms/{roomId}/suspensions",
+		"POST /manager/rooms/{roomId}/impact-preview",
+		"POST /manager/rooms/{roomId}/impact-apply",
 		"GET /manager/classes",
+		"GET /manager/classes/types",
 		"POST /manager/classes",
 		"GET /manager/classes/{classId}",
 		"PATCH /manager/classes/{classId}",
@@ -285,13 +287,13 @@ class GeneratedOpenApiTests {
 		assertThat(deprecatedResponses.path("409").path("$ref").asText())
 			.isEqualTo("#/components/responses/Conflict");
 		assertThat(deprecatedResponses.properties().stream().map(java.util.Map.Entry::getKey))
+			.noneMatch(status -> status.matches("2\\d\\d"));
+
+		assertThat(document.at("/components/schemas/BookingResponse/properties/status/enum")).isNotEmpty();
 		assertThat(document.at("/paths/~1manager~1classes~1types/get/description").asText())
 			.contains("MANAGER");
 		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum")
 			.toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
-			.noneMatch(status -> status.matches("2\\d\\d"));
-
-		assertThat(document.at("/components/schemas/BookingResponse/properties/status/enum")).isNotEmpty();
 	}
 
 	private JsonNode generatedDocument() throws Exception {
