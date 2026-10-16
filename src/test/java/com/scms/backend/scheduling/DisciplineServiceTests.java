@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Sort;
@@ -31,6 +33,9 @@ class DisciplineServiceTests {
 
 	@Mock
 	private DisciplineRepository disciplines;
+
+	@Mock
+	private SportClassRepository classes;
 
 	@Mock
 	private AccountRepository accounts;
@@ -155,6 +160,48 @@ class DisciplineServiceTests {
 			"name", "Yoga", "description", "Old", "status", "ACTIVE"));
 		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
 			"name", "Pilates", "description", "Core control", "status", "INACTIVE"));
+	}
+
+	@Test
+	void disableLocksClassesBeforeDisciplineAndReturnsStableAffectedDetails() {
+		UUID managerId = activeManager();
+		UUID disciplineId = UUID.randomUUID();
+		Discipline discipline = new Discipline(disciplineId, "Yoga", null, DisciplineStatus.ACTIVE);
+		UUID firstSessionId = UUID.randomUUID();
+		UUID firstClassId = UUID.randomUUID();
+		UUID secondSessionId = UUID.randomUUID();
+		UUID secondClassId = UUID.randomUUID();
+		DisciplineRepository.BlockingSessionView first = mock(DisciplineRepository.BlockingSessionView.class);
+		DisciplineRepository.BlockingSessionView second = mock(DisciplineRepository.BlockingSessionView.class);
+		when(disciplines.findByIdForUpdate(disciplineId)).thenReturn(Optional.of(discipline));
+		when(disciplines.findBlockingSessions(disciplineId)).thenReturn(List.of(first, second));
+		when(first.getSessionId()).thenReturn(firstSessionId);
+		when(first.getClassId()).thenReturn(firstClassId);
+		when(first.getClassName()).thenReturn("Morning Yoga");
+		when(second.getSessionId()).thenReturn(secondSessionId);
+		when(second.getClassId()).thenReturn(secondClassId);
+		when(second.getClassName()).thenReturn("Evening Yoga");
+
+		DisciplineValidationException exception;
+		try {
+			service.update(managerId, disciplineId,
+				new DisciplinePatchRequest(null, null, DisciplineStatus.INACTIVE));
+			throw new AssertionError("Discipline disable should be rejected");
+		}
+		catch (DisciplineValidationException expected) {
+			exception = expected;
+		}
+
+		assertThat(exception.getAffectedSessions()).extracting(DisciplineSessionConflict::sessionId)
+			.containsExactly(firstSessionId, secondSessionId);
+		assertThat(exception.getAffectedSessions()).extracting(DisciplineSessionConflict::classId)
+			.containsExactly(firstClassId, secondClassId);
+		assertThat(exception.getAffectedSessions()).extracting(DisciplineSessionConflict::className)
+			.containsExactly("Morning Yoga", "Evening Yoga");
+		InOrder order = org.mockito.Mockito.inOrder(classes, disciplines);
+		order.verify(classes).findByDisciplineIdForUpdate(disciplineId);
+		order.verify(disciplines).findByIdForUpdate(disciplineId);
+		verify(disciplines, never()).saveAndFlush(any(Discipline.class));
 	}
 
 	@Test

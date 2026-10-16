@@ -20,11 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class DisciplineService {
 
 	private final DisciplineRepository disciplines;
+	private final SportClassRepository classes;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 
-	DisciplineService(DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits) {
+	DisciplineService(DisciplineRepository disciplines, SportClassRepository classes, AccountRepository accounts,
+			AuditEventRepository audits) {
 		this.disciplines = disciplines;
+		this.classes = classes;
 		this.accounts = accounts;
 		this.audits = audits;
 	}
@@ -71,7 +74,10 @@ public class DisciplineService {
 		if (request == null || (request.name() == null && request.description() == null && request.status() == null)) {
 			throw new DisciplineValidationException("request", "at least one field is required");
 		}
-		Discipline discipline = find(disciplineId);
+		if (request.status() == DisciplineStatus.INACTIVE) {
+			classes.findByDisciplineIdForUpdate(disciplineId);
+		}
+		Discipline discipline = findForUpdate(disciplineId);
 		Map<String, Object> before = snapshot(discipline);
 		String name = request.name() == null ? discipline.getName() : normalizeName(request.name());
 		if (!name.equals(discipline.getName()) && disciplines.existsByNameAndIdNot(name, disciplineId)) {
@@ -81,11 +87,12 @@ public class DisciplineService {
 			? discipline.getDescription() : normalizeDescription(request.description());
 		DisciplineStatus status = request.status() == null ? discipline.getStatus() : request.status();
 		if (discipline.getStatus() != DisciplineStatus.INACTIVE && status == DisciplineStatus.INACTIVE) {
-			List<UUID> blockingSessionIds = disciplines.findBlockingSessionIds(disciplineId);
-			if (!blockingSessionIds.isEmpty()) {
+			List<DisciplineSessionConflict> blockers = disciplines.findBlockingSessions(disciplineId).stream()
+				.map(DisciplineSessionConflict::from).toList();
+			if (!blockers.isEmpty()) {
 				throw new DisciplineValidationException("affectedSessionIds",
 					"Discipline cannot be disabled while sessions are in progress or scheduled in the future: "
-						+ blockingSessionIds);
+						+ blockers.stream().map(DisciplineSessionConflict::sessionId).toList(), blockers);
 			}
 		}
 		discipline.update(name, description, status);
@@ -112,6 +119,12 @@ public class DisciplineService {
 
 	private Discipline find(UUID id) {
 		return disciplines.findById(id).orElseThrow(DisciplineNotFoundException::new);
+	}
+
+	private Discipline findForUpdate(UUID id) {
+		java.util.Optional<Discipline> result = disciplines.findByIdForUpdate(id);
+		if (result == null || result.isEmpty()) result = disciplines.findById(id);
+		return result.orElseThrow(DisciplineNotFoundException::new);
 	}
 
 	private void ensureActiveManager(UUID managerId) {
