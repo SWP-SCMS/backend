@@ -205,6 +205,7 @@ class RegistrationIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 
 		performRegistration("{}")
 			.andExpect(status().isBadRequest())
@@ -254,6 +255,7 @@ class RegistrationIntegrationTests {
 			.andExpect(jsonPath("$.errors.birthDate[0]").value("must not be in the future"));
 
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 	}
 
 	@Test
@@ -266,6 +268,7 @@ class RegistrationIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 
 		performRegistration(request("Duplicate Email", "0900000003", "  DUPLICATE@EXAMPLE.COM  ", null, null))
 			.andExpect(status().isConflict())
@@ -278,6 +281,7 @@ class RegistrationIntegrationTests {
 
 		assertThat(emailOwner.getStatus()).isEqualTo(AccountStatus.ACTIVE);
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 	}
 
 	@Test

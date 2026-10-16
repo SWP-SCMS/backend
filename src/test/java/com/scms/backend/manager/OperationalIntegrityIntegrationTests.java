@@ -70,10 +70,10 @@ class OperationalIntegrityIntegrationTests {
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var firstAttempt = executor.submit(() -> deactivateTogether(first.getId(), second.getId(), ready, start));
 			var secondAttempt = executor.submit(() -> deactivateTogether(second.getId(), first.getId(), ready, start));
-			ready.await();
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
 			start.countDown();
-			StaffStatusConflictException firstFailure = firstAttempt.get();
-			StaffStatusConflictException secondFailure = secondAttempt.get();
+			StaffStatusConflictException firstFailure = firstAttempt.get(10, TimeUnit.SECONDS);
+			StaffStatusConflictException secondFailure = secondAttempt.get(10, TimeUnit.SECONDS);
 			assertThat(firstFailure == null ^ secondFailure == null).isTrue();
 			assertThat(firstFailure != null ? firstFailure : secondFailure)
 				.hasMessage("The last active Manager cannot be deactivated");

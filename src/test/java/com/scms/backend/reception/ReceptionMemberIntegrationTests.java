@@ -124,7 +124,6 @@ class ReceptionMemberIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
-
 		MvcResult result = createMember(accessToken(receptionist), """
 			{
 			  "fullName": "  Nguyen Van A  ",
@@ -351,6 +350,7 @@ class ReceptionMemberIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 		installFailureTrigger("audit_events", "us15_audit_failure", "us15_force_audit_failure",
 			"forced audit failure", "P0001");
 		try {
@@ -363,6 +363,7 @@ class ReceptionMemberIntegrationTests {
 		}
 
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 		assertThat(accountRepository.findByEmailIgnoreCaseAndStatus("audit-failure-us15@example.com",
 			AccountStatus.ACTIVE)).isEmpty();
 	}
@@ -374,6 +375,7 @@ class ReceptionMemberIntegrationTests {
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
+		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
 		installFailureTrigger("notifications", "us15_notification_failure", "us15_force_notification_failure",
 			"forced notification failure", "P0001");
 		UUID accountId;
@@ -394,6 +396,8 @@ class ReceptionMemberIntegrationTests {
 			AccountStatus.ACTIVE)).isPresent();
 		assertThat(jdbcTemplate.queryForObject("select status from notification_outbox where event_key=?", String.class,
 			"ACCOUNT_CREATED:" + accountId)).isEqualTo("FAILED");
+		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class))
+			.isEqualTo(outboxBefore + 1);
 	}
 
 	private static Stream<Arguments> invalidRequiredRequests() {
