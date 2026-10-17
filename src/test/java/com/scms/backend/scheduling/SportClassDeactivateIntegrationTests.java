@@ -14,6 +14,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -44,6 +45,7 @@ class SportClassDeactivateIntegrationTests {
 	@Autowired ClassSessionRepository sessions;
 	@Autowired RoomRepository rooms;
 	@Autowired JdbcTemplate db;
+	@Autowired EntityManager entityManager;
 	@Autowired PlatformTransactionManager transactionManager;
 
 	@Test
@@ -54,6 +56,7 @@ class SportClassDeactivateIntegrationTests {
 		ClassSession scheduled = saveSession(fixture, now.plusSeconds(600), now.plusSeconds(4200));
 		ClassSession inProgress = saveSession(fixture, now.minusSeconds(600), now.plusSeconds(3000));
 		db.update("update class_sessions set status='IN_PROGRESS' where id=?", inProgress.getId());
+		entityManager.clear();
 
 		assertThatThrownBy(() -> sportClasses.update(fixture.managerId(), fixture.sportClass().getId(),
 			new SportClassPatchRequest(null, null, null, SportClassStatus.INACTIVE)))
@@ -76,6 +79,7 @@ class SportClassDeactivateIntegrationTests {
 		ClassSession ended = saveSession(fixture, past, past.plusSeconds(1800));
 		ClassSession completed = saveSession(fixture, past, past.plusSeconds(3600));
 		db.update("update class_sessions set status='COMPLETED' where id=?", completed.getId());
+		entityManager.clear();
 
 		sportClasses.update(fixture.managerId(), fixture.sportClass().getId(),
 			new SportClassPatchRequest(null, null, null, SportClassStatus.INACTIVE));
