@@ -138,8 +138,11 @@ class SportClassDeactivateIntegrationTests {
 	}
 
 	private ClassSession saveSession(Fixture fixture, Instant start, Instant end) {
+		Account coach = saveAccount(AccountRole.COACH, "Session coach");
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Session room " + UUID.randomUUID(), 20,
+			RoomStatus.ACTIVE));
 		return sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), fixture.sportClass(), null,
-			fixture.coach(), fixture.room(), start, end, 10, fixture.managerId()));
+			coach, room, start, end, 10, fixture.managerId()));
 	}
 
 	private Fixture fixture() {
