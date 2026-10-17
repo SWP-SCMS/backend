@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SCMS Manager Scheduling Changes
-  version: v4.2
+  version: v4.3
 servers:
   - url: /api/v1
 paths:
@@ -266,15 +266,33 @@ components:
       type: object
       properties:
         classType: {type: string, enum: [GROUP, PT_1_1], description: Only supported values for updates.}
+        status: {type: string, enum: [ACTIVE, INACTIVE], description: INACTIVE is rejected with CLASS_HAS_ACTIVE_SESSIONS while a SCHEDULED or IN_PROGRESS session has not ended.}
     SportClassResponse:
       type: object
       properties:
         classType: {type: string, enum: [GROUP, PT_1_1, YOGA], description: YOGA is retained for legacy reads.}
+    SchedulingProblem:
+      type: object
+      properties:
+        code: {type: string, example: CLASS_HAS_ACTIVE_SESSIONS}
+        affectedSessionIds: {type: array, items: {type: string, format: uuid}}
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: {type: string, format: uuid}
+              classId: {type: string, format: uuid}
+              className: {type: string}
+              startTime: {type: string, format: date-time}
+              endTime: {type: string, format: date-time}
   responses:
     BadRequest: {description: Invalid request.}
     Unauthorized: {description: Authentication required.}
     Forbidden: {description: Manager role required.}
     NotFound: {description: Resource not found.}
-    Conflict: {description: Request conflicts with current scheduling state.}
+    Conflict:
+      description: Request conflicts with current scheduling state. Class deactivation uses code CLASS_HAS_ACTIVE_SESSIONS and returns affected sessions.
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/SchedulingProblem'}}}
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

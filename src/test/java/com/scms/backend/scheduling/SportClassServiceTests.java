@@ -185,7 +185,7 @@ class SportClassServiceTests {
 		UUID managerId = activeManager();
 		Discipline discipline = discipline(DisciplineStatus.ACTIVE);
 		SportClass sportClass = sportClass(discipline);
-		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(classes.findByIdForUpdate(sportClass.getId())).thenReturn(Optional.of(sportClass));
 		when(classes.existsByDisciplineIdAndNameAndIdNot(discipline.getId(), "Power Yoga", sportClass.getId()))
 			.thenReturn(false);
 
@@ -221,6 +221,32 @@ class SportClassServiceTests {
 			new SportClassPatchRequest(" Yoga ", null, " Foundation ", SportClassStatus.ACTIVE));
 
 		assertThat(result).isEqualTo(SportClassResponse.from(sportClass));
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void patchRejectsDeactivationWhileAClassSessionHasNotEnded() {
+		UUID managerId = activeManager();
+		SportClass sportClass = sportClass(discipline(DisciplineStatus.ACTIVE));
+		DisciplineRepository.BlockingSessionView blocker = org.mockito.Mockito.mock(
+			DisciplineRepository.BlockingSessionView.class);
+		UUID sessionId = UUID.randomUUID();
+		when(blocker.getSessionId()).thenReturn(sessionId);
+		when(blocker.getClassId()).thenReturn(sportClass.getId());
+		when(blocker.getClassName()).thenReturn(sportClass.getName());
+		when(classes.findByIdForUpdate(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(classes.findBlockingSessions(sportClass.getId())).thenReturn(List.of(blocker));
+
+		assertThatThrownBy(() -> service.update(managerId, sportClass.getId(),
+			new SportClassPatchRequest(null, null, null, SportClassStatus.INACTIVE)))
+			.isInstanceOf(SportClassException.class)
+			.satisfies(error -> {
+				SportClassException exception = (SportClassException) error;
+				assertThat(exception.getCode()).isEqualTo("CLASS_HAS_ACTIVE_SESSIONS");
+				assertThat(exception.getAffectedSessions())
+					.extracting(DisciplineSessionConflict::sessionId).containsExactly(sessionId);
+			});
+		verify(classes, never()).saveAndFlush(any());
 		verify(audits, never()).save(any());
 	}
 

@@ -1,5 +1,6 @@
 package com.scms.backend.scheduling;
 
+import java.util.List;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
@@ -22,4 +23,16 @@ public interface SportClassRepository extends JpaRepository<SportClass, UUID> {
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select sportClass from SportClass sportClass where sportClass.id = :id")
 	java.util.Optional<SportClass> findByIdForUpdate(@Param("id") UUID id);
+
+	@Query(value = """
+		select cs.id as "sessionId", sc.id as "classId", sc.name as "className",
+			cs.start_time as "startTime", cs.end_time as "endTime"
+		from class_sessions cs
+		join sport_classes sc on sc.id = cs.sport_class_id
+		where sc.id = :classId
+		  and cs.status in ('SCHEDULED', 'IN_PROGRESS')
+		  and cs.end_time > current_timestamp
+		order by cs.start_time, cs.id
+		""", nativeQuery = true)
+	List<DisciplineRepository.BlockingSessionView> findBlockingSessions(@Param("classId") UUID classId);
 }

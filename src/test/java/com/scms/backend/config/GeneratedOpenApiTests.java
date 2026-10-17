@@ -295,6 +295,10 @@ class GeneratedOpenApiTests {
 			.contains("MANAGER");
 		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum")
 			.toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
+		assertThat(document.at("/paths/~1manager~1classes~1{classId}/patch/responses/409/$ref").asText())
+			.isEqualTo("#/components/responses/Conflict");
+		assertThat(document.at("/components/schemas/ApiProblem/properties/affectedSessions/items/properties/sessionId/format")
+			.asText()).isEqualTo("uuid");
 	}
 
 	private JsonNode generatedDocument() throws Exception {

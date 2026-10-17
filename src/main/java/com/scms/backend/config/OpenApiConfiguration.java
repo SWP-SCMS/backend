@@ -95,6 +95,13 @@ public class OpenApiConfiguration {
 			.addProperty("code", new StringSchema())
 			.addProperty("errors", new ObjectSchema().additionalProperties(
 				new ArraySchema().items(new StringSchema())))
+			.addProperty("affectedSessionIds", new ArraySchema().items(new StringSchema().format("uuid")))
+			.addProperty("affectedSessions", new ArraySchema().items(new ObjectSchema()
+				.addProperty("sessionId", new StringSchema().format("uuid"))
+				.addProperty("classId", new StringSchema().format("uuid"))
+				.addProperty("className", new StringSchema())
+				.addProperty("startTime", new StringSchema().format("date-time"))
+				.addProperty("endTime", new StringSchema().format("date-time"))))
 			.addProperty("traceId", new StringSchema())
 			.required(List.of("title", "status", "detail", "instance", "code"));
 	}

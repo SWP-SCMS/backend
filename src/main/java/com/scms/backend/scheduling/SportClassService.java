@@ -79,7 +79,8 @@ public class SportClassService {
 				&& request.description() == null && request.status() == null)) {
 			throw SportClassException.validation("request", "at least one field is required");
 		}
-		SportClass sportClass = findClass(classId);
+		SportClass sportClass = request.status() == SportClassStatus.INACTIVE
+			? findClassForUpdate(classId) : findClass(classId);
 		Map<String, Object> before = snapshot(sportClass);
 		String name = request.name() == null ? sportClass.getName() : normalizeName(request.name());
 		if (!name.equals(sportClass.getName()) && classes.existsByDisciplineIdAndNameAndIdNot(
@@ -91,6 +92,11 @@ public class SportClassService {
 		String description = request.description() == null
 			? sportClass.getDescription() : normalizeDescription(request.description());
 		SportClassStatus status = request.status() == null ? sportClass.getStatus() : request.status();
+		if (sportClass.getStatus() != SportClassStatus.INACTIVE && status == SportClassStatus.INACTIVE) {
+			List<DisciplineSessionConflict> blockers = classes.findBlockingSessions(classId).stream()
+				.map(DisciplineSessionConflict::from).toList();
+			if (!blockers.isEmpty()) throw SportClassException.activeSessions(blockers);
+		}
 		sportClass.update(name, classType, description, status);
 		Map<String, Object> after = snapshot(sportClass);
 		if (before.equals(after)) return SportClassResponse.from(sportClass);
@@ -119,6 +125,10 @@ public class SportClassService {
 
 	private SportClass findClass(UUID id) {
 		return classes.findById(id).orElseThrow(SportClassException::notFound);
+	}
+
+	private SportClass findClassForUpdate(UUID id) {
+		return classes.findByIdForUpdate(id).orElseThrow(SportClassException::notFound);
 	}
 
 	private void flush(SportClass sportClass) {
