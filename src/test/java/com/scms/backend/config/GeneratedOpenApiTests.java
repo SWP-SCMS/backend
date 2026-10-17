@@ -62,6 +62,7 @@ class GeneratedOpenApiTests {
 		"POST /manager/staff-accounts/{accountId}/reset-password",
 		"GET /members/me/profile",
 		"PATCH /members/me/profile",
+		"POST /members/me/profile/image",
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
 		"GET /manager/membership-offers",
@@ -96,6 +97,7 @@ class GeneratedOpenApiTests {
 		"GET /reception/members/search",
 		"GET /reception/members/{memberId}/profile",
 		"PATCH /reception/members/{memberId}/profile",
+		"POST /reception/members/{memberId}/profile/image",
 		"POST /reception/center-visits",
 		"GET /members/me/center-visits/current",
 		"PATCH /members/me/center-visits/current/checkout",
@@ -118,7 +120,10 @@ class GeneratedOpenApiTests {
 		"PATCH /manager/rooms/{roomId}",
 		"GET /manager/rooms/{roomId}/suspensions",
 		"POST /manager/rooms/{roomId}/suspensions",
+		"POST /manager/rooms/{roomId}/impact-preview",
+		"POST /manager/rooms/{roomId}/impact-apply",
 		"GET /manager/classes",
+		"GET /manager/classes/types",
 		"POST /manager/classes",
 		"GET /manager/classes/{classId}",
 		"PATCH /manager/classes/{classId}",
@@ -286,6 +291,10 @@ class GeneratedOpenApiTests {
 			.noneMatch(status -> status.matches("2\\d\\d"));
 
 		assertThat(document.at("/components/schemas/BookingResponse/properties/status/enum")).isNotEmpty();
+		assertThat(document.at("/paths/~1manager~1classes~1types/get/description").asText())
+			.contains("MANAGER");
+		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum")
+			.toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
 	}
 
 	private JsonNode generatedDocument() throws Exception {

@@ -53,6 +53,7 @@ public class Discipline {
 		this.name = name;
 		this.description = description;
 		this.status = status;
+		this.updatedAt = Instant.now();
 	}
 
 	UUID getId() {

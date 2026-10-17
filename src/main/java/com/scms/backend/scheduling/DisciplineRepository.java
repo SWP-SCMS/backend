@@ -1,9 +1,12 @@
 package com.scms.backend.scheduling;
 
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
+import java.time.Instant;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,13 +16,27 @@ public interface DisciplineRepository extends JpaRepository<Discipline, UUID> {
 
 	boolean existsByNameAndIdNot(String name, UUID id);
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select discipline from Discipline discipline where discipline.id = :id")
+	java.util.Optional<Discipline> findByIdForUpdate(@Param("id") UUID id);
+
 	@Query(value = """
-		select cs.id from class_sessions cs
+		select cs.id as "sessionId", sc.id as "classId", sc.name as "className",
+			cs.start_time as "startTime", cs.end_time as "endTime"
+		from class_sessions cs
 		join sport_classes sc on sc.id = cs.sport_class_id
 		where sc.discipline_id = :disciplineId
-		  and (cs.status = 'IN_PROGRESS'
-		       or (cs.status = 'SCHEDULED' and cs.start_time > current_timestamp))
+		  and cs.status in ('SCHEDULED', 'IN_PROGRESS')
+		  and cs.end_time > current_timestamp
 		order by cs.start_time, cs.id
 		""", nativeQuery = true)
-	List<UUID> findBlockingSessionIds(@Param("disciplineId") UUID disciplineId);
+	List<BlockingSessionView> findBlockingSessions(@Param("disciplineId") UUID disciplineId);
+
+	interface BlockingSessionView {
+		UUID getSessionId();
+		UUID getClassId();
+		String getClassName();
+		Instant getStartTime();
+		Instant getEndTime();
+	}
 }

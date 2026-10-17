@@ -40,6 +40,12 @@ public class SportClassService {
 	}
 
 	@Transactional(readOnly = true)
+	List<SportClassType> supportedTypes(UUID managerId) {
+		ensureActiveManager(managerId);
+		return List.of(SportClassType.GROUP, SportClassType.PT_1_1);
+	}
+
+	@Transactional(readOnly = true)
 	SportClassResponse get(UUID managerId, UUID classId) {
 		ensureActiveManager(managerId);
 		return SportClassResponse.from(findClass(classId));

@@ -86,6 +86,16 @@ public class RoomService {
 		return RoomResponse.from(room);
 	}
 
+	void disableAfterImpactResolution(UUID managerId, Room room, String reason) {
+		ensureActiveManager(managerId);
+		if (room.getStatus() == RoomStatus.INACTIVE) return;
+		Map<String, Object> before = snapshot(room);
+		room.update(room.getName(), room.getCapacity(), RoomStatus.INACTIVE);
+		flush(room);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_UPDATED", "ROOM", room.getId(),
+			reason, before, snapshot(room)));
+	}
+
 	private Map<String, Object> snapshot(Room room) {
 		return Map.of("name", room.getName(), "capacity", room.getCapacity(), "status", room.getStatus().name());
 	}

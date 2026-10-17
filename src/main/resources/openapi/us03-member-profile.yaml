@@ -5,7 +5,8 @@ info:
   description: >-
     Contract for US03 self-service Member Profile access. The authenticated account is always
     taken from the JWT subject; this API does not accept an account or Member ID selector and
-    does not upload or process image files.
+    Profile images can be uploaded through the dedicated multipart operation below; the legacy
+    profileImageUrl JSON property remains readable and writable for compatibility.
 servers:
   - url: /api/v1
 paths:
@@ -45,6 +46,43 @@ paths:
       responses:
         '200':
           description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfileResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /members/me/profile/image:
+    post:
+      summary: Upload the authenticated Member's profile image
+      operationId: uploadMemberProfileImage
+      description: >-
+        Accepts a required JPEG or PNG multipart file. The server validates the decoded image,
+        stores it with a UUID filename, and returns the updated profile. The file is limited to
+        5 MiB; the client filename and MIME type are not trusted.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: JPEG or PNG image, maximum 5 MiB.
+      responses:
+        '200':
+          description: Updated profile with the stored profileImageUrl
           content:
             application/json:
               schema:

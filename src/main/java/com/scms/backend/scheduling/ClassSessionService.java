@@ -219,8 +219,9 @@ public class ClassSessionService {
 		if (capacity == null || capacity <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
 		}
-		SportClass sportClass = classes.findById(classId)
-			.orElseThrow(() -> RecurringScheduleException.notFound("class"));
+		Optional<SportClass> classResult = classes.findByIdForUpdate(classId);
+		if (classResult == null || classResult.isEmpty()) classResult = classes.findById(classId);
+		SportClass sportClass = classResult.orElseThrow(() -> RecurringScheduleException.notFound("class"));
 		if (sportClass.getStatus() != SportClassStatus.ACTIVE
 				|| sportClass.getDiscipline().getStatus() != DisciplineStatus.ACTIVE) {
 			throw RecurringScheduleException.inactive("class");
@@ -245,6 +246,59 @@ public class ClassSessionService {
 				|| rooms.existsSuspensionOverlap(resources.room().getId(), startTime, endTime)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+	}
+
+	void moveForRoomImpact(UUID managerId, ClassSession session, Room targetRoom, String reason) {
+		ensureActiveManager(managerId);
+		if (session.getStatus() != ClassSessionStatus.SCHEDULED
+				&& session.getStatus() != ClassSessionStatus.IN_PROGRESS) {
+			throw RecurringScheduleException.sessionNotScheduled();
+		}
+		if (targetRoom.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
+		if (session.getCapacity() > targetRoom.getCapacity()) throw RecurringScheduleException.capacityConflict();
+		if (sessions.existsOverlapExcluding(session.getId(), session.getTeachingCoach().getId(), targetRoom.getId(),
+				session.getStartTime(), session.getEndTime())
+				|| rooms.existsSuspensionOverlap(targetRoom.getId(), session.getStartTime(), session.getEndTime())) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		UUID oldRoomId = session.getRoom().getId();
+		session.updateAssignment(session.getTeachingCoach(), targetRoom);
+		try {
+			sessions.saveAndFlush(session);
+		}
+		catch (DataIntegrityViolationException exception) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_ASSIGNMENT_CHANGED", "CLASS_SESSION",
+			session.getId(), reason, Map.of("roomId", oldRoomId.toString()),
+			Map.of("roomId", targetRoom.getId().toString())));
+	}
+
+	void rescheduleForRoomImpact(UUID managerId, ClassSession session, Instant startTime, Instant endTime,
+			String reason) {
+		ensureActiveManager(managerId);
+		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
+			throw RecurringScheduleException.sessionNotScheduled();
+		}
+		validateTimes(startTime, endTime);
+		if (sessions.existsOverlapExcluding(session.getId(), session.getTeachingCoach().getId(),
+			session.getRoom().getId(), startTime, endTime)
+				|| rooms.existsSuspensionOverlap(session.getRoom().getId(), startTime, endTime)) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		Instant oldStart = session.getStartTime();
+		Instant oldEnd = session.getEndTime();
+		session.updateSchedule(startTime, endTime);
+		try {
+			sessions.saveAndFlush(session);
+		}
+		catch (DataIntegrityViolationException exception) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_RESCHEDULED", "CLASS_SESSION",
+			session.getId(), reason,
+			Map.of("startTime", oldStart.toString(), "endTime", oldEnd.toString()),
+			Map.of("startTime", startTime.toString(), "endTime", endTime.toString())));
 	}
 
 	ClassSession newScheduled(Resources resources, RecurringSchedule recurringSchedule, Instant startTime,

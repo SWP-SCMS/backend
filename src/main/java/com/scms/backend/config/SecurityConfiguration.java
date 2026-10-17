@@ -127,6 +127,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/members/me/training-results").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/feedback").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/training-plans").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.POST, "/members/me/profile/image").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/payments/sepay/webhook").permitAll()
 				.requestMatchers("/notifications/**").authenticated()
 				.requestMatchers(HttpMethod.GET, "/payments/*/result", "/receipts/*")

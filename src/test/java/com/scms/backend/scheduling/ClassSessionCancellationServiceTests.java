@@ -136,6 +136,21 @@ class ClassSessionCancellationServiceTests {
 		verify(sessions, never()).findAll(any(Specification.class), any(Sort.class));
 	}
 
+	@Test
+	void bulkCancellationRetryIsIdempotentWhenAllRequestedSessionsAreAlreadyHandled() {
+		UUID managerId = activeManager();
+		UUID sessionId = UUID.randomUUID();
+		when(sessions.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of());
+
+		ClassSessionCancellationBatchResponse result = service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(List.of(sessionId), null, null, null, "already handled"));
+
+		assertThat(result.cancelledCount()).isZero();
+		assertThat(result.sessionIds()).isEmpty();
+		verify(sessions).findAll(any(Specification.class), any(Sort.class));
+		verify(sessions, never()).findByIdForUpdate(any());
+	}
+
 	private UUID activeManager() {
 		UUID id = UUID.randomUUID();
 		when(accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);

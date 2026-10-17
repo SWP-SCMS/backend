@@ -115,6 +115,34 @@ class SportClassServiceTests {
 	}
 
 	@Test
+	void createRejectsLegacyYogaType() {
+		UUID managerId = activeManager();
+
+		assertThatThrownBy(() -> service.create(managerId,
+			new SportClassCreateRequest(UUID.randomUUID(), "Yoga", SportClassType.YOGA, null)))
+			.isInstanceOf(SportClassException.class)
+			.extracting("code").isEqualTo("CLASS_TYPE_UNSUPPORTED");
+	}
+
+	@Test
+	void supportedTypesReturnsOnlySupportedTypes() {
+		UUID managerId = activeManager();
+
+		assertThat(service.supportedTypes(managerId))
+			.containsExactly(SportClassType.GROUP, SportClassType.PT_1_1);
+	}
+
+	@Test
+	void inactiveManagerCannotListSupportedTypes() {
+		UUID managerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(false);
+
+		assertThatThrownBy(() -> service.supportedTypes(managerId))
+			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+	}
+
+	@Test
 	void inactiveManagerCannotListClasses() {
 		UUID managerId = UUID.randomUUID();
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
@@ -130,8 +158,11 @@ class SportClassServiceTests {
 		SportClass sportClass = sportClass(discipline(DisciplineStatus.ACTIVE));
 		when(classes.findAll(any(Sort.class))).thenReturn(List.of(sportClass));
 
-		assertThat(service.list(managerId)).singleElement().extracting(SportClassResponse::name)
+		List<SportClassResponse> result = service.list(managerId);
+		assertThat(result).singleElement().extracting(SportClassResponse::name)
 			.isEqualTo("Yoga");
+		assertThat(result).singleElement().extracting(SportClassResponse::classType)
+			.isEqualTo(SportClassType.YOGA);
 		ArgumentCaptor<Sort> sort = ArgumentCaptor.forClass(Sort.class);
 		verify(classes).findAll(sort.capture());
 		assertThat(sort.getValue().getOrderFor("name")).isNotNull();
@@ -201,6 +232,19 @@ class SportClassServiceTests {
 			new SportClassPatchRequest(null, null, null, null)))
 			.isInstanceOf(SportClassException.class)
 			.extracting("field").isEqualTo("request");
+	}
+
+	@Test
+	void patchRejectsLegacyYogaType() {
+		UUID managerId = activeManager();
+		Discipline discipline = discipline(DisciplineStatus.ACTIVE);
+		SportClass sportClass = sportClass(discipline);
+		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+
+		assertThatThrownBy(() -> service.update(managerId, sportClass.getId(),
+			new SportClassPatchRequest(null, SportClassType.YOGA, null, null)))
+			.isInstanceOf(SportClassException.class)
+			.extracting("code").isEqualTo("CLASS_TYPE_UNSUPPORTED");
 	}
 
 	private UUID activeManager() {

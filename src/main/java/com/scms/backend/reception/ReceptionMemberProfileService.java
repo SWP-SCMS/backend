@@ -63,7 +63,7 @@ public class ReceptionMemberProfileService {
 	}
 
 	@Transactional(readOnly = true)
-	MemberProfileResponse getProfile(UUID receptionistAccountId, String memberId) {
+	public MemberProfileResponse getProfile(UUID receptionistAccountId, String memberId) {
 		ensureActiveReceptionist(receptionistAccountId);
 		return toProfileResponse(findByMemberId(normalizeMemberId(memberId)));
 	}
@@ -113,6 +113,17 @@ public class ReceptionMemberProfileService {
 			throw identifierAvailability.fromDatabase(exception);
 		}
 		return toProfileResponse(profile);
+	}
+
+	@Transactional
+	public String replaceProfileImage(UUID receptionistAccountId, String memberId, String profileImageUrl) {
+		ensureActiveReceptionist(receptionistAccountId);
+		MemberProfile profile = findByMemberId(normalizeMemberId(memberId));
+		String oldProfileImageUrl = profile.getProfileImageUrl();
+		profile.updateDetails(profileImageUrl, profile.getFitnessGoal(), profile.getEmergencyContactName(),
+			profile.getEmergencyContactPhone());
+		memberProfileRepository.flush();
+		return oldProfileImageUrl;
 	}
 
 	private String normalizeMemberId(String memberId) {

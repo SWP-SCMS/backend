@@ -80,6 +80,17 @@ public class MemberProfileService {
 		return toResponse(account, profile);
 	}
 
+	@Transactional
+	String replaceProfileImage(UUID accountId, String profileImageUrl) {
+		Account account = loadMemberAccount(accountId);
+		MemberProfile profile = loadProfile(accountId);
+		String oldProfileImageUrl = profile.getProfileImageUrl();
+		profile.updateDetails(profileImageUrl, profile.getFitnessGoal(), profile.getEmergencyContactName(),
+			profile.getEmergencyContactPhone());
+		memberProfileRepository.flush();
+		return oldProfileImageUrl;
+	}
+
 	private Account loadMemberAccount(UUID accountId) {
 		Account account = accountRepository.findById(accountId)
 			.orElseThrow(() -> new IllegalStateException("Authenticated account no longer exists"));
