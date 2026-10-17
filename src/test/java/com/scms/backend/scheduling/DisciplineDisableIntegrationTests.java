@@ -53,9 +53,10 @@ class DisciplineDisableIntegrationTests {
 	@Transactional
 	void staleScheduledAndInProgressSessionsBlockButCompletedHistoryDoesNot() {
 		Fixture fixture = fixture();
-		ClassSession staleScheduled = saveSession(fixture, PAST, FUTURE);
-		ClassSession inProgress = saveSession(fixture, PAST.plusSeconds(3600), FUTURE);
-		ClassSession completed = saveSession(fixture, PAST.plusSeconds(7200), FUTURE);
+		Instant now = Instant.now();
+		ClassSession staleScheduled = saveSession(fixture, now.minusSeconds(1800), now.plusSeconds(1800));
+		ClassSession inProgress = saveSession(fixture, now.minusSeconds(1200), now.plusSeconds(2400));
+		ClassSession completed = saveSession(fixture, PAST, PAST.plusSeconds(3600));
 		db.update("update class_sessions set status='IN_PROGRESS' where id=?", inProgress.getId());
 		db.update("update class_sessions set status='COMPLETED' where id=?", completed.getId());
 
@@ -75,7 +76,7 @@ class DisciplineDisableIntegrationTests {
 	@Transactional
 	void completedSessionIsRetainedWhenDisciplineIsDisabled() {
 		Fixture fixture = fixture();
-		ClassSession completed = saveSession(fixture, PAST, FUTURE);
+		ClassSession completed = saveSession(fixture, PAST, PAST.plusSeconds(3600));
 		db.update("update class_sessions set status='COMPLETED' where id=?", completed.getId());
 
 		disciplines.update(fixture.managerId(), fixture.disciplineId(),
@@ -122,7 +123,7 @@ class DisciplineDisableIntegrationTests {
 			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
 			start.countDown();
 			assertThat(java.util.List.of(disable.get(10, TimeUnit.SECONDS), create.get(10, TimeUnit.SECONDS)))
-				.containsExactlyInAnyOrder("disabled", "created");
+				.isIn(java.util.List.of("disabled", "blocked"), java.util.List.of("blocked", "created"));
 		}
 
 		String status = db.queryForObject("select status from disciplines where id=?", String.class,

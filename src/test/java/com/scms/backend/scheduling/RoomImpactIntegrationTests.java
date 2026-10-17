@@ -66,10 +66,12 @@ class RoomImpactIntegrationTests {
 			future.getId(), "MOVE", target.getId(), null, null, "Move to replacement room"))));
 
 		assertThat(result.status()).isEqualTo(RoomStatus.INACTIVE);
-		assertThat(sessions.findById(future.getId()).orElseThrow().getRoom().getId()).isEqualTo(target.getId());
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, future.getId()))
+			.isEqualTo(target.getId());
 		assertThat(sessions.findById(completed.getId()).orElseThrow().getStatus())
 			.isEqualTo(ClassSessionStatus.COMPLETED);
-		assertThat(sessions.findById(completed.getId()).orElseThrow().getRoom().getId()).isEqualTo(source.getId());
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, completed.getId()))
+			.isEqualTo(source.getId());
 	}
 
 	private Account saveAccount(AccountRole role, String name) {
