@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -90,6 +92,8 @@ class ClassSessionAssignmentServiceTests {
 		UUID managerId = activeManager();
 		ClassSession session = session();
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
 
 		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(),
 			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
@@ -100,16 +104,32 @@ class ClassSessionAssignmentServiceTests {
 	}
 
 	@Test
-	void updateAssignmentLocksSessionBeforeCheckingIt() {
+	void updateAssignmentLocksSourceAndTargetRoomsBeforeSession() {
 		UUID managerId = activeManager();
-		ClassSession session = session();
+		Room source = new Room(UUID.fromString("00000000-0000-0000-0000-000000000001"),
+			"Studio A", 20, RoomStatus.ACTIVE);
+		Room target = new Room(UUID.fromString("00000000-0000-0000-0000-000000000002"),
+			"Studio B", 30, RoomStatus.ACTIVE);
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
+			null, SportClassStatus.ACTIVE);
+		Account currentCoach = coach("Coach");
+		ClassSession session = new ClassSession(UUID.randomUUID(), sportClass, null, currentCoach, source,
+			now.plusSeconds(3600), now.plusSeconds(7200), 15, UUID.randomUUID());
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(source.getId()));
+		when(classes.findByIdForUpdate(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(accounts.findByIdForUpdate(currentCoach.getId())).thenReturn(Optional.of(currentCoach));
+		when(rooms.findByIdForUpdate(source.getId())).thenReturn(Optional.of(source));
+		when(rooms.findByIdForUpdate(target.getId())).thenReturn(Optional.of(target));
 
 		service.updateAssignment(managerId, session.getId(),
-			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
+			new ClassSessionAssignmentRequest(currentCoach.getId(), target.getId()));
 
-		verify(sessions).findByIdForUpdate(session.getId());
-		verify(sessions, never()).findById(session.getId());
+		InOrder ordered = inOrder(rooms, sessions);
+		ordered.verify(rooms).findByIdForUpdate(source.getId());
+		ordered.verify(rooms).findByIdForUpdate(target.getId());
+		ordered.verify(sessions).findByIdForUpdate(session.getId());
 	}
 
 	@Test
@@ -118,6 +138,8 @@ class ClassSessionAssignmentServiceTests {
 		ClassSession session = session();
 		ReflectionTestUtils.setField(session, "status", ClassSessionStatus.IN_PROGRESS);
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(any(UUID.class))).thenReturn(Optional.of(session.getRoom()));
 
 		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(),
 			new ClassSessionAssignmentRequest(UUID.randomUUID(), UUID.randomUUID())))
@@ -147,9 +169,11 @@ class ClassSessionAssignmentServiceTests {
 
 	private void stubAssignment(ClassSession session, Account coach, Room room) {
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		when(rooms.findByIdForUpdate(room.getId())).thenReturn(Optional.of(room));
 		when(classes.findById(session.getSportClass().getId())).thenReturn(Optional.of(session.getSportClass()));
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
-		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
 	}
 
 	private UUID activeManager() {

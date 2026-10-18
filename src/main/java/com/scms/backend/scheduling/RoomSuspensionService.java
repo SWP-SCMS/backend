@@ -85,6 +85,50 @@ public class RoomSuspensionService {
 	}
 
 	@Transactional
+	RoomSuspensionResponse extend(UUID managerId, UUID roomId, UUID suspensionId,
+			RoomSuspensionExtensionRequest request) {
+		validateExtensionRequest(request);
+		ensureActiveManager(managerId);
+		Map<UUID, RoomSessionResolutionRequest> resolutions = resolutionMap(request.resolutions());
+		if (lockRendezvous != null) lockRendezvous.await();
+		RoomSuspension suspension = suspensions.findByIdForUpdate(suspensionId)
+			.filter(candidate -> candidate.getRoom().getId().equals(roomId))
+			.orElseThrow(RoomException::notFound);
+		if (!suspension.getEndTime().equals(request.expectedEndTime())) throw RoomException.suspensionChanged();
+		if (!suspension.getEndTime().isAfter(clock.instant())) throw RoomException.suspensionExpired();
+		if (request.endTime() == null || !request.endTime().isAfter(request.expectedEndTime())
+				|| !request.endTime().isAfter(suspension.getEndTime())) {
+			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
+		}
+		String reason = normalizeReason(request.reason(), true);
+		Map<UUID, Room> lockedRooms = lockRooms(roomId, resolutions.values());
+		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
+			throw RoomException.suspensionConflict();
+		}
+		Instant currentEndTime = suspension.getEndTime();
+		Instant now = clock.instant();
+		lifecycle.catchUp(now);
+		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, currentEndTime, request.endTime(),
+			false, now);
+		validateResolutionSet(affected, resolutions);
+		validateOperation(affected, resolutions, lockedRooms,
+			new Impact(suspension.getStartTime(), request.endTime(), false, reason));
+		applyResolutions(managerId, affected, resolutions, lockedRooms);
+		Map<String, Object> before = suspensionSnapshot(suspension);
+		suspension.extend(request.endTime(), reason);
+		try {
+			suspensions.saveAndFlush(suspension);
+		}
+		catch (DataIntegrityViolationException exception) {
+			throw RoomException.suspensionConflict();
+		}
+		Map<String, Object> after = suspensionSnapshot(suspension);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_SUSPENSION_EXTENDED", "ROOM_SUSPENSION",
+			suspensionId, reason, before, after));
+		return RoomSuspensionResponse.from(suspension);
+	}
+
+	@Transactional
 	RoomImpactPreviewResponse previewImpact(UUID managerId, UUID roomId, RoomImpactPreviewRequest request) {
 		ensureActiveManager(managerId);
 		Impact impact = validateImpact(request);
@@ -108,6 +152,19 @@ public class RoomSuspensionService {
 			impact.permanentDisable(), clock.instant());
 		validateResolutionSet(affected, resolutions);
 		validateOperation(affected, resolutions, lockedRooms, impact);
+		applyResolutions(managerId, affected, resolutions, lockedRooms);
+		if (impact.permanentDisable()) {
+			roomService.disableAfterImpactResolution(managerId, sourceRoom, impact.reason());
+		}
+		else {
+			createLocked(managerId, sourceRoom,
+				new RoomSuspensionCreateRequest(impact.startTime(), impact.endTime(), impact.reason()), true);
+		}
+		return RoomResponse.from(sourceRoom);
+	}
+
+	private void applyResolutions(UUID managerId, List<ClassSession> affected,
+			Map<UUID, RoomSessionResolutionRequest> resolutions, Map<UUID, Room> lockedRooms) {
 		for (ClassSession session : affected) {
 			RoomSessionResolutionRequest resolution = resolutions.get(session.getId());
 			switch (resolution.action()) {
@@ -126,14 +183,6 @@ public class RoomSuspensionService {
 			default -> throw RoomException.validation("resolutions.action", "must be MOVE, RESCHEDULE, or CANCEL");
 			}
 		}
-		if (impact.permanentDisable()) {
-			roomService.disableAfterImpactResolution(managerId, sourceRoom, impact.reason());
-		}
-		else {
-			createLocked(managerId, sourceRoom,
-				new RoomSuspensionCreateRequest(impact.startTime(), impact.endTime(), impact.reason()), true);
-		}
-		return RoomResponse.from(sourceRoom);
 	}
 
 	private RoomSuspensionResponse createLocked(UUID managerId, Room room, RoomSuspensionCreateRequest request,
@@ -320,6 +369,15 @@ public class RoomSuspensionService {
 				ClassSessionRepository.BookingCountView::getBookedCount));
 	}
 
+	private Map<String, Object> suspensionSnapshot(RoomSuspension suspension) {
+		Map<String, Object> snapshot = new HashMap<>();
+		snapshot.put("roomId", suspension.getRoom().getId().toString());
+		snapshot.put("startTime", suspension.getStartTime().toString());
+		snapshot.put("endTime", suspension.getEndTime().toString());
+		snapshot.put("reason", suspension.getReason());
+		return snapshot;
+	}
+
 	private void notifyChangedSession(ClassSession session, String notificationType) {
 		if (jdbc == null || notifications == null) return;
 		Map<String, Object> payload = Map.of(
@@ -344,6 +402,20 @@ public class RoomSuspensionService {
 		if (value != null && value.length() > 1000) throw RoomException.validation("reason",
 			"must be at most 1000 characters");
 		return value;
+	}
+
+	private void validateExtensionRequest(RoomSuspensionExtensionRequest request) {
+		if (request == null) throw RoomException.suspensionValidation("request", "must be a JSON object");
+		if (request.expectedEndTime() == null) {
+			throw RoomException.suspensionValidation("expectedEndTime", "is required");
+		}
+		if (request.endTime() == null) {
+			throw RoomException.suspensionValidation("endTime", "is required");
+		}
+		normalizeReason(request.reason(), true);
+		if (request.resolutions() == null) {
+			throw RoomException.suspensionValidation("resolutions", "is required");
+		}
 	}
 
 	private record Impact(Instant startTime, Instant endTime, boolean permanentDisable, String reason) { }

@@ -31,9 +31,17 @@ public class ClassSessionService {
 	private final AuditEventRepository audits;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
+	private final RoomImpactLockRendezvous lockRendezvous;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
+			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
+			RoomImpactLockRendezvous lockRendezvous) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -41,6 +49,7 @@ public class ClassSessionService {
 		this.audits = audits;
 		this.lifecycle = lifecycle;
 		this.clock = clock;
+		this.lockRendezvous = lockRendezvous;
 	}
 
 	@Transactional
@@ -155,13 +164,20 @@ public class ClassSessionService {
 			throw RecurringScheduleException.validation("request", "coachId or roomId is required");
 		}
 		advanceStatuses();
+		UUID sourceRoomId = sessions.findRoomIdById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		lockAssignmentRooms(sourceRoomId, request.roomId());
+		if (lockRendezvous != null) lockRendezvous.await();
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
 			throw RecurringScheduleException.sessionNotScheduled();
 		}
+		if (request.roomId() == null && !session.getRoom().getId().equals(sourceRoomId)) {
+			throw RecurringScheduleException.sessionConflict();
+		}
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
-		UUID roomId = request.roomId() == null ? session.getRoom().getId() : request.roomId();
+		UUID roomId = request.roomId() == null ? sourceRoomId : request.roomId();
 		UUID beforeCoachId = session.getTeachingCoach().getId();
 		UUID beforeRoomId = session.getRoom().getId();
 		if (coachId.equals(beforeCoachId) && roomId.equals(beforeRoomId)) {
@@ -242,6 +258,16 @@ public class ClassSessionService {
 		if (room.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
 		if (capacity > room.getCapacity()) throw RecurringScheduleException.capacityConflict();
 		return new Resources(sportClass, coach, room);
+	}
+
+	private void lockAssignmentRooms(UUID sourceRoomId, UUID requestedRoomId) {
+		java.util.Set<UUID> roomIds = new java.util.TreeSet<>(java.util.Comparator.comparing(UUID::toString));
+		roomIds.add(sourceRoomId);
+		if (requestedRoomId != null) roomIds.add(requestedRoomId);
+		for (UUID roomId : roomIds) {
+			rooms.findByIdForUpdate(roomId)
+				.orElseThrow(() -> RecurringScheduleException.notFound("room"));
+		}
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime) {
