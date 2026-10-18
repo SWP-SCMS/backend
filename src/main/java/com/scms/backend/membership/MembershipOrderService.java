@@ -26,17 +26,20 @@ public class MembershipOrderService {
 	private final AccountRepository accountRepository;
 	private final MemberProfileRepository memberProfileRepository;
 	private final MembershipOfferRepository membershipOfferRepository;
+	private final MembershipPlanRepository membershipPlanRepository;
 	private final MembershipRepository membershipRepository;
 	private final MembershipOrderRepository membershipOrderRepository;
 
 	MembershipOrderService(AccountRepository accountRepository,
 			MemberProfileRepository memberProfileRepository,
 			MembershipOfferRepository membershipOfferRepository,
+			MembershipPlanRepository membershipPlanRepository,
 			MembershipRepository membershipRepository,
 			MembershipOrderRepository membershipOrderRepository) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.membershipOfferRepository = membershipOfferRepository;
+		this.membershipPlanRepository = membershipPlanRepository;
 		this.membershipRepository = membershipRepository;
 		this.membershipOrderRepository = membershipOrderRepository;
 	}
@@ -70,6 +73,8 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
+		membershipPlanRepository.findByPlanCodeForUpdate(offer.getPlan().getPlanCode())
+			.orElseThrow(MembershipOfferNotFoundException::new);
 		membershipRepository.expireDue(Instant.now());
 		ensureActiveMember(member);
 		UUID memberAccountId = member.getAccountId();

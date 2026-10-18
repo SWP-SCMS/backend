@@ -15,10 +15,12 @@ import java.util.UUID;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -102,11 +104,34 @@ class MembershipPlanAdminServiceTests {
 	}
 
 	@Test
+	void createAndUpdatePersistDistinctAuditEvents() {
+		UUID managerId = activeManager();
+		MembershipBenefit benefit = new MembershipBenefit("CENTER_ACCESS", "Center", "Access", MembershipBenefitStatus.ACTIVE);
+		when(plans.existsById("AUDITED_PLAN")).thenReturn(false);
+		when(benefits.findAllByCodeIn(Set.of("CENTER_ACCESS"))).thenReturn(List.of(benefit));
+		when(plans.saveAndFlush(any(MembershipPlan.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.create(managerId, new MembershipPlanCreateRequest("AUDITED_PLAN", "Audited", null,
+			List.of("CENTER_ACCESS")));
+		MembershipPlan plan = new MembershipPlan("AUDITED_PLAN", "Audited", MembershipPlanStatus.ACTIVE, Set.of(benefit));
+		when(plans.findByPlanCodeForUpdate("AUDITED_PLAN")).thenReturn(Optional.of(plan));
+
+		service.update(managerId, "AUDITED_PLAN", new MembershipPlanPatchRequest("Renamed", null, null));
+
+		ArgumentCaptor<AuditEvent> auditsCaptor = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, org.mockito.Mockito.times(2)).save(auditsCaptor.capture());
+		List<AuditEvent> events = auditsCaptor.getAllValues();
+		assertThat(events).extracting(AuditEvent::getAction)
+			.containsExactly("MEMBERSHIP_PLAN_CREATED", "MEMBERSHIP_PLAN_UPDATED");
+		assertThat(events.get(0).getId()).isNotEqualTo(events.get(1).getId());
+	}
+
+	@Test
 	void lockedBenefitsRejectChangesButAcceptIdenticalInput() {
 		UUID managerId = activeManager();
 		MembershipBenefit benefit = new MembershipBenefit("CENTER_ACCESS", "Center", "Access", MembershipBenefitStatus.ACTIVE);
 		MembershipPlan plan = new MembershipPlan("BASIC", "Basic", MembershipPlanStatus.ACTIVE, Set.of(benefit));
-		when(plans.findByIdWithBenefits("BASIC")).thenReturn(Optional.of(plan));
+		when(plans.findByPlanCodeForUpdate("BASIC")).thenReturn(Optional.of(plan));
 		when(orders.existsByPlanCodeSnapshot("BASIC")).thenReturn(true);
 
 		MembershipPlanResponse same = service.update(managerId, "BASIC",

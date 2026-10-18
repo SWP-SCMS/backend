@@ -71,7 +71,7 @@ public class MembershipPlanAdminService {
 		catch (DataIntegrityViolationException exception) {
 			throw new MembershipPlanConflictException("MEMBERSHIP_PLAN_CODE_CONFLICT");
 		}
-		audits.save(new AuditEvent(UUID.nameUUIDFromBytes(code.getBytes(StandardCharsets.UTF_8)), managerId,
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId,
 			"MEMBERSHIP_PLAN_CREATED", "MEMBERSHIP_PLAN", auditId(code), snapshot(plan)));
 		return MembershipPlanResponse.from(plan);
 	}
@@ -82,7 +82,7 @@ public class MembershipPlanAdminService {
 		if (request == null || (request.displayName() == null && request.status() == null
 				&& request.benefitCodes() == null && request.code() == null)) throw invalid("at least one field is required");
 		if (request.code() != null) throw invalid("code cannot be changed");
-		MembershipPlan plan = find(code);
+		MembershipPlan plan = plans.findByPlanCodeForUpdate(code).orElseThrow(MembershipPlanNotFoundException::new);
 		Map<String, Object> before = snapshot(plan);
 		Set<MembershipBenefit> resolved = plan.getBenefits();
 		if (request.benefitCodes() != null) {
@@ -100,7 +100,7 @@ public class MembershipPlanAdminService {
 		Map<String, Object> after = snapshot(plan);
 		if (!before.equals(after)) {
 			plans.saveAndFlush(plan);
-			audits.save(new AuditEvent(UUID.nameUUIDFromBytes(code.getBytes(StandardCharsets.UTF_8)), managerId,
+			audits.save(new AuditEvent(UUID.randomUUID(), managerId,
 				"MEMBERSHIP_PLAN_UPDATED", "MEMBERSHIP_PLAN", auditId(code), null, before, after));
 		}
 		return MembershipPlanResponse.from(plan);

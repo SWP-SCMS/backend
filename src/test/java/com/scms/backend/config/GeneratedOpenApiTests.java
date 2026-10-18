@@ -361,6 +361,9 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedContractDocumentsMembershipPlanManagement() throws Exception {
 		JsonNode document = generatedDocument();
+		JsonNode offerPlanCode = document.at("/components/schemas/MembershipOfferResponse/properties/planCode");
+		assertThat(offerPlanCode.path("type").asText()).isEqualTo("string");
+		assertThat(offerPlanCode.path("enum").toString()).isEqualTo("[\"BASIC\",\"PLUS\"]");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
