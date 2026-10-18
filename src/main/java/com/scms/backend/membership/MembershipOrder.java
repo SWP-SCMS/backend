@@ -40,9 +40,8 @@ public class MembershipOrder {
 	@Column(name = "offer_name_snapshot", nullable = false, length = 200, updatable = false)
 	private String offerNameSnapshot;
 
-	@Enumerated(EnumType.STRING)
-	@Column(name = "plan_code_snapshot", nullable = false, length = 10, updatable = false)
-	private MembershipPlanCode planCodeSnapshot;
+	@Column(name = "plan_code_snapshot", nullable = false, length = 50, updatable = false)
+	private String planCodeSnapshot;
 
 	@Column(name = "price_amount_snapshot", nullable = false, precision = 19, scale = 0, updatable = false)
 	private BigInteger priceAmountSnapshot;
@@ -92,7 +91,7 @@ public class MembershipOrder {
 		this.createdByAccountId = Objects.requireNonNull(createdByAccountId);
 		this.offerId = Objects.requireNonNull(offer).getId();
 		this.offerNameSnapshot = offer.getName();
-		this.planCodeSnapshot = MembershipPlanCode.valueOf(offer.getPlan().getPlanCode());
+		this.planCodeSnapshot = offer.getPlan().getPlanCode();
 		this.priceAmountSnapshot = offer.getPriceAmount();
 		this.currencyCodeSnapshot = offer.getCurrencyCode();
 		this.durationDaysSnapshot = offer.getDurationDays();
@@ -124,7 +123,7 @@ public class MembershipOrder {
 		return offerNameSnapshot;
 	}
 
-	public MembershipPlanCode getPlanCodeSnapshot() {
+	public String getPlanCodeSnapshot() {
 		return planCodeSnapshot;
 	}
 

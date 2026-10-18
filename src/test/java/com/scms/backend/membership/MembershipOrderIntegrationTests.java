@@ -131,7 +131,7 @@ class MembershipOrderIntegrationTests {
 		assertThat(saved.getCreatedByAccountId()).isEqualTo(member.getAccountId());
 		assertThat(saved.getOfferId()).isEqualTo(offerId);
 		assertThat(saved.getOfferNameSnapshot()).isEqualTo("Snapshot Offer");
-		assertThat(saved.getPlanCodeSnapshot()).isEqualTo(MembershipPlanCode.PLUS);
+		assertThat(saved.getPlanCodeSnapshot()).isEqualTo("PLUS");
 		assertThat(saved.getPriceAmountSnapshot()).isEqualTo(EXACT_PRICE);
 		assertThat(saved.getCurrencyCodeSnapshot()).isEqualTo("VND");
 		assertThat(saved.getDurationDaysSnapshot()).isEqualTo(45);
@@ -141,6 +141,26 @@ class MembershipOrderIntegrationTests {
 		assertThat(saved.getPaidAt()).isNull();
 		assertThat(saved.getCreatedAt()).isNotNull();
 		assertOutOfScopeCountsUnchanged(before);
+	}
+
+	@Test
+	void dynamicPlanCodeIsPreservedInOrderSnapshotAndPendingReadResponse() throws Exception {
+		MemberProfile member = createMember(AccountStatus.ACTIVE);
+		insertPlan("FAMILY", "Family", "ACTIVE", true);
+		UUID offerId = insertOffer(member.getAccount(), "FAMILY", "Family Offer", BigInteger.valueOf(700000), 30,
+			"ACTIVE");
+
+		MvcResult created = createForMember(accessToken(member.getAccount()), offerId)
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.planCode").value("FAMILY"))
+			.andReturn();
+		UUID orderId = UUID.fromString(JsonPath.read(created.getResponse().getContentAsString(), "$.orderId"));
+
+		assertThat(membershipOrderRepository.findById(orderId).orElseThrow().getPlanCodeSnapshot())
+			.isEqualTo("FAMILY");
+		resumeForMember(accessToken(member.getAccount()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.planCode").value("FAMILY"));
 	}
 
 	@Test
@@ -394,6 +414,17 @@ class MembershipOrderIntegrationTests {
 			values (?, ?, ?, 'Order test offer', ?, 'VND', ?, ?, ?)
 			""", id, planCode, name, price, durationDays, status, creator.getId());
 		return id;
+	}
+
+	private void insertPlan(String planCode, String displayName, String status, boolean withBenefit) {
+		jdbcTemplate.update("""
+			insert into membership_plans(plan_code, display_name, supports_booking, supports_personal_coaching, status)
+			values (?, ?, false, false, ?)
+			""", planCode, displayName, status);
+		if (withBenefit) {
+			jdbcTemplate.update("insert into membership_plan_benefits(plan_code, benefit_code) values (?, 'CENTER_ACCESS')",
+				planCode);
+		}
 	}
 
 	private void insertPendingOrder(UUID memberAccountId, UUID actorAccountId, UUID offerId) {

@@ -2,7 +2,9 @@ package com.scms.backend.membership;
 
 import java.math.BigInteger;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
@@ -17,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MembershipOfferAdminService {
 	private static final BigInteger MAX_AMOUNT = BigInteger.TEN.pow(19).subtract(BigInteger.ONE);
+	private static final Pattern PLAN_CODE = Pattern.compile("[A-Z][A-Z0-9_]{1,49}");
 	private final MembershipOfferRepository offers;
 	private final MembershipPlanRepository plans;
 	private final AccountRepository accounts;
@@ -33,7 +36,13 @@ public class MembershipOfferAdminService {
 	@Transactional
 	MembershipOfferAdminResponse create(UUID managerId, MembershipOfferAdminRequest request) {
 		ensureManager(managerId); validate(request, true);
-		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plans.findById(request.planCode().name()).orElseThrow(),
+		String planCode = normalizePlanCode(request.planCode());
+		MembershipPlan plan = plans.findByPlanCodeForUpdate(planCode)
+			.filter(value -> value.getStatus() == MembershipPlanStatus.ACTIVE)
+			.filter(value -> value.getBenefits().stream()
+				.anyMatch(benefit -> benefit.getStatus() == MembershipBenefitStatus.ACTIVE))
+			.orElseThrow(() -> new MembershipOfferValidationException("Invalid membership offer"));
+		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plan,
 			request.name().trim(), request.description().trim(), request.priceAmount(), "VND", request.durationDays(),
 			request.status() == null ? MembershipOfferStatus.ACTIVE : request.status(), managerId);
 		offers.save(offer);
@@ -75,7 +84,9 @@ public class MembershipOfferAdminService {
 
 	private void ensureManager(UUID id) { if (!accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
 	private void validate(MembershipOfferAdminRequest r, boolean create) {
-		if (r == null || (create && r.planCode() == null) || r.name() == null || r.name().trim().isEmpty()
+		if (r == null || (create && (r.planCode() == null
+				|| !PLAN_CODE.matcher(r.planCode().trim().toUpperCase(Locale.ROOT)).matches()))
+				|| r.name() == null || r.name().trim().isEmpty()
 				|| r.description() == null || r.description().trim().isEmpty() || !validAmount(r.priceAmount())
 				|| r.durationDays() == null || r.durationDays() <= 0) throw new MembershipOfferValidationException("Invalid membership offer");
 	}
@@ -89,5 +100,6 @@ public class MembershipOfferAdminService {
 		if (r.durationDays() != null && r.durationDays() <= 0) throw new MembershipOfferValidationException("durationDays must be positive");
 	}
 	private String trim(String value) { return value == null ? null : value.trim(); }
+	private String normalizePlanCode(String value) { return value.trim().toUpperCase(Locale.ROOT); }
 	private boolean validAmount(BigInteger value) { return value != null && value.signum() > 0 && value.compareTo(MAX_AMOUNT) <= 0; }
 }

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +21,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -36,12 +38,12 @@ class MembershipOfferAdminServiceTests {
 	@Test
 	void createWritesCompleteAuditEvent() {
 		UUID managerId = activeManager();
-		MembershipPlan plan = plan(MembershipPlanCode.PLUS);
-		when(plans.findById(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByPlanCodeForUpdate(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
 		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		MembershipOfferAdminResponse result = service.create(managerId, new MembershipOfferAdminRequest(
-			MembershipPlanCode.PLUS, " Plus 30 ", " Full access ", BigInteger.valueOf(750000), 30, null));
+			MembershipPlanCode.PLUS.name(), " Plus 30 ", " Full access ", BigInteger.valueOf(750000), 30, null));
 
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits, times(1)).save(audit.capture());
@@ -54,6 +56,24 @@ class MembershipOfferAdminServiceTests {
 			"planCode", "PLUS", "name", "Plus 30", "description", "Full access",
 			"priceAmount", BigInteger.valueOf(750000), "currencyCode", "VND", "durationDays", 30,
 			"status", "ACTIVE", "createdByAccountId", managerId.toString()));
+	}
+
+	@Test
+	void createLocksPlanBeforeCheckingEligibilityAndSavingOffer() {
+		UUID managerId = activeManager();
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByPlanCodeForUpdate("PLUS")).thenReturn(Optional.of(plan));
+		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.create(managerId, new MembershipOfferAdminRequest(
+			"PLUS", "Plus 30", "Full access", BigInteger.valueOf(750000), 30, null));
+
+		InOrder order = inOrder(plans, plan, offers);
+		order.verify(plans).findByPlanCodeForUpdate("PLUS");
+		order.verify(plan).getStatus();
+		order.verify(plan).getBenefits();
+		order.verify(offers).save(any(MembershipOffer.class));
+		verify(plans, never()).findByIdWithBenefits("PLUS");
 	}
 
 	@Test
@@ -108,6 +128,15 @@ class MembershipOfferAdminServiceTests {
 	private MembershipPlan plan(MembershipPlanCode code) {
 		MembershipPlan plan = mock(MembershipPlan.class);
 		when(plan.getPlanCode()).thenReturn(code.name());
+		return plan;
+	}
+
+	private MembershipPlan eligiblePlan(MembershipPlanCode code) {
+		MembershipPlan plan = plan(code);
+		when(plan.getStatus()).thenReturn(MembershipPlanStatus.ACTIVE);
+		MembershipBenefit benefit = mock(MembershipBenefit.class);
+		when(benefit.getStatus()).thenReturn(MembershipBenefitStatus.ACTIVE);
+		when(plan.getBenefits()).thenReturn(java.util.Set.of(benefit));
 		return plan;
 	}
 }

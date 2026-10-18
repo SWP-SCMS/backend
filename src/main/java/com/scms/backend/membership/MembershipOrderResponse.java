@@ -4,13 +4,15 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record MembershipOrderResponse(
 	UUID orderId,
 	String orderNumber,
 	String memberId,
 	UUID offerId,
 	String offerName,
-	MembershipPlanCode planCode,
+	@Schema(pattern = "^[A-Z][A-Z0-9_]{1,49}$") String planCode,
 	BigInteger priceAmount,
 	String currencyCode,
 	int durationDays,

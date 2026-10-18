@@ -66,9 +66,8 @@ components:
   schemas:
     MembershipPlanCode:
       type: string
-      enum:
-        - BASIC
-        - PLUS
+      pattern: '^[A-Z][A-Z0-9_]{1,49}$'
+      maxLength: 50
     MembershipOffer:
       type: object
       additionalProperties: false

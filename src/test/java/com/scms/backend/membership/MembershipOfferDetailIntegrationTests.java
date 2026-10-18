@@ -237,6 +237,34 @@ class MembershipOfferDetailIntegrationTests {
 	}
 
 	@Test
+	void dynamicPlanOfferDetailReturnsDynamicPlanCode() throws Exception {
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
+		String planCode = "FAMILY";
+		insertPlan(planCode, "Family", "ACTIVE", true);
+		UUID offerId = UUID.randomUUID();
+		insertOffer(offerId, planCode, "Family Offer", "Family access", BigInteger.valueOf(700000), 30,
+			"ACTIVE", member);
+
+		getOffer(accessToken(member), offerId.toString())
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.planCode").value(planCode));
+	}
+
+	@Test
+	void activeOfferAttachedToInactivePlanIsNotPubliclyReadable() throws Exception {
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
+		String planCode = "DORMANT";
+		insertPlan(planCode, "Dormant", "INACTIVE", true);
+		UUID offerId = UUID.randomUUID();
+		insertOffer(offerId, planCode, "Dormant Offer", "Hidden", BigInteger.valueOf(700000), 30,
+			"ACTIVE", member);
+
+		getOffer(accessToken(member), offerId.toString())
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_FOUND"));
+	}
+
+	@Test
 	void memberWithActiveMembershipCanStillGetOfferDetail() throws Exception {
 		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
 		UUID offerId = UUID.randomUUID();
@@ -282,6 +310,17 @@ class MembershipOfferDetailIntegrationTests {
 			     created_by_account_id)
 			values (?, ?, ?, ?, ?, 'VND', ?, ?, ?)
 			""", id, planCode, name, description, priceAmount, durationDays, status, creator.getId());
+	}
+
+	private void insertPlan(String planCode, String displayName, String status, boolean withBenefit) {
+		jdbcTemplate.update("""
+			insert into membership_plans(plan_code, display_name, supports_booking, supports_personal_coaching, status)
+			values (?, ?, false, false, ?)
+			""", planCode, displayName, status);
+		if (withBenefit) {
+			jdbcTemplate.update("insert into membership_plan_benefits(plan_code, benefit_code) values (?, 'CENTER_ACCESS')",
+				planCode);
+		}
 	}
 
 	private void insertActiveMembership(Account member, UUID offerId) {
