@@ -4,12 +4,21 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-public record AuditHistoryResponse(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId,
-		String reason, Map<String, Object> beforeData, Map<String, Object> afterData, Instant createdAt) {
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRole;
 
-	static AuditHistoryResponse from(AuditEvent event) {
-		return new AuditHistoryResponse(event.getId(), event.getActorAccountId(), event.getAction(),
-			event.getTargetType(), event.getTargetId(), event.getReason(), event.getBeforeData(), event.getAfterData(),
-			event.getCreatedAt());
+import io.swagger.v3.oas.annotations.media.Schema;
+
+public record AuditHistoryResponse(UUID id, UUID actorAccountId,
+		@Schema(nullable = true, requiredMode = Schema.RequiredMode.REQUIRED) String actorName,
+		@Schema(nullable = true, requiredMode = Schema.RequiredMode.REQUIRED) AccountRole actorRole,
+		String action, String targetType, UUID targetId, String reason, Map<String, Object> beforeData,
+		Map<String, Object> afterData, Instant createdAt) {
+
+	static AuditHistoryResponse from(AuditEvent event, Account actor) {
+		return new AuditHistoryResponse(event.getId(), event.getActorAccountId(),
+			actor == null ? null : actor.getFullName(), actor == null ? null : actor.getRole(),
+			event.getAction(), event.getTargetType(), event.getTargetId(), event.getReason(), event.getBeforeData(),
+			event.getAfterData(), event.getCreatedAt());
 	}
 }
