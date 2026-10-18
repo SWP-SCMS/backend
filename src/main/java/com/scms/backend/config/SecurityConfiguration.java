@@ -147,6 +147,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/reports/**").hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/manager/dashboard").hasRole("MANAGER")
 				.requestMatchers("/manager/audit-events", "/manager/audit-events/**").hasRole("MANAGER")
+				.requestMatchers(HttpMethod.GET, "/manager/coach-assignments/candidates",
+					"/manager/coaches/assignment-workloads").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())

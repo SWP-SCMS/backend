@@ -126,11 +126,28 @@ class SecurityProblemDetailTests {
 		}
 	}
 
+	@Test
+	void assignmentDiscoveryRoutesAreManagerOnly() throws Exception {
+		for (String path : new String[] {
+			"/manager/coach-assignments/candidates",
+			"/manager/coaches/assignment-workloads"
+		}) {
+			mockMvc.perform(get(path)).andExpect(status().isUnauthorized());
+			mockMvc.perform(get(path).with(user("manager").roles("MANAGER")))
+				.andExpect(status().isOk());
+			for (String role : new String[] { "MEMBER", "COACH", "RECEPTIONIST" }) {
+				mockMvc.perform(get(path).with(user(role.toLowerCase()).roles(role)))
+					.andExpect(status().isForbidden());
+			}
+		}
+	}
+
 	@RestController
 	static class TestController {
 		@GetMapping({ "/protected", "/manager/members", "/manager/audit-events", "/manager/dashboard",
 			"/membership-offers", "/reception/members/{memberCode}/memberships",
-			"/manager/members/{memberAccountId}/memberships" })
+			"/manager/members/{memberAccountId}/memberships", "/manager/coach-assignments/candidates",
+			"/manager/coaches/assignment-workloads" })
 		void protectedResource() {
 		}
 

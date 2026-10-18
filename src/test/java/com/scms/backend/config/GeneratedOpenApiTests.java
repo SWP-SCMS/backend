@@ -168,6 +168,8 @@ class GeneratedOpenApiTests {
 		"PATCH /notifications/{notificationId}/read",
 		"PATCH /notifications/read-all",
 		"GET /manager/audit-events",
+		"GET /manager/coach-assignments/candidates",
+		"GET /manager/coaches/assignment-workloads",
 		"POST /manager/members/{memberId}/coach-assignment",
 		"GET /manager/members/{memberId}/coach-assignment",
 		"GET /manager/members/{memberId}/coach-assignments",
@@ -336,6 +338,30 @@ class GeneratedOpenApiTests {
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"ACTIVE\",\"EXPIRED\"]");
+	}
+
+	@Test
+	void generatedContractDocumentsAssignmentDiscovery() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode candidates = operation(document, "/manager/coach-assignments/candidates", "get");
+		assertThat(candidates.path("parameters").toString())
+			.contains("query", "assignmentStatus", "page", "size", "UNASSIGNED", "ASSIGNED", "ALL");
+		assertThat(response(document, "/manager/coach-assignments/candidates", "get", "200")
+			.at("/content/application~1json/schema/$ref").asText())
+			.isEqualTo("#/components/schemas/AssignmentCandidatePageResponse");
+
+		JsonNode workloads = operation(document, "/manager/coaches/assignment-workloads", "get");
+		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200")
+			.at("/content/application~1json/schema/type").asText()).isEqualTo("array");
+		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200")
+			.at("/content/application~1json/schema/items/$ref").asText())
+			.isEqualTo("#/components/schemas/CoachAssignmentWorkloadResponse");
+
+		JsonNode workload = document.at("/components/schemas/CoachAssignmentWorkloadResponse/properties");
+		assertThat(workload.path("activeMemberCount").path("format").asText()).isEqualTo("int64");
+		assertThat(workload.path("maximumMemberCount").path("type").toString())
+			.contains("integer", "null");
+		assertThat(workload.path("availableForAssignment").path("type").asText()).isEqualTo("boolean");
 	}
 
 	@Test
