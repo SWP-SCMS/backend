@@ -2,6 +2,10 @@ package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -41,9 +47,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -52,6 +60,7 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
@@ -75,6 +84,7 @@ class PaymentFlowIntegrationTests {
 
 	@Autowired MockMvc mockMvc;
 	@MockitoSpyBean JdbcTemplate db;
+	@MockitoBean MembershipLifecycleScheduler membershipLifecycleScheduler;
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
@@ -610,6 +620,119 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void staffMembershipHistoryUsesOwnershipSnapshotsOrderingAndReconciliation() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		MemberProfile otherMember = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID firstId = UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff");
+		UUID secondId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+		Instant now = clock.instant();
+		Instant startsAt = now.minusSeconds(172800).truncatedTo(ChronoUnit.MICROS);
+		membershipHistoryEntry(member.getAccountId(), offer, firstId, "PLUS", "Snapshot Plus", "ACTIVE",
+			startsAt, now.minusSeconds(60));
+		membershipHistoryEntry(member.getAccountId(), offer, secondId, "BASIC", "Snapshot Basic", "EXPIRED",
+			startsAt, now.plusSeconds(86400));
+		UUID otherMembershipId = UUID.randomUUID();
+		membershipHistoryEntry(otherMember.getAccountId(), offer, otherMembershipId, "BASIC", "Other Member",
+			"ACTIVE", startsAt.plusSeconds(3600), now.minusSeconds(60));
+		db.update("update membership_offers set name='Current Offer Name' where id=?", offer);
+
+		getAuthorized(receptionist,
+			"/api/v1/reception/members/" + member.getMemberCode() + "/memberships")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].membershipId").value(firstId.toString()))
+			.andExpect(jsonPath("$[0].planCode").value("PLUS"))
+			.andExpect(jsonPath("$[0].offerName").value("Snapshot Plus"))
+			.andExpect(jsonPath("$[0].status").value("EXPIRED"))
+			.andExpect(jsonPath("$[0].startsAt").value(startsAt.toString()))
+			.andExpect(jsonPath("$[1].membershipId").value(secondId.toString()))
+			.andExpect(jsonPath("$[1].offerName").value("Snapshot Basic"))
+			.andExpect(jsonPath("$.length()").value(2));
+		assertThat(db.queryForObject("select status from memberships where id=?", String.class, firstId))
+			.isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select status from memberships where id=?", String.class, otherMembershipId))
+			.isEqualTo("ACTIVE");
+
+		db.update("update accounts set status='SUSPENDED' where id=?", member.getAccountId());
+		getAuthorized(manager, "/api/v1/manager/members/" + member.getAccountId() + "/memberships")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].membershipId").value(firstId.toString()))
+			.andExpect(jsonPath("$[1].membershipId").value(secondId.toString()));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void staffMembershipHistoryRollsBackScopedExpiryWhenHistoryQueryFails() {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID membershipId = UUID.randomUUID();
+		Instant now = clock.instant();
+		membershipHistoryEntry(member.getAccountId(), offer, membershipId, "BASIC", "Rollback Snapshot", "ACTIVE",
+			now.minusSeconds(3600), now.minusSeconds(60));
+
+		try {
+			doThrow(new DataAccessResourceFailureException("forced history query failure")).when(db).query(
+				argThat(sql -> sql.contains("from memberships where member_account_id=?")),
+				org.mockito.ArgumentMatchers.<RowMapper<StaffMembershipResponse>>any(), eq(member.getAccountId()));
+
+			assertThatThrownBy(() -> paymentService.managerMembershipHistory(manager.getId(), member.getAccountId()))
+				.isInstanceOf(DataAccessResourceFailureException.class)
+				.hasMessageContaining("forced history query failure");
+		}
+		finally {
+			reset(db);
+		}
+
+		assertThat(db.queryForObject("select status from memberships where id=?", String.class, membershipId))
+			.isEqualTo("ACTIVE");
+	}
+
+	@Test
+	void staffMembershipHistoryEnforcesSecurityEmptyAndNotFoundContracts() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		Account manager = account(AccountRole.MANAGER);
+		Account coach = account(AccountRole.COACH);
+		Account inactiveReceptionist = account(AccountRole.RECEPTIONIST);
+		Account inactiveManager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		String inactiveReceptionToken = bearer(inactiveReceptionist);
+		String inactiveManagerToken = bearer(inactiveManager);
+		db.update("update accounts set status='INACTIVE' where id in (?,?)", inactiveReceptionist.getId(),
+			inactiveManager.getId());
+
+		getAuthorized(receptionist,
+			"/api/v1/reception/members/" + member.getMemberCode() + "/memberships")
+			.andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+		getAuthorized(manager, "/api/v1/manager/members/" + member.getAccountId() + "/memberships")
+			.andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+		getAuthorized(receptionist, "/api/v1/manager/members/" + member.getAccountId() + "/memberships")
+			.andExpect(status().isForbidden());
+		getAuthorized(manager, "/api/v1/reception/members/" + member.getMemberCode() + "/memberships")
+			.andExpect(status().isForbidden());
+		for (Account actor : List.of(member.getAccount(), coach)) {
+			getAuthorized(actor, "/api/v1/reception/members/" + member.getMemberCode() + "/memberships")
+				.andExpect(status().isForbidden());
+			getAuthorized(actor, "/api/v1/manager/members/" + member.getAccountId() + "/memberships")
+				.andExpect(status().isForbidden());
+		}
+		mockMvc.perform(get("/api/v1/reception/members/{memberCode}/memberships", member.getMemberCode())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, inactiveReceptionToken))
+			.andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/v1/manager/members/{memberAccountId}/memberships", member.getAccountId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, inactiveManagerToken))
+			.andExpect(status().isUnauthorized());
+		getAuthorized(receptionist, "/api/v1/reception/members/MB-999999/memberships")
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_FOUND"));
+		getAuthorized(manager, "/api/v1/manager/members/" + UUID.randomUUID() + "/memberships")
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_FOUND"));
+		getAuthorized(manager, "/api/v1/manager/members/" + coach.getId() + "/memberships")
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("PAYMENT_NOT_FOUND"));
+	}
+
+	@Test
 	void reportUsesHalfOpenBoundariesAndExcludesTestDataByDefault() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile normal = member();
@@ -716,6 +839,29 @@ class PaymentFlowIntegrationTests {
 				""", UUID.randomUUID(), member, order, offer, amount, membershipStatus,
 				java.sql.Timestamp.from(paidAt), java.sql.Timestamp.from(paidAt.plusSeconds(2592000)));
 		}
+	}
+
+	private void membershipHistoryEntry(UUID member, UUID offer, UUID membershipId, String planCode,
+			String offerName, String status, Instant startsAt, Instant endsAt) {
+		UUID order = UUID.randomUUID();
+		UUID payment = UUID.randomUUID();
+		db.update("""
+			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
+				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
+				duration_days_snapshot,payment_method,status,expires_at,paid_at)
+			values(?,?,?,?,?,?,?,12000,'VND',30,'CASH','PAID',null,?)
+			""", order, "ORD-" + order.toString().replace("-", "").toUpperCase(), member, member, offer,
+			offerName, planCode, java.sql.Timestamp.from(startsAt));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at)
+			values(?,?,'CASH','PAID',12000,'VND',?,?)
+			""", payment, order, member, java.sql.Timestamp.from(startsAt));
+		db.update("""
+			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
+				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
+			values(?,?,?,?,?,?,12000,'VND',30,?,?,?)
+			""", membershipId, member, order, offer, planCode, offerName, status,
+			java.sql.Timestamp.from(startsAt), java.sql.Timestamp.from(endsAt));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions cash(Account actor, String memberCode, UUID offer)

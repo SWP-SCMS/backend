@@ -16,4 +16,9 @@ public interface MembershipRepository extends JpaRepository<Membership, UUID> {
 	@Query(value = "update memberships set status = 'EXPIRED' where status = 'ACTIVE' and ends_at <= :now",
 		nativeQuery = true)
 	int expireDue(@Param("now") Instant now);
+
+	@Modifying
+	@Query(value = "update memberships set status = 'EXPIRED' where member_account_id = :memberId and status = 'ACTIVE' and ends_at <= :now",
+		nativeQuery = true)
+	int expireDueForMember(@Param("memberId") UUID memberId, @Param("now") Instant now);
 }

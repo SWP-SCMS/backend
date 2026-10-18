@@ -39,7 +39,8 @@ class PaymentServiceMembershipHistoryTests {
 		JdbcTemplate db = mock(JdbcTemplate.class);
 		AccountRepository accounts = mock(AccountRepository.class);
 		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
-			mock(PaymentFulfillmentService.class), Clock.systemUTC());
+			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
+			mock(MembershipRepository.class), Clock.systemUTC());
 		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE))
 			.thenReturn(true);
 

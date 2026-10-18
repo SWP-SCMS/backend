@@ -149,7 +149,9 @@ class PaymentServiceLockingTests {
 
 	private PaymentService service(JdbcTemplate db, AccountRepository accounts,
 			PaymentFulfillmentService fulfillment) {
-		return new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment, Clock.systemUTC());
+		return new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
+			mock(com.scms.backend.account.MemberProfileRepository.class), mock(MembershipRepository.class),
+			Clock.systemUTC());
 	}
 
 	private Account account(UUID id, AccountRole role, AccountStatus status) {
