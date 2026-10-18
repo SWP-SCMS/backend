@@ -280,6 +280,53 @@ class RoomSuspensionServiceTests {
 	}
 
 	@Test
+	void roomImpactRescheduleDurationMustBeBetweenThirtyAndNinetyMinutes() {
+		UUID managerId = activeManager();
+		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
+		ClassSession session = org.mockito.Mockito.mock(ClassSession.class);
+		UUID sessionId = UUID.randomUUID();
+		Instant suspensionStart = now.plusSeconds(3600);
+		Instant suspensionEnd = now.plusSeconds(7200);
+		Instant newStart = now.plusSeconds(9000);
+		when(session.getId()).thenReturn(sessionId);
+		when(session.getStatus()).thenReturn(ClassSessionStatus.SCHEDULED);
+		when(session.getRoom()).thenReturn(room);
+		when(rooms.findByIdForUpdate(room.getId())).thenReturn(Optional.of(room));
+		when(sessions.findRoomImpactsForUpdate(room.getId(), suspensionStart, suspensionEnd, false, now))
+			.thenReturn(java.util.List.of(session));
+		when(rooms.existsSuspensionOverlap(eq(room.getId()), any(), any())).thenReturn(false);
+		when(suspensions.existsOverlap(room.getId(), suspensionStart, suspensionEnd)).thenReturn(false);
+		when(suspensions.saveAndFlush(any(RoomSuspension.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThatThrownBy(() -> service.applyImpact(managerId, room.getId(), new RoomImpactPreviewRequest(
+			suspensionStart, suspensionEnd, false, "Repair", List.of(new RoomSessionResolutionRequest(sessionId,
+				"RESCHEDULE", null, newStart, newStart.plusSeconds(29 * 60 + 59), "Move later")))))
+			.isInstanceOf(RoomException.class)
+			.satisfies(error -> {
+				RoomException exception = (RoomException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("resolutions.endTime");
+			});
+
+		service.applyImpact(managerId, room.getId(), new RoomImpactPreviewRequest(suspensionStart, suspensionEnd,
+			false, "Repair", List.of(new RoomSessionResolutionRequest(sessionId, "RESCHEDULE", null, newStart,
+				newStart.plusSeconds(30 * 60), "Move later"))));
+		service.applyImpact(managerId, room.getId(), new RoomImpactPreviewRequest(suspensionStart, suspensionEnd,
+			false, "Repair", List.of(new RoomSessionResolutionRequest(sessionId, "RESCHEDULE", null, newStart,
+				newStart.plusSeconds(90 * 60), "Move later"))));
+
+		assertThatThrownBy(() -> service.applyImpact(managerId, room.getId(), new RoomImpactPreviewRequest(
+			suspensionStart, suspensionEnd, false, "Repair", List.of(new RoomSessionResolutionRequest(sessionId,
+				"RESCHEDULE", null, newStart, newStart.plusSeconds(90 * 60).plusMillis(1), "Move later")))))
+			.isInstanceOf(RoomException.class)
+			.satisfies(error -> {
+				RoomException exception = (RoomException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("resolutions.endTime");
+			});
+	}
+
+	@Test
 	void oppositeDirectionMovesRendezvousBeforeRoomLocksAndCompleteWithinTimeout() throws Exception {
 		UUID managerId = activeManager();
 		UUID roomAId = UUID.fromString("00000000-0000-0000-0000-000000000001");

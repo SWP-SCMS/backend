@@ -167,6 +167,44 @@ class RecurringScheduleServiceTests {
 		verify(schedules, never()).saveAndFlush(any());
 	}
 
+	@Test
+	void recurringSessionDurationMustBeBetweenThirtyAndNinetyMinutes() {
+		UUID managerId = manager(AccountStatus.ACTIVE);
+		SportClass sportClass = sportClass(DisciplineStatus.ACTIVE, SportClassStatus.ACTIVE);
+		Room room = room(RoomStatus.ACTIVE, 20);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		stubActiveResources(sportClass, room, coach);
+		when(schedules.saveAndFlush(any(RecurringSchedule.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+		when(sessions.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service.create(managerId, new RecurringScheduleCreateRequest(sportClass.getId(), coach.getId(),
+			room.getId(), LocalDate.of(2026, 10, 6), List.of(2), LocalTime.of(9, 0), LocalTime.of(9, 30), 10)))
+			.isNotNull();
+		assertThat(service.create(managerId, new RecurringScheduleCreateRequest(sportClass.getId(), coach.getId(),
+			room.getId(), LocalDate.of(2026, 10, 6), List.of(4), LocalTime.of(9, 0), LocalTime.of(10, 30), 10)))
+			.isNotNull();
+
+		assertThatThrownBy(() -> service.create(managerId, new RecurringScheduleCreateRequest(sportClass.getId(),
+			coach.getId(), room.getId(), LocalDate.of(2026, 10, 6), List.of(6), LocalTime.of(9, 0),
+			LocalTime.of(9, 29, 59), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.satisfies(error -> {
+				RecurringScheduleException exception = (RecurringScheduleException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("endTime");
+			});
+		assertThatThrownBy(() -> service.create(managerId, new RecurringScheduleCreateRequest(sportClass.getId(),
+			coach.getId(), room.getId(), LocalDate.of(2026, 10, 6), List.of(7), LocalTime.of(9, 0),
+			LocalTime.of(10, 30, 0, 1_000_000), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.satisfies(error -> {
+				RecurringScheduleException exception = (RecurringScheduleException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("endTime");
+			});
+	}
+
 	private void stubActiveResources(SportClass sportClass, Room room, Account coach) {
 		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
 		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));

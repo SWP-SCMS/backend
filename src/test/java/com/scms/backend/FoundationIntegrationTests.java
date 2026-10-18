@@ -91,8 +91,18 @@ class FoundationIntegrationTests {
 		assertThat(jdbcTemplate.queryForList(
 			"select version from flyway_schema_history where success order by installed_rank", String.class))
 			.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
-				"14", "15", "16", "17");
+				"14", "15", "16", "17", "18");
 		assertThat(jdbcTemplate.queryForObject("show timezone", String.class)).isIn("UTC", "Etc/UTC");
+	}
+
+	@Test
+	void sessionDurationMinimumConstraintsRemainNotValidForHistoricalRows() {
+		assertThat(jdbcTemplate.queryForObject(
+			"select convalidated from pg_constraint where conname = ?", Boolean.class,
+			"chk_class_sessions_min_duration")).isFalse();
+		assertThat(jdbcTemplate.queryForObject(
+			"select convalidated from pg_constraint where conname = ?", Boolean.class,
+			"chk_recurring_schedules_min_duration")).isFalse();
 	}
 
 	@Test

@@ -102,6 +102,37 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void sessionDurationMustBeBetweenThirtyAndNinetyMinutes() {
+		Fixture fixture = activeFixture(20);
+		when(sessions.existsOverlap(any(), any(), any(), any())).thenReturn(false);
+		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service.create(fixture.managerId(), request(fixture.sportClass().getId(), fixture.coach().getId(),
+			fixture.room().getId(), now.plusSeconds(3600), now.plusSeconds(3600 + 30 * 60), 10))).isNotNull();
+		assertThat(service.create(fixture.managerId(), request(fixture.sportClass().getId(), fixture.coach().getId(),
+			fixture.room().getId(), now.plusSeconds(7200), now.plusSeconds(7200 + 90 * 60), 10))).isNotNull();
+
+		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), now.plusSeconds(10800),
+			now.plusSeconds(10800 + 29 * 60 + 59), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.satisfies(error -> {
+				RecurringScheduleException exception = (RecurringScheduleException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("endTime");
+			});
+		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), now.plusSeconds(14400),
+			now.plusSeconds(14400 + 90 * 60).plusMillis(1), 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.satisfies(error -> {
+				RecurringScheduleException exception = (RecurringScheduleException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("endTime");
+			});
+	}
+
+	@Test
 	void capacityCannotExceedActiveRoom() {
 		Fixture fixture = activeFixture(10);
 

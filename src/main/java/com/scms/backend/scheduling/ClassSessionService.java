@@ -207,6 +207,9 @@ public class ClassSessionService {
 		if (endTime == null || !endTime.isAfter(startTime)) {
 			throw RecurringScheduleException.validation("endTime", "must be later than startTime");
 		}
+		if (Duration.between(startTime, endTime).compareTo(Duration.ofMinutes(30)) < 0) {
+			throw RecurringScheduleException.validation("endTime", "a Session cannot be shorter than 30 minutes");
+		}
 		if (Duration.between(startTime, endTime).compareTo(Duration.ofMinutes(90)) > 0) {
 			throw RecurringScheduleException.validation("endTime", "a Session cannot be longer than 90 minutes");
 		}

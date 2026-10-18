@@ -99,6 +99,9 @@ public class RecurringScheduleService {
 		if (request.endTime() == null || !request.endTime().isAfter(request.startTime())) {
 			throw RecurringScheduleException.validation("endTime", "must be later than startTime");
 		}
+		if (Duration.between(request.startTime(), request.endTime()).compareTo(Duration.ofMinutes(30)) < 0) {
+			throw RecurringScheduleException.validation("endTime", "a Session cannot be shorter than 30 minutes");
+		}
 		if (Duration.between(request.startTime(), request.endTime()).compareTo(Duration.ofMinutes(90)) > 0) {
 			throw RecurringScheduleException.validation("endTime", "a Session cannot be longer than 90 minutes");
 		}
