@@ -83,7 +83,7 @@ class CenterVisitIntegrationTests {
 		checkIn(receptionist, request(withoutCenterAccess))
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("CENTER_VISIT_MEMBERSHIP_REQUIRED"))
-			.andExpect(jsonPath("$.message").value(
+			.andExpect(jsonPath("$.detail").value(
 				"An active membership with the CENTER_ACCESS benefit is required for center check-in."));
 
 		MemberProfile basic = member(AccountStatus.ACTIVE, "photo");
