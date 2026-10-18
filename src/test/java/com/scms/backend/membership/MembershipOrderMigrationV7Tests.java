@@ -54,7 +54,7 @@ class MembershipOrderMigrationV7Tests {
 
 		try (Connection connection = connection()) {
 			assertThat(versions(connection)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
-				"14", "15", "16", "17");
+				"14", "15", "16", "17", "18");
 			assertThat(queryTimestamp(connection,
 				"select expires_at from membership_orders where id = ?", oldOrderId)).isEqualTo(oldDeadline);
 			assertThat(queryString(connection, """
