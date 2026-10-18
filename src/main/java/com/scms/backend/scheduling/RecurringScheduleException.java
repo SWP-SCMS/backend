@@ -42,6 +42,11 @@ public class RecurringScheduleException extends RuntimeException {
 			"An inactive " + resource + " cannot be scheduled.");
 	}
 
+	static RecurringScheduleException legacyYoga() {
+		return new RecurringScheduleException(HttpStatus.BAD_REQUEST, "LEGACY_YOGA_UNSUPPORTED", "classId",
+			"Legacy Yoga classes are retained for history and cannot receive new Sessions.");
+	}
+
 	static RecurringScheduleException coachInvalid() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "COACH_NOT_ACTIVE", null,
 			"The selected account is not an active Coach.");

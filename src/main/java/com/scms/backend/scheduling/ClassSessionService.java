@@ -245,6 +245,10 @@ public class ClassSessionService {
 				|| sportClass.getDiscipline().getStatus() != DisciplineStatus.ACTIVE) {
 			throw RecurringScheduleException.inactive("class");
 		}
+		if (sportClass.getClassType() == SportClassType.YOGA
+				|| "yoga".equalsIgnoreCase(sportClass.getDiscipline().getName().trim())) {
+			throw RecurringScheduleException.legacyYoga();
+		}
 		Optional<Account> coachResult = accounts.findByIdForUpdate(coachId);
 		if (coachResult == null || coachResult.isEmpty()) coachResult = accounts.findById(coachId);
 		Account coach = coachResult

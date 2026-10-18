@@ -205,6 +205,25 @@ class RecurringScheduleServiceTests {
 			});
 	}
 
+	@Test
+	void recurringScheduleRejectsLegacyYogaClass() {
+		UUID managerId = manager(AccountStatus.ACTIVE);
+		Discipline yoga = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
+		SportClass legacyYoga = new SportClass(UUID.randomUUID(), yoga, "Legacy Flow", SportClassType.YOGA,
+			null, SportClassStatus.ACTIVE);
+		Room room = room(RoomStatus.ACTIVE, 20);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		when(classes.findById(legacyYoga.getId())).thenReturn(Optional.of(legacyYoga));
+
+		assertThatThrownBy(() -> service.create(managerId, request(legacyYoga, room, coach,
+			LocalDate.of(2026, 10, 6), List.of(2))))
+			.isInstanceOfSatisfying(RecurringScheduleException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("LEGACY_YOGA_UNSUPPORTED");
+				assertThat(exception.getField()).isEqualTo("classId");
+			});
+		verify(schedules, never()).saveAndFlush(any(RecurringSchedule.class));
+	}
+
 	private void stubActiveResources(SportClass sportClass, Room room, Account coach) {
 		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
 		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
@@ -225,8 +244,8 @@ class RecurringScheduleServiceTests {
 	}
 
 	private SportClass sportClass(DisciplineStatus disciplineStatus, SportClassStatus classStatus) {
-		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, disciplineStatus);
-		return new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA, null, classStatus);
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, disciplineStatus);
+		return new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.GROUP, null, classStatus);
 	}
 
 	private Room room(RoomStatus status, int capacity) {

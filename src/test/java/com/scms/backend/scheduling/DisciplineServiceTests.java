@@ -47,29 +47,14 @@ class DisciplineServiceTests {
 	private DisciplineService service;
 
 	@Test
-	void activeManagerCreatesNormalizedActiveDiscipline() {
+	void activeManagerRejectsLegacyYogaDisciplineCreation() {
 		UUID managerId = activeManager();
-		when(disciplines.existsByName("Yoga")).thenReturn(false);
-		when(disciplines.saveAndFlush(any(Discipline.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		DisciplineResponse result = service.create(managerId,
-			new DisciplineCreateRequest("  Yoga  ", "  Mobility and balance  "));
-
-		assertThat(result.name()).isEqualTo("Yoga");
-		assertThat(result.description()).isEqualTo("Mobility and balance");
-		assertThat(result.status()).isEqualTo(DisciplineStatus.ACTIVE);
-		ArgumentCaptor<Discipline> saved = ArgumentCaptor.forClass(Discipline.class);
-		verify(disciplines).saveAndFlush(saved.capture());
-		assertThat(saved.getValue().getId()).isNotNull();
-		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
-		verify(audits, times(1)).save(audit.capture());
-		assertThat(audit.getValue().getAction()).isEqualTo("DISCIPLINE_CREATED");
-		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
-		assertThat(audit.getValue().getTargetType()).isEqualTo("DISCIPLINE");
-		assertThat(audit.getValue().getTargetId()).isEqualTo(result.id());
-		assertThat(audit.getValue().getBeforeData()).isNull();
-		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Yoga", "description", "Mobility and balance", "status", "ACTIVE"));
+		assertThatThrownBy(() -> service.create(managerId,
+			new DisciplineCreateRequest("  Yoga  ", "  Mobility and balance  ")))
+			.isInstanceOf(DisciplineValidationException.class)
+			.hasMessage("Yoga is retained for legacy history and cannot be created.");
+		verify(disciplines, never()).saveAndFlush(any(Discipline.class));
 	}
 
 	@Test
@@ -84,9 +69,9 @@ class DisciplineServiceTests {
 	@Test
 	void createAuditIncludesNullDescription() {
 		UUID managerId = activeManager();
-		when(disciplines.existsByName("Yoga")).thenReturn(false);
+		when(disciplines.existsByName("Pilates")).thenReturn(false);
 
-		service.create(managerId, new DisciplineCreateRequest("Yoga", null));
+		service.create(managerId, new DisciplineCreateRequest("Pilates", null));
 
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
@@ -96,9 +81,9 @@ class DisciplineServiceTests {
 	@Test
 	void createRejectsDuplicateNormalizedName() {
 		UUID managerId = activeManager();
-		when(disciplines.existsByName("Yoga")).thenReturn(true);
+		when(disciplines.existsByName("Pilates")).thenReturn(true);
 
-		assertThatThrownBy(() -> service.create(managerId, new DisciplineCreateRequest("Yoga", null)))
+		assertThatThrownBy(() -> service.create(managerId, new DisciplineCreateRequest("Pilates", null)))
 			.isInstanceOf(DuplicateDisciplineException.class);
 	}
 
@@ -215,6 +200,18 @@ class DisciplineServiceTests {
 
 		assertThat(result).isEqualTo(DisciplineResponse.from(discipline));
 		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void patchRejectsChangingDisciplineToLegacyYoga() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", "Mobility", DisciplineStatus.ACTIVE);
+		when(disciplines.findById(discipline.getId())).thenReturn(Optional.of(discipline));
+
+		assertThatThrownBy(() -> service.update(managerId, discipline.getId(),
+			new DisciplinePatchRequest("Yoga", null, null)))
+			.isInstanceOf(DisciplineValidationException.class)
+			.hasMessage("Yoga is retained for legacy history and cannot be assigned to a new discipline.");
 	}
 
 	@Test

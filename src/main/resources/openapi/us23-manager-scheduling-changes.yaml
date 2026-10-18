@@ -300,7 +300,7 @@ components:
     SportClassResponse:
       type: object
       properties:
-        classType: {type: string, enum: [GROUP, PT_1_1, YOGA], description: YOGA is retained for legacy reads.}
+        classType: {type: string, enum: [GROUP, PT_1_1, YOGA], description: YOGA is legacy read/history data only and is not accepted for new or updated classes.}
     SchedulingProblem:
       type: object
       properties:

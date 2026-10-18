@@ -45,10 +45,10 @@ class ClassSessionAssignmentIntegrationTests {
 		Account coachA = saveAccount(AccountRole.COACH, "Coach A");
 		Account coachB = saveAccount(AccountRole.COACH, "Coach B");
 		Account coachC = saveAccount(AccountRole.COACH, "Coach C");
-		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Yoga", null,
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Pilates", null,
 			DisciplineStatus.ACTIVE));
-		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Vinyasa",
-			SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Reformer",
+			SportClassType.GROUP, null, SportClassStatus.ACTIVE));
 		Room roomA = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE));
 		Room roomB = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio B", 20, RoomStatus.ACTIVE));
 		Room roomC = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio C", 20, RoomStatus.ACTIVE));
@@ -105,10 +105,10 @@ class ClassSessionAssignmentIntegrationTests {
 		Account manager = saveAccount(AccountRole.MANAGER, "Rollback manager");
 		Account coachA = saveAccount(AccountRole.COACH, "Rollback coach A");
 		Account coachB = saveAccount(AccountRole.COACH, "Rollback coach B");
-		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Rollback yoga", null,
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Rollback Pilates", null,
 			DisciplineStatus.ACTIVE));
 		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
-			"Rollback class", SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+			"Rollback class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
 		Room roomA = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Rollback studio A", 20, RoomStatus.ACTIVE));
 		Room roomB = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Rollback studio B", 20, RoomStatus.ACTIVE));
 		ClassSession target = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coachA,

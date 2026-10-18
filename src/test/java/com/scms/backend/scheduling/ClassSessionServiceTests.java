@@ -133,6 +133,23 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void createRejectsLegacyYogaClassWhileHistoryRemainsReadable() {
+		UUID managerId = activeManager();
+		Discipline yoga = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
+		SportClass legacyYoga = new SportClass(UUID.randomUUID(), yoga, "Legacy Flow", SportClassType.YOGA,
+			null, SportClassStatus.ACTIVE);
+		when(classes.findById(legacyYoga.getId())).thenReturn(Optional.of(legacyYoga));
+
+		assertThatThrownBy(() -> service.create(managerId, request(legacyYoga.getId(),
+			UUID.randomUUID(), UUID.randomUUID(), now.plusSeconds(3600), now.plusSeconds(7200), 10)))
+			.isInstanceOfSatisfying(RecurringScheduleException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("LEGACY_YOGA_UNSUPPORTED");
+				assertThat(exception.getField()).isEqualTo("classId");
+			});
+		verify(sessions, never()).saveAndFlush(any(ClassSession.class));
+	}
+
+	@Test
 	void capacityCannotExceedActiveRoom() {
 		Fixture fixture = activeFixture(10);
 
@@ -183,8 +200,8 @@ class ClassSessionServiceTests {
 
 	private Fixture activeFixture(int roomCapacity) {
 		UUID managerId = activeManager();
-		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
-		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.GROUP,
 			null, SportClassStatus.ACTIVE);
 		Room room = new Room(UUID.randomUUID(), "Studio", roomCapacity, RoomStatus.ACTIVE);
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
