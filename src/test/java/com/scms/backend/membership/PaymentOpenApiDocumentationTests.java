@@ -6,7 +6,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.scms.backend.config.OpenApiConfiguration;
+import java.io.InputStream;
 import java.util.stream.StreamSupport;
 
 import org.junit.jupiter.api.Test;
@@ -67,6 +69,24 @@ class PaymentOpenApiDocumentationTests {
 		assertThat(properties.has("credential")).isFalse();
 	}
 
+	@Test
+	void staticStaffMembershipHistoryContractMatchesTheDedicatedResponse() throws Exception {
+		try (InputStream stream = getClass().getResourceAsStream("/openapi/api-01-staff-membership-history.yaml")) {
+			assertThat(stream).isNotNull();
+			JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(stream);
+			assertStaffMembershipOperation(document, "/reception/members/{memberCode}/memberships", "memberCode");
+			assertStaffMembershipOperation(document, "/manager/members/{memberAccountId}/memberships", "memberAccountId");
+			JsonNode badRequest = document.at("/paths/~1manager~1members~1{memberAccountId}~1memberships/get/responses/400");
+			assertThat(badRequest.path("$ref").asText()).isEqualTo("#/components/responses/BadRequest");
+			assertThat(document.at("/components/responses/BadRequest/content/application~1problem+json/schema/$ref")
+				.asText()).isEqualTo("#/components/schemas/ApiProblem");
+			JsonNode schema = document.at("/components/schemas/StaffMembershipResponse");
+			assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
+			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+		}
+	}
+
 	private void assertParameter(JsonNode operation, String name, String example) {
 		JsonNode parameter = StreamSupport.stream(operation.path("parameters").spliterator(), false)
 			.filter(node -> node.path("name").asText().equals(name))
@@ -74,5 +94,15 @@ class PaymentOpenApiDocumentationTests {
 			.orElseThrow();
 		assertThat(parameter.path("description").asText()).contains("UTC", "half-open");
 		assertThat(parameter.path("example").asText()).isEqualTo(example);
+	}
+
+	private void assertStaffMembershipOperation(JsonNode document, String path, String parameterName) {
+		JsonNode operation = document.path("paths").path(path).path("get");
+		assertThat(operation.path("parameters").findValuesAsText("name")).contains(parameterName);
+		String responseReference = operation.at("/responses/200/$ref").asText();
+		JsonNode response = document.at(responseReference.substring(1));
+		assertThat(response.at("/content/application~1json/schema/items/$ref").asText())
+			.isEqualTo("#/components/schemas/StaffMembershipResponse");
+		assertThat(operation.path("responses").has("404")).isTrue();
 	}
 }

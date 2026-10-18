@@ -8,6 +8,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -87,6 +88,20 @@ class PaymentController {
 	@GetMapping("/members/me/memberships")
 	ResponseEntity<List<MembershipHistoryResponse>> history(@AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.ok(service.memberHistory(id(jwt)));
+	}
+
+	@GetMapping(value = "/reception/members/{memberCode}/memberships", produces = MediaType.APPLICATION_JSON_VALUE)
+	@Operation(description = "Requires an active RECEPTIONIST. Returns the ACTIVE or SUSPENDED Member's membership snapshots with UTC instants.")
+	ResponseEntity<List<StaffMembershipResponse>> receptionMembershipHistory(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable String memberCode) {
+		return ResponseEntity.ok(service.receptionMembershipHistory(id(jwt), memberCode));
+	}
+
+	@GetMapping(value = "/manager/members/{memberAccountId}/memberships", produces = MediaType.APPLICATION_JSON_VALUE)
+	@Operation(description = "Requires an active MANAGER. Returns the ACTIVE or SUSPENDED Member's membership snapshots with UTC instants.")
+	ResponseEntity<List<StaffMembershipResponse>> managerMembershipHistory(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberAccountId) {
+		return ResponseEntity.ok(service.managerMembershipHistory(id(jwt), memberAccountId));
 	}
 
 	@GetMapping("/manager/reports/membership-revenue")

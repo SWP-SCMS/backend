@@ -82,6 +82,8 @@ class GeneratedOpenApiTests {
 		"GET /receipts/{receiptId}",
 		"GET /payments/{paymentId}/result",
 		"GET /members/me/memberships",
+		"GET /reception/members/{memberCode}/memberships",
+		"GET /manager/members/{memberAccountId}/memberships",
 		"GET /manager/reports/membership-revenue",
 		"GET /manager/dashboard",
 		"GET /manager/reports/members",
@@ -309,6 +311,31 @@ class GeneratedOpenApiTests {
 			.isEqualTo("#/components/responses/Conflict");
 		assertThat(document.at("/components/schemas/ApiProblem/properties/affectedSessions/items/properties/sessionId/format")
 			.asText()).isEqualTo("uuid");
+	}
+
+	@Test
+	void generatedContractDocumentsStaffMembershipHistory() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String path : List.of(
+			"/reception/members/{memberCode}/memberships",
+			"/manager/members/{memberAccountId}/memberships")) {
+			JsonNode operation = operation(document, path, "get");
+			assertThat(operation.path("description").asText())
+				.contains("ACTIVE", "SUSPENDED", "snapshot", "UTC");
+			JsonNode content = response(document, path, "get", "200").path("content");
+			assertThat(content.properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.containsExactly("application/json");
+			JsonNode item = content.path("application/json").path("schema").path("items");
+			assertThat(item.path("$ref").asText()).isEqualTo("#/components/schemas/StaffMembershipResponse");
+		}
+		JsonNode schema = document.at("/components/schemas/StaffMembershipResponse");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+		assertThat(schema.path("required").toString())
+			.contains("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
+		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
+		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"ACTIVE\",\"EXPIRED\"]");
 	}
 
 	@Test

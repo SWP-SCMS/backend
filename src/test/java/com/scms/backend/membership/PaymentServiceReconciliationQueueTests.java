@@ -34,7 +34,8 @@ class PaymentServiceReconciliationQueueTests {
 	private final JdbcTemplate db = mock(JdbcTemplate.class);
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
-		mock(PaymentFulfillmentService.class), Clock.fixed(NOW, ZoneOffset.UTC));
+		mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
+		mock(MembershipRepository.class), Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@BeforeEach
 	void allowManager() {

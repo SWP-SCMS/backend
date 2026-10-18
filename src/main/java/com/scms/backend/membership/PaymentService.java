@@ -14,6 +14,8 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
@@ -29,11 +31,15 @@ class PaymentService {
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final PaymentFulfillmentService fulfillment;
+	private final MemberProfileRepository profiles;
+	private final MembershipRepository memberships;
 	private final Clock clock;
 
 	PaymentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits,
-			PaymentFulfillmentService fulfillment, Clock clock) {
-		this.db=db; this.accounts=accounts; this.audits=audits; this.fulfillment=fulfillment; this.clock=clock;
+			PaymentFulfillmentService fulfillment, MemberProfileRepository profiles,
+			MembershipRepository memberships, Clock clock) {
+		this.db=db; this.accounts=accounts; this.audits=audits; this.fulfillment=fulfillment;
+		this.profiles=profiles; this.memberships=memberships; this.clock=clock;
 	}
 
 	@Transactional
@@ -286,6 +292,39 @@ class PaymentService {
 				rs.getString("currency_code_snapshot").trim(),rs.getInt("duration_days_snapshot"),
 				rs.getString("status"),rs.getTimestamp("starts_at").toInstant(),
 				rs.getTimestamp("ends_at").toInstant()),actor);
+	}
+
+	@Transactional
+	List<StaffMembershipResponse> receptionMembershipHistory(UUID actor, String memberCode) {
+		ensure(actor, AccountRole.RECEPTIONIST);
+		UUID memberId = profiles.findVisibleMemberByCode(memberCode.trim(), AccountRole.MEMBER,
+			List.of(AccountStatus.ACTIVE, AccountStatus.SUSPENDED))
+			.map(MemberProfile::getAccountId)
+			.orElseThrow(() -> PaymentException.notFound("Member was not found"));
+		return staffMembershipHistory(memberId);
+	}
+
+	@Transactional
+	List<StaffMembershipResponse> managerMembershipHistory(UUID actor, UUID memberAccountId) {
+		ensure(actor, AccountRole.MANAGER);
+		UUID memberId = accounts.findById(memberAccountId)
+			.filter(account -> account.getRole() == AccountRole.MEMBER)
+			.filter(account -> account.getStatus() == AccountStatus.ACTIVE
+				|| account.getStatus() == AccountStatus.SUSPENDED)
+			.map(Account::getId)
+			.orElseThrow(() -> PaymentException.notFound("Member was not found"));
+		return staffMembershipHistory(memberId);
+	}
+
+	private List<StaffMembershipResponse> staffMembershipHistory(UUID memberId) {
+		memberships.expireDueForMember(memberId, clock.instant());
+		return db.query("""
+			select id,plan_code_snapshot,offer_name_snapshot,status,starts_at,ends_at
+			from memberships where member_account_id=? order by starts_at desc,id desc
+			""", (rs, row) -> new StaffMembershipResponse(rs.getObject("id", UUID.class),
+				rs.getString("plan_code_snapshot"), rs.getString("offer_name_snapshot"),
+				rs.getString("status"), rs.getTimestamp("starts_at").toInstant(),
+				rs.getTimestamp("ends_at").toInstant()), memberId);
 	}
 
 	@Transactional(readOnly=true)

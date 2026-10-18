@@ -125,6 +125,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.PATCH, "/members/me/bookings/*/cancel").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/bookings").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/bookings").hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/reception/members/*/memberships").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/membership-offers/**").hasRole("MANAGER")
 				.requestMatchers("/reception/membership-orders/**").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders/*/payments/sepay",

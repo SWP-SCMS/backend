@@ -105,10 +105,32 @@ class SecurityProblemDetailTests {
 			.andExpect(status().isOk());
 	}
 
+	@Test
+	void staffMembershipHistoryRoutesAreRoleScoped() throws Exception {
+		mockMvc.perform(get("/reception/members/MB-100001/memberships")
+			.with(user("receptionist").roles("RECEPTIONIST")))
+			.andExpect(status().isOk());
+		mockMvc.perform(get("/manager/members/00000000-0000-0000-0000-000000000001/memberships")
+			.with(user("manager").roles("MANAGER")))
+			.andExpect(status().isOk());
+
+		for (String role : new String[] { "MEMBER", "COACH", "MANAGER" }) {
+			mockMvc.perform(get("/reception/members/MB-100001/memberships")
+				.with(user(role.toLowerCase()).roles(role)))
+				.andExpect(status().isForbidden());
+		}
+		for (String role : new String[] { "MEMBER", "COACH", "RECEPTIONIST" }) {
+			mockMvc.perform(get("/manager/members/00000000-0000-0000-0000-000000000001/memberships")
+				.with(user(role.toLowerCase()).roles(role)))
+				.andExpect(status().isForbidden());
+		}
+	}
+
 	@RestController
 	static class TestController {
 		@GetMapping({ "/protected", "/manager/members", "/manager/audit-events", "/manager/dashboard",
-			"/membership-offers" })
+			"/membership-offers", "/reception/members/{memberCode}/memberships",
+			"/manager/members/{memberAccountId}/memberships" })
 		void protectedResource() {
 		}
 
