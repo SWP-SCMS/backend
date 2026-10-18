@@ -13,7 +13,7 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select offer from MembershipOffer offer
 		join fetch offer.plan plan
-		where offer.status = :status
+		where offer.status = :status and plan.status = 'ACTIVE'
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
 	List<MembershipOffer> findAllByStatus(@Param("status") MembershipOfferStatus status);
@@ -21,7 +21,7 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select offer from MembershipOffer offer
 		join fetch offer.plan plan
-		where offer.status = :status and plan.planCode = :planCode
+		where offer.status = :status and plan.status = 'ACTIVE' and plan.planCode = :planCode
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
 	List<MembershipOffer> findAllByStatusAndPlanCode(@Param("status") MembershipOfferStatus status,
@@ -33,5 +33,13 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 		where offer.id = :offerId and offer.status = :status
 		""")
 	Optional<MembershipOffer> findByIdAndStatus(@Param("offerId") UUID offerId,
+		@Param("status") MembershipOfferStatus status);
+
+	@Query("""
+		select offer from MembershipOffer offer
+		join fetch offer.plan plan
+		where offer.id = :offerId and offer.status = :status and plan.status = 'ACTIVE'
+		""")
+	Optional<MembershipOffer> findByIdAndStatusAndActivePlan(@Param("offerId") UUID offerId,
 		@Param("status") MembershipOfferStatus status);
 }

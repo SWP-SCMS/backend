@@ -111,6 +111,48 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void managerCreatesOfferForActiveDynamicPlanAfterNormalizingCode() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		insertPlan(" family ", "Family", "ACTIVE", true);
+
+		mockMvc.perform(post("/api/v1/manager/membership-offers").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(manager)).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"planCode\":\" family \",\"name\":\"Family Offer\",\"description\":\"Family access\","
+				+ "\"priceAmount\":700000,\"durationDays\":30}"))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.planCode").value("FAMILY"));
+	}
+
+	@Test
+	void managerRejectsOfferForUnknownPlanWithOfferValidationContract() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+
+		createOffer(manager, "UNKNOWN")
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_VALIDATION_ERROR"));
+	}
+
+	@Test
+	void managerRejectsOfferForInactivePlanWithOfferValidationContract() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		insertPlan("INACTIVE_FAMILY", "Inactive Family", "INACTIVE", true);
+
+		createOffer(manager, "INACTIVE_FAMILY")
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_VALIDATION_ERROR"));
+	}
+
+	@Test
+	void managerRejectsOfferForBenefitlessPlanWithOfferValidationContract() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		insertPlan("NO_BENEFIT", "No Benefit", "ACTIVE", false);
+
+		createOffer(manager, "NO_BENEFIT")
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_VALIDATION_ERROR"));
+	}
+
+	@Test
 	void cashConfirmationIsAtomicAndDoubleClickCannotFulfillTwice() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile member = member();
@@ -791,6 +833,25 @@ class PaymentFlowIntegrationTests {
 			values(?,?,?,'Payment test offer',?,'VND',30,'ACTIVE',?)
 			""", id, plan, (testData ? "QA Offer " : "Offer ") + id, price, creator.getId());
 		return id;
+	}
+
+	private void insertPlan(String planCode, String displayName, String status, boolean withBenefit) {
+		db.update("""
+			insert into membership_plans(plan_code, display_name, supports_booking, supports_personal_coaching, status)
+			values (?, ?, false, false, ?)
+			""", planCode.trim().toUpperCase(), displayName, status);
+		if (withBenefit) {
+			db.update("insert into membership_plan_benefits(plan_code, benefit_code) values (?, 'CENTER_ACCESS')",
+				planCode.trim().toUpperCase());
+		}
+	}
+
+	private org.springframework.test.web.servlet.ResultActions createOffer(Account manager, String planCode)
+			throws Exception {
+		return mockMvc.perform(post("/api/v1/manager/membership-offers").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(manager)).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"planCode\":\"" + planCode + "\",\"name\":\"Offer\",\"description\":\"Access\","
+				+ "\"priceAmount\":700000,\"durationDays\":30}"));
 	}
 
 	private UUID order(UUID member, UUID actor, UUID offer, long amount, boolean testData, Instant expiresAt) {

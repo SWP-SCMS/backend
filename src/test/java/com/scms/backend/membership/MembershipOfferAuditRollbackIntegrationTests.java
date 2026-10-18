@@ -49,7 +49,7 @@ class MembershipOfferAuditRollbackIntegrationTests {
 
 		try {
 			assertThatThrownBy(() -> service.create(manager.getId(), new MembershipOfferAdminRequest(
-				MembershipPlanCode.BASIC, "Rollback offer", "Must roll back", BigInteger.valueOf(500000), 30,
+				MembershipPlanCode.BASIC.name(), "Rollback offer", "Must roll back", BigInteger.valueOf(500000), 30,
 				MembershipOfferStatus.ACTIVE)))
 				.rootCause().hasMessageContaining(constraint);
 			assertThat(offers.count()).isEqualTo(before);

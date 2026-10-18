@@ -3,6 +3,6 @@ package com.scms.backend.membership;
 public class InvalidPlanCodeException extends RuntimeException {
 
 	public InvalidPlanCodeException() {
-		super("planCode must be exactly BASIC or PLUS");
+		super("planCode must be uppercase and contain only letters, digits, or underscores");
 	}
 }

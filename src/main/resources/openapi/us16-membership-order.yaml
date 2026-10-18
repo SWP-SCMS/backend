@@ -235,7 +235,8 @@ components:
           description: Stored Order snapshot, not the Offer's current name.
         planCode:
           type: string
-          enum: [BASIC, PLUS]
+          pattern: '^[A-Z][A-Z0-9_]{1,49}$'
+          maxLength: 50
         priceAmount:
           type: integer
           minimum: 1

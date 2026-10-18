@@ -36,12 +36,12 @@ class MembershipOfferAdminServiceTests {
 	@Test
 	void createWritesCompleteAuditEvent() {
 		UUID managerId = activeManager();
-		MembershipPlan plan = plan(MembershipPlanCode.PLUS);
-		when(plans.findById(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByIdWithBenefits(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
 		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		MembershipOfferAdminResponse result = service.create(managerId, new MembershipOfferAdminRequest(
-			MembershipPlanCode.PLUS, " Plus 30 ", " Full access ", BigInteger.valueOf(750000), 30, null));
+			MembershipPlanCode.PLUS.name(), " Plus 30 ", " Full access ", BigInteger.valueOf(750000), 30, null));
 
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits, times(1)).save(audit.capture());
@@ -108,6 +108,15 @@ class MembershipOfferAdminServiceTests {
 	private MembershipPlan plan(MembershipPlanCode code) {
 		MembershipPlan plan = mock(MembershipPlan.class);
 		when(plan.getPlanCode()).thenReturn(code.name());
+		return plan;
+	}
+
+	private MembershipPlan eligiblePlan(MembershipPlanCode code) {
+		MembershipPlan plan = plan(code);
+		when(plan.getStatus()).thenReturn(MembershipPlanStatus.ACTIVE);
+		MembershipBenefit benefit = mock(MembershipBenefit.class);
+		when(benefit.getStatus()).thenReturn(MembershipBenefitStatus.ACTIVE);
+		when(plan.getBenefits()).thenReturn(java.util.Set.of(benefit));
 		return plan;
 	}
 }

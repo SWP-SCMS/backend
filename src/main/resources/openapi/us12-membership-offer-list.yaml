@@ -13,7 +13,7 @@ paths:
       summary: List active Membership Offers
       operationId: listMembershipOffers
       description: >-
-        Returns every ACTIVE Membership Offer, optionally restricted to one fixed Membership
+        Returns every ACTIVE Membership Offer, optionally restricted to one Membership
         Plan. The endpoint is available only to ACTIVE MEMBER and RECEPTIONIST Accounts. Results
         are not paginated and are sorted by planCode ASC, durationDays ASC, name ASC, then
         offerId ASC. When no offer matches, the response is 200 with an empty JSON array.
@@ -23,7 +23,7 @@ paths:
         - name: planCode
           in: query
           required: false
-          description: Exact, case-sensitive fixed Membership Plan code.
+          description: Exact uppercase Membership Plan code.
           schema:
             $ref: '#/components/schemas/MembershipPlanCode'
       responses:
@@ -36,7 +36,7 @@ paths:
                 items:
                   $ref: '#/components/schemas/MembershipOfferSummary'
         '400':
-          description: planCode is present but is not exactly BASIC or PLUS
+          description: planCode is present but does not match the uppercase Plan code format
           content:
             application/problem+json:
               schema:
@@ -59,9 +59,8 @@ components:
   schemas:
     MembershipPlanCode:
       type: string
-      enum:
-        - BASIC
-        - PLUS
+      pattern: '^[A-Z][A-Z0-9_]{1,49}$'
+      maxLength: 50
     MembershipOfferSummary:
       type: object
       additionalProperties: false

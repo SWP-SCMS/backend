@@ -212,7 +212,7 @@ class MembershipOfferIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = {"basic", "plus", " BASIC ", "PREMIUM", ""})
+	@ValueSource(strings = {"basic", "plus", " BASIC ", "PREMIUM-", "", "A"})
 	void invalidPlanCodeReturnsProblemDetail(String planCode) throws Exception {
 		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
 
@@ -229,6 +229,38 @@ class MembershipOfferIntegrationTests {
 		insertOffer(UUID.randomUUID(), "BASIC", "Basic Only", "Basic", 500000, 30, "ACTIVE", member);
 
 		getOffers(accessToken(member), "PLUS")
+			.andExpect(status().isOk())
+			.andExpect(content().json("[]"));
+	}
+
+	@Test
+	void dynamicPlanFilterReturnsActiveOfferWithDynamicCode() throws Exception {
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
+		insertPlan("FAMILY", "Family", "ACTIVE", true);
+		insertOffer(UUID.randomUUID(), "FAMILY", "Family Active", "Family", 700000, 30, "ACTIVE", member);
+
+		getOffers(accessToken(member), "FAMILY")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.length()").value(1))
+			.andExpect(jsonPath("$[0].planCode").value("FAMILY"));
+	}
+
+	@Test
+	void validUnknownPlanFilterReturnsAnEmptyJsonArray() throws Exception {
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
+
+		getOffers(accessToken(member), "UNKNOWN")
+			.andExpect(status().isOk())
+			.andExpect(content().json("[]"));
+	}
+
+	@Test
+	void activeOffersForInactivePlansAreHiddenFromPublicList() throws Exception {
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE);
+		insertPlan("DORMANT", "Dormant", "INACTIVE", true);
+		insertOffer(UUID.randomUUID(), "DORMANT", "Dormant Offer", "Hidden", 700000, 30, "ACTIVE", member);
+
+		getOffers(accessToken(member), null)
 			.andExpect(status().isOk())
 			.andExpect(content().json("[]"));
 	}
@@ -289,6 +321,17 @@ class MembershipOfferIntegrationTests {
 			     created_by_account_id)
 			values (?, ?, ?, ?, ?, 'VND', ?, ?, ?)
 			""", id, planCode, name, description, priceAmount, durationDays, status, creator.getId());
+	}
+
+	private void insertPlan(String planCode, String displayName, String status, boolean withBenefit) {
+		jdbcTemplate.update("""
+			insert into membership_plans(plan_code, display_name, supports_booking, supports_personal_coaching, status)
+			values (?, ?, false, false, ?)
+			""", planCode, displayName, status);
+		if (withBenefit) {
+			jdbcTemplate.update("insert into membership_plan_benefits(plan_code, benefit_code) values (?, 'CENTER_ACCESS')",
+				planCode);
+		}
 	}
 
 	private long countOffers() {

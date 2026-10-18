@@ -21,6 +21,19 @@ class MembershipOfferResponseCompatibilityTests {
 
 		MembershipOfferResponse response = MembershipOfferResponse.from(offer);
 
-		assertThat(response.planCode()).isEqualTo(MembershipPlanCode.BASIC);
+		assertThat(response.planCode()).isEqualTo("BASIC");
+	}
+
+	@Test
+	void preservesDynamicPlanCodeAtThePublicOfferResponseBoundary() {
+		MembershipPlan plan = mock(MembershipPlan.class);
+		when(plan.getPlanCode()).thenReturn("FAMILY");
+		when(plan.getDisplayName()).thenReturn("Family");
+		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plan, "Family 30", "Access",
+			BigInteger.valueOf(500000), "VND", 30, MembershipOfferStatus.ACTIVE, UUID.randomUUID());
+
+		MembershipOfferResponse response = MembershipOfferResponse.from(offer);
+
+		assertThat(response.planCode()).isEqualTo("FAMILY");
 	}
 }

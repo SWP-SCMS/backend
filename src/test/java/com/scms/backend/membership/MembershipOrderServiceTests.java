@@ -1,5 +1,6 @@
 package com.scms.backend.membership;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -91,5 +92,23 @@ class MembershipOrderServiceTests {
 		service.createForMember(memberAccountId, new MembershipOrderCreateRequest(offerId));
 
 		org.mockito.Mockito.verify(planRepository).findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name());
+	}
+
+	@Test
+	void preservesDynamicPlanCodeInOrderSnapshot() {
+		MembershipPlan plan = mock(MembershipPlan.class);
+		when(plan.getPlanCode()).thenReturn("FAMILY");
+		MembershipOffer offer = mock(MembershipOffer.class);
+		when(offer.getId()).thenReturn(offerId);
+		when(offer.getPlan()).thenReturn(plan);
+		when(offer.getName()).thenReturn("Family Offer");
+		when(offer.getPriceAmount()).thenReturn(BigInteger.valueOf(500000));
+		when(offer.getCurrencyCode()).thenReturn("VND");
+		when(offer.getDurationDays()).thenReturn(30);
+
+		MembershipOrder order = new MembershipOrder(UUID.randomUUID(), "ORD-FAMILY", memberAccountId,
+			memberAccountId, offer);
+
+		assertThat(order.getPlanCodeSnapshot()).isEqualTo("FAMILY");
 	}
 }

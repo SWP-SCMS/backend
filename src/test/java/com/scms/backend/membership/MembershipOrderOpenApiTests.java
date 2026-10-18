@@ -19,6 +19,7 @@ class MembershipOrderOpenApiTests {
 			assertThat(document.get("openapi")).isEqualTo("3.1.0");
 			Map<String, Object> paths = (Map<String, Object>) document.get("paths");
 			Map<String, Object> components = (Map<String, Object>) document.get("components");
+			Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
 			Map<String, Object> responseComponents = (Map<String, Object>) components.get("responses");
 			assertThat(paths).hasSize(4);
 
@@ -42,6 +43,12 @@ class MembershipOrderOpenApiTests {
 				"/reception/members/{memberId}/membership-orders/pending", "get");
 			assertThat((String) resolveResponse(receptionPendingResponses, responseComponents, "409")
 				.get("description")).contains("MEMBER_NOT_ACTIVE");
+
+			Map<String, Object> order = (Map<String, Object>) schemas.get("MembershipOrder");
+			Map<String, Object> orderProperties = (Map<String, Object>) order.get("properties");
+			Map<String, Object> planCode = (Map<String, Object>) orderProperties.get("planCode");
+			assertThat(planCode).doesNotContainKey("enum")
+				.containsEntry("pattern", "^[A-Z][A-Z0-9_]{1,49}$");
 		}
 		catch (java.io.IOException exception) {
 			throw new AssertionError(exception);

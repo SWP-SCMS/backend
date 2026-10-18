@@ -363,7 +363,12 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		JsonNode offerPlanCode = document.at("/components/schemas/MembershipOfferResponse/properties/planCode");
 		assertThat(offerPlanCode.path("type").asText()).isEqualTo("string");
-		assertThat(offerPlanCode.path("enum").toString()).isEqualTo("[\"BASIC\",\"PLUS\"]");
+		assertThat(offerPlanCode.path("enum").isMissingNode()).isTrue();
+		assertThat(offerPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
+		JsonNode orderPlanCode = document.at("/components/schemas/MembershipOrderResponse/properties/planCode");
+		assertThat(orderPlanCode.path("type").asText()).isEqualTo("string");
+		assertThat(orderPlanCode.path("enum").isMissingNode()).isTrue();
+		assertThat(orderPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
