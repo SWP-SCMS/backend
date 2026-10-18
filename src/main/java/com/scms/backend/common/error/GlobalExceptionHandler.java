@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import com.scms.backend.auth.DuplicateAccountException;
 import com.scms.backend.auth.CurrentPasswordIncorrectException;
@@ -321,6 +322,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
+		if (!exception.getAffectedSessionIds().isEmpty()) {
+			problem.setProperty("affectedSessionIds", exception.getAffectedSessionIds().stream()
+				.map(UUID::toString).toList());
+		}
 		return problem;
 	}
 
@@ -331,6 +336,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		problem.setProperty("code", exception.getCode());
 		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
+		if ("SESSION_BULK_SELECTION_CHANGED".equals(exception.getCode())) {
+			problem.setProperty("eligibleSessionIds", exception.getEligibleSessionIds());
+			problem.setProperty("ineligibleSessionIds", exception.getIneligibleSessionIds());
 		}
 		return problem;
 	}

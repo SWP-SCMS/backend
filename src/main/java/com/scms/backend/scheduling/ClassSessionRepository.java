@@ -44,6 +44,27 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
 
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select session from ClassSession session
+		where session.id in :sessionIds
+		order by session.id
+		""")
+	List<ClassSession> findAllByIdForUpdate(@Param("sessionIds") Collection<UUID> sessionIds);
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select session from ClassSession session
+		where session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED
+		  and session.startTime > :now
+		  and (:classId is null or session.sportClass.id = :classId)
+		  and (:from is null or session.endTime > :from)
+		  and (:to is null or session.startTime < :to)
+		order by session.id
+		""")
+	List<ClassSession> findFutureScheduledForUpdate(@Param("classId") UUID classId,
+		@Param("from") Instant from, @Param("to") Instant to, @Param("now") Instant now);
+
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""
 		update ClassSession session
@@ -85,6 +106,19 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	boolean existsOverlapExcluding(@Param("sessionId") UUID sessionId, @Param("coachId") UUID coachId,
 			@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
 			@Param("endTime") Instant endTime);
+
+	@Query("""
+		select session.id from ClassSession session
+		where session.id <> :sessionId
+		  and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+		  and (session.room.id = :roomId or session.teachingCoach.id = :coachId)
+		  and session.startTime < :endTime and session.endTime > :startTime
+		order by session.startTime, session.id
+		""")
+	java.util.Optional<UUID> findConflictIdExcluding(@Param("sessionId") UUID sessionId,
+			@Param("coachId") UUID coachId, @Param("roomId") UUID roomId,
+			@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
 
 	@Query(value = """
 		select class_session_id as "sessionId", count(*) as "bookedCount"
