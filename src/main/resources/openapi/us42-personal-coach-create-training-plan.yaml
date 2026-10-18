@@ -5,6 +5,32 @@ info:
   description: US42 – Personal Coach - Create Training Plan
 paths:
   /coach/members/{memberId}/training-plans:
+    get:
+      operationId: listMemberTrainingPlansForCoach
+      summary: List the assigned Member's Training Plans with their current versions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Paginated Training Plans ordered newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingPlanPageResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     post:
       operationId: createPersonalTrainingPlan
       summary: Create a Training Plan and its initial immutable version
@@ -84,6 +110,17 @@ components:
         content:
           type: object
           additionalProperties: true
+    TrainingPlanPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/TrainingPlanResponse" }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     ProblemDetail:
       type: object
       required: [title, status, detail, instance, code]

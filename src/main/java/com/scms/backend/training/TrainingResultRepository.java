@@ -33,6 +33,16 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 	Optional<TrainingResult> findSessionByIdAndMemberAccountId(@Param("id") UUID id,
 			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
 
+	@Query(value = """
+		select * from training_results
+		where class_session_id = :sessionId
+		  and member_account_id = :memberId
+		  and coach_assignment_id is null
+		  and legacy_duplicate = false
+		""", nativeQuery = true)
+	Optional<TrainingResult> findSessionByClassSessionIdAndMemberAccountId(
+			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
+
 	@Query("""
 		select r from TrainingResult r
 		where r.memberAccountId = :memberId

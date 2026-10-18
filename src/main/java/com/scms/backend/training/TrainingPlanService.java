@@ -3,8 +3,11 @@ package com.scms.backend.training;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -13,6 +16,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -94,6 +98,27 @@ public class TrainingPlanService {
 				planId, null, beforeData, afterData));
 
 		return TrainingPlanResponse.from(plan, next);
+	}
+
+	@Transactional
+	public TrainingPlanPageResponse list(UUID coachId, UUID memberId, Pageable pageable) {
+		ensureActiveCoach(coachId);
+		currentAssignment(coachId, memberId, clock.instant());
+		var page = plans.findByMemberAccountId(memberId, pageable);
+		List<UUID> planIds = page.getContent().stream().map(TrainingPlan::getId).toList();
+		Map<UUID, TrainingPlanVersion> latestVersions = planIds.isEmpty() ? Map.of()
+				: versions.findHistoryByTrainingPlanIds(planIds).stream()
+					.collect(Collectors.toMap(TrainingPlanVersion::getTrainingPlanId, Function.identity(),
+							(left, right) -> left.getVersionNumber() > right.getVersionNumber() ? left : right));
+		List<TrainingPlanResponse> content = page.getContent().stream()
+				.map(plan -> {
+					TrainingPlanVersion latest = latestVersions.get(plan.getId());
+					if (latest == null) throw TrainingPlanException.versionHistoryNotFound();
+					return TrainingPlanResponse.from(plan, latest);
+				})
+				.toList();
+		return new TrainingPlanPageResponse(content, page.getNumber(), page.getSize(),
+				page.getTotalElements(), page.getTotalPages());
 	}
 
 	private void ensureActiveCoach(UUID coachId) {

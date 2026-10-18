@@ -44,6 +44,20 @@ public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedba
 	Optional<TrainingFeedback> findSessionByTrainingResultIdAndMemberAccountIdForUpdate(
 			@Param("resultId") UUID resultId, @Param("memberId") UUID memberId);
 
+	@Query(value = """
+		select f.* from feedback f
+		join training_results r on r.id = f.training_result_id
+		where f.member_account_id = :memberId
+		  and f.coach_assignment_id is null
+		  and f.training_plan_version_id is null
+		  and f.legacy_duplicate = false
+		  and r.class_session_id = :sessionId
+		  and r.coach_assignment_id is null
+		  and r.legacy_duplicate = false
+		""", nativeQuery = true)
+	Optional<TrainingFeedback> findSessionByClassSessionIdAndMemberAccountId(
+			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select f from TrainingFeedback f

@@ -45,6 +45,9 @@ class CoachAssignmentIntegrationTests {
 	private CoachAssignmentService service;
 
 	@Autowired
+	private MemberCoachAssignmentService memberAssignmentService;
+
+	@Autowired
 	private AccountRepository accounts;
 
 	@Autowired
@@ -108,6 +111,8 @@ class CoachAssignmentIntegrationTests {
 		assertThat(responseA).isNotNull();
 		assertThat(responseA.coachAccountId()).isEqualTo(coachA.getId());
 		assertThat(responseA.status()).isEqualTo(CoachAssignmentStatus.ACTIVE);
+		assertThat(memberAssignmentService.getActive(member.getId())).get()
+			.extracting(MemberCoachAssignmentResponse::coachAccountId).isEqualTo(coachA.getId());
 
 		// Verify database row
 		Map<String, Object> assignmentRowA = jdbc.queryForMap(
@@ -273,7 +278,7 @@ class CoachAssignmentIntegrationTests {
 			Timestamp.from(assignmentStartsAt), Timestamp.from(assignmentStartsAt), Timestamp.from(assignmentStartsAt));
 
 		// 1. Querying active coach assignment triggers lifecycle transition
-		java.util.Optional<CoachAssignmentResponse> activeResult = service.getActive(manager.getId(), member.getId());
+		java.util.Optional<MemberCoachAssignmentResponse> activeResult = memberAssignmentService.getActive(member.getId());
 		assertThat(activeResult).isEmpty();
 
 		// 2. Verify database record is actually ENDED in PostgreSQL, not just hidden from query

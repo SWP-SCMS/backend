@@ -142,19 +142,25 @@ class GeneratedOpenApiTests {
 		"PATCH /coach/class-sessions/{sessionId}/attendance/{attendanceId}",
 		"GET /coach/members",
 		"GET /coach/members/{memberId}",
+		"GET /coach/members/{memberId}/training-plans",
 		"POST /coach/members/{memberId}/training-plans",
 		"PUT /coach/members/{memberId}/training-plans/{planId}",
 		"POST /coach/members/{memberId}/training-results",
+		"GET /coach/members/{memberId}/training-results",
 		"PUT /coach/members/{memberId}/training-results/{resultId}",
 		"POST /coach/members/{memberId}/feedback",
+		"GET /coach/members/{memberId}/feedback",
 		"PUT /coach/members/{memberId}/feedback/{feedbackId}",
 		"POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
+		"GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
 		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}",
 		"POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+		"GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
 		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}",
 		"GET /members/me/training-results",
 		"GET /members/me/feedback",
 		"GET /members/me/training-plans",
+		"GET /members/me/coach-assignment",
 		"GET /notifications",
 		"PATCH /notifications/{notificationId}/read",
 		"PATCH /notifications/read-all",
@@ -172,7 +178,10 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/reset-password",
 		"GET /members/me/membership-orders/pending",
 		"GET /reception/members/{memberId}/membership-orders/pending",
-		"GET /manager/members/{memberId}/coach-assignment"
+		"GET /manager/members/{memberId}/coach-assignment",
+		"GET /members/me/coach-assignment",
+		"GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
+		"GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback"
 	);
 
 	private static final Set<String> HTTP_METHODS = Set.of(

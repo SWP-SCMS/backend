@@ -8,6 +8,24 @@ info:
     Only the Session's ACTIVE Teaching Coach may create or update it.
 paths:
   /coach/class-sessions/{sessionId}/members/{memberId}/feedback:
+    get:
+      operationId: getSessionTrainingFeedback
+      summary: Get the Member's Feedback for this Session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+      responses:
+        "200":
+          description: Existing Session Training Feedback.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingFeedbackResponse" }
+        "204": { description: No Session Training Feedback exists. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
       operationId: createSessionTrainingFeedback
       summary: Create idempotent Feedback for a Group or Yoga Session Training Result

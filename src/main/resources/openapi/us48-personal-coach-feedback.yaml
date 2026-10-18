@@ -9,6 +9,25 @@ info:
     Per BR-FDB-03, Group/Yoga Session Feedback is outside US48 and follows Teaching Coach ownership in US49.
 paths:
   /coach/members/{memberId}/feedback:
+    get:
+      operationId: listMemberTrainingFeedbackForCoach
+      summary: List personal and Session-linked Feedback for an assigned Member
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Paginated Feedback ordered newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingFeedbackPageResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     post:
       operationId: createPersonalTrainingFeedback
       summary: Create Feedback for personal Training
@@ -98,10 +117,22 @@ components:
         coachAssignmentId: { type: string, format: uuid }
         trainingPlanVersionId: { type: string, format: uuid }
         trainingResultId: { type: string, format: uuid }
+        classSessionId: { type: [string, "null"], format: uuid }
         content: { type: string }
         createdByAccountId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    TrainingFeedbackPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: { $ref: "#/components/schemas/TrainingFeedbackResponse" }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1 }
+        totalElements: { type: integer, format: int64, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
     ProblemDetail:
       type: object
       required: [title, status, detail, instance, code]

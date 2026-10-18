@@ -6,10 +6,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.auth.ActiveAccountJwtValidator;
@@ -44,6 +46,23 @@ class SessionTrainingFeedbackControllerTests {
 	private static final UUID MEMBER_ID = UUID.randomUUID();
 	private static final UUID RESULT_ID = UUID.randomUUID();
 	private static final Instant NOW = Instant.parse("2026-10-15T08:00:00Z");
+
+	@Test
+	void getReturnsLinkedFeedbackOr204() throws Exception {
+		when(service.get(COACH_ID, SESSION_ID, MEMBER_ID))
+				.thenReturn(Optional.of(response(UUID.randomUUID(), "Good progress")));
+		mockMvc.perform(get("/coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+				SESSION_ID, MEMBER_ID).with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.classSessionId").value(SESSION_ID.toString()));
+
+		when(service.get(COACH_ID, SESSION_ID, MEMBER_ID)).thenReturn(Optional.empty());
+		mockMvc.perform(get("/coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+				SESSION_ID, MEMBER_ID).with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+				.andExpect(status().isNoContent());
+	}
 
 	@Test
 	void createReturns201ForCoach() throws Exception {

@@ -6,10 +6,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.auth.ActiveAccountJwtValidator;
@@ -44,6 +46,22 @@ class TrainingFeedbackControllerTests {
 	private static final UUID MEMBER_ID = UUID.randomUUID();
 	private static final UUID PLAN_VERSION_ID = UUID.randomUUID();
 	private static final Instant NOW = Instant.parse("2026-10-14T08:00:00Z");
+
+	@Test
+	void listReturnsFeedbackWithSessionLinkage() throws Exception {
+		UUID sessionId = UUID.randomUUID();
+		TrainingFeedbackResponse row = new TrainingFeedbackResponse(UUID.randomUUID(), MEMBER_ID, null,
+				null, UUID.randomUUID(), sessionId, "Class feedback", COACH_ID, NOW, NOW);
+		when(service.list(eq(COACH_ID), eq(MEMBER_ID), any()))
+				.thenReturn(new TrainingFeedbackPageResponse(List.of(row), 0, 20, 1, 1));
+
+		mockMvc.perform(get("/coach/members/{memberId}/feedback", MEMBER_ID)
+				.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
+				.andExpect(jsonPath("$.totalElements").value(1));
+	}
 
 	@Test
 	void createReturns201ForCoach() throws Exception {
@@ -109,7 +127,7 @@ class TrainingFeedbackControllerTests {
 	}
 
 	private TrainingFeedbackResponse response(UUID id, String content) {
-		return new TrainingFeedbackResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, null,
+		return new TrainingFeedbackResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, null, null,
 				content, COACH_ID, NOW, NOW);
 	}
 

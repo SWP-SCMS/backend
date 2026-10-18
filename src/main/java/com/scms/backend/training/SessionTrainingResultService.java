@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
@@ -73,11 +74,26 @@ public class SessionTrainingResultService {
 		return SessionTrainingResultResponse.from(result);
 	}
 
+	@Transactional(readOnly = true)
+	public Optional<SessionTrainingResultResponse> get(UUID coachId, UUID sessionId, UUID memberId) {
+		requireOwnedGroupOrYogaSessionForRead(coachId, sessionId);
+		return results.findSessionByClassSessionIdAndMemberAccountId(sessionId, memberId)
+				.map(SessionTrainingResultResponse::from);
+	}
+
 	private void requireOwnedGroupOrYogaSession(UUID coachId, UUID sessionId) {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw TrainingResultException.actorNotActiveCoach();
 		}
 		sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
+			.orElseThrow(TrainingResultException::sessionNotFound);
+	}
+
+	private void requireOwnedGroupOrYogaSessionForRead(UUID coachId, UUID sessionId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw TrainingResultException.actorNotActiveCoach();
+		}
+		sessions.findOwnedGroupOrYogaById(sessionId, coachId)
 			.orElseThrow(TrainingResultException::sessionNotFound);
 	}
 

@@ -6,10 +6,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,6 +47,22 @@ class TrainingResultControllerTests {
 	private static final UUID MEMBER_ID = UUID.randomUUID();
 	private static final UUID PLAN_VERSION_ID = UUID.randomUUID();
 	private static final Instant ACTIVITY_AT = Instant.parse("2026-10-13T07:00:00Z");
+
+	@Test
+	void listReturnsPersonalAndSessionResultsWithSessionLinkage() throws Exception {
+		UUID sessionId = UUID.randomUUID();
+		TrainingResultResponse row = new TrainingResultResponse(UUID.randomUUID(), MEMBER_ID, null, null,
+				sessionId, ACTIVITY_AT, Map.of("notes", "Class result"), COACH_ID, ACTIVITY_AT, ACTIVITY_AT);
+		when(service.list(eq(COACH_ID), eq(MEMBER_ID), any()))
+				.thenReturn(new TrainingResultPageResponse(List.of(row), 0, 20, 1, 1));
+
+		mockMvc.perform(get("/coach/members/{memberId}/training-results", MEMBER_ID)
+				.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
+				.andExpect(jsonPath("$.totalElements").value(1));
+	}
 
 	@Test
 	void createReturns201ForCoach() throws Exception {
@@ -100,7 +118,7 @@ class TrainingResultControllerTests {
 	}
 
 	private TrainingResultResponse response(UUID id, String notes) {
-		return new TrainingResultResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, ACTIVITY_AT,
+		return new TrainingResultResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, null, ACTIVITY_AT,
 				Map.of("notes", notes), COACH_ID, ACTIVITY_AT, ACTIVITY_AT);
 	}
 

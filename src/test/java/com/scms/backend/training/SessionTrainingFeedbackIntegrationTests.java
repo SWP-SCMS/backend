@@ -57,8 +57,12 @@ class SessionTrainingFeedbackIntegrationTests {
 			new SessionTrainingFeedbackRequest(result.id(), "Good alignment"));
 		SessionTrainingFeedbackResponse updated = feedback.update(coach.getId(), sessionId, member.getId(),
 			created.id(), new SessionTrainingFeedbackRequest(result.id(), "Keep shoulders relaxed"));
+		SessionTrainingFeedbackResponse loaded = feedback.get(coach.getId(), sessionId, member.getId())
+			.orElseThrow();
 
 		assertThat(updated.classSessionId()).isEqualTo(sessionId);
+		assertThat(loaded.id()).isEqualTo(created.id());
+		assertThat(loaded.content()).isEqualTo("Keep shoulders relaxed");
 		assertThat(updated.trainingResultId()).isEqualTo(result.id());
 		assertThat(jdbc.queryForObject(
 			"select coach_assignment_id is null from feedback where id = ?", Boolean.class, created.id()))

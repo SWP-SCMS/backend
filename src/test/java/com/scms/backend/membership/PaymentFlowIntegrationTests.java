@@ -513,7 +513,8 @@ class PaymentFlowIntegrationTests {
 
 		mockMvc.perform(get("/api/v1/members/me/receipts").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, bearer(owner.getAccount())))
-			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(receipt.toString()));
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(receipt.toString()))
+			.andExpect(jsonPath("$[0].planCode").value("BASIC"));
 		getAuthorized(owner.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isOk());
 		getAuthorized(owner.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isOk());
 		getAuthorized(stranger.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isForbidden());

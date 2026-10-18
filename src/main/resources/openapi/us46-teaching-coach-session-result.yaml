@@ -5,6 +5,24 @@ info:
   description: US46 - Teaching Coach - Record Group / Yoga Session Result
 paths:
   /coach/class-sessions/{sessionId}/members/{memberId}/training-results:
+    get:
+      operationId: getSessionTrainingResult
+      summary: Get the Member's Training Result for this Session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/MemberId"
+      responses:
+        "200":
+          description: Existing Session Training Result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionTrainingResultResponse" }
+        "204": { description: No Session Training Result exists. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
       operationId: createSessionTrainingResult
       summary: Record an idempotent Training Result for a booked Member in a Group or Yoga Session

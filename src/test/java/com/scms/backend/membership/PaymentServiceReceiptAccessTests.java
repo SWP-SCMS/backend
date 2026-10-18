@@ -65,6 +65,7 @@ class PaymentServiceReceiptAccessTests {
 			Map.entry("receipt_number", "RC-001"),
 			Map.entry("payment_id", paymentId),
 			Map.entry("order_id", orderId),
+			Map.entry("plan_code_snapshot", "BASIC"),
 			Map.entry("offer_name_snapshot", "Monthly Basic"),
 			Map.entry("member_account_id", memberId),
 			Map.entry("member_name", "Member One"),
@@ -80,6 +81,7 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response.receiptId()).isEqualTo(receiptId);
 		assertThat(response.paymentMethod()).isEqualTo("BANK_TRANSFER");
+		assertThat(response.planCode()).isEqualTo("BASIC");
 		assertThat(response.offerName()).isEqualTo("Monthly Basic");
 		assertThat(response.memberName()).isEqualTo("Member One");
 		assertThat(response.memberCode()).isEqualTo("MB-100001");
@@ -104,10 +106,10 @@ class PaymentServiceReceiptAccessTests {
 	@Test
 	void receptionistCanListCashAndBankTransferReceiptsByMemberCode() {
 		ReceiptResponse cash = new ReceiptResponse(UUID.randomUUID(), "RC-CASH", UUID.randomUUID(),
-			UUID.randomUUID(), "Monthly Basic", memberId, "Member One", "MB-100001",
+			UUID.randomUUID(), "BASIC", "Monthly Basic", memberId, "Member One", "MB-100001",
 			BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "CASH", issuedAt);
 		ReceiptResponse bank = new ReceiptResponse(UUID.randomUUID(), "RC-BANK", UUID.randomUUID(),
-			UUID.randomUUID(), "Monthly Basic", memberId, "Member One", "MB-100001",
+			UUID.randomUUID(), "BASIC", "Monthly Basic", memberId, "Member One", "MB-100001",
 			BigDecimal.valueOf(12000).toBigIntegerExact(), "VND", "BANK_TRANSFER", issuedAt.minusSeconds(60));
 		when(db.queryForObject(anyString(), eq(UUID.class), eq("MB-100001"))).thenReturn(memberId);
 		doReturn(List.of(cash, bank)).when(db).query(anyString(),

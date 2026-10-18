@@ -11,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,6 +27,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class TrainingPlanServiceTests {
@@ -78,6 +81,35 @@ class TrainingPlanServiceTests {
 		assertThat(auditCaptor.getValue().getTargetType()).isEqualTo("TRAINING_PLAN");
 		assertThat(auditCaptor.getValue().getTargetId()).isEqualTo(response.id());
 		assertThat(auditCaptor.getValue().getAfterData()).containsEntry("versionNumber", 1);
+	}
+
+	@Test
+	void listReturnsNewestPlanVersionOnlyAfterAssignmentReconciliation() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, assignment.getId(), "Strength",
+				coachId, now.minusSeconds(7200));
+		TrainingPlanVersion v1 = new TrainingPlanVersion(UUID.randomUUID(), planId, 1,
+				Map.of("goal", "Base"), coachId, now.minusSeconds(7200));
+		TrainingPlanVersion v2 = new TrainingPlanVersion(UUID.randomUUID(), planId, 2,
+				Map.of("goal", "Progression"), coachId, now.minusSeconds(3600));
+		var pageable = PageRequest.of(0, 20);
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.hasActivePlusMembership(memberId, now)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
+				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByMemberAccountId(memberId, pageable))
+				.thenReturn(new PageImpl<>(List.of(plan), pageable, 1));
+		when(versions.findHistoryByTrainingPlanIds(List.of(planId))).thenReturn(List.of(v1, v2));
+
+		TrainingPlanPageResponse response = service.list(coachId, memberId, pageable);
+
+		assertThat(response.content()).singleElement().satisfies(row -> {
+			assertThat(row.versionId()).isEqualTo(v2.getId());
+			assertThat(row.versionNumber()).isEqualTo(2);
+			assertThat(row.content()).containsEntry("goal", "Progression");
+		});
+		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
 	}
 
 	@Test

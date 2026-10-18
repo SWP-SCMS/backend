@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountRepository;
@@ -69,11 +70,26 @@ public class SessionTrainingFeedbackService {
 		return SessionTrainingFeedbackResponse.from(current, sessionId);
 	}
 
+	@Transactional(readOnly = true)
+	public Optional<SessionTrainingFeedbackResponse> get(UUID coachId, UUID sessionId, UUID memberId) {
+		requireOwnedGroupOrYogaSessionForRead(coachId, sessionId);
+		return feedback.findSessionByClassSessionIdAndMemberAccountId(sessionId, memberId)
+				.map(value -> SessionTrainingFeedbackResponse.from(value, sessionId));
+	}
+
 	private void requireOwnedGroupOrYogaSession(UUID coachId, UUID sessionId) {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw TrainingFeedbackException.actorNotActiveCoach();
 		}
 		sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
+			.orElseThrow(TrainingFeedbackException::sessionNotFound);
+	}
+
+	private void requireOwnedGroupOrYogaSessionForRead(UUID coachId, UUID sessionId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw TrainingFeedbackException.actorNotActiveCoach();
+		}
+		sessions.findOwnedGroupOrYogaById(sessionId, coachId)
 			.orElseThrow(TrainingFeedbackException::sessionNotFound);
 	}
 

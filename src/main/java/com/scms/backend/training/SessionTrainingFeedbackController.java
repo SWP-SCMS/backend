@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,6 +24,13 @@ public class SessionTrainingFeedbackController {
 
 	public SessionTrainingFeedbackController(SessionTrainingFeedbackService service) {
 		this.service = service;
+	}
+
+	@GetMapping
+	public ResponseEntity<SessionTrainingFeedbackResponse> get(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID sessionId, @PathVariable UUID memberId) {
+		return service.get(UUID.fromString(jwt.getSubject()), sessionId, memberId)
+				.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
 	}
 
 	@PostMapping

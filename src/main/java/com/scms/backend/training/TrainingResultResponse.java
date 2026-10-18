@@ -9,6 +9,7 @@ public record TrainingResultResponse(
 	UUID memberAccountId,
 	UUID coachAssignmentId,
 	UUID trainingPlanVersionId,
+	UUID classSessionId,
 	Instant activityAt,
 	Map<String, Object> content,
 	UUID createdByAccountId,
@@ -17,7 +18,7 @@ public record TrainingResultResponse(
 ) {
 	static TrainingResultResponse from(TrainingResult result) {
 		return new TrainingResultResponse(result.getId(), result.getMemberAccountId(),
-				result.getCoachAssignmentId(), result.getTrainingPlanVersionId(), result.getActivityAt(),
+				result.getCoachAssignmentId(), result.getTrainingPlanVersionId(), result.getClassSessionId(), result.getActivityAt(),
 				result.getContent(), result.getCreatedByAccountId(), result.getCreatedAt(), result.getUpdatedAt());
 	}
 }

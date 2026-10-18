@@ -55,8 +55,12 @@ class SessionTrainingResultIntegrationTests {
 		SessionTrainingResultResponse updated = results.update(coach.getId(), sessionId, member.getId(),
 			created.id(), new SessionTrainingResultRequest(activityAt.plusSeconds(60),
 				Map.of("posesCompleted", 10)));
+		SessionTrainingResultResponse loaded = results.get(coach.getId(), sessionId, member.getId())
+			.orElseThrow();
 
 		assertThat(updated.classSessionId()).isEqualTo(sessionId);
+		assertThat(loaded.id()).isEqualTo(created.id());
+		assertThat(loaded.content()).containsEntry("posesCompleted", 10);
 		assertThat(jdbc.queryForObject(
 			"select coach_assignment_id is null from training_results where id = ?", Boolean.class, created.id()))
 			.isTrue();

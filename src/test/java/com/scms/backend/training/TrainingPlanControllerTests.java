@@ -6,10 +6,12 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -43,6 +45,22 @@ class TrainingPlanControllerTests {
 
 	private static final UUID COACH_ID = UUID.randomUUID();
 	private static final UUID MEMBER_ID = UUID.randomUUID();
+
+	@Test
+	void listReturnsPaginatedCurrentVersionsForCoach() throws Exception {
+		TrainingPlanResponse plan = new TrainingPlanResponse(UUID.randomUUID(), MEMBER_ID, UUID.randomUUID(),
+				"Strength foundation", TrainingPlanStatus.ACTIVE, COACH_ID, Instant.parse("2026-10-13T06:00:00Z"),
+				UUID.randomUUID(), 2, Map.of("goal", "Build strength"));
+		when(service.list(eq(COACH_ID), eq(MEMBER_ID), any()))
+				.thenReturn(new TrainingPlanPageResponse(List.of(plan), 0, 20, 1, 1));
+
+		mockMvc.perform(get("/coach/members/{memberId}/training-plans", MEMBER_ID)
+				.with(jwt().jwt(builder -> builder.subject(COACH_ID.toString()))
+						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].versionNumber").value(2))
+				.andExpect(jsonPath("$.totalElements").value(1));
+	}
 
 	@Test
 	void createReturns201ForCoach() throws Exception {

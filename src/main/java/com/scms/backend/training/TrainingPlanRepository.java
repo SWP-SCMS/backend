@@ -6,6 +6,8 @@ import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +18,10 @@ public interface TrainingPlanRepository extends JpaRepository<TrainingPlan, UUID
 	@Query("select p from TrainingPlan p where p.memberAccountId = :memberId "
 			+ "order by p.createdAt desc, p.id desc")
 	List<TrainingPlan> findByMemberAccountIdOrderByCreatedAtDesc(@Param("memberId") UUID memberId);
+
+	@Query(value = "select p from TrainingPlan p where p.memberAccountId = :memberId",
+			countQuery = "select count(p) from TrainingPlan p where p.memberAccountId = :memberId")
+	Page<TrainingPlan> findByMemberAccountId(@Param("memberId") UUID memberId, Pageable pageable);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select p from TrainingPlan p where p.id = :id and p.memberAccountId = :memberId")

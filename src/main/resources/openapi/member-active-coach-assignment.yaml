@@ -1,0 +1,42 @@
+openapi: "3.1.0"
+info:
+  title: SCMS - Member Active Coach Assignment API
+  version: "1.0"
+paths:
+  /members/me/coach-assignment:
+    get:
+      operationId: getOwnActiveCoachAssignment
+      summary: Get the authenticated Member's active personal Coach Assignment
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active personal Coach Assignment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MemberCoachAssignmentResponse" }
+        "204": { description: The Member has no active Coach Assignment. }
+        "401": { description: Authentication required. }
+        "403": { description: Active Member role required. }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    MemberCoachAssignmentResponse:
+      type: object
+      required:
+        - assignmentId
+        - coachAccountId
+        - coachFullName
+        - coachPhone
+        - coachEmail
+        - status
+        - startsAt
+      properties:
+        assignmentId: { type: string, format: uuid }
+        coachAccountId: { type: string, format: uuid }
+        coachFullName: { type: string }
+        coachPhone: { type: string }
+        coachEmail: { type: string, format: email }
+        status: { type: string, enum: [ACTIVE] }
+        startsAt: { type: string, format: date-time }

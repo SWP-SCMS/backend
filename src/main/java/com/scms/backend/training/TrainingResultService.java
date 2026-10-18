@@ -13,6 +13,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -65,6 +66,15 @@ public class TrainingResultService {
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_RESULT_UPDATED", "TRAINING_RESULT",
 				resultId, null, beforeData, snapshot(result)));
 		return TrainingResultResponse.from(result);
+	}
+
+	@Transactional
+	public TrainingResultPageResponse list(UUID coachId, UUID memberId, Pageable pageable) {
+		requireCurrentAssignment(coachId, memberId, clock.instant());
+		var page = results.findHistoryByMemberAccountId(memberId, pageable);
+		return new TrainingResultPageResponse(page.getContent().stream()
+				.map(TrainingResultResponse::from).toList(), page.getNumber(), page.getSize(),
+				page.getTotalElements(), page.getTotalPages());
 	}
 
 	private CoachAssignment requireCurrentAssignment(UUID coachId, UUID memberId, Instant now) {
