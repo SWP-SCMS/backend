@@ -31,6 +31,13 @@ public class MembershipBenefit {
 
 	protected MembershipBenefit() { }
 
+	MembershipBenefit(String code, String displayName, String description, MembershipBenefitStatus status) {
+		this.code = code;
+		this.displayName = displayName;
+		this.description = description;
+		this.status = status;
+	}
+
 	public String getCode() { return code; }
 	public String getDisplayName() { return displayName; }
 	public String getDescription() { return description; }

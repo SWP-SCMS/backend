@@ -14,15 +14,15 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.Version;
 
 @Entity
 @Table(name = "membership_plans")
 public class MembershipPlan {
 
 	@Id
-	@Enumerated(EnumType.STRING)
-	@Column(name = "plan_code", nullable = false, length = 10, updatable = false)
-	private MembershipPlanCode planCode;
+	@Column(name = "plan_code", nullable = false, length = 50, updatable = false)
+	private String planCode;
 
 	@Column(name = "display_name", nullable = false, length = 100)
 	private String displayName;
@@ -33,8 +33,19 @@ public class MembershipPlan {
 	@Column(name = "supports_personal_coaching", nullable = false)
 	private boolean supportsPersonalCoaching;
 
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false, length = 20)
+	private MembershipPlanStatus status;
+
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
+
+	@Column(name = "updated_at", nullable = false, insertable = false)
+	private Instant updatedAt;
+
+	@Version
+	@Column(nullable = false)
+	private Long version;
 
 	@ManyToMany(fetch = FetchType.LAZY)
 	@JoinTable(name = "membership_plan_benefits",
@@ -45,7 +56,16 @@ public class MembershipPlan {
 	protected MembershipPlan() {
 	}
 
-	public MembershipPlanCode getPlanCode() {
+	MembershipPlan(String planCode, String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
+		this.planCode = planCode;
+		this.displayName = displayName;
+		this.status = status;
+		this.benefits = new HashSet<>(benefits);
+		this.supportsBooking = benefits.stream().anyMatch(benefit -> "CLASS_BOOKING".equals(benefit.getCode()));
+		this.supportsPersonalCoaching = benefits.stream().anyMatch(benefit -> "PERSONAL_COACHING".equals(benefit.getCode()));
+	}
+
+	public String getPlanCode() {
 		return planCode;
 	}
 
@@ -63,5 +83,18 @@ public class MembershipPlan {
 
 	public Set<MembershipBenefit> getBenefits() {
 		return Set.copyOf(benefits);
+	}
+
+	public MembershipPlanStatus getStatus() { return status; }
+	public Instant getCreatedAt() { return createdAt; }
+	public Instant getUpdatedAt() { return updatedAt; }
+	public Long getVersion() { return version; }
+
+	void update(String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
+		this.displayName = displayName;
+		this.status = status;
+		this.benefits = new HashSet<>(benefits);
+		this.supportsBooking = benefits.stream().anyMatch(benefit -> "CLASS_BOOKING".equals(benefit.getCode()));
+		this.supportsPersonalCoaching = benefits.stream().anyMatch(benefit -> "PERSONAL_COACHING".equals(benefit.getCode()));
 	}
 }

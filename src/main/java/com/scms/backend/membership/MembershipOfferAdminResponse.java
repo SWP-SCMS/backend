@@ -3,7 +3,7 @@ package com.scms.backend.membership;
 import java.math.BigInteger;
 import java.util.UUID;
 
-record MembershipOfferAdminResponse(UUID offerId, MembershipPlanCode planCode, String name,
+record MembershipOfferAdminResponse(UUID offerId, String planCode, String name,
 		String description, BigInteger priceAmount, String currencyCode, int durationDays,
 		MembershipOfferStatus status) {
 	static MembershipOfferAdminResponse from(MembershipOffer offer) {

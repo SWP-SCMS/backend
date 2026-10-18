@@ -25,7 +25,7 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
 	List<MembershipOffer> findAllByStatusAndPlanCode(@Param("status") MembershipOfferStatus status,
-		@Param("planCode") MembershipPlanCode planCode);
+		@Param("planCode") String planCode);
 
 	@Query("""
 		select offer from MembershipOffer offer

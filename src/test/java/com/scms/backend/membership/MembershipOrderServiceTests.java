@@ -25,10 +25,11 @@ class MembershipOrderServiceTests {
 	private final AccountRepository accountRepository = mock(AccountRepository.class);
 	private final MemberProfileRepository memberProfileRepository = mock(MemberProfileRepository.class);
 	private final MembershipOfferRepository offerRepository = mock(MembershipOfferRepository.class);
+	private final MembershipPlanRepository planRepository = mock(MembershipPlanRepository.class);
 	private final MembershipRepository membershipRepository = mock(MembershipRepository.class);
 	private final MembershipOrderRepository orderRepository = mock(MembershipOrderRepository.class);
 	private final MembershipOrderService service = new MembershipOrderService(accountRepository,
-		memberProfileRepository, offerRepository, membershipRepository, orderRepository);
+		memberProfileRepository, offerRepository, planRepository, membershipRepository, orderRepository);
 
 	private UUID memberAccountId;
 	private UUID offerId;
@@ -47,7 +48,7 @@ class MembershipOrderServiceTests {
 		when(memberProfileRepository.findById(memberAccountId)).thenReturn(Optional.of(member));
 
 		MembershipPlan plan = mock(MembershipPlan.class);
-		when(plan.getPlanCode()).thenReturn(MembershipPlanCode.BASIC);
+		when(plan.getPlanCode()).thenReturn(MembershipPlanCode.BASIC.name());
 		MembershipOffer offer = mock(MembershipOffer.class);
 		when(offer.getId()).thenReturn(offerId);
 		when(offer.getPlan()).thenReturn(plan);
@@ -57,6 +58,8 @@ class MembershipOrderServiceTests {
 		when(offer.getDurationDays()).thenReturn(30);
 		when(offerRepository.findByIdAndStatus(offerId, MembershipOfferStatus.ACTIVE))
 			.thenReturn(Optional.of(offer));
+		when(planRepository.findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
+			.thenReturn(Optional.of(plan));
 	}
 
 	@Test
@@ -79,5 +82,14 @@ class MembershipOrderServiceTests {
 		assertThatThrownBy(() -> service.createForMember(memberAccountId,
 			new MembershipOrderCreateRequest(offerId)))
 			.isSameAs(unrelated);
+	}
+
+	@Test
+	void orderCreationLocksTheOfferPlanBeforeCheckingOrderState() {
+		when(orderRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.createForMember(memberAccountId, new MembershipOrderCreateRequest(offerId));
+
+		org.mockito.Mockito.verify(planRepository).findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name());
 	}
 }

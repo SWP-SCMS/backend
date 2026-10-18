@@ -71,6 +71,11 @@ class GeneratedOpenApiTests {
 		"GET /manager/membership-offers",
 		"POST /manager/membership-offers",
 		"PATCH /manager/membership-offers/{id}",
+		"GET /manager/membership-benefits",
+		"GET /manager/membership-plans",
+		"GET /manager/membership-plans/{planCode}",
+		"POST /manager/membership-plans",
+		"PATCH /manager/membership-plans/{planCode}",
 		"POST /members/me/membership-orders",
 		"GET /members/me/membership-orders/pending",
 		"POST /reception/members/{memberId}/membership-orders",
@@ -351,6 +356,35 @@ class GeneratedOpenApiTests {
 			.contains("actorName", "actorRole");
 		assertThat(properties.path("actorName").path("type").toString()).contains("string", "null");
 		assertThat(properties.path("actorRole").path("type").toString()).contains("string", "null");
+	}
+
+	@Test
+	void generatedContractDocumentsMembershipPlanManagement() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode offerPlanCode = document.at("/components/schemas/MembershipOfferResponse/properties/planCode");
+		assertThat(offerPlanCode.path("type").asText()).isEqualTo("string");
+		assertThat(offerPlanCode.path("enum").toString()).isEqualTo("[\"BASIC\",\"PLUS\"]");
+		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
+
+		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "createdAt",
+				"updatedAt", "version");
+		assertThat(response.path("status").path("enum").toString())
+			.isEqualTo("[\"ACTIVE\",\"INACTIVE\"]");
+		assertThat(response.path("benefitCodes").path("type").asText()).isEqualTo("array");
+		assertThat(response.path("createdAt").path("format").asText()).isEqualTo("date-time");
+		assertThat(response.path("updatedAt").path("format").asText()).isEqualTo("date-time");
+
+		JsonNode benefit = document.at("/components/schemas/MembershipBenefitResponse/properties");
+		assertThat(benefit.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("code", "displayName", "description", "status");
+
+		assertThat(operation(document, "/manager/membership-benefits", "get").path("description").asText())
+			.isEqualTo("Requires MANAGER role.");
+		assertThat(response(document, "/manager/membership-plans/{planCode}", "patch", "409")
+			.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		assertThat(document.path("paths").path("/manager/membership-plans/{planCode}").has("delete"))
+			.isFalse();
 	}
 
 	@Test

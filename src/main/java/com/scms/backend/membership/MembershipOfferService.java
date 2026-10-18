@@ -23,7 +23,7 @@ public class MembershipOfferService {
 		}
 		else {
 			MembershipPlanCode planCode = parsePlanCode(requestedPlanCode);
-			offers = repository.findAllByStatusAndPlanCode(MembershipOfferStatus.ACTIVE, planCode);
+			offers = repository.findAllByStatusAndPlanCode(MembershipOfferStatus.ACTIVE, planCode.name());
 		}
 		return offers.stream().map(MembershipOfferResponse::from).toList();
 	}

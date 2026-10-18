@@ -33,7 +33,7 @@ public class MembershipOfferAdminService {
 	@Transactional
 	MembershipOfferAdminResponse create(UUID managerId, MembershipOfferAdminRequest request) {
 		ensureManager(managerId); validate(request, true);
-		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plans.findById(request.planCode()).orElseThrow(),
+		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plans.findById(request.planCode().name()).orElseThrow(),
 			request.name().trim(), request.description().trim(), request.priceAmount(), "VND", request.durationDays(),
 			request.status() == null ? MembershipOfferStatus.ACTIVE : request.status(), managerId);
 		offers.save(offer);
@@ -62,7 +62,7 @@ public class MembershipOfferAdminService {
 
 	private Map<String, Object> snapshot(MembershipOffer offer) {
 		Map<String, Object> data = new HashMap<>();
-		data.put("planCode", offer.getPlan().getPlanCode().name());
+		data.put("planCode", offer.getPlan().getPlanCode());
 		data.put("name", offer.getName());
 		data.put("description", offer.getDescription());
 		data.put("priceAmount", offer.getPriceAmount());

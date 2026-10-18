@@ -92,7 +92,7 @@ public class MembershipOrder {
 		this.createdByAccountId = Objects.requireNonNull(createdByAccountId);
 		this.offerId = Objects.requireNonNull(offer).getId();
 		this.offerNameSnapshot = offer.getName();
-		this.planCodeSnapshot = offer.getPlan().getPlanCode();
+		this.planCodeSnapshot = MembershipPlanCode.valueOf(offer.getPlan().getPlanCode());
 		this.priceAmountSnapshot = offer.getPriceAmount();
 		this.currencyCodeSnapshot = offer.getCurrencyCode();
 		this.durationDaysSnapshot = offer.getDurationDays();

@@ -17,7 +17,7 @@ public record MembershipOfferResponse(
 
 	static MembershipOfferResponse from(MembershipOffer offer) {
 		MembershipPlan plan = offer.getPlan();
-		return new MembershipOfferResponse(offer.getId(), plan.getPlanCode(), plan.getDisplayName(), offer.getName(),
+		return new MembershipOfferResponse(offer.getId(), MembershipPlanCode.valueOf(plan.getPlanCode()), plan.getDisplayName(), offer.getName(),
 			offer.getDescription(), offer.getPriceAmount(), offer.getCurrencyCode(), offer.getDurationDays(),
 			plan.supportsBooking(), plan.supportsPersonalCoaching());
 	}
