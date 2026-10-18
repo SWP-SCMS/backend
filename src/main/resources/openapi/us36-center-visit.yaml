@@ -1,0 +1,222 @@
+openapi: 3.1.0
+info:
+  title: SCMS Center Visit API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /reception/center-visits:
+    post:
+      operationId: checkInCenterVisit
+      description: Requires an active RECEPTIONIST and visual identity verification.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema:
+            type: string
+            maxLength: 100
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CenterVisitRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/CenterVisit'
+        '201':
+          $ref: '#/components/responses/CenterVisit'
+        '400':
+          $ref: '#/components/responses/ApiProblem'
+        '401':
+          $ref: '#/components/responses/ApiProblem'
+        '403':
+          $ref: '#/components/responses/ApiProblem'
+        '404':
+          $ref: '#/components/responses/ApiProblem'
+        '409':
+          $ref: '#/components/responses/ApiProblem'
+  /members/me/center-visits/current:
+    get:
+      operationId: getCurrentMemberCenterVisit
+      description: Requires the active MEMBER who owns the visit.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/CenterVisit'
+        '401':
+          $ref: '#/components/responses/ApiProblem'
+        '403':
+          $ref: '#/components/responses/ApiProblem'
+        '404':
+          $ref: '#/components/responses/ApiProblem'
+  /members/me/center-visits/current/checkout:
+    patch:
+      operationId: checkoutCurrentMemberCenterVisit
+      description: Requires the active MEMBER who owns the visit.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/CenterVisit'
+        '401':
+          $ref: '#/components/responses/ApiProblem'
+        '403':
+          $ref: '#/components/responses/ApiProblem'
+        '404':
+          $ref: '#/components/responses/ApiProblem'
+  /reception/members/{memberAccountId}/center-visits/current/checkout:
+    patch:
+      operationId: checkoutMemberCenterVisitForReceptionist
+      description: Requires an active RECEPTIONIST.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: memberAccountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/CenterVisit'
+        '400':
+          $ref: '#/components/responses/ApiProblem'
+        '401':
+          $ref: '#/components/responses/ApiProblem'
+        '403':
+          $ref: '#/components/responses/ApiProblem'
+        '404':
+          $ref: '#/components/responses/ApiProblem'
+  /reception/center-visits/open:
+    get:
+      operationId: listOpenCenterVisits
+      description: Requires an active RECEPTIONIST and returns oldest check-ins first.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: A page of open center visits
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CenterVisitPageResponse'
+        '400':
+          $ref: '#/components/responses/ApiProblem'
+        '401':
+          $ref: '#/components/responses/ApiProblem'
+        '403':
+          $ref: '#/components/responses/ApiProblem'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    CenterVisit:
+      description: Center visit response with the Member's current Account name
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CenterVisitResponse'
+    ApiProblem:
+      description: Request failed
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiProblem'
+  schemas:
+    CenterVisitRequest:
+      type: object
+      required: [identityVerified]
+      properties:
+        memberId:
+          type: [string, 'null']
+        phone:
+          type: [string, 'null']
+        identityVerified:
+          type: boolean
+    CenterVisitResponse:
+      type: object
+      additionalProperties: false
+      required: [id, memberId, memberCode, memberName, membershipId, checkedInBy, checkedInAt,
+        checkedOutAt, checkoutSource, created]
+      properties:
+        id:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        memberCode:
+          type: string
+        memberName:
+          type: string
+          description: Current Account full name at response time
+        membershipId:
+          type: string
+          format: uuid
+        checkedInBy:
+          type: string
+          format: uuid
+        checkedInAt:
+          type: string
+          format: date-time
+        checkedOutAt:
+          type: [string, 'null']
+          format: date-time
+        checkoutSource:
+          type: [string, 'null']
+          enum: [MEMBER, RECEPTIONIST, AUTO_REENTRY, null]
+        created:
+          type: boolean
+    CenterVisitPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CenterVisitResponse'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    ApiProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string

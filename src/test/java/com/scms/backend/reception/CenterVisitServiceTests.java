@@ -13,7 +13,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -30,6 +32,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class CenterVisitServiceTests {
@@ -70,6 +74,7 @@ class CenterVisitServiceTests {
 			new CenterVisitRequest("MB-100001", null, true), " request-1 ");
 
 		assertThat(response.memberId()).isEqualTo(memberId);
+		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.membershipId()).isEqualTo(membershipId);
 		assertThat(response.checkedInBy()).isEqualTo(receptionistId);
 		assertThat(response.checkedInAt()).isEqualTo(now);
@@ -96,6 +101,7 @@ class CenterVisitServiceTests {
 			new CenterVisitRequest("MB-100001", null, true), "request-1");
 
 		assertThat(response.id()).isEqualTo(existing.getId());
+		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
 		assertThat(response.created()).isFalse();
 		verify(visits, never()).saveAndFlush(any());
@@ -207,6 +213,7 @@ class CenterVisitServiceTests {
 
 		CenterVisitResponse response = service.checkoutMember(memberId);
 
+		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedOutAt()).isEqualTo(now.minusSeconds(60));
 		verify(visits, never()).save(any());
 		verify(audits, never()).save(any());
@@ -222,6 +229,7 @@ class CenterVisitServiceTests {
 
 		CenterVisitResponse response = service.checkoutMember(memberId);
 
+		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedOutAt()).isEqualTo(now);
 		assertThat(response.checkoutSource()).isEqualTo(CheckoutSource.MEMBER);
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
@@ -231,6 +239,65 @@ class CenterVisitServiceTests {
 		assertThat(audit.getValue().getBeforeData()).containsEntry("checkedOut", false);
 		assertThat(audit.getValue().getAfterData()).containsEntry("checkoutSource", "MEMBER")
 			.containsEntry("checkedOutBy", memberId.toString());
+	}
+
+	@Test
+	void currentMemberUsesCurrentAccountName() {
+		CenterVisit open = visit(now.minusSeconds(300), null);
+		when(accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(accounts.findById(memberId)).thenReturn(Optional.of(memberAccount("Renamed Member")));
+		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
+			.thenReturn(Optional.of(open));
+
+		CenterVisitResponse response = service.currentMember(memberId);
+
+		assertThat(response.memberName()).isEqualTo("Renamed Member");
+	}
+
+	@Test
+	void receptionistCheckoutUsesCurrentAccountName() {
+		CenterVisit open = visit(now.minusSeconds(300), null);
+		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount("Checkout Member")));
+		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
+			.thenReturn(Optional.of(open));
+
+		CenterVisitResponse response = service.checkoutReceptionist(receptionistId, memberId);
+
+		assertThat(response.memberName()).isEqualTo("Checkout Member");
+		assertThat(response.checkoutSource()).isEqualTo(CheckoutSource.RECEPTIONIST);
+	}
+
+	@Test
+	void openVisitsBatchUniqueMemberAccountsAndProfiles() {
+		UUID secondMemberId = UUID.randomUUID();
+		CenterVisit first = visit(now.minusSeconds(300), null);
+		CenterVisit second = new CenterVisit(UUID.randomUUID(), secondMemberId, UUID.randomUUID(),
+			receptionistId, now.minusSeconds(200), null);
+		var pageable = PageRequest.of(0, 20);
+		Set<UUID> memberIds = Set.of(memberId, secondMemberId);
+		Account firstAccount = memberAccount("First Member");
+		Account secondAccount = memberAccount(secondMemberId, "Second Member");
+		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(visits.findByCheckedOutAtIsNull(pageable))
+			.thenReturn(new PageImpl<>(List.of(first, second), pageable, 2));
+		when(accounts.findAllById(memberIds)).thenReturn(List.of(firstAccount, secondAccount));
+		when(profiles.findAllById(memberIds))
+			.thenReturn(List.of(new MemberProfile(firstAccount), new MemberProfile(secondAccount)));
+
+		CenterVisitPageResponse response = service.openVisits(receptionistId, pageable);
+
+		assertThat(response.content()).extracting(CenterVisitResponse::memberName)
+			.containsExactly("First Member", "Second Member");
+		verify(accounts).findAllById(memberIds);
+		verify(profiles).findAllById(memberIds);
+		verify(accounts, never()).findById(any());
+		verify(profiles, never()).findById(any());
 	}
 
 	@Test
@@ -285,7 +352,19 @@ class CenterVisitServiceTests {
 	}
 
 	private Account memberAccount(AccountStatus status) {
-		return new Account(memberId, AccountRole.MEMBER, status, "Member", "0901000001",
+		return memberAccount(memberId, status, "Member");
+	}
+
+	private Account memberAccount(String fullName) {
+		return memberAccount(memberId, AccountStatus.ACTIVE, fullName);
+	}
+
+	private Account memberAccount(UUID accountId, String fullName) {
+		return memberAccount(accountId, AccountStatus.ACTIVE, fullName);
+	}
+
+	private Account memberAccount(UUID accountId, AccountStatus status, String fullName) {
+		return new Account(accountId, AccountRole.MEMBER, status, fullName, "0901000001",
 			"member@example.test", LocalDate.of(1990, 1, 1), "password");
 	}
 

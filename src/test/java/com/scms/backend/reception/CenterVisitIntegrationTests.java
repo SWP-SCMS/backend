@@ -83,6 +83,7 @@ class CenterVisitIntegrationTests {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.memberId").value(member.getAccountId().toString()))
 			.andExpect(jsonPath("$.memberCode").value(member.getMemberCode()))
+			.andExpect(jsonPath("$.memberName").value("MEMBER US36"))
 			.andExpect(jsonPath("$.membershipId").value(membershipId.toString()))
 			.andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
 		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}")
@@ -108,10 +109,12 @@ class CenterVisitIntegrationTests {
 			.andExpect(status().isCreated()).andExpect(jsonPath("$.created").value(true));
 		Instant checkedInAt = jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
 			Instant.class, first.getAccountId());
-		jdbc.update("update accounts set status='SUSPENDED' where id=?", first.getAccountId());
+		jdbc.update("update accounts set status='SUSPENDED', full_name='Renamed Replay Member' where id=?",
+			first.getAccountId());
 		jdbc.update("update member_profiles set profile_image_url=null where account_id=?", first.getAccountId());
 		checkIn(receptionist, request(first), " visit-key ")
-			.andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false))
+			.andExpect(jsonPath("$.memberName").value("Renamed Replay Member"));
 		assertThat(jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
 			Instant.class, first.getAccountId())).isEqualTo(checkedInAt);
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?",
@@ -156,35 +159,42 @@ class CenterVisitIntegrationTests {
 		MemberProfile other = member(AccountStatus.ACTIVE, "photo");
 		membership(owner.getAccountId(), receptionist.getId());
 		checkIn(receptionist, request(owner), null).andExpect(status().isCreated());
+		jdbc.update("update accounts set full_name='Renamed Center Member' where id=?", owner.getAccountId());
 
 		mockMvc.perform(get("/api/v1/members/me/center-visits/current").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(other.getAccount())))
 			.andExpect(status().isNotFound());
 		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("MEMBER"));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("MEMBER"))
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		Instant checkout = jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
 			Instant.class, owner.getAccountId());
 		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		assertThat(jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
 			Instant.class, owner.getAccountId())).isEqualTo(checkout);
 
-		checkIn(receptionist, request(owner), "reentry").andExpect(status().isCreated());
+		checkIn(receptionist, request(owner), "reentry").andExpect(status().isCreated())
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"))
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		Instant receptionistCheckout = jdbc.queryForObject("""
 			select checked_out_at from center_visits where member_account_id=?
 			order by checked_in_at desc, id desc limit 1
 			""", Instant.class, owner.getAccountId());
 		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"))
+			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		assertThat(jdbc.queryForObject("""
 			select checked_out_at from center_visits where member_account_id=?
 			order by checked_in_at desc, id desc limit 1
@@ -209,6 +219,8 @@ class CenterVisitIntegrationTests {
 		checkIn(receptionist, request(first), null).andExpect(status().isCreated());
 		checkIn(receptionist, request(second), null).andExpect(status().isCreated());
 		checkIn(receptionist, request(third), null).andExpect(status().isCreated());
+		jdbc.update("update accounts set full_name='First Open Member' where id=?", first.getAccountId());
+		jdbc.update("update accounts set full_name='Third Open Member' where id=?", third.getAccountId());
 		Instant firstTime = Instant.parse("2026-10-06T01:00:00Z");
 		Instant secondTime = Instant.parse("2026-10-06T02:00:00Z");
 		Instant thirdTime = Instant.parse("2026-10-06T03:00:00Z");
@@ -231,12 +243,14 @@ class CenterVisitIntegrationTests {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
 			.andExpect(jsonPath("$.content[0].id").value(firstVisit.toString()))
+			.andExpect(jsonPath("$.content[0].memberName").value("First Open Member"))
 			.andExpect(jsonPath("$.totalElements").value(2))
 			.andExpect(jsonPath("$.totalPages").value(2));
 		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=1&size=1").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
 			.andExpect(jsonPath("$.content[0].id").value(thirdVisit.toString()))
+			.andExpect(jsonPath("$.content[0].memberName").value("Third Open Member"))
 			.andExpect(jsonPath("$.totalElements").value(2));
 
 		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?",
