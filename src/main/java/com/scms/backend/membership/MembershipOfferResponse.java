@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record MembershipOfferResponse(
 	UUID offerId,
-	MembershipPlanCode planCode,
+	String planCode,
 	String planDisplayName,
 	String name,
 	String description,

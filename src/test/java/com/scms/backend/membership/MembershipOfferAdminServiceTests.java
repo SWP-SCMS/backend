@@ -37,7 +37,7 @@ class MembershipOfferAdminServiceTests {
 	void createWritesCompleteAuditEvent() {
 		UUID managerId = activeManager();
 		MembershipPlan plan = plan(MembershipPlanCode.PLUS);
-		when(plans.findById(MembershipPlanCode.PLUS)).thenReturn(Optional.of(plan));
+		when(plans.findById(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
 		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		MembershipOfferAdminResponse result = service.create(managerId, new MembershipOfferAdminRequest(
@@ -107,7 +107,7 @@ class MembershipOfferAdminServiceTests {
 
 	private MembershipPlan plan(MembershipPlanCode code) {
 		MembershipPlan plan = mock(MembershipPlan.class);
-		when(plan.getPlanCode()).thenReturn(code);
+		when(plan.getPlanCode()).thenReturn(code.name());
 		return plan;
 	}
 }

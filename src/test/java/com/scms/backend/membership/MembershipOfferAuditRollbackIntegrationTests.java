@@ -63,7 +63,7 @@ class MembershipOfferAuditRollbackIntegrationTests {
 	void auditFailureRollsBackMembershipOfferUpdate() {
 		Account creator = saveManager();
 		MembershipOffer offer = offers.saveAndFlush(new MembershipOffer(UUID.randomUUID(),
-			plans.findById(MembershipPlanCode.BASIC).orElseThrow(), "Original offer", "Original description",
+			plans.findById(MembershipPlanCode.BASIC.name()).orElseThrow(), "Original offer", "Original description",
 			BigInteger.valueOf(500000), "VND", 30, MembershipOfferStatus.ACTIVE, creator.getId()));
 		long originalVersion = ((Number) membershipOfferRow(offer.getId()).get("version")).longValue();
 		String constraint = "chk_test_reject_membership_offer_update_audit";

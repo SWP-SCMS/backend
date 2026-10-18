@@ -26,6 +26,9 @@ import com.scms.backend.membership.PaymentException;
 import com.scms.backend.membership.ReportingValidationException;
 import com.scms.backend.membership.SepayValidationException;
 import com.scms.backend.membership.MembershipOfferValidationException;
+import com.scms.backend.membership.MembershipPlanConflictException;
+import com.scms.backend.membership.MembershipPlanNotFoundException;
+import com.scms.backend.membership.MembershipPlanValidationException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
 import com.scms.backend.reception.CenterVisitException;
@@ -442,6 +445,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
 		problem.setTitle("Membership offer validation failed");
 		problem.setProperty("code", "MEMBERSHIP_OFFER_VALIDATION_ERROR");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipPlanValidationException.class)
+	ProblemDetail handleMembershipPlanValidation(MembershipPlanValidationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+		problem.setTitle("Membership plan validation failed");
+		problem.setProperty("code", "MEMBERSHIP_PLAN_VALIDATION_ERROR");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipPlanConflictException.class)
+	ProblemDetail handleMembershipPlanConflict(MembershipPlanConflictException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
+		problem.setTitle("Membership plan conflict");
+		problem.setProperty("code", exception.getMessage());
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipPlanNotFoundException.class)
+	ProblemDetail handleMembershipPlanNotFound() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND,
+			"The requested membership plan was not found.");
+		problem.setTitle("Membership plan not found");
+		problem.setProperty("code", "MEMBERSHIP_PLAN_NOT_FOUND");
 		return problem;
 	}
 

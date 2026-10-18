@@ -4,6 +4,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface MembershipOrderRepository extends JpaRepository<MembershipOrder, UUID> {
 
@@ -11,4 +13,7 @@ public interface MembershipOrderRepository extends JpaRepository<MembershipOrder
 
 	Optional<MembershipOrder> findByMemberAccountIdAndStatus(UUID memberAccountId,
 		MembershipOrderStatus status);
+
+	@Query(value = "select exists (select 1 from membership_orders where plan_code_snapshot = :planCode)", nativeQuery = true)
+	boolean existsByPlanCodeSnapshot(@Param("planCode") String planCode);
 }

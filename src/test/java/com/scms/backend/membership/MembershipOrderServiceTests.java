@@ -47,7 +47,7 @@ class MembershipOrderServiceTests {
 		when(memberProfileRepository.findById(memberAccountId)).thenReturn(Optional.of(member));
 
 		MembershipPlan plan = mock(MembershipPlan.class);
-		when(plan.getPlanCode()).thenReturn(MembershipPlanCode.BASIC);
+		when(plan.getPlanCode()).thenReturn(MembershipPlanCode.BASIC.name());
 		MembershipOffer offer = mock(MembershipOffer.class);
 		when(offer.getId()).thenReturn(offerId);
 		when(offer.getPlan()).thenReturn(plan);
