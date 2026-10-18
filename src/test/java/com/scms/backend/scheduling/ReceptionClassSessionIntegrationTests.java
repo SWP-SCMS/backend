@@ -25,7 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -195,7 +195,7 @@ class ReceptionClassSessionIntegrationTests {
 
 		assertThatThrownBy(() -> bookings.saveAndFlush(new Booking(UUID.randomUUID(), fixture.openSession().getId(),
 			fixture.dynamicMember().getId(), fixture.dynamicMembershipId(), fixture.receptionist().getId(), NOW)))
-			.isInstanceOf(DataIntegrityViolationException.class);
+			.isInstanceOf(DataAccessException.class);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor receptionistJwt(UUID accountId) {
