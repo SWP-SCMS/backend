@@ -25,7 +25,7 @@
 
 ## CI gate
 
-Pending commit, rebase, push, PR, Push-CI, PR-CI, merge, Main CI, and post-merge smoke test.
+Completed: commit `83c779e`, PR #88, Push-CI `39174732630`, PR-CI `39174735668`, squash merge `71a783a`, Main CI `39175219818`, and post-merge focused smoke (78 tests, 0 failures/errors).
 
 ## Risk / follow-up
 

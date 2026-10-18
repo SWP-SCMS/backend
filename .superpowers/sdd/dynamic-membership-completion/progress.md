@@ -48,3 +48,15 @@
 - `git diff --check`: passed.
 - Report: `.superpowers/sdd/dynamic-membership-completion/task-7-report.md`.
 - Remaining gates: fetch/rebase, repeat tests, commit/push, Push-CI, PR-CI, merge, Main CI, post-merge smoke, then Progress 8.
+
+### Progress 7 complete
+
+- Fix commit: `83c779e`.
+- PR: https://github.com/SWP-SCMS/backend/pull/88.
+- Squash merge: `71a783a`.
+- Push-CI after fix: `39174732630` — success, unit plus four integration shards.
+- PR-CI after fix: `39174735668` — success, unit plus four integration shards.
+- Main CI after merge: `39175219818` — success, unit plus four integration shards.
+- Post-merge smoke on `main`: focused assignment/training service and OpenAPI suite passed; 16 selected classes, 78 tests, 0 failures/errors.
+- Local full test after fix: 523 tests, 0 failures, 50 Docker/Testcontainers-only errors because Docker is unavailable locally.
+- Progress 8 may now start from `origin/main@71a783a`.
