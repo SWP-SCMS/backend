@@ -4,7 +4,7 @@
 
 Implementation complete on branch `codex/dynamic-membership-plan-api` from baseline `a2e4e9c7c3babf38103034ca3586a8abde62e7a7`.
 
-Local commit SHA: pending final local commit.
+Local implementation commit SHA: `892da16`.
 
 ## Acceptance criteria and implementation
 
