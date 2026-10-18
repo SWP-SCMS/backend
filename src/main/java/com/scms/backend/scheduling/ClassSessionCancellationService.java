@@ -19,6 +19,7 @@ import com.scms.backend.notification.NotificationWriter;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,10 +34,12 @@ public class ClassSessionCancellationService {
 	private final NotificationWriter notifications;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
+	private final ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous;
 
 	ClassSessionCancellationService(ClassSessionRepository sessions, AccountRepository accounts,
 			AuditEventRepository audits, JdbcTemplate jdbc, NotificationWriter notifications,
-			SessionLifecycleService lifecycle, Clock clock) {
+			SessionLifecycleService lifecycle, Clock clock,
+			ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous) {
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
@@ -44,6 +47,7 @@ public class ClassSessionCancellationService {
 		this.notifications = notifications;
 		this.lifecycle = lifecycle;
 		this.clock = clock;
+		this.explicitBulkLockRendezvous = explicitBulkLockRendezvous;
 	}
 
 	@Transactional
@@ -99,6 +103,7 @@ public class ClassSessionCancellationService {
 		lifecycle.catchUp(now);
 		List<ClassSession> eligibleSessions;
 		if (requestedIds != null) {
+			explicitBulkLockRendezvous.await();
 			List<ClassSession> lockedSessions = sessions.findAllByIdForUpdate(requestedIds);
 			eligibleSessions = lockedSessions.stream()
 				.filter(session -> isEligible(session, request, now))
@@ -192,5 +197,11 @@ public class ClassSessionCancellationService {
 				"sessionIds, classId, from, or to is required");
 		}
 		return request.sessionIds();
+	}
+}
+
+@Component
+class ExplicitBulkCancellationLockRendezvous {
+	void await() {
 	}
 }

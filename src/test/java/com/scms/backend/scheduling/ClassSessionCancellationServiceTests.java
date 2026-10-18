@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -41,6 +42,7 @@ class ClassSessionCancellationServiceTests {
 	@Mock JdbcTemplate jdbc;
 	@Mock NotificationWriter notifications;
 	@Mock SessionLifecycleService lifecycle;
+	@Mock ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous;
 	ClassSessionCancellationService service;
 
 	private final Instant now = Instant.parse("2026-10-06T06:00:00Z");
@@ -48,7 +50,7 @@ class ClassSessionCancellationServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionCancellationService(sessions, accounts, audits, jdbc, notifications, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC));
+			Clock.fixed(now, ZoneOffset.UTC), explicitBulkLockRendezvous);
 	}
 
 	@Test
@@ -192,6 +194,21 @@ class ClassSessionCancellationServiceTests {
 		verify(sessions).findAllByIdForUpdate(requestedIds);
 		verify(sessions, times(2)).saveAndFlush(any(ClassSession.class));
 		verify(audits, times(2)).save(any());
+	}
+
+	@Test
+	void explicitBulkCancellationReachesRendezvousImmediatelyBeforeOrderedLockQuery() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		List<UUID> requestedIds = List.of(session.getId());
+		when(sessions.findAllByIdForUpdate(requestedIds)).thenReturn(List.of(session));
+
+		service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "lock boundary"));
+
+		org.mockito.InOrder ordered = inOrder(explicitBulkLockRendezvous, sessions);
+		ordered.verify(explicitBulkLockRendezvous).await();
+		ordered.verify(sessions).findAllByIdForUpdate(requestedIds);
 	}
 
 	@Test

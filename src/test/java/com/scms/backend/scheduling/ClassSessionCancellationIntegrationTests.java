@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -47,6 +49,7 @@ class ClassSessionCancellationIntegrationTests {
 	@Autowired RoomRepository rooms;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
+	@MockitoBean ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous;
 
 	@Test
 	void memberBookingIsPersistedAuditedNotifiedAndCannotOverbook() {
@@ -350,9 +353,11 @@ class ClassSessionCancellationIntegrationTests {
 	}
 
 	@Test
-	void concurrentBulkCancellationOfTheSameIdsCancelsOnceWithoutDeadlock() throws Exception {
+	void concurrentOppositeOrderBulkCancellationCancelsEachEffectExactlyOnceWithoutDeadlock() throws Exception {
 		Account manager = saveAccount(AccountRole.MANAGER, "Concurrent Manager");
 		Account coach = saveAccount(AccountRole.COACH, "Concurrent Coach");
+		Account firstMember = saveAccount(AccountRole.MEMBER, "Concurrent Member One");
+		Account secondMember = saveAccount(AccountRole.MEMBER, "Concurrent Member Two");
 		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Concurrent Yoga", null,
 			DisciplineStatus.ACTIVE));
 		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Concurrent Flow",
@@ -364,40 +369,76 @@ class ClassSessionCancellationIntegrationTests {
 		ClassSession second = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
 			room, Instant.parse("2031-03-01T04:00:00Z"), Instant.parse("2031-03-01T05:00:00Z"), 12,
 			manager.getId()));
-		CountDownLatch ready = new CountDownLatch(2);
-		CountDownLatch start = new CountDownLatch(1);
+		UUID firstMembershipId = insertMembership(manager.getId(), firstMember.getId());
+		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
+		UUID firstBookingId = insertBooking(first, firstMember, firstMembershipId);
+		UUID secondBookingId = insertBooking(second, secondMember, secondMembershipId);
+		CountDownLatch atLockBoundary = new CountDownLatch(2);
+		CountDownLatch releaseLockBoundary = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			atLockBoundary.countDown();
+			if (!releaseLockBoundary.await(5, TimeUnit.SECONDS)) {
+				throw new AssertionError("Timed out waiting to release explicit bulk lock boundary");
+			}
+			return null;
+		}).when(explicitBulkLockRendezvous).await();
 
 		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
 			Future<ClassSessionCancellationBatchResponse> firstRequest = executor.submit(() -> {
-				ready.countDown();
-				start.await();
 				return service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(
 					List.of(first.getId(), second.getId()), null, null, null, "concurrent one"));
 			});
 			Future<ClassSessionCancellationBatchResponse> secondRequest = executor.submit(() -> {
-				ready.countDown();
-				start.await();
 				return service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(
 					List.of(second.getId(), first.getId()), null, null, null, "concurrent two"));
 			});
-			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-			start.countDown();
+			boolean bothReachedLockBoundary;
+			try {
+				bothReachedLockBoundary = atLockBoundary.await(5, TimeUnit.SECONDS);
+			}
+			finally {
+				releaseLockBoundary.countDown();
+			}
+			assertThat(bothReachedLockBoundary).isTrue();
 
 			assertThat(List.of(firstRequest.get(10, TimeUnit.SECONDS).cancelledCount(),
 				secondRequest.get(10, TimeUnit.SECONDS).cancelledCount())).containsExactlyInAnyOrder(0, 2);
 		}
 
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
+			first.getId())).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
+			second.getId())).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForMap("""
+			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
+			""", firstBookingId)).containsEntry("status", "CANCELLED")
+			.containsEntry("cancellation_source", "SESSION_CANCELLED")
+			.containsEntry("cancelled_by_account_id", manager.getId());
+		assertThat(jdbc.queryForMap("""
+			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
+			""", secondBookingId)).containsEntry("status", "CANCELLED")
+			.containsEntry("cancellation_source", "SESSION_CANCELLED")
+			.containsEntry("cancelled_by_account_id", manager.getId());
 		assertThat(jdbc.queryForObject("""
-			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id in (?, ?)
-			""", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, first.getId())).isOne();
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, second.getId())).isOne();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?",
+			Long.class, "SESSION_CANCELLED:" + first.getId() + ":" + firstMember.getId())).isOne();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?",
+			Long.class, "SESSION_CANCELLED:" + second.getId() + ":" + secondMember.getId())).isOne();
 	}
 
-	private void insertBooking(ClassSession session, Account member, UUID membershipId) {
+	private UUID insertBooking(ClassSession session, Account member, UUID membershipId) {
+		UUID bookingId = UUID.randomUUID();
 		jdbc.update("""
 			insert into bookings (id, class_session_id, member_account_id, membership_id, status,
 				booked_by_account_id)
 			values (?, ?, ?, ?, 'BOOKED', ?)
-			""", UUID.randomUUID(), session.getId(), member.getId(), membershipId, member.getId());
+			""", bookingId, session.getId(), member.getId(), membershipId, member.getId());
+		return bookingId;
 	}
 
 	private UUID insertMembership(UUID managerId, UUID memberId) {
