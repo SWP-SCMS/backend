@@ -1,6 +1,7 @@
 package com.scms.backend.training;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -103,4 +104,90 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		  )
 		""", nativeQuery = true)
 	int endAllActiveAssignmentsWithExpiredPlus(@Param("now") Instant now);
+
+	@Query(value = """
+		select account.id as "memberAccountId", profile.member_code as "memberCode",
+			account.full_name as "fullName", account.phone as "phone", account.email as "email",
+			membership.ends_at as "membershipEndsAt",
+			case when assignment.id is null then 'UNASSIGNED' else 'ASSIGNED' end as "assignmentStatus"
+		from accounts account
+		join member_profiles profile on profile.account_id = account.id
+		join lateral (
+			select memberships.ends_at
+			from memberships
+			where memberships.member_account_id = account.id
+			  and memberships.status = 'ACTIVE'
+			  and memberships.plan_code_snapshot = 'PLUS'
+			  and memberships.starts_at <= :now
+			  and memberships.ends_at > :now
+			order by memberships.ends_at, memberships.id
+			limit 1
+		) membership on true
+		left join coach_assignments assignment
+		  on assignment.member_account_id = account.id and assignment.status = 'ACTIVE'
+		where account.role = 'MEMBER' and account.status = 'ACTIVE'
+		  and (cast(:query as text) is null or lower(profile.member_code) like lower(concat('%', cast(:query as text), '%'))
+		    or lower(account.full_name) like lower(concat('%', cast(:query as text), '%'))
+		    or account.phone like concat('%', cast(:query as text), '%')
+		    or lower(account.email) like lower(concat('%', cast(:query as text), '%')))
+		  and (:assignmentStatus = 'ALL'
+		    or (:assignmentStatus = 'UNASSIGNED' and assignment.id is null)
+		    or (:assignmentStatus = 'ASSIGNED' and assignment.id is not null))
+		order by case when assignment.id is null then 0 else 1 end,
+			membership.ends_at, profile.member_code, account.id
+		""", countQuery = """
+		select count(*)
+		from accounts account
+		join member_profiles profile on profile.account_id = account.id
+		left join coach_assignments assignment
+		  on assignment.member_account_id = account.id and assignment.status = 'ACTIVE'
+		where account.role = 'MEMBER' and account.status = 'ACTIVE'
+		  and exists (
+			select 1 from memberships
+			where memberships.member_account_id = account.id
+			  and memberships.status = 'ACTIVE'
+			  and memberships.plan_code_snapshot = 'PLUS'
+			  and memberships.starts_at <= :now
+			  and memberships.ends_at > :now
+		  )
+		  and (cast(:query as text) is null or lower(profile.member_code) like lower(concat('%', cast(:query as text), '%'))
+		    or lower(account.full_name) like lower(concat('%', cast(:query as text), '%'))
+		    or account.phone like concat('%', cast(:query as text), '%')
+		    or lower(account.email) like lower(concat('%', cast(:query as text), '%')))
+		  and (:assignmentStatus = 'ALL'
+		    or (:assignmentStatus = 'UNASSIGNED' and assignment.id is null)
+		    or (:assignmentStatus = 'ASSIGNED' and assignment.id is not null))
+		""", nativeQuery = true)
+	Page<AssignmentCandidateView> findAssignmentCandidates(@Param("query") String query,
+		@Param("assignmentStatus") String assignmentStatus, @Param("now") Instant now, Pageable pageable);
+
+	@Query(value = """
+		select account.id as "coachAccountId", account.full_name as "fullName",
+			account.phone as "phone", account.email as "email", count(assignment.id) as "activeMemberCount"
+		from accounts account
+		left join coach_assignments assignment
+		  on assignment.coach_account_id = account.id and assignment.status = 'ACTIVE'
+		where account.role = 'COACH' and account.status = 'ACTIVE'
+		group by account.id, account.full_name, account.phone, account.email
+		order by account.full_name, account.id
+		""", nativeQuery = true)
+	List<CoachAssignmentWorkloadView> findAssignmentWorkloads();
+
+	interface AssignmentCandidateView {
+		UUID getMemberAccountId();
+		String getMemberCode();
+		String getFullName();
+		String getPhone();
+		String getEmail();
+		Instant getMembershipEndsAt();
+		String getAssignmentStatus();
+	}
+
+	interface CoachAssignmentWorkloadView {
+		UUID getCoachAccountId();
+		String getFullName();
+		String getPhone();
+		String getEmail();
+		long getActiveMemberCount();
+	}
 }
