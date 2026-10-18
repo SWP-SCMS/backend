@@ -22,15 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class SessionTrainingResultService {
 
 	private final TrainingResultRepository results;
+	private final CoachAssignmentRepository assignments;
 	private final ClassSessionRepository sessions;
 	private final BookingRepository bookings;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final Clock clock;
 
-	public SessionTrainingResultService(TrainingResultRepository results, ClassSessionRepository sessions,
-			BookingRepository bookings, AccountRepository accounts, AuditEventRepository audits, Clock clock) {
+	public SessionTrainingResultService(TrainingResultRepository results, CoachAssignmentRepository assignments,
+			ClassSessionRepository sessions, BookingRepository bookings, AccountRepository accounts,
+			AuditEventRepository audits, Clock clock) {
 		this.results = results;
+		this.assignments = assignments;
 		this.sessions = sessions;
 		this.bookings = bookings;
 		this.accounts = accounts;
@@ -46,6 +49,7 @@ public class SessionTrainingResultService {
 				BookingStatus.BOOKED)) {
 			throw TrainingResultException.sessionMemberNotFound();
 		}
+		requireTrainingResultBenefit(memberId);
 		TrainingResult existing = results.findSessionByClassSessionIdAndMemberAccountIdForUpdate(sessionId, memberId)
 				.orElse(null);
 		if (existing != null) {
@@ -64,6 +68,7 @@ public class SessionTrainingResultService {
 	public SessionTrainingResultResponse update(UUID coachId, UUID sessionId, UUID memberId, UUID resultId,
 			SessionTrainingResultRequest request) {
 		requireOwnedGroupOrYogaSession(coachId, sessionId);
+		requireTrainingResultBenefit(memberId);
 		TrainingResult result = results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId)
 			.orElseThrow(TrainingResultException::sessionResultNotFound);
 		Map<String, Object> beforeData = snapshot(result);
@@ -95,6 +100,12 @@ public class SessionTrainingResultService {
 		}
 		sessions.findOwnedGroupOrYogaById(sessionId, coachId)
 			.orElseThrow(TrainingResultException::sessionNotFound);
+	}
+
+	private void requireTrainingResultBenefit(UUID memberId) {
+		if (!assignments.hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", clock.instant())) {
+			throw TrainingResultException.plusMembershipRequired();
+		}
 	}
 
 	private Map<String, Object> snapshot(TrainingResult result) {

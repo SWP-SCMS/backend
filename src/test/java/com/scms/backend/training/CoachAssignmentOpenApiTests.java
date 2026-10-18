@@ -23,6 +23,7 @@ class CoachAssignmentOpenApiTests {
 			// OpenAPI 3.1 strictly forbids 'nullable: true'
 			assertThat(rawYaml).doesNotContain("nullable: true");
 			assertThat(rawYaml).doesNotContain("nullable:true");
+			assertThat(rawYaml).contains("PERSONAL_COACHING Benefit", "PLUS_MEMBERSHIP_REQUIRED");
 
 			Map<String, Object> document = new Yaml().load(new String(bytes, StandardCharsets.UTF_8));
 			assertThat(document.get("openapi")).isEqualTo("3.1.0");

@@ -31,7 +31,7 @@ public class MemberCoachAssignmentService {
 		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
-		assignments.endActiveAssignmentIfPlusExpired(memberId, clock.instant());
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, clock.instant());
 		return assignments.findByMemberAccountIdAndStatus(memberId, CoachAssignmentStatus.ACTIVE)
 				.flatMap(assignment -> coachResponse(assignment));
 	}

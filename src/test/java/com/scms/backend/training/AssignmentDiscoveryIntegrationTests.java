@@ -215,7 +215,8 @@ class AssignmentDiscoveryIntegrationTests {
 		UUID singleAssignment = insertActiveAssignment(singleMember.getAccountId(), coach.getId(), manager.getId(),
 			now.minusSeconds(14400));
 
-		assertThat(assignments.endActiveAssignmentIfPlusExpired(singleMember.getAccountId(), now)).isEqualTo(1);
+		assertThat(assignments.endActiveAssignmentIfPersonalCoachingExpired(singleMember.getAccountId(), now))
+			.isEqualTo(1);
 		assertEndedAt(singleAssignment, latestPastExpiry);
 
 		MemberProfile bulkMember = createMember(AccountStatus.ACTIVE, "Bulk Reconciliation Member",
@@ -229,7 +230,7 @@ class AssignmentDiscoveryIntegrationTests {
 		UUID bulkAssignment = insertActiveAssignment(bulkMember.getAccountId(), coach.getId(), manager.getId(),
 			now.minusSeconds(14400));
 
-		assertThat(assignments.endAllActiveAssignmentsWithExpiredPlus(now)).isEqualTo(1);
+		assertThat(assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(now)).isEqualTo(1);
 		assertEndedAt(bulkAssignment, latestPastExpiry);
 	}
 

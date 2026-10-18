@@ -170,7 +170,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     Conflict:
-      description: The Member does not have an active PLUS Membership.
+      description: The Member does not have an active Membership with the TRAINING_RESULT Benefit.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

@@ -40,7 +40,7 @@ public class TrainingResultService {
 	@Transactional
 	public TrainingResultResponse create(UUID coachId, UUID memberId, PersonalTrainingResultRequest request) {
 		Instant now = clock.instant();
-		CoachAssignment assignment = requireCurrentAssignment(coachId, memberId, now);
+		CoachAssignment assignment = requireCurrentAssignment(coachId, memberId, now, "TRAINING_RESULT");
 		requireMemberPlanVersion(request.trainingPlanVersionId(), memberId);
 
 		TrainingResult result = results.saveAndFlush(new TrainingResult(UUID.randomUUID(), memberId,
@@ -55,7 +55,7 @@ public class TrainingResultService {
 	public TrainingResultResponse update(UUID coachId, UUID memberId, UUID resultId,
 			PersonalTrainingResultRequest request) {
 		Instant now = clock.instant();
-		requireCurrentAssignment(coachId, memberId, now);
+		requireCurrentAssignment(coachId, memberId, now, "TRAINING_RESULT");
 		requireMemberPlanVersion(request.trainingPlanVersionId(), memberId);
 
 		TrainingResult result = results.findPersonalByIdAndMemberAccountIdForUpdate(resultId, memberId)
@@ -70,19 +70,21 @@ public class TrainingResultService {
 
 	@Transactional
 	public TrainingResultPageResponse list(UUID coachId, UUID memberId, Pageable pageable) {
-		requireCurrentAssignment(coachId, memberId, clock.instant());
+		requireCurrentAssignment(coachId, memberId, clock.instant(), null);
 		var page = results.findHistoryByMemberAccountId(memberId, pageable);
 		return new TrainingResultPageResponse(page.getContent().stream()
 				.map(TrainingResultResponse::from).toList(), page.getNumber(), page.getSize(),
 				page.getTotalElements(), page.getTotalPages());
 	}
 
-	private CoachAssignment requireCurrentAssignment(UUID coachId, UUID memberId, Instant now) {
+	private CoachAssignment requireCurrentAssignment(UUID coachId, UUID memberId, Instant now,
+			String requiredBenefit) {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw TrainingResultException.actorNotActiveCoach();
 		}
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
-		if (!assignments.hasActivePlusMembership(memberId, now)) {
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+		if (requiredBenefit != null
+				&& !assignments.hasActiveMembershipBenefit(memberId, requiredBenefit, now)) {
 			throw TrainingResultException.plusMembershipRequired();
 		}
 		return assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(

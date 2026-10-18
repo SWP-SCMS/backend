@@ -286,7 +286,7 @@ class CoachAssignmentIntegrationTests {
 				"select status, ends_at, end_reason from coach_assignments where id = ?", assignmentId);
 		assertThat(assignmentRow.get("status")).isEqualTo("ENDED");
 		assertThat(assignmentRow.get("ends_at")).isNotNull();
-		assertThat(assignmentRow.get("end_reason")).isEqualTo("PLUS membership expired");
+		assertThat(assignmentRow.get("end_reason")).isEqualTo("PERSONAL_COACHING Benefit expired");
 
 		// 3. Verify history retains the ended assignment
 		CoachAssignmentPageResponse history = service.listHistory(manager.getId(), member.getId(),
@@ -294,6 +294,6 @@ class CoachAssignmentIntegrationTests {
 		assertThat(history.totalElements()).isEqualTo(1);
 		assertThat(history.content().get(0).id()).isEqualTo(assignmentId);
 		assertThat(history.content().get(0).status()).isEqualTo(CoachAssignmentStatus.ENDED);
-		assertThat(history.content().get(0).endReason()).isEqualTo("PLUS membership expired");
+		assertThat(history.content().get(0).endReason()).isEqualTo("PERSONAL_COACHING Benefit expired");
 	}
 }

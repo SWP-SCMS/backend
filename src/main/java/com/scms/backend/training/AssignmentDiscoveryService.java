@@ -57,7 +57,7 @@ public class AssignmentDiscoveryService {
 	private Instant reconcile() {
 		Instant now = clock.instant();
 		memberships.expireDue(now);
-		assignments.endAllActiveAssignmentsWithExpiredPlus(now);
+		assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 		return now;
 	}
 

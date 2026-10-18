@@ -114,7 +114,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     Conflict:
-      description: PLUS Membership, plan status, or version state prevents the update.
+      description: TRAINING_PLAN Benefit, plan status, or version state prevents the update.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

@@ -44,7 +44,7 @@ public class TrainingPlanService {
 	public TrainingPlanResponse create(UUID coachId, UUID memberId, CreateTrainingPlanRequest request) {
 		ensureActiveCoach(coachId);
 		Instant now = clock.instant();
-		CoachAssignment assignment = currentAssignment(coachId, memberId, now);
+		CoachAssignment assignment = currentAssignment(coachId, memberId, now, "TRAINING_PLAN");
 
 		TrainingPlan plan = plans.saveAndFlush(new TrainingPlan(UUID.randomUUID(), memberId, assignment.getId(),
 				request.title().trim(), coachId, now));
@@ -69,7 +69,7 @@ public class TrainingPlanService {
 			UpdateTrainingPlanRequest request) {
 		ensureActiveCoach(coachId);
 		Instant now = clock.instant();
-		currentAssignment(coachId, memberId, now);
+		currentAssignment(coachId, memberId, now, "TRAINING_PLAN");
 
 		TrainingPlan plan = plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)
 				.orElseThrow(TrainingPlanException::planNotFound);
@@ -103,7 +103,7 @@ public class TrainingPlanService {
 	@Transactional
 	public TrainingPlanPageResponse list(UUID coachId, UUID memberId, Pageable pageable) {
 		ensureActiveCoach(coachId);
-		currentAssignment(coachId, memberId, clock.instant());
+		currentAssignment(coachId, memberId, clock.instant(), null);
 		var page = plans.findByMemberAccountId(memberId, pageable);
 		List<UUID> planIds = page.getContent().stream().map(TrainingPlan::getId).toList();
 		Map<UUID, TrainingPlanVersion> latestVersions = planIds.isEmpty() ? Map.of()
@@ -127,9 +127,10 @@ public class TrainingPlanService {
 		}
 	}
 
-	private CoachAssignment currentAssignment(UUID coachId, UUID memberId, Instant now) {
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
-		if (!assignments.hasActivePlusMembership(memberId, now)) {
+	private CoachAssignment currentAssignment(UUID coachId, UUID memberId, Instant now, String requiredBenefit) {
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+		if (requiredBenefit != null
+				&& !assignments.hasActiveMembershipBenefit(memberId, requiredBenefit, now)) {
 			throw TrainingPlanException.plusMembershipRequired();
 		}
 		return assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(

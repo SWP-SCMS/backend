@@ -23,6 +23,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
     post:
       operationId: createSessionTrainingResult
       summary: Record an idempotent Training Result for a booked Member in a Group or Yoga Session
@@ -46,6 +47,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
   /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}:
     put:
       operationId: updateSessionTrainingResult
@@ -74,6 +76,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -135,6 +138,7 @@ components:
             - ACTOR_NOT_ACTIVE_COACH
             - SESSION_NOT_FOUND
             - SESSION_MEMBER_NOT_FOUND
+            - PLUS_MEMBERSHIP_REQUIRED
             - TRAINING_RESULT_NOT_FOUND
   responses:
     BadRequest:
@@ -154,6 +158,11 @@ components:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     NotFound:
       description: Session, booked Member, or Result was not found in the Teaching Coach's scope.
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/ProblemDetail" }
+    Conflict:
+      description: The Member does not have an active Membership with the TRAINING_RESULT Benefit.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

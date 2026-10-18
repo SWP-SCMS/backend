@@ -25,6 +25,6 @@ class MembershipLifecycleScheduler {
 	void reconcile() {
 		var now = clock.instant();
 		memberships.expireDue(now);
-		assignments.endAllActiveAssignmentsWithExpiredPlus(now);
+		assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 	}
 }

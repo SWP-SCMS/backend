@@ -42,15 +42,19 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	@Query(value = """
 		select exists (
-			select 1 from memberships
-			where member_account_id = :memberId
-			  and status = 'ACTIVE'
-			  and plan_code_snapshot = 'PLUS'
-			  and starts_at <= :at
-			  and ends_at > :at
+			select 1
+			from memberships membership
+			join membership_plan_benefits benefit
+			  on benefit.plan_code = membership.plan_code_snapshot
+			where membership.member_account_id = :memberId
+			  and membership.status = 'ACTIVE'
+			  and benefit.benefit_code = :benefitCode
+			  and membership.starts_at <= :at
+			  and membership.ends_at > :at
 		)
 		""", nativeQuery = true)
-	boolean hasActivePlusMembership(@Param("memberId") UUID memberId, @Param("at") Instant at);
+	boolean hasActiveMembershipBenefit(@Param("memberId") UUID memberId,
+			@Param("benefitCode") String benefitCode, @Param("at") Instant at);
 
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """
@@ -59,29 +63,34 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		    ends_at = greatest(
 		        ca.starts_at,
 		        coalesce(
-		            (select max(m.ends_at) from memberships m
+		            (select max(m.ends_at)
+		             from memberships m
+		             join membership_plan_benefits benefit on benefit.plan_code = m.plan_code_snapshot
 		             where m.member_account_id = ca.member_account_id
-		               and m.plan_code_snapshot = 'PLUS'
+		               and benefit.benefit_code = 'PERSONAL_COACHING'
 		               and m.starts_at <= :now
 		               and m.ends_at <= :now),
 		            :now
 		        )
 		    ),
-		    end_reason = 'PLUS membership expired',
+		    end_reason = 'PERSONAL_COACHING Benefit expired',
 		    updated_at = :now,
 		    version = ca.version + 1
 		where ca.member_account_id = :memberId
 		  and ca.status = 'ACTIVE'
 		  and not exists (
-		      select 1 from memberships m
+		      select 1
+		      from memberships m
+		      join membership_plan_benefits benefit on benefit.plan_code = m.plan_code_snapshot
 		      where m.member_account_id = ca.member_account_id
 		        and m.status = 'ACTIVE'
-		        and m.plan_code_snapshot = 'PLUS'
+		        and benefit.benefit_code = 'PERSONAL_COACHING'
 		        and m.starts_at <= :now
 		        and m.ends_at > :now
 		  )
 		""", nativeQuery = true)
-	int endActiveAssignmentIfPlusExpired(@Param("memberId") UUID memberId, @Param("now") Instant now);
+	int endActiveAssignmentIfPersonalCoachingExpired(@Param("memberId") UUID memberId,
+			@Param("now") Instant now);
 
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """
@@ -90,28 +99,32 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		    ends_at = greatest(
 		        ca.starts_at,
 		        coalesce(
-		            (select max(m.ends_at) from memberships m
+		            (select max(m.ends_at)
+		             from memberships m
+		             join membership_plan_benefits benefit on benefit.plan_code = m.plan_code_snapshot
 		             where m.member_account_id = ca.member_account_id
-		               and m.plan_code_snapshot = 'PLUS'
+		               and benefit.benefit_code = 'PERSONAL_COACHING'
 		               and m.starts_at <= :now
 		               and m.ends_at <= :now),
 		            :now
 		        )
 		    ),
-		    end_reason = 'PLUS membership expired',
+		    end_reason = 'PERSONAL_COACHING Benefit expired',
 		    updated_at = :now,
 		    version = ca.version + 1
 		where ca.status = 'ACTIVE'
 		  and not exists (
-		      select 1 from memberships m
+		      select 1
+		      from memberships m
+		      join membership_plan_benefits benefit on benefit.plan_code = m.plan_code_snapshot
 		      where m.member_account_id = ca.member_account_id
 		        and m.status = 'ACTIVE'
-		        and m.plan_code_snapshot = 'PLUS'
+		        and benefit.benefit_code = 'PERSONAL_COACHING'
 		        and m.starts_at <= :now
 		        and m.ends_at > :now
 		  )
 		""", nativeQuery = true)
-	int endAllActiveAssignmentsWithExpiredPlus(@Param("now") Instant now);
+	int endAllActiveAssignmentsWithExpiredPersonalCoaching(@Param("now") Instant now);
 
 	@Query(value = """
 		select account.id as "memberAccountId", profile.member_code as "memberCode",
@@ -123,9 +136,11 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		join lateral (
 			select memberships.ends_at
 			from memberships
+			join membership_plan_benefits benefit
+			  on benefit.plan_code = memberships.plan_code_snapshot
 			where memberships.member_account_id = account.id
 			  and memberships.status = 'ACTIVE'
-			  and memberships.plan_code_snapshot = 'PLUS'
+			  and benefit.benefit_code = 'PERSONAL_COACHING'
 			  and memberships.starts_at <= :now
 			  and memberships.ends_at > :now
 			order by memberships.ends_at, memberships.id
@@ -151,10 +166,13 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		  on assignment.member_account_id = account.id and assignment.status = 'ACTIVE'
 		where account.role = 'MEMBER' and account.status = 'ACTIVE'
 		  and exists (
-			select 1 from memberships
+			select 1
+			from memberships
+			join membership_plan_benefits benefit
+			  on benefit.plan_code = memberships.plan_code_snapshot
 			where memberships.member_account_id = account.id
 			  and memberships.status = 'ACTIVE'
-			  and memberships.plan_code_snapshot = 'PLUS'
+			  and benefit.benefit_code = 'PERSONAL_COACHING'
 			  and memberships.starts_at <= :now
 			  and memberships.ends_at > :now
 		  )

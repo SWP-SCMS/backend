@@ -21,16 +21,18 @@ public class SessionTrainingFeedbackService {
 
 	private final TrainingFeedbackRepository feedback;
 	private final TrainingResultRepository results;
+	private final CoachAssignmentRepository assignments;
 	private final ClassSessionRepository sessions;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final Clock clock;
 
 	public SessionTrainingFeedbackService(TrainingFeedbackRepository feedback,
-			TrainingResultRepository results, ClassSessionRepository sessions,
+			TrainingResultRepository results, CoachAssignmentRepository assignments, ClassSessionRepository sessions,
 			AccountRepository accounts, AuditEventRepository audits, Clock clock) {
 		this.feedback = feedback;
 		this.results = results;
+		this.assignments = assignments;
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
@@ -42,6 +44,7 @@ public class SessionTrainingFeedbackService {
 			SessionTrainingFeedbackRequest request) {
 		requireOwnedGroupOrYogaSession(coachId, sessionId);
 		requireSessionResult(request.trainingResultId(), sessionId, memberId);
+		requireTrainingFeedbackBenefit(memberId);
 		TrainingFeedback existing = feedback.findSessionByTrainingResultIdAndMemberAccountIdForUpdate(
 				request.trainingResultId(), memberId).orElse(null);
 		if (existing != null) {
@@ -60,6 +63,7 @@ public class SessionTrainingFeedbackService {
 			UUID feedbackId, SessionTrainingFeedbackRequest request) {
 		requireOwnedGroupOrYogaSession(coachId, sessionId);
 		requireSessionResult(request.trainingResultId(), sessionId, memberId);
+		requireTrainingFeedbackBenefit(memberId);
 		TrainingFeedback current = feedback.findSessionByIdAndMemberAccountIdForUpdate(
 			feedbackId, sessionId, memberId).orElseThrow(TrainingFeedbackException::sessionFeedbackNotFound);
 		Map<String, Object> beforeData = snapshot(current, sessionId);
@@ -96,6 +100,12 @@ public class SessionTrainingFeedbackService {
 	private void requireSessionResult(UUID resultId, UUID sessionId, UUID memberId) {
 		results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId)
 			.orElseThrow(TrainingFeedbackException::sessionResultNotFound);
+	}
+
+	private void requireTrainingFeedbackBenefit(UUID memberId) {
+		if (!assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", clock.instant())) {
+			throw TrainingFeedbackException.plusMembershipRequired();
+		}
 	}
 
 	private Map<String, Object> snapshot(TrainingFeedback value, UUID sessionId) {
