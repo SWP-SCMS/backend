@@ -1,0 +1,128 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Audit History API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /manager/audit-events:
+    get:
+      operationId: listAuditHistory
+      description: Requires an active MANAGER and returns append-only audit events newest first.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: actorId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+            maxLength: 120
+        - name: targetType
+          in: query
+          schema:
+            type: string
+            maxLength: 80
+        - name: targetId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Matching audit events; unresolved actors retain actorAccountId and null identity fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditHistoryPageResponse'
+        '400':
+          description: Invalid filter or pagination
+        '401':
+          description: Missing, invalid, expired, or inactive Manager token
+        '403':
+          description: Authenticated account is not a MANAGER
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    AuditHistoryPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditHistoryResponse'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+    AuditHistoryResponse:
+      type: object
+      additionalProperties: false
+      required: [id, actorAccountId, actorName, actorRole, action, targetType, targetId, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorAccountId:
+          type: [string, 'null']
+          format: uuid
+        actorName:
+          type: [string, 'null']
+        actorRole:
+          type: [string, 'null']
+          enum: [MEMBER, COACH, RECEPTIONIST, MANAGER, null]
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+          format: uuid
+        reason:
+          type: [string, 'null']
+        beforeData:
+          type: [object, 'null']
+          additionalProperties: true
+        afterData:
+          type: [object, 'null']
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time

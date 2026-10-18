@@ -63,7 +63,12 @@ class AuditHistoryIntegrationTests {
 		AuditHistoryPageResponse result = service.list(managerId, actorId, "payment_paid", "attendance", targetId,
 			from, to, PageRequest.of(0, 20));
 
-		assertThat(result.content()).extracting(AuditHistoryResponse::id).containsExactly(matchingId);
+		assertThat(result.content()).singleElement().satisfies(event -> {
+			assertThat(event.id()).isEqualTo(matchingId);
+			assertThat(event.actorAccountId()).isEqualTo(actorId);
+			assertThat(event.actorName()).isEqualTo("RECEPTIONIST Audit User");
+			assertThat(event.actorRole()).isEqualTo(AccountRole.RECEPTIONIST);
+		});
 	}
 
 	@Test

@@ -341,6 +341,30 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedContractDocumentsAuditActorIdentity() throws Exception {
+		JsonNode properties = generatedDocument().at("/components/schemas/AuditHistoryResponse/properties");
+
+		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("actorName", "actorRole");
+		assertThat(properties.path("actorName").path("type").toString()).contains("string", "null");
+		assertThat(properties.path("actorRole").path("type").toString()).contains("string", "null");
+	}
+
+	@Test
+	void staticContractDocumentsAuditActorIdentity() throws Exception {
+		var resource = getClass().getResource("/openapi/us52-manager-audit-history.yaml");
+		assertThat(resource).isNotNull();
+		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
+			.readTree(resource);
+		JsonNode properties = document.at("/components/schemas/AuditHistoryResponse/properties");
+
+		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("actorAccountId", "actorName", "actorRole");
+		assertThat(properties.path("actorName").path("type").toString()).contains("string", "null");
+		assertThat(properties.path("actorRole").path("type").toString()).contains("string", "null");
+	}
+
+	@Test
 	void generatedContractDocumentsAssignmentDiscovery() throws Exception {
 		JsonNode document = generatedDocument();
 		JsonNode candidates = operation(document, "/manager/coach-assignments/candidates", "get");

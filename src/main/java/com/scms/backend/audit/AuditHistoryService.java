@@ -2,8 +2,14 @@ package com.scms.backend.audit;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
+import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
@@ -37,7 +43,12 @@ class AuditHistoryService {
 		Page<AuditEvent> page = audits.findAll(
 			AuditHistorySpecifications.filtered(actorId, normalizedAction, normalizedTargetType, targetId, from, to),
 			pageable);
-		return new AuditHistoryPageResponse(page.getContent().stream().map(AuditHistoryResponse::from).toList(),
+		Set<UUID> actorIds = page.getContent().stream().map(AuditEvent::getActorAccountId).filter(Objects::nonNull)
+			.collect(Collectors.toSet());
+		Map<UUID, Account> actors = accounts.findAllById(actorIds).stream()
+			.collect(Collectors.toMap(Account::getId, Function.identity()));
+		return new AuditHistoryPageResponse(page.getContent().stream()
+			.map(event -> AuditHistoryResponse.from(event, actors.get(event.getActorAccountId()))).toList(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
