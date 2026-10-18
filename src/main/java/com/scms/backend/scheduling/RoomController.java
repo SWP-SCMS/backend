@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/manager/rooms")
@@ -61,6 +62,13 @@ public class RoomController {
 	ResponseEntity<RoomSuspensionResponse> suspend(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID roomId,
 			@RequestBody RoomSuspensionCreateRequest request) {
 		return ResponseEntity.status(201).body(suspensionService.create(accountId(jwt), roomId, request));
+	}
+
+	@PatchMapping("/{roomId}/suspensions/{suspensionId}")
+	ResponseEntity<RoomSuspensionResponse> extendSuspension(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID roomId, @PathVariable UUID suspensionId,
+			@Valid @RequestBody RoomSuspensionExtensionRequest request) {
+		return ResponseEntity.ok(suspensionService.extend(accountId(jwt), roomId, suspensionId, request));
 	}
 
 	@PostMapping("/{roomId}/impact-preview")

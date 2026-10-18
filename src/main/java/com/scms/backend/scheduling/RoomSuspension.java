@@ -26,10 +26,10 @@ public class RoomSuspension {
 	@Column(name = "start_time", nullable = false, updatable = false)
 	private Instant startTime;
 
-	@Column(name = "end_time", nullable = false, updatable = false)
+	@Column(name = "end_time", nullable = false)
 	private Instant endTime;
 
-	@Column(length = 1000, updatable = false)
+	@Column(length = 1000)
 	private String reason;
 
 	@Column(name = "created_by_account_id", nullable = false, updatable = false)
@@ -56,4 +56,9 @@ public class RoomSuspension {
 	Instant getEndTime() { return endTime; }
 	String getReason() { return reason; }
 	UUID getCreatedBy() { return createdBy; }
+
+	void extend(Instant endTime, String reason) {
+		this.endTime = endTime;
+		this.reason = reason;
+	}
 }

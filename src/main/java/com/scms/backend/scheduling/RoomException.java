@@ -80,6 +80,16 @@ public class RoomException extends RuntimeException {
 			"The room suspension overlaps an existing suspension or Session.");
 	}
 
+	static RoomException suspensionChanged() {
+		return new RoomException(HttpStatus.CONFLICT, "ROOM_SUSPENSION_CHANGED", null,
+			"The room suspension changed after it was loaded.");
+	}
+
+	static RoomException suspensionExpired() {
+		return new RoomException(HttpStatus.CONFLICT, "ROOM_SUSPENSION_EXPIRED", null,
+			"An ended room suspension cannot be extended.");
+	}
+
 	static RoomException inactiveRoom() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_INACTIVE", null,
 			"The target room is not active.");

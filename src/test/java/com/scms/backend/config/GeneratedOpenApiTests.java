@@ -120,6 +120,7 @@ class GeneratedOpenApiTests {
 		"PATCH /manager/rooms/{roomId}",
 		"GET /manager/rooms/{roomId}/suspensions",
 		"POST /manager/rooms/{roomId}/suspensions",
+		"PATCH /manager/rooms/{roomId}/suspensions/{suspensionId}",
 		"POST /manager/rooms/{roomId}/impact-preview",
 		"POST /manager/rooms/{roomId}/impact-apply",
 		"GET /manager/classes",
@@ -308,6 +309,38 @@ class GeneratedOpenApiTests {
 			.isEqualTo("#/components/responses/Conflict");
 		assertThat(document.at("/components/schemas/ApiProblem/properties/affectedSessions/items/properties/sessionId/format")
 			.asText()).isEqualTo("uuid");
+	}
+
+	@Test
+	void generatedAndStaticContractsDescribeRoomSuspensionExtension() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode generatedPatch = operation(generated,
+			"/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
+		assertThat(generatedPatch.path("requestBody").path("content").path("application/json")
+			.path("schema").path("$ref").asText())
+			.isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
+		JsonNode generatedRequest = generated.at("/components/schemas/RoomSuspensionExtensionRequest/properties");
+		assertThat(generatedRequest.path("expectedEndTime").path("format").asText()).isEqualTo("date-time");
+		assertThat(generatedRequest.path("endTime").path("format").asText()).isEqualTo("date-time");
+		assertThat(generatedRequest.path("resolutions").path("type").asText()).isEqualTo("array");
+		assertThat(generated.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
+			.contains("expectedEndTime", "endTime", "reason", "resolutions");
+		assertThat(response(generated, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
+			.isMissingNode()).isFalse();
+
+		try (var stream = getClass().getResourceAsStream("/openapi/us23-manager-scheduling-changes.yaml")) {
+			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
+				.readTree(stream);
+			JsonNode documentedPatch = operation(documented,
+				"/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
+			assertThat(documentedPatch.path("requestBody").path("content").path("application/json")
+				.path("schema").path("$ref").asText())
+				.isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
+			assertThat(documented.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
+				.contains("expectedEndTime", "endTime", "reason", "resolutions");
+			assertThat(response(documented, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
+				.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		}
 	}
 
 	private JsonNode generatedDocument() throws Exception {

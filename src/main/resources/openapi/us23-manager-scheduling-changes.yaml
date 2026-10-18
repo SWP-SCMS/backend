@@ -49,6 +49,26 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /manager/rooms/{roomId}/suspensions/{suspensionId}:
+    patch:
+      summary: Extend an active room suspension and resolve newly affected sessions
+      operationId: extendRoomSuspension
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {$ref: '#/components/parameters/RoomId'}
+        - {name: suspensionId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RoomSuspensionExtensionRequest'}}}
+      responses:
+        '200':
+          description: Existing room suspension extended after all resolutions are applied atomically.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RoomSuspensionResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/rooms/{roomId}/impact-preview:
     post:
       summary: Preview sessions affected by room suspension or permanent disable
@@ -154,6 +174,16 @@ components:
         startTime: {type: string, format: date-time}
         endTime: {type: string, format: date-time}
         reason: {type: [string, 'null'], maxLength: 1000}
+    RoomSuspensionExtensionRequest:
+      type: object
+      required: [expectedEndTime, endTime, reason, resolutions]
+      properties:
+        expectedEndTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        reason: {type: string, maxLength: 1000}
+        resolutions:
+          type: array
+          items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
     RoomSuspensionResponse:
       type: object
       required: [id, roomId, startTime, endTime, createdBy]

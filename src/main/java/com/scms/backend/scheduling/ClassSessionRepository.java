@@ -44,6 +44,9 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
 
+	@Query("select session.room.id from ClassSession session where session.id = :id")
+	java.util.Optional<UUID> findRoomIdById(@Param("id") UUID id);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select session from ClassSession session
