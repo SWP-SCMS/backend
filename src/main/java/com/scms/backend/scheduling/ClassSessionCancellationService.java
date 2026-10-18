@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ClassSessionCancellationService {
+	private static final Comparator<UUID> UUID_ORDER = Comparator.comparing(UUID::toString);
 
 	private final ClassSessionRepository sessions;
 	private final AccountRepository accounts;
@@ -55,7 +57,11 @@ public class ClassSessionCancellationService {
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
 			throw RecurringScheduleException.sessionNotScheduled();
 		}
+		return cancelLocked(managerId, session, reason, now);
+	}
 
+	private ClassSessionDetailResponse cancelLocked(UUID managerId, ClassSession session, String reason, Instant now) {
+		UUID sessionId = session.getId();
 		List<UUID> memberIds = jdbc.queryForList("""
 			select member_account_id from bookings
 			where class_session_id = ? and status = 'BOOKED'
@@ -89,16 +95,45 @@ public class ClassSessionCancellationService {
 		ensureActiveManager(managerId);
 		String reason = validate(request == null ? null : new ClassSessionCancellationRequest(request.reason()));
 		List<UUID> requestedIds = validateSelector(request);
-		List<UUID> eligible = findEligible(request).stream()
-			.map(ClassSession::getId).toList();
-		if (requestedIds != null && !eligible.isEmpty() && eligible.size() != requestedIds.size()) {
-			throw RecurringScheduleException.validation("sessionIds",
-				"all sessionIds must identify future SCHEDULED Sessions; eligible IDs: " + eligible);
+		Instant now = clock.instant();
+		lifecycle.catchUp(now);
+		List<ClassSession> eligibleSessions;
+		if (requestedIds != null) {
+			List<ClassSession> lockedSessions = sessions.findAllByIdForUpdate(requestedIds);
+			eligibleSessions = lockedSessions.stream()
+				.filter(session -> isEligible(session, request, now))
+				.toList();
+			List<UUID> eligibleIds = eligibleSessions.stream().map(ClassSession::getId).toList();
+			HashSet<UUID> eligibleIdSet = new HashSet<>(eligibleIds);
+			List<UUID> ineligibleIds = requestedIds.stream()
+				.filter(id -> !eligibleIdSet.contains(id))
+				.sorted(UUID_ORDER)
+				.toList();
+			if (!ineligibleIds.isEmpty()) {
+				boolean allCancelled = lockedSessions.size() == requestedIds.size()
+					&& lockedSessions.stream().allMatch(session -> session.getStatus() == ClassSessionStatus.CANCELLED);
+				if (allCancelled) {
+					return new ClassSessionCancellationBatchResponse(0, List.of());
+				}
+				throw RecurringScheduleException.bulkSelectionChanged(eligibleIds, ineligibleIds);
+			}
 		}
-		for (UUID sessionId : eligible) {
-			cancel(managerId, sessionId, new ClassSessionCancellationRequest(reason));
+		else {
+			eligibleSessions = sessions.findFutureScheduledForUpdate(request.classId(), request.from(), request.to(), now);
 		}
-		return new ClassSessionCancellationBatchResponse(eligible.size(), eligible);
+		for (ClassSession session : eligibleSessions) {
+			cancelLocked(managerId, session, reason, now);
+		}
+		List<UUID> eligibleIds = eligibleSessions.stream().map(ClassSession::getId).toList();
+		return new ClassSessionCancellationBatchResponse(eligibleIds.size(), eligibleIds);
+	}
+
+	private boolean isEligible(ClassSession session, ClassSessionCancellationBatchRequest request, Instant now) {
+		return session.getStatus() == ClassSessionStatus.SCHEDULED
+			&& session.getStartTime().isAfter(now)
+			&& (request.classId() == null || request.classId().equals(session.getSportClass().getId()))
+			&& (request.from() == null || session.getEndTime().isAfter(request.from()))
+			&& (request.to() == null || session.getStartTime().isBefore(request.to()));
 	}
 
 	private List<ClassSession> findEligible(ClassSessionCancellationBatchRequest request) {

@@ -332,6 +332,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
+		if ("SESSION_BULK_SELECTION_CHANGED".equals(exception.getCode())) {
+			problem.setProperty("eligibleSessionIds", exception.getEligibleSessionIds());
+			problem.setProperty("ineligibleSessionIds", exception.getIneligibleSessionIds());
+		}
 		return problem;
 	}
 

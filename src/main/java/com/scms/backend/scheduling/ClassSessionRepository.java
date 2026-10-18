@@ -33,6 +33,27 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
 
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select session from ClassSession session
+		where session.id in :sessionIds
+		order by session.id
+		""")
+	List<ClassSession> findAllByIdForUpdate(@Param("sessionIds") Collection<UUID> sessionIds);
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select session from ClassSession session
+		where session.status = com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED
+		  and session.startTime > :now
+		  and (:classId is null or session.sportClass.id = :classId)
+		  and (:from is null or session.endTime > :from)
+		  and (:to is null or session.startTime < :to)
+		order by session.id
+		""")
+	List<ClassSession> findFutureScheduledForUpdate(@Param("classId") UUID classId,
+		@Param("from") Instant from, @Param("to") Instant to, @Param("now") Instant now);
+
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query("""
 		update ClassSession session

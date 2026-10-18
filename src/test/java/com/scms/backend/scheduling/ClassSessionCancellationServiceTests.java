@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -139,16 +140,96 @@ class ClassSessionCancellationServiceTests {
 	@Test
 	void bulkCancellationRetryIsIdempotentWhenAllRequestedSessionsAreAlreadyHandled() {
 		UUID managerId = activeManager();
-		UUID sessionId = UUID.randomUUID();
-		when(sessions.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of());
+		ClassSession session = session();
+		session.cancel(now.minusSeconds(60), "first cancellation");
+		when(sessions.findAllByIdForUpdate(List.of(session.getId()))).thenReturn(List.of(session));
 
 		ClassSessionCancellationBatchResponse result = service.cancelBulk(managerId,
-			new ClassSessionCancellationBatchRequest(List.of(sessionId), null, null, null, "already handled"));
+			new ClassSessionCancellationBatchRequest(List.of(session.getId()), null, null, null, "already handled"));
 
 		assertThat(result.cancelledCount()).isZero();
 		assertThat(result.sessionIds()).isEmpty();
-		verify(sessions).findAll(any(Specification.class), any(Sort.class));
+		verify(sessions).findAllByIdForUpdate(List.of(session.getId()));
 		verify(sessions, never()).findByIdForUpdate(any());
+	}
+
+	@Test
+	void bulkCancellationRejectsMixedExplicitSelectionWithEligibleAndIneligibleIds() {
+		UUID managerId = activeManager();
+		ClassSession eligible = session();
+		UUID ineligibleId = UUID.randomUUID();
+		when(sessions.findAllByIdForUpdate(List.of(ineligibleId, eligible.getId())))
+			.thenReturn(List.of(eligible));
+
+		assertThatThrownBy(() -> service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(List.of(ineligibleId, eligible.getId()),
+				null, null, null, "stale selection")))
+			.isInstanceOf(RecurringScheduleException.class)
+			.hasFieldOrPropertyWithValue("status", org.springframework.http.HttpStatus.CONFLICT)
+			.hasFieldOrPropertyWithValue("code", "SESSION_BULK_SELECTION_CHANGED")
+			.hasFieldOrPropertyWithValue("eligibleSessionIds", List.of(eligible.getId()))
+			.hasFieldOrPropertyWithValue("ineligibleSessionIds", List.of(ineligibleId));
+		verify(jdbc, never()).update(org.mockito.ArgumentMatchers.anyString(),
+			org.mockito.ArgumentMatchers.<Object[]>any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void bulkCancellationCancelsEveryExplicitSessionReturnedByTheOrderedLockQuery() {
+		UUID managerId = activeManager();
+		ClassSession first = session(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+		ClassSession second = session(UUID.fromString("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+		List<UUID> requestedIds = List.of(second.getId(), first.getId());
+		when(sessions.findAllByIdForUpdate(requestedIds)).thenReturn(List.of(first, second));
+
+		ClassSessionCancellationBatchResponse result = service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "weather"));
+
+		assertThat(result.cancelledCount()).isEqualTo(2);
+		assertThat(result.sessionIds()).containsExactly(first.getId(), second.getId());
+		assertThat(first.getStatus()).isEqualTo(ClassSessionStatus.CANCELLED);
+		assertThat(second.getStatus()).isEqualTo(ClassSessionStatus.CANCELLED);
+		verify(sessions).findAllByIdForUpdate(requestedIds);
+		verify(sessions, times(2)).saveAndFlush(any(ClassSession.class));
+		verify(audits, times(2)).save(any());
+	}
+
+	@Test
+	void bulkCancellationLocksFilteredSessionsBeforeCancellingThem() {
+		UUID managerId = activeManager();
+		UUID classId = UUID.randomUUID();
+		Instant from = now.plusSeconds(600);
+		Instant to = now.plusSeconds(10800);
+		ClassSession session = session();
+		when(sessions.findFutureScheduledForUpdate(classId, from, to, now)).thenReturn(List.of(session));
+
+		ClassSessionCancellationBatchResponse result = service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(null, classId, from, to, "maintenance"));
+
+		assertThat(result.sessionIds()).containsExactly(session.getId());
+		verify(sessions).findFutureScheduledForUpdate(classId, from, to, now);
+		verify(sessions, never()).findByIdForUpdate(any());
+	}
+
+	@Test
+	void bulkCancellationDoesNotTreatInProgressSessionsAsEligible() {
+		UUID managerId = activeManager();
+		ClassSession eligible = session(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+		ClassSession inProgress = session(UUID.fromString("00000000-0000-0000-0000-000000000002"));
+		org.springframework.test.util.ReflectionTestUtils.setField(inProgress, "status",
+			ClassSessionStatus.IN_PROGRESS);
+		List<UUID> requestedIds = List.of(inProgress.getId(), eligible.getId());
+		when(sessions.findAllByIdForUpdate(requestedIds)).thenReturn(List.of(eligible, inProgress));
+
+		assertThatThrownBy(() -> service.cancelBulk(managerId,
+			new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "late cancellation")))
+			.isInstanceOf(RecurringScheduleException.class)
+			.hasFieldOrPropertyWithValue("code", "SESSION_BULK_SELECTION_CHANGED")
+			.hasFieldOrPropertyWithValue("eligibleSessionIds", List.of(eligible.getId()))
+			.hasFieldOrPropertyWithValue("ineligibleSessionIds", List.of(inProgress.getId()));
+		assertThat(eligible.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+		verify(jdbc, never()).update(org.mockito.ArgumentMatchers.anyString(),
+			org.mockito.ArgumentMatchers.<Object[]>any());
 	}
 
 	private UUID activeManager() {
@@ -158,12 +239,16 @@ class ClassSessionCancellationServiceTests {
 	}
 
 	private ClassSession session() {
+		return session(UUID.randomUUID());
+	}
+
+	private ClassSession session(UUID id) {
 		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
 		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
 			null, SportClassStatus.ACTIVE);
 		Account coach = new Account(UUID.randomUUID(), AccountRole.COACH, AccountStatus.ACTIVE, "Coach",
 			"0900000000", "coach@example.test", LocalDate.of(1990, 1, 1), "{noop}password");
-		return new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+		return new ClassSession(id, sportClass, null, coach,
 			new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE), now.plusSeconds(3600),
 			now.plusSeconds(7200), 15, UUID.randomUUID());
 	}
