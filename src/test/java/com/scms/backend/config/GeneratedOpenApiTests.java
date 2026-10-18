@@ -365,6 +365,28 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedContractDocumentsCenterVisitMemberName() throws Exception {
+		JsonNode schema = generatedDocument().at("/components/schemas/CenterVisitResponse");
+
+		assertThat(schema.path("properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).contains("memberName");
+		assertThat(schema.path("required").toString()).contains("memberName");
+	}
+
+	@Test
+	void staticContractDocumentsCenterVisitMemberName() throws Exception {
+		var resource = getClass().getResource("/openapi/us36-center-visit.yaml");
+		assertThat(resource).isNotNull();
+		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
+			.readTree(resource);
+		JsonNode schema = document.at("/components/schemas/CenterVisitResponse");
+
+		assertThat(schema.path("properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).contains("memberName");
+		assertThat(schema.path("required").toString()).contains("memberName");
+	}
+
+	@Test
 	void generatedContractDocumentsAssignmentDiscovery() throws Exception {
 		JsonNode document = generatedDocument();
 		JsonNode candidates = operation(document, "/manager/coach-assignments/candidates", "get");
