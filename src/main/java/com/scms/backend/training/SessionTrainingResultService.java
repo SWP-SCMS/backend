@@ -14,6 +14,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.scheduling.BookingRepository;
 import com.scms.backend.scheduling.BookingStatus;
+import com.scms.backend.scheduling.ClassSession;
 import com.scms.backend.scheduling.ClassSessionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,12 +45,12 @@ public class SessionTrainingResultService {
 	@Transactional
 	public SessionTrainingResultResponse create(UUID coachId, UUID sessionId, UUID memberId,
 			SessionTrainingResultRequest request) {
-		requireOwnedGroupOrYogaSession(coachId, sessionId);
+		ClassSession session = requireOwnedGroupOrYogaSession(coachId, sessionId);
 		if (!bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
 				BookingStatus.BOOKED)) {
 			throw TrainingResultException.sessionMemberNotFound();
 		}
-		requireTrainingResultBenefit(memberId);
+		requireTrainingResultBenefit(memberId, session.getStartTime());
 		TrainingResult existing = results.findSessionByClassSessionIdAndMemberAccountIdForUpdate(sessionId, memberId)
 				.orElse(null);
 		if (existing != null) {
@@ -67,8 +68,8 @@ public class SessionTrainingResultService {
 	@Transactional
 	public SessionTrainingResultResponse update(UUID coachId, UUID sessionId, UUID memberId, UUID resultId,
 			SessionTrainingResultRequest request) {
-		requireOwnedGroupOrYogaSession(coachId, sessionId);
-		requireTrainingResultBenefit(memberId);
+		ClassSession session = requireOwnedGroupOrYogaSession(coachId, sessionId);
+		requireTrainingResultBenefit(memberId, session.getStartTime());
 		TrainingResult result = results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId)
 			.orElseThrow(TrainingResultException::sessionResultNotFound);
 		Map<String, Object> beforeData = snapshot(result);
@@ -86,11 +87,11 @@ public class SessionTrainingResultService {
 				.map(SessionTrainingResultResponse::from);
 	}
 
-	private void requireOwnedGroupOrYogaSession(UUID coachId, UUID sessionId) {
+	private ClassSession requireOwnedGroupOrYogaSession(UUID coachId, UUID sessionId) {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw TrainingResultException.actorNotActiveCoach();
 		}
-		sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
+		return sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
 			.orElseThrow(TrainingResultException::sessionNotFound);
 	}
 
@@ -102,8 +103,8 @@ public class SessionTrainingResultService {
 			.orElseThrow(TrainingResultException::sessionNotFound);
 	}
 
-	private void requireTrainingResultBenefit(UUID memberId) {
-		if (!assignments.hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", clock.instant())) {
+	private void requireTrainingResultBenefit(UUID memberId, Instant at) {
+		if (!assignments.hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", at)) {
 			throw TrainingResultException.plusMembershipRequired();
 		}
 	}

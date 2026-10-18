@@ -171,7 +171,7 @@ class TrainingBenefitEligibilityIntegrationTests {
 		UUID eligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), eligible.getId(),
 			eligibleMembership, now.plusSeconds(3600));
 		UUID ineligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), ineligible.getId(),
-			ineligibleMembership, now.plusSeconds(3600));
+			ineligibleMembership, now.plusSeconds(7200));
 
 		SessionTrainingResultResponse created = sessionResults.create(coach.getId(), eligibleSession,
 			eligible.getId(), new SessionTrainingResultRequest(now, Map.of("reps", 10)));
@@ -198,7 +198,7 @@ class TrainingBenefitEligibilityIntegrationTests {
 		UUID eligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), eligible.getId(),
 			eligibleMembership, now.plusSeconds(3600));
 		UUID ineligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), ineligible.getId(),
-			ineligibleMembership, now.plusSeconds(3600));
+			ineligibleMembership, now.plusSeconds(7200));
 		SessionTrainingResultResponse eligibleResult = sessionResults.create(coach.getId(), eligibleSession,
 			eligible.getId(), new SessionTrainingResultRequest(now, Map.of("reps", 10)));
 		SessionTrainingResultResponse ineligibleResult = sessionResults.create(coach.getId(), ineligibleSession,
