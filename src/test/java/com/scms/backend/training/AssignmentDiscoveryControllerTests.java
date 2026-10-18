@@ -2,6 +2,7 @@ package com.scms.backend.training;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -80,19 +81,45 @@ class AssignmentDiscoveryControllerTests {
 	}
 
 	@Test
-	void candidatesRejectInvalidPaginationAndStatus() throws Exception {
-		for (String parameter : new String[] { "page=-1", "size=0", "size=101" }) {
-			String[] pair = parameter.split("=");
-			mockMvc.perform(get("/api/v1/manager/coach-assignments/candidates")
-				.contextPath("/api/v1").with(role("MANAGER")).queryParam(pair[0], pair[1]))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
-		}
+	void missingAssignmentStatusDefaultsToAll() throws Exception {
+		when(service.candidates(eq(managerId), isNull(), eq(AssignmentCandidateStatus.ALL), any(Pageable.class)))
+			.thenReturn(new AssignmentCandidatePageResponse(List.of(), 0, 20, 0, 0));
+
 		mockMvc.perform(get("/api/v1/manager/coach-assignments/candidates")
-			.contextPath("/api/v1").with(role("MANAGER"))
-			.queryParam("assignmentStatus", "ACTIVE"))
+			.contextPath("/api/v1").with(role("MANAGER")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.content").isEmpty());
+	}
+
+	@Test
+	void candidatesRejectEmptyWhitespaceAndUnknownAssignmentStatus() throws Exception {
+		for (String assignmentStatus : new String[] { "", " ", "ACTIVE" }) {
+			mockMvc.perform(get("/api/v1/manager/coach-assignments/candidates")
+				.contextPath("/api/v1").with(role("MANAGER"))
+				.queryParam("assignmentStatus", assignmentStatus))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"))
+				.andExpect(jsonPath("$.errors").doesNotExist());
+		}
+	}
+
+	@Test
+	void candidatesReportTheInvalidPaginationField() throws Exception {
+		mockMvc.perform(get("/api/v1/manager/coach-assignments/candidates")
+			.contextPath("/api/v1").with(role("MANAGER")).queryParam("page", "-1"))
 			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.errors.page").isArray())
+			.andExpect(jsonPath("$.errors.size").doesNotExist());
+
+		for (String size : new String[] { "0", "101" }) {
+			mockMvc.perform(get("/api/v1/manager/coach-assignments/candidates")
+				.contextPath("/api/v1").with(role("MANAGER")).queryParam("size", size))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors.size").isArray())
+				.andExpect(jsonPath("$.errors.page").doesNotExist());
+		}
 	}
 
 	@Test

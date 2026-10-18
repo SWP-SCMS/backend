@@ -5,6 +5,9 @@ import java.util.UUID;
 
 import com.scms.backend.manager.StaffAccountValidationException;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
+import org.springframework.beans.TypeMismatchException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -28,11 +31,13 @@ public class AssignmentDiscoveryController {
 	@GetMapping(value = "/coach-assignments/candidates", produces = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<AssignmentCandidatePageResponse> candidates(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(required = false) String query,
-			@RequestParam(defaultValue = "ALL") AssignmentCandidateStatus assignmentStatus,
+			@Parameter(schema = @Schema(type = "string", allowableValues = {
+				"UNASSIGNED", "ASSIGNED", "ALL" }, defaultValue = "ALL"))
+			@RequestParam(required = false) String assignmentStatus,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 		validatePagination(page, size);
-		return ResponseEntity.ok(service.candidates(accountId(jwt), query, assignmentStatus,
+		return ResponseEntity.ok(service.candidates(accountId(jwt), query, parseAssignmentStatus(assignmentStatus),
 			PageRequest.of(page, size)));
 	}
 
@@ -42,9 +47,21 @@ public class AssignmentDiscoveryController {
 	}
 
 	private void validatePagination(int page, int size) {
-		if (page < 0 || size < 1 || size > 100) {
-			throw new StaffAccountValidationException("page",
-				"page must be >= 0 and size must be between 1 and 100");
+		if (page < 0) {
+			throw new StaffAccountValidationException("page", "must be greater than or equal to 0");
+		}
+		if (size < 1 || size > 100) {
+			throw new StaffAccountValidationException("size", "must be between 1 and 100");
+		}
+	}
+
+	private AssignmentCandidateStatus parseAssignmentStatus(String value) {
+		if (value == null) return AssignmentCandidateStatus.ALL;
+		try {
+			return AssignmentCandidateStatus.valueOf(value);
+		}
+		catch (IllegalArgumentException exception) {
+			throw new TypeMismatchException(value, AssignmentCandidateStatus.class, exception);
 		}
 	}
 

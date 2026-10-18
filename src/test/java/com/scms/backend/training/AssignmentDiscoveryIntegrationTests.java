@@ -50,6 +50,7 @@ class AssignmentDiscoveryIntegrationTests {
 
 	@Autowired AssignmentDiscoveryService discovery;
 	@Autowired CoachAssignmentService assignmentService;
+	@Autowired CoachAssignmentRepository assignments;
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate jdbc;
@@ -201,6 +202,88 @@ class AssignmentDiscoveryIntegrationTests {
 	}
 
 	@Test
+	void reconciliationUsesLatestPastPlusExpiryWhenAFuturePlusMembershipExists() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager Reconciliation");
+		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Coach Reconciliation");
+		Instant now = Instant.parse("2026-10-18T12:00:00Z");
+		Instant latestPastExpiry = now.minusSeconds(300);
+
+		MemberProfile singleMember = createMember(AccountStatus.ACTIVE, "Single Reconciliation Member",
+			"0900000201", "single-reconciliation@example.test");
+		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(10800),
+			now.minusSeconds(7200));
+		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(7200),
+			latestPastExpiry);
+		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.plusSeconds(3600),
+			now.plusSeconds(86400));
+		UUID singleAssignment = insertActiveAssignment(singleMember.getAccountId(), coach.getId(), manager.getId(),
+			now.minusSeconds(14400));
+
+		assertThat(assignments.endActiveAssignmentIfPlusExpired(singleMember.getAccountId(), now)).isEqualTo(1);
+		assertEndedAt(singleAssignment, latestPastExpiry);
+
+		MemberProfile bulkMember = createMember(AccountStatus.ACTIVE, "Bulk Reconciliation Member",
+			"0900000202", "bulk-reconciliation@example.test");
+		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(10800),
+			now.minusSeconds(7200));
+		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(7200),
+			latestPastExpiry);
+		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.plusSeconds(3600),
+			now.plusSeconds(86400));
+		UUID bulkAssignment = insertActiveAssignment(bulkMember.getAccountId(), coach.getId(), manager.getId(),
+			now.minusSeconds(14400));
+
+		assertThat(assignments.endAllActiveAssignmentsWithExpiredPlus(now)).isEqualTo(1);
+		assertEndedAt(bulkAssignment, latestPastExpiry);
+	}
+
+	@Test
+	void candidatesUseMemberCodeBeforeUuidAndCreationForStablePageBoundaries() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager Stable Ordering");
+		Instant now = Instant.now();
+		Instant membershipEndsAt = now.plusSeconds(86400);
+		Account createdFirstLowUuid = createAccount(UUID.fromString("00000000-0000-0000-0000-000000000010"),
+			AccountRole.MEMBER, AccountStatus.ACTIVE, "Created First");
+		MemberProfile createdFirstProfile = profiles.saveAndFlush(new MemberProfile(createdFirstLowUuid));
+		Account createdSecondHighUuid = createAccount(UUID.fromString("ffffffff-ffff-ffff-ffff-fffffffffff0"),
+			AccountRole.MEMBER, AccountStatus.ACTIVE, "Created Second");
+		MemberProfile createdSecondProfile = profiles.saveAndFlush(new MemberProfile(createdSecondHighUuid));
+
+		String lowerMemberCode = createdFirstProfile.getMemberCode();
+		String higherMemberCode = createdSecondProfile.getMemberCode();
+		jdbc.update("update member_profiles set member_code = 'MB-99999999999999999' where account_id = ?",
+			createdFirstProfile.getAccountId());
+		jdbc.update("update member_profiles set member_code = ? where account_id = ?", lowerMemberCode,
+			createdSecondProfile.getAccountId());
+		jdbc.update("update member_profiles set member_code = ? where account_id = ?", higherMemberCode,
+			createdFirstProfile.getAccountId());
+
+		MemberProfile lowerCodeProfile = createdSecondProfile;
+		MemberProfile higherCodeProfile = createdFirstProfile;
+		createMembership(lowerCodeProfile.getAccountId(), manager.getId(), "PLUS",
+			now.minusSeconds(3600), membershipEndsAt);
+		createMembership(higherCodeProfile.getAccountId(), manager.getId(), "PLUS",
+			now.minusSeconds(3600), membershipEndsAt);
+
+		assertThat(lowerMemberCode).isLessThan(higherMemberCode);
+		AssignmentCandidatePageResponse firstPage = discovery.candidates(manager.getId(), null,
+			AssignmentCandidateStatus.ALL, PageRequest.of(0, 1));
+		AssignmentCandidatePageResponse secondPage = discovery.candidates(manager.getId(), null,
+			AssignmentCandidateStatus.ALL, PageRequest.of(1, 1));
+
+		assertThat(firstPage.totalElements()).isEqualTo(2);
+		assertThat(firstPage.totalPages()).isEqualTo(2);
+		assertThat(firstPage.content()).extracting(AssignmentCandidateResponse::memberAccountId)
+			.containsExactly(lowerCodeProfile.getAccountId());
+		assertThat(firstPage.content()).extracting(AssignmentCandidateResponse::memberCode)
+			.containsExactly(lowerMemberCode);
+		assertThat(secondPage.content()).extracting(AssignmentCandidateResponse::memberAccountId)
+			.containsExactly(higherCodeProfile.getAccountId());
+		assertThat(secondPage.content()).extracting(AssignmentCandidateResponse::memberCode)
+			.containsExactly(higherMemberCode);
+	}
+
+	@Test
 	void inactiveManagerTokenIsRejectedByBothEndpoints() throws Exception {
 		Account inactiveManager = createAccount(AccountRole.MANAGER, AccountStatus.INACTIVE, "Inactive Manager");
 		for (String path : List.of("/api/v1/manager/coach-assignments/candidates",
@@ -221,8 +304,12 @@ class AssignmentDiscoveryIntegrationTests {
 	}
 
 	private Account createAccount(AccountRole role, AccountStatus status, String name) {
+		return createAccount(UUID.randomUUID(), role, status, name);
+	}
+
+	private Account createAccount(UUID accountId, AccountRole role, AccountStatus status, String name) {
 		String unique = UUID.randomUUID().toString().substring(0, 8);
-		return accounts.saveAndFlush(new Account(UUID.randomUUID(), role, status, name, "08" + unique,
+		return accounts.saveAndFlush(new Account(accountId, role, status, name, "08" + unique,
 			unique + "@example.test", LocalDate.of(1990, 1, 1), "{noop}secret"));
 	}
 
@@ -270,6 +357,13 @@ class AssignmentDiscoveryIntegrationTests {
 			""", assignmentId, memberId, coachId, managerId, Timestamp.from(startsAt), Timestamp.from(startsAt),
 			Timestamp.from(startsAt));
 		return assignmentId;
+	}
+
+	private void assertEndedAt(UUID assignmentId, Instant expectedEndsAt) {
+		assertThat(jdbc.queryForObject("select status from coach_assignments where id = ?", String.class,
+			assignmentId)).isEqualTo("ENDED");
+		assertThat(jdbc.queryForObject("select ends_at from coach_assignments where id = ?", Timestamp.class,
+			assignmentId).toInstant()).isEqualTo(expectedEndsAt);
 	}
 
 	private String bearer(Account account) {

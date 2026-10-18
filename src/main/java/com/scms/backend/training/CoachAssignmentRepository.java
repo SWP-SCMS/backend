@@ -59,7 +59,11 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		    ends_at = greatest(
 		        ca.starts_at,
 		        coalesce(
-		            (select max(m.ends_at) from memberships m where m.member_account_id = ca.member_account_id and m.plan_code_snapshot = 'PLUS'),
+		            (select max(m.ends_at) from memberships m
+		             where m.member_account_id = ca.member_account_id
+		               and m.plan_code_snapshot = 'PLUS'
+		               and m.starts_at <= :now
+		               and m.ends_at <= :now),
 		            :now
 		        )
 		    ),
@@ -86,7 +90,11 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 		    ends_at = greatest(
 		        ca.starts_at,
 		        coalesce(
-		            (select max(m.ends_at) from memberships m where m.member_account_id = ca.member_account_id and m.plan_code_snapshot = 'PLUS'),
+		            (select max(m.ends_at) from memberships m
+		             where m.member_account_id = ca.member_account_id
+		               and m.plan_code_snapshot = 'PLUS'
+		               and m.starts_at <= :now
+		               and m.ends_at <= :now),
 		            :now
 		        )
 		    ),
