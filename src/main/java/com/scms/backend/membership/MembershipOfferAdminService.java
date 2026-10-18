@@ -37,7 +37,7 @@ public class MembershipOfferAdminService {
 	MembershipOfferAdminResponse create(UUID managerId, MembershipOfferAdminRequest request) {
 		ensureManager(managerId); validate(request, true);
 		String planCode = normalizePlanCode(request.planCode());
-		MembershipPlan plan = plans.findByIdWithBenefits(planCode)
+		MembershipPlan plan = plans.findByPlanCodeForUpdate(planCode)
 			.filter(value -> value.getStatus() == MembershipPlanStatus.ACTIVE)
 			.filter(value -> value.getBenefits().stream()
 				.anyMatch(benefit -> benefit.getStatus() == MembershipBenefitStatus.ACTIVE))

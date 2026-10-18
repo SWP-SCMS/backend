@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +21,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -37,7 +39,7 @@ class MembershipOfferAdminServiceTests {
 	void createWritesCompleteAuditEvent() {
 		UUID managerId = activeManager();
 		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
-		when(plans.findByIdWithBenefits(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
+		when(plans.findByPlanCodeForUpdate(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
 		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		MembershipOfferAdminResponse result = service.create(managerId, new MembershipOfferAdminRequest(
@@ -54,6 +56,24 @@ class MembershipOfferAdminServiceTests {
 			"planCode", "PLUS", "name", "Plus 30", "description", "Full access",
 			"priceAmount", BigInteger.valueOf(750000), "currencyCode", "VND", "durationDays", 30,
 			"status", "ACTIVE", "createdByAccountId", managerId.toString()));
+	}
+
+	@Test
+	void createLocksPlanBeforeCheckingEligibilityAndSavingOffer() {
+		UUID managerId = activeManager();
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByPlanCodeForUpdate("PLUS")).thenReturn(Optional.of(plan));
+		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.create(managerId, new MembershipOfferAdminRequest(
+			"PLUS", "Plus 30", "Full access", BigInteger.valueOf(750000), 30, null));
+
+		InOrder order = inOrder(plans, plan, offers);
+		order.verify(plans).findByPlanCodeForUpdate("PLUS");
+		order.verify(plan).getStatus();
+		order.verify(plan).getBenefits();
+		order.verify(offers).save(any(MembershipOffer.class));
+		verify(plans, never()).findByIdWithBenefits("PLUS");
 	}
 
 	@Test

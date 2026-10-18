@@ -379,9 +379,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	}
 
 	@ExceptionHandler(InvalidPlanCodeException.class)
-	ProblemDetail handleInvalidPlanCode() {
+	ProblemDetail handleInvalidPlanCode(InvalidPlanCodeException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
-			"planCode must be exactly BASIC or PLUS.");
+			exception.getMessage());
 		problem.setTitle("Invalid plan code");
 		problem.setProperty("code", "INVALID_PLAN_CODE");
 		return problem;

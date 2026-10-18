@@ -14,6 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.StaffStatusConflictException;
+import com.scms.backend.membership.InvalidPlanCodeException;
 
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -92,6 +93,17 @@ class GlobalExceptionHandlerTests {
 	}
 
 	@Test
+	void returnsDynamicFormatForInvalidPlanCode() throws Exception {
+		mockMvc.perform(get("/invalid-plan"))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+			.andExpect(jsonPath("$.title").value("Invalid plan code"))
+			.andExpect(jsonPath("$.detail")
+				.value("planCode must be uppercase and contain only letters, digits, or underscores"))
+			.andExpect(jsonPath("$.code").value("INVALID_PLAN_CODE"));
+	}
+
+	@Test
 	void hidesInternalDetailsForUnexpectedErrors() throws Exception {
 		mockMvc.perform(get("/fail"))
 			.andExpect(status().isInternalServerError())
@@ -155,6 +167,11 @@ class GlobalExceptionHandlerTests {
 		@GetMapping("/conflict")
 		void conflict() {
 			throw new StaffStatusConflictException("Status cannot change.");
+		}
+
+		@GetMapping("/invalid-plan")
+		void invalidPlan() {
+			throw new InvalidPlanCodeException();
 		}
 	}
 
