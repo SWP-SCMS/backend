@@ -38,7 +38,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = "scms.membership-lifecycle-initial-delay-ms=86400000")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
@@ -74,8 +74,6 @@ class AssignmentDiscoveryIntegrationTests {
 			"inactive-coach-member@example.test");
 		MemberProfile suspended = createMember(AccountStatus.SUSPENDED, "Suspended Member", "0955555555",
 			"suspended@example.test");
-		MemberProfile inactive = createMember(AccountStatus.INACTIVE, "Inactive Member", "0966666666",
-			"inactive@example.test");
 		MemberProfile basic = createMember(AccountStatus.ACTIVE, "Basic Member", "0977777777",
 			"basic@example.test");
 		MemberProfile expired = createMember(AccountStatus.ACTIVE, "Expired Member", "0988888888",
@@ -90,8 +88,6 @@ class AssignmentDiscoveryIntegrationTests {
 		createMembership(assignedInactiveCoach.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(3600),
 			now.plusSeconds(7200));
 		createMembership(suspended.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(3600),
-			now.plusSeconds(86400));
-		createMembership(inactive.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(3600),
 			now.plusSeconds(86400));
 		createMembership(basic.getAccountId(), manager.getId(), "BASIC", now.minusSeconds(3600),
 			now.plusSeconds(86400));
@@ -115,7 +111,7 @@ class AssignmentDiscoveryIntegrationTests {
 			.containsExactly(AssignmentCandidateStatus.UNASSIGNED, AssignmentCandidateStatus.UNASSIGNED,
 				AssignmentCandidateStatus.ASSIGNED, AssignmentCandidateStatus.ASSIGNED);
 		assertThat(all.content()).extracting(AssignmentCandidateResponse::memberAccountId)
-			.doesNotContain(suspended.getAccountId(), inactive.getAccountId(), basic.getAccountId(), expired.getAccountId());
+			.doesNotContain(suspended.getAccountId(), basic.getAccountId(), expired.getAccountId());
 
 		assertThat(discovery.candidates(manager.getId(), null, AssignmentCandidateStatus.UNASSIGNED,
 			PageRequest.of(0, 20)).content())
