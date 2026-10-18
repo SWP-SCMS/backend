@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.junit.jupiter.Container;
@@ -49,6 +50,7 @@ class RoomSuspensionExtensionIntegrationTests {
 	@Autowired DisciplineRepository disciplines;
 	@Autowired SportClassRepository classes;
 	@Autowired ClassSessionRepository sessions;
+	@Autowired JdbcTemplate jdbc;
 	@MockitoBean AuditEventRepository audits;
 	@MockitoBean RoomImpactLockRendezvous lockRendezvous;
 
@@ -94,7 +96,8 @@ class RoomSuspensionExtensionIntegrationTests {
 			assertThat(extensionSucceeded).isTrue();
 			assertThat(assignmentSucceeded).isTrue();
 
-			UUID finalRoomId = sessions.findById(session.getId()).orElseThrow().getRoom().getId();
+			UUID finalRoomId = jdbc.queryForObject("select room_id from class_sessions where id = ?", UUID.class,
+				session.getId());
 			Instant finalEndTime = suspensions.findById(suspension.getId()).orElseThrow().getEndTime();
 			assertThat(finalRoomId).isEqualTo(extensionTarget.getId());
 			assertThat(finalEndTime).isEqualTo(extendedEndTime);
@@ -168,7 +171,8 @@ class RoomSuspensionExtensionIntegrationTests {
 			.hasMessage("audit failed");
 
 		assertThat(suspensions.findById(suspension.getId()).orElseThrow().getEndTime()).isEqualTo(expectedEndTime);
-		assertThat(sessions.findById(session.getId()).orElseThrow().getRoom().getId()).isEqualTo(source.getId());
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id = ?", UUID.class, session.getId()))
+			.isEqualTo(source.getId());
 	}
 
 	private Object extendAfterBarrier(CyclicBarrier start, UUID managerId, UUID roomId, UUID suspensionId,
