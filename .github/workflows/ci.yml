@@ -18,6 +18,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          chmod +x mvnw
           mapfile -t test_classes < <(
             find src/test/java -type f -name '*Tests.java' -print0 \
               | xargs -0 -n1 bash -c '
@@ -52,6 +53,7 @@ jobs:
           SHARD_COUNT: 4
         run: |
           set -euo pipefail
+          chmod +x mvnw
           mapfile -t test_classes < <(
             find src/test/java -type f -name '*Tests.java' -print0 \
               | xargs -0 -n1 bash -c '
