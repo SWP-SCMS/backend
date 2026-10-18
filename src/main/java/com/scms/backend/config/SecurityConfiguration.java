@@ -150,6 +150,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/manager/coach-assignments/candidates",
 					"/manager/coaches/assignment-workloads").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")
+				.requestMatchers("/staff/me/profile").hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
