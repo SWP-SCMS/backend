@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: SCMS Staff Self Profile API
+  version: 1.0.0
+paths:
+  /staff/me/profile:
+    get:
+      summary: Get the authenticated staff profile
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Staff profile}
+    patch:
+      summary: Update the authenticated staff profile
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StaffProfilePatchRequest'}
+      responses:
+        '200': {description: Updated staff profile}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  schemas:
+    StaffProfilePatchRequest:
+      type: object
+      properties:
+        fullName: {type: string}
+        phone: {type: string}
+        email: {type: string, format: email}
+        birthDate: {type: string, format: date}

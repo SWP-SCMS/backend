@@ -63,6 +63,8 @@ class GeneratedOpenApiTests {
 		"GET /members/me/profile",
 		"PATCH /members/me/profile",
 		"POST /members/me/profile/image",
+		"GET /staff/me/profile",
+		"PATCH /staff/me/profile",
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
 		"GET /manager/membership-offers",
