@@ -43,6 +43,17 @@ class SepayServiceTests {
 	@Mock PaymentFulfillmentService fulfillment;
 
 	@Test
+	void receptionistPaymentRequiresAnActiveReceptionist() {
+		UUID actor = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(false);
+		SepayService service = service("MB", "123456789", "SCMS GYM");
+
+		assertThatThrownBy(() -> service.createForReceptionist(actor, "MB-000001", UUID.randomUUID()))
+			.isInstanceOf(com.scms.backend.auth.InvalidAuthenticatedAccountException.class);
+	}
+
+	@Test
 	void blankAccountNameRejectsNewPaymentBeforeWrites() {
 		UUID actor = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();

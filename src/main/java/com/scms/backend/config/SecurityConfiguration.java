@@ -130,6 +130,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/reception/membership-orders/**").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders/*/payments/sepay",
 					"/members/me/membership-orders/*/bank-transfer").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.POST, "/reception/members/*/membership-orders/*/payments/sepay")
+					.hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.GET, "/members/me/receipts", "/members/me/memberships")
 					.hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/training-results").hasRole("MEMBER")

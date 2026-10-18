@@ -29,6 +29,12 @@ class SepayController {
 		return ResponseEntity.ok(service.create(UUID.fromString(jwt.getSubject()), orderId));
 	}
 
+	@PostMapping("/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")
+	ResponseEntity<SepayPaymentResponse> createForReceptionist(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable String memberId, @PathVariable UUID orderId) {
+		return ResponseEntity.ok(service.createForReceptionist(UUID.fromString(jwt.getSubject()), memberId, orderId));
+	}
+
 	@PostMapping("/payments/sepay/webhook")
 	@SecurityRequirements
 	ResponseEntity<PaymentResultResponse> webhook(
