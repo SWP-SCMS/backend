@@ -23,7 +23,7 @@ begin
     where sc.id = session_row.sport_class_id;
 
     if session_row.status <> 'SCHEDULED' or session_row.start_time <= current_timestamp then
-        raise exception 'Booking requires a future SCHEDULED Session';
+        raise exception 'Booking requires a future SCHEDULED Session' using errcode = '23514';
     end if;
 
     select status into member_status
@@ -31,7 +31,7 @@ begin
     where id = new.member_account_id and role = 'MEMBER';
 
     if member_status is distinct from 'ACTIVE' then
-        raise exception 'Booking requires an ACTIVE Member Account';
+        raise exception 'Booking requires an ACTIVE Member Account' using errcode = '23514';
     end if;
 
     select * into membership_row
@@ -58,7 +58,8 @@ begin
                     and plan_benefit.benefit_code = required_benefit.benefit_code
               )
         ) then
-        raise exception 'Booking requires an ACTIVE Membership with required benefits covering Session start';
+        raise exception 'Booking requires an ACTIVE Membership with required benefits covering Session start'
+            using errcode = '23514';
     end if;
 
     select count(*) into booked_count
@@ -68,7 +69,7 @@ begin
       and id <> new.id;
 
     if booked_count >= session_row.capacity then
-        raise exception 'Session capacity is full';
+        raise exception 'Session capacity is full' using errcode = '23514';
     end if;
     return new;
 end;

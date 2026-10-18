@@ -25,7 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -188,6 +188,37 @@ class ReceptionClassSessionIntegrationTests {
 
 	@Test
 	@Transactional
+	void customPlanWithClassBookingCanBook() {
+		Fixture fixture = fixture();
+		Account customMember = saveAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "Custom Booking Member");
+		createPlan("CUSTOM_BOOKING", fixture.manager().getId(), "CLASS_BOOKING");
+		UUID membershipId = createMembership(fixture.manager().getId(), customMember.getId(), "Custom Booking",
+			"CUSTOM_BOOKING");
+
+		BookingResponse response = bookingService.book(customMember.getId(), fixture.openSession().getId());
+
+		org.assertj.core.api.Assertions.assertThat(response.membershipId()).isEqualTo(membershipId);
+	}
+
+	@Test
+	@Transactional
+	void customPlanWithoutClassBookingIsRejectedByServiceAndTrigger() {
+		Fixture fixture = fixture();
+		Account customMember = saveAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "Custom Access Member");
+		createPlan("CUSTOM_ACCESS", fixture.manager().getId(), "CENTER_ACCESS");
+		UUID membershipId = createMembership(fixture.manager().getId(), customMember.getId(), "Custom Access",
+			"CUSTOM_ACCESS");
+
+		assertThatThrownBy(() -> bookingService.book(customMember.getId(), fixture.openSession().getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
+		assertThatThrownBy(() -> bookings.saveAndFlush(new Booking(UUID.randomUUID(), fixture.openSession().getId(),
+			customMember.getId(), membershipId, fixture.receptionist().getId(), NOW)))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
+	@Transactional
 	void databaseBookingTriggerRequiresEveryDisciplineBenefit() {
 		Fixture fixture = fixture();
 		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
@@ -195,7 +226,7 @@ class ReceptionClassSessionIntegrationTests {
 
 		assertThatThrownBy(() -> bookings.saveAndFlush(new Booking(UUID.randomUUID(), fixture.openSession().getId(),
 			fixture.dynamicMember().getId(), fixture.dynamicMembershipId(), fixture.receptionist().getId(), NOW)))
-			.isInstanceOf(DataAccessException.class);
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor receptionistJwt(UUID accountId) {
@@ -252,34 +283,46 @@ class ReceptionClassSessionIntegrationTests {
 	}
 
 	private UUID createMembership(UUID managerId, UUID memberId, String suffix) {
+		return createMembership(managerId, memberId, suffix, "PLUS");
+	}
+
+	private UUID createMembership(UUID managerId, UUID memberId, String suffix, String planCode) {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
-		insertMembershipRows(managerId, memberId, suffix, offerId, orderId, membershipId);
+		insertMembershipRows(managerId, memberId, suffix, planCode, offerId, orderId, membershipId);
 		return membershipId;
 	}
 
 	@Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
-	private void insertMembershipRows(UUID managerId, UUID memberId, String suffix, UUID offerId, UUID orderId,
-			UUID membershipId) {
+	private void insertMembershipRows(UUID managerId, UUID memberId, String suffix, String planCode, UUID offerId,
+			UUID orderId, UUID membershipId) {
 		jdbc.update("insert into membership_offers(id, plan_code, name, description, price_amount, "
-			+ "currency_code, duration_days, status, created_by_account_id) values (?, 'PLUS', ?, ?, 12000, "
-			+ "'VND', 365, 'ACTIVE', ?)", offerId, "US35 " + suffix, "US35 test offer", managerId);
+			+ "currency_code, duration_days, status, created_by_account_id) values (?, ?, ?, ?, 12000, "
+			+ "'VND', 365, 'ACTIVE', ?)", offerId, planCode, "US35 " + suffix, "US35 test offer", managerId);
 		jdbc.update("insert into membership_orders(id, order_number, member_account_id, created_by_account_id, "
 			+ "offer_id, offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot, "
 			+ "duration_days_snapshot, payment_method, status, expires_at, paid_at) values (?, ?, ?, ?, ?, ?, "
-			+ "'PLUS', 12000, 'VND', 365, 'CASH', 'PAID', ?, ?)", orderId,
+			+ "?, 12000, 'VND', 365, 'CASH', 'PAID', ?, ?)", orderId,
 			"US35-" + orderId.toString().replace("-", ""), memberId, managerId, offerId, "US35 " + suffix,
-			java.sql.Timestamp.from(Instant.parse("2030-01-02T00:00:00Z")), java.sql.Timestamp.from(NOW));
+			planCode, java.sql.Timestamp.from(Instant.parse("2030-01-02T00:00:00Z")), java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into payments(id, order_id, method, status, amount, currency_code, "
 			+ "processed_by_account_id, paid_at) values (?, ?, 'CASH', 'PAID', 12000, 'VND', ?, ?)",
 			UUID.randomUUID(), orderId, managerId, java.sql.Timestamp.from(NOW));
 		jdbc.update("insert into memberships(id, member_account_id, order_id, offer_id, plan_code_snapshot, "
 			+ "offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot, status, "
-			+ "starts_at, ends_at) values (?, ?, ?, ?, 'PLUS', ?, 12000, 'VND', 365, 'ACTIVE', "
+			+ "starts_at, ends_at) values (?, ?, ?, ?, ?, ?, 12000, 'VND', 365, 'ACTIVE', "
 			+ "'2029-01-01T00:00:00Z', '2031-01-01T00:00:00Z')", membershipId, memberId, orderId, offerId,
-			"US35 " + suffix);
+			planCode, "US35 " + suffix);
+	}
+
+	private void createPlan(String planCode, UUID managerId, String benefitCode) {
+		jdbc.update("insert into membership_plans(plan_code, display_name, supports_booking, "
+			+ "supports_personal_coaching, status, created_by_account_id) values (?, ?, ?, false, 'ACTIVE', ?)",
+			planCode, planCode, "CLASS_BOOKING".equals(benefitCode), managerId);
+		jdbc.update("insert into membership_plan_benefits(plan_code, benefit_code) values (?, ?)", planCode,
+			benefitCode);
 	}
 
 	private Account saveAccount(AccountRole role, AccountStatus status, String name) {

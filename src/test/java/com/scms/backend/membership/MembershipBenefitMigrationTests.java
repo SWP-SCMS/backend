@@ -32,6 +32,7 @@ class MembershipBenefitMigrationTests {
 				.contains("membership_plan_benefits")
 				.contains("discipline_required_benefits")
 				.contains("class_booking")
+				.contains("using errcode = '23514'")
 				.doesNotContain("plan_code_snapshot <> 'plus'")
 				.doesNotContain("drop trigger");
 		}
