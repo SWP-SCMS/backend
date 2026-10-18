@@ -21,6 +21,7 @@ class TrainingFeedbackOpenApiTests {
 			String yaml = new String(source.readAllBytes(), StandardCharsets.UTF_8);
 			assertThat(yaml).doesNotContain("nullable: true");
 			assertThat(yaml).contains("BR-FDB-03", "Group/Yoga Session Feedback is outside US48");
+			assertThat(yaml).contains("TRAINING_FEEDBACK Benefit", "PLUS_MEMBERSHIP_REQUIRED");
 			Map<String, Object> document = new Yaml().load(yaml);
 			assertThat(document.get("openapi")).isEqualTo("3.1.0");
 			Map<String, Object> paths = (Map<String, Object>) document.get("paths");

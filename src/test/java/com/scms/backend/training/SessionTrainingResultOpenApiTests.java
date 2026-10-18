@@ -20,6 +20,7 @@ class SessionTrainingResultOpenApiTests {
 			assertThat(source).isNotNull();
 			String yaml = new String(source.readAllBytes(), StandardCharsets.UTF_8);
 			assertThat(yaml).doesNotContain("coachAssignmentId");
+			assertThat(yaml).contains("TRAINING_RESULT Benefit", "PLUS_MEMBERSHIP_REQUIRED");
 			Map<String, Object> document = new Yaml().load(yaml);
 			assertThat(document.get("openapi")).isEqualTo("3.1.0");
 			Map<String, Object> paths = (Map<String, Object>) document.get("paths");
@@ -29,10 +30,10 @@ class SessionTrainingResultOpenApiTests {
 				"/coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}");
 			assertThat(((Map<String, Object>) collection.get("post")).get("responses"))
 				.asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
-				.containsKeys("201", "400", "401", "403", "404");
+				.containsKeys("201", "400", "401", "403", "404", "409");
 			assertThat(((Map<String, Object>) item.get("put")).get("responses"))
 				.asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.MAP)
-				.containsKeys("200", "400", "401", "403", "404");
+				.containsKeys("200", "400", "401", "403", "404", "409");
 			Map<String, Object> schemas = (Map<String, Object>) ((Map<String, Object>) document.get("components"))
 				.get("schemas");
 			assertThat(schemas.keySet()).containsAll(List.of(

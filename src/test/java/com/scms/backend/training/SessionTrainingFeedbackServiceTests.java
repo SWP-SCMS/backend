@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +36,7 @@ class SessionTrainingFeedbackServiceTests {
 
 	@Mock TrainingFeedbackRepository feedback;
 	@Mock TrainingResultRepository results;
+	@Mock CoachAssignmentRepository assignments;
 	@Mock ClassSessionRepository sessions;
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
@@ -48,7 +50,7 @@ class SessionTrainingFeedbackServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new SessionTrainingFeedbackService(feedback, results, sessions, accounts, audits,
+		service = new SessionTrainingFeedbackService(feedback, results, assignments, sessions, accounts, audits,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -67,6 +69,7 @@ class SessionTrainingFeedbackServiceTests {
 	@Test
 	void createPersistsSessionFeedbackWithoutPersonalAssignmentAndAuditsIt() {
 		permitTeachingCoach();
+		permitTrainingFeedbackBenefit();
 		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.of(sessionResult()));
 		when(feedback.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -76,6 +79,7 @@ class SessionTrainingFeedbackServiceTests {
 
 		assertThat(response.classSessionId()).isEqualTo(sessionId);
 		assertThat(response.trainingResultId()).isEqualTo(resultId);
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now);
 		ArgumentCaptor<TrainingFeedback> saved = ArgumentCaptor.forClass(TrainingFeedback.class);
 		verify(feedback).saveAndFlush(saved.capture());
 		assertThat(saved.getValue().getCoachAssignmentId()).isNull();
@@ -89,6 +93,7 @@ class SessionTrainingFeedbackServiceTests {
 	@Test
 	void createReturnsExistingSessionFeedbackWithoutDuplicatingIt() {
 		permitTeachingCoach();
+		permitTrainingFeedbackBenefit();
 		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.of(sessionResult()));
 		TrainingFeedback existing = TrainingFeedback.forClassSessionResult(UUID.randomUUID(), memberId,
@@ -129,8 +134,22 @@ class SessionTrainingFeedbackServiceTests {
 	}
 
 	@Test
+	void createRejectsMemberWithoutTrainingFeedbackBenefit() {
+		permitTeachingCoach();
+		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
+			.thenReturn(Optional.of(sessionResult()));
+
+		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
+			.isInstanceOfSatisfying(TrainingFeedbackException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("PLUS_MEMBERSHIP_REQUIRED"));
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now);
+		verify(feedback, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void updateKeepsSessionScopeAndAuditsBeforeAndAfter() {
 		permitTeachingCoach();
+		permitTrainingFeedbackBenefit();
 		when(results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId))
 			.thenReturn(Optional.of(sessionResult()));
 		UUID feedbackId = UUID.randomUUID();
@@ -144,6 +163,7 @@ class SessionTrainingFeedbackServiceTests {
 			feedbackId, request("After"));
 
 		assertThat(response.content()).isEqualTo("After");
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now);
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("TRAINING_FEEDBACK_UPDATED");
@@ -154,8 +174,14 @@ class SessionTrainingFeedbackServiceTests {
 	private void permitTeachingCoach() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 			.thenReturn(true);
+		ClassSession session = mock(ClassSession.class);
+		lenient().when(session.getStartTime()).thenReturn(now);
 		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId))
-			.thenReturn(Optional.of(mock(ClassSession.class)));
+			.thenReturn(Optional.of(session));
+	}
+
+	private void permitTrainingFeedbackBenefit() {
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now)).thenReturn(true);
 	}
 
 	private SessionTrainingFeedbackRequest request(String content) {

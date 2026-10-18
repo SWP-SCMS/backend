@@ -20,7 +20,7 @@ public class TrainingPlanException extends RuntimeException {
 
 	static TrainingPlanException plusMembershipRequired() {
 		return new TrainingPlanException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
-				"Creating a Training Plan requires an active PLUS Membership.");
+				"Creating or editing a Training Plan requires an active Membership with the TRAINING_PLAN Benefit.");
 	}
 
 	static TrainingPlanException activeAssignmentNotFound() {

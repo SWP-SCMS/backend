@@ -453,6 +453,34 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedContractDocumentsTrainingBenefitEligibility() throws Exception {
+		JsonNode document = generatedDocument();
+		for (var requirement : java.util.Map.ofEntries(
+			java.util.Map.entry("POST /manager/members/{memberId}/coach-assignment", "PERSONAL_COACHING"),
+			java.util.Map.entry("GET /manager/coach-assignments/candidates", "PERSONAL_COACHING"),
+			java.util.Map.entry("POST /coach/members/{memberId}/training-plans", "TRAINING_PLAN"),
+			java.util.Map.entry("PUT /coach/members/{memberId}/training-plans/{planId}", "TRAINING_PLAN"),
+			java.util.Map.entry("POST /coach/members/{memberId}/training-results", "TRAINING_RESULT"),
+			java.util.Map.entry("PUT /coach/members/{memberId}/training-results/{resultId}", "TRAINING_RESULT"),
+			java.util.Map.entry("POST /coach/members/{memberId}/feedback", "TRAINING_FEEDBACK"),
+			java.util.Map.entry("PUT /coach/members/{memberId}/feedback/{feedbackId}", "TRAINING_FEEDBACK"),
+			java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
+				"TRAINING_RESULT"),
+			java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}",
+				"TRAINING_RESULT"),
+			java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
+				"TRAINING_FEEDBACK"),
+			java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}",
+				"TRAINING_FEEDBACK")).entrySet()) {
+			int separator = requirement.getKey().indexOf(' ');
+			String method = requirement.getKey().substring(0, separator).toLowerCase();
+			String path = requirement.getKey().substring(separator + 1);
+			assertThat(operation(document, path, method).path("description").asText())
+				.as(requirement.getKey()).contains(requirement.getValue(), "Benefit");
+		}
+	}
+
+	@Test
 	void generatedAndStaticContractsDescribeRoomSuspensionExtension() throws Exception {
 		JsonNode generated = generatedDocument();
 		JsonNode generatedPatch = operation(generated,

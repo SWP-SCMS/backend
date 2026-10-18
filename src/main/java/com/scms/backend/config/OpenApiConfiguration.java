@@ -130,9 +130,28 @@ public class OpenApiConfiguration {
 		if (path.equals("/reception/members/{memberId}/receipts")) {
 			return "Requires MANAGER or RECEPTIONIST role; member access is role-scoped.";
 		}
-		if (path.startsWith("/manager/")) return "Requires MANAGER role.";
+		if (path.startsWith("/manager/")) {
+			if (path.contains("coach-assignment")) {
+				return "Requires MANAGER role; PERSONAL_COACHING Benefit is required for assignment eligibility.";
+			}
+			return "Requires MANAGER role.";
+		}
 		if (path.startsWith("/reception/")) return "Requires RECEPTIONIST role; member access is role-scoped.";
-		if (path.startsWith("/coach/")) return "Requires COACH role; session access is ownership-scoped.";
+		if (path.startsWith("/coach/")) {
+			if (path.contains("training-plans")) {
+				return "Requires COACH role; TRAINING_PLAN Benefit and ownership-scoped access. Session access is ownership-scoped.";
+			}
+			if (path.contains("training-results")) {
+				return "Requires COACH role; TRAINING_RESULT Benefit and ownership-scoped access. Session access is ownership-scoped.";
+			}
+			if (path.contains("feedback")) {
+				return "Requires COACH role; TRAINING_FEEDBACK Benefit and ownership-scoped access. Session access is ownership-scoped.";
+			}
+			if (path.contains("coach-assignments") || path.contains("coach-assignment")) {
+				return "Requires COACH role; PERSONAL_COACHING Benefit and ownership-scoped access. Session access is ownership-scoped.";
+			}
+			return "Requires COACH role; session access is ownership-scoped.";
+		}
 		if (path.startsWith("/members/")) return "Requires MEMBER role; resource ownership is limited to the authenticated member.";
 		if (path.startsWith("/membership-offers")) return "Public catalog; only ACTIVE membership offers are returned.";
 		return "Requires an authenticated account; access is role- and ownership-scoped.";

@@ -71,8 +71,8 @@ public class CoachAssignmentService {
 		}
 
 		Instant now = clock.instant();
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
-		if (!assignments.hasActivePlusMembership(memberId, now)) {
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+		if (!assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", now)) {
 			throw CoachAssignmentException.plusMembershipRequired();
 		}
 
@@ -160,7 +160,7 @@ public class CoachAssignmentService {
 		ensureMemberExists(memberId);
 
 		Instant now = clock.instant();
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 
 		Optional<CoachAssignment> active = assignments.findByMemberAccountIdAndStatus(memberId,
 				CoachAssignmentStatus.ACTIVE);
@@ -177,7 +177,7 @@ public class CoachAssignmentService {
 		ensureMemberExists(memberId);
 
 		Instant now = clock.instant();
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 
 		Page<CoachAssignment> page = assignments.findByMemberAccountIdOrderByCreatedAtDesc(memberId, pageable);
 		Set<UUID> coachIds = page.getContent().stream()
@@ -208,7 +208,7 @@ public class CoachAssignmentService {
 		}
 
 		Instant now = clock.instant();
-		assignments.endActiveAssignmentIfPlusExpired(memberId, now);
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 
 		CoachAssignment current = assignments.findByMemberAccountIdAndStatusForUpdate(memberId,
 				CoachAssignmentStatus.ACTIVE).orElseThrow(CoachAssignmentException::activeAssignmentNotFound);

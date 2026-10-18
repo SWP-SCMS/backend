@@ -77,7 +77,7 @@ class AssignmentDiscoveryServiceTests {
 		});
 		InOrder order = inOrder(memberships, assignments);
 		order.verify(memberships).expireDue(NOW);
-		order.verify(assignments).endAllActiveAssignmentsWithExpiredPlus(NOW);
+		order.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(NOW);
 		order.verify(assignments).findAssignmentCandidates("member", "ASSIGNED", NOW, pageable);
 	}
 
@@ -103,7 +103,7 @@ class AssignmentDiscoveryServiceTests {
 		});
 		InOrder order = inOrder(memberships, assignments);
 		order.verify(memberships).expireDue(NOW);
-		order.verify(assignments).endAllActiveAssignmentsWithExpiredPlus(NOW);
+		order.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(NOW);
 		order.verify(assignments).findAssignmentWorkloads();
 	}
 

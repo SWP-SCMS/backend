@@ -36,7 +36,8 @@ public class CoachAssignmentException extends RuntimeException {
 	}
 
 	public static CoachAssignmentException plusMembershipRequired() {
-		return new CoachAssignmentException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED", "Coach assignment requires an active PLUS Membership.");
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
+				"Coach assignment requires an active Membership with the PERSONAL_COACHING Benefit.");
 	}
 
 	public static CoachAssignmentException alreadyAssignedToThisCoach() {

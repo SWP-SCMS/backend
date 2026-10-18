@@ -94,7 +94,7 @@ class CoachAssignedMemberServiceTests {
 		});
 
 		InOrder lifecycleThenList = inOrder(assignments);
-		lifecycleThenList.verify(assignments).endAllActiveAssignmentsWithExpiredPlus(now);
+		lifecycleThenList.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 		lifecycleThenList.verify(assignments).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
 				coachId, CoachAssignmentStatus.ACTIVE, pageable);
 	}
@@ -123,7 +123,7 @@ class CoachAssignedMemberServiceTests {
 		assertThatThrownBy(() -> service.listAssignedMembers(coachId, pageable))
 				.isInstanceOf(InvalidAuthenticatedAccountException.class);
 
-		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPlus(now);
+		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 		verify(assignments, never()).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
 				coachId, CoachAssignmentStatus.ACTIVE, pageable);
 	}
@@ -146,7 +146,7 @@ class CoachAssignedMemberServiceTests {
 		assertThat(result.memberAccountId()).isEqualTo(memberId);
 		assertThat(result.assignmentId()).isEqualTo(assignment.getId());
 		assertThat(result.memberId()).isEqualTo("MBR-000001");
-		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+		verify(assignments).endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 	}
 
 	@Test

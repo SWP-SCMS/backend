@@ -20,7 +20,7 @@ public class TrainingFeedbackException extends RuntimeException {
 
 	static TrainingFeedbackException plusMembershipRequired() {
 		return new TrainingFeedbackException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
-				"Creating or editing Feedback requires an active PLUS Membership.");
+				"Creating or editing Feedback requires an active Membership with the TRAINING_FEEDBACK Benefit.");
 	}
 
 	static TrainingFeedbackException activeAssignmentNotFound() {

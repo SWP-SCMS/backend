@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -156,7 +157,7 @@ class CoachAssignmentServiceTests {
 		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
 		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
 		when(accounts.findById(coachId)).thenReturn(Optional.of(activeCoach));
-		when(assignments.hasActivePlusMembership(memberId, fixedNow)).thenReturn(false);
+		when(assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", fixedNow)).thenReturn(false);
 
 		CoachAssignmentAssignRequest request = new CoachAssignmentAssignRequest(coachId, "Initial assign");
 
@@ -170,7 +171,7 @@ class CoachAssignmentServiceTests {
 		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
 		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
 		when(accounts.findById(coachId)).thenReturn(Optional.of(activeCoach));
-		when(assignments.hasActivePlusMembership(memberId, fixedNow)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", fixedNow)).thenReturn(true);
 		when(assignments.findByMemberAccountIdAndStatusForUpdate(memberId, CoachAssignmentStatus.ACTIVE))
 				.thenReturn(Optional.empty());
 		when(assignments.saveAndFlush(any(CoachAssignment.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -184,6 +185,7 @@ class CoachAssignmentServiceTests {
 		assertThat(response.coachAccountId()).isEqualTo(coachId);
 		assertThat(response.coachFullName()).isEqualTo("Coach Alpha");
 		assertThat(response.status()).isEqualTo(CoachAssignmentStatus.ACTIVE);
+		assertBenefitRequested("PERSONAL_COACHING");
 		assertThat(response.startsAt()).isEqualTo(fixedNow);
 		assertThat(response.endsAt()).isNull();
 
@@ -204,12 +206,19 @@ class CoachAssignmentServiceTests {
 				eq("TRAINING_COACH_ASSIGNED"), eq("COACH_ASSIGNMENT"), eq(response.id()), any());
 	}
 
+	private void assertBenefitRequested(String benefitCode) {
+		assertThat(mockingDetails(assignments).getInvocations()).anySatisfy(invocation -> {
+			assertThat(invocation.getMethod().getName()).isEqualTo("hasActiveMembershipBenefit");
+			assertThat(invocation.getArguments()).containsExactly(memberId, benefitCode, fixedNow);
+		});
+	}
+
 	@Test
 	void assign_whenAlreadyAssignedToSameCoach_throwsAlreadyAssignedToThisCoach() {
 		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
 		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
 		when(accounts.findById(coachId)).thenReturn(Optional.of(activeCoach));
-		when(assignments.hasActivePlusMembership(memberId, fixedNow)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", fixedNow)).thenReturn(true);
 
 		CoachAssignment current = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
 				CoachAssignmentStatus.ACTIVE, fixedNow.minusSeconds(3600), fixedNow.minusSeconds(3600));
@@ -230,7 +239,7 @@ class CoachAssignmentServiceTests {
 		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
 		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
 		when(accounts.findById(secondCoachId)).thenReturn(Optional.of(activeSecondCoach));
-		when(assignments.hasActivePlusMembership(memberId, fixedNow)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", fixedNow)).thenReturn(true);
 
 		CoachAssignment current = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
 				CoachAssignmentStatus.ACTIVE, fixedNow.minusSeconds(7200), fixedNow.minusSeconds(7200));

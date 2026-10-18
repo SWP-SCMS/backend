@@ -8,7 +8,7 @@ paths:
   /manager/coach-assignments/candidates:
     get:
       summary: List assignment-eligible Members
-      description: Reconciles due Memberships and Coach assignments before returning ACTIVE Members with an effective PLUS Membership.
+      description: Reconciles due Memberships and Coach assignments before returning ACTIVE Members with an effective PERSONAL_COACHING Benefit.
       operationId: listAssignmentCandidates
       security:
         - bearerAuth: []

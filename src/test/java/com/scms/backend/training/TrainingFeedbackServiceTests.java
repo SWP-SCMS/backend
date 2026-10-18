@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,11 +64,19 @@ class TrainingFeedbackServiceTests {
 		assertThat(response.trainingPlanVersionId()).isEqualTo(planVersionId);
 		assertThat(response.trainingResultId()).isNull();
 		assertThat(response.content()).isEqualTo("Good progress");
+		assertBenefitRequested("TRAINING_FEEDBACK");
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("TRAINING_FEEDBACK_CREATED");
 		assertThat(audit.getValue().getAfterData())
 				.containsEntry("trainingPlanVersionId", planVersionId.toString());
+	}
+
+	private void assertBenefitRequested(String benefitCode) {
+		assertThat(mockingDetails(assignments).getInvocations()).anySatisfy(invocation -> {
+			assertThat(invocation.getMethod().getName()).isEqualTo("hasActiveMembershipBenefit");
+			assertThat(invocation.getArguments()).containsExactly(memberId, benefitCode, now);
+		});
 	}
 
 	@Test
@@ -97,7 +106,7 @@ class TrainingFeedbackServiceTests {
 	@Test
 	void createRejectsCoachOutsideCurrentAssignment() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
-		when(assignments.hasActivePlusMembership(memberId, now)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now)).thenReturn(true);
 		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
 				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.empty());
 
@@ -110,12 +119,12 @@ class TrainingFeedbackServiceTests {
 	@Test
 	void createRejectsExpiredPlusAndEndsAssignment() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
-		when(assignments.hasActivePlusMembership(memberId, now)).thenReturn(false);
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now)).thenReturn(false);
 
 		assertThatThrownBy(() -> service.create(coachId, memberId, planRequest("Denied")))
 				.isInstanceOfSatisfying(TrainingFeedbackException.class,
 						exception -> assertThat(exception.getCode()).isEqualTo("PLUS_MEMBERSHIP_REQUIRED"));
-		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+		verify(assignments).endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 		verify(feedback, never()).saveAndFlush(any());
 	}
 
@@ -148,7 +157,7 @@ class TrainingFeedbackServiceTests {
 		CoachAssignment assignment = new CoachAssignment(UUID.randomUUID(), memberId, coachId, UUID.randomUUID(),
 				CoachAssignmentStatus.ACTIVE, now.minusSeconds(7200), now.minusSeconds(7200));
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
-		when(assignments.hasActivePlusMembership(memberId, now)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", now)).thenReturn(true);
 		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(
 				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
 		return assignment;

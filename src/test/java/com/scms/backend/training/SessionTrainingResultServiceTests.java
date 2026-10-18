@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +37,7 @@ import org.springframework.data.jpa.repository.Query;
 class SessionTrainingResultServiceTests {
 
 	@Mock TrainingResultRepository results;
+	@Mock CoachAssignmentRepository assignments;
 	@Mock ClassSessionRepository sessions;
 	@Mock BookingRepository bookings;
 	@Mock AccountRepository accounts;
@@ -49,7 +51,7 @@ class SessionTrainingResultServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new SessionTrainingResultService(results, sessions, bookings, accounts, audits,
+		service = new SessionTrainingResultService(results, assignments, sessions, bookings, accounts, audits,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -67,6 +69,7 @@ class SessionTrainingResultServiceTests {
 	@Test
 	void createPersistsSessionResultWithoutPersonalAssignmentAndAuditsIt() {
 		permitTeachingCoach();
+		permitTrainingResultBenefit();
 		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
 			BookingStatus.BOOKED)).thenReturn(true);
 		when(results.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
@@ -76,6 +79,7 @@ class SessionTrainingResultServiceTests {
 		assertThat(response.memberAccountId()).isEqualTo(memberId);
 		assertThat(response.classSessionId()).isEqualTo(sessionId);
 		assertThat(response.content()).containsEntry("notes", "Good form");
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", now);
 		ArgumentCaptor<TrainingResult> saved = ArgumentCaptor.forClass(TrainingResult.class);
 		verify(results).saveAndFlush(saved.capture());
 		assertThat(saved.getValue().getCoachAssignmentId()).isNull();
@@ -88,6 +92,7 @@ class SessionTrainingResultServiceTests {
 	@Test
 	void createReturnsExistingSessionResultWithoutDuplicatingIt() {
 		permitTeachingCoach();
+		permitTrainingResultBenefit();
 		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
 			BookingStatus.BOOKED)).thenReturn(true);
 		TrainingResult existing = TrainingResult.forClassSession(UUID.randomUUID(), memberId, sessionId,
@@ -129,8 +134,22 @@ class SessionTrainingResultServiceTests {
 	}
 
 	@Test
+	void createRejectsMemberWithoutTrainingResultBenefit() {
+		permitTeachingCoach();
+		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
+			BookingStatus.BOOKED)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("PLUS_MEMBERSHIP_REQUIRED"));
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", now);
+		verify(results, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void updatePreservesSessionOwnershipAndRecordsBeforeAndAfterHistory() {
 		permitTeachingCoach();
+		permitTrainingResultBenefit();
 		UUID resultId = UUID.randomUUID();
 		TrainingResult result = TrainingResult.forClassSession(resultId, memberId, sessionId,
 			now.minusSeconds(3600), Map.of("notes", "Before"), coachId, now.minusSeconds(3600));
@@ -142,6 +161,7 @@ class SessionTrainingResultServiceTests {
 			request("After"));
 
 		assertThat(response.content()).containsEntry("notes", "After");
+		verify(assignments).hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", now);
 		assertThat(result.getCoachAssignmentId()).isNull();
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
@@ -152,8 +172,14 @@ class SessionTrainingResultServiceTests {
 
 	private void permitTeachingCoach() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		ClassSession session = mock(ClassSession.class);
+		lenient().when(session.getStartTime()).thenReturn(now);
 		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId))
-			.thenReturn(Optional.of(mock(ClassSession.class)));
+			.thenReturn(Optional.of(session));
+	}
+
+	private void permitTrainingResultBenefit() {
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_RESULT", now)).thenReturn(true);
 	}
 
 	private SessionTrainingResultRequest request(String notes) {

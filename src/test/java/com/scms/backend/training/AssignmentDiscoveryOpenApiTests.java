@@ -3,6 +3,7 @@ package com.scms.backend.training;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -17,7 +18,9 @@ class AssignmentDiscoveryOpenApiTests {
 		try (InputStream source = getClass().getResourceAsStream(
 				"/openapi/api-02-api-03-assignment-discovery.yaml")) {
 			assertThat(source).isNotNull();
-			Map<String, Object> document = new Yaml().load(source);
+			String yaml = new String(source.readAllBytes(), StandardCharsets.UTF_8);
+			assertThat(yaml).contains("PERSONAL_COACHING Benefit");
+			Map<String, Object> document = new Yaml().load(yaml);
 			assertThat(document.get("openapi")).isEqualTo("3.1.0");
 
 			Map<String, Object> paths = (Map<String, Object>) document.get("paths");

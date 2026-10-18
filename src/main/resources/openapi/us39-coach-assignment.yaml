@@ -171,7 +171,7 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     Conflict:
       description: >-
-        Business rule conflicts: PLUS_MEMBERSHIP_REQUIRED, MEMBER_NOT_ACTIVE, COACH_NOT_ACTIVE,
+        Business rule conflicts: PERSONAL_COACHING Benefit is required (PLUS_MEMBERSHIP_REQUIRED), MEMBER_NOT_ACTIVE, COACH_NOT_ACTIVE,
         COACH_ALREADY_ASSIGNED, or COACH_ASSIGNMENT_CONFLICT.
       content:
         application/problem+json:

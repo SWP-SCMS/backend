@@ -57,7 +57,7 @@ class MemberCoachAssignmentServiceTests {
 		assertThat(response.assignmentId()).isEqualTo(assignment.getId());
 		assertThat(response.coachFullName()).isEqualTo("Coach Alpha");
 		assertThat(response.startsAt()).isEqualTo(assignment.getStartsAt());
-		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+		verify(assignments).endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 	}
 
 	@Test
@@ -68,7 +68,7 @@ class MemberCoachAssignmentServiceTests {
 				.thenReturn(Optional.empty());
 
 		assertThat(service.getActive(memberId)).isEmpty();
-		verify(assignments).endActiveAssignmentIfPlusExpired(memberId, now);
+		verify(assignments).endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
 	}
 
 	@Test

@@ -20,7 +20,7 @@ public class TrainingResultException extends RuntimeException {
 
 	static TrainingResultException plusMembershipRequired() {
 		return new TrainingResultException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
-				"Recording a Training Result requires an active PLUS Membership.");
+				"Recording or editing a Training Result requires an active Membership with the TRAINING_RESULT Benefit.");
 	}
 
 	static TrainingResultException activeAssignmentNotFound() {

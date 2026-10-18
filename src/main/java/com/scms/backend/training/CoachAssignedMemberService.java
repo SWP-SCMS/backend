@@ -25,7 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
  * US40 - Coach - Assigned Member List
  *
  * BR-COA-03: Coach may have multiple ACTIVE assignments.
- * BR-COA-05: Reconcile expired PLUS memberships before listing.
+	 * BR-COA-05: Reconcile expired PERSONAL_COACHING entitlements before listing.
  * BR-COA-06: Only ACTIVE Coach can access.
  * BR-RPT-06: Coach may only see Members within their assigned coaching scope.
  * BR-SEC-04: Role + ownership enforced at backend.
@@ -48,14 +48,13 @@ public class CoachAssignedMemberService {
 
 	/**
 	 * US40: List Members currently assigned to this Coach (ACTIVE assignments only).
-	 * Reconciles expired PLUS memberships before returning the list.
+	 * Reconciles expired PERSONAL_COACHING entitlements before returning the list.
 	 */
 	@Transactional
 	public CoachAssignedMemberPageResponse listAssignedMembers(UUID coachId, Pageable pageable) {
 		ensureActiveCoach(coachId);
 
-		// BR-COA-05: reconcile all expired-PLUS assignments (bulk, no memberId filter)
-		assignments.endAllActiveAssignmentsWithExpiredPlus(clock.instant());
+		assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(clock.instant());
 
 		Page<CoachAssignment> page = assignments.findByCoachAccountIdAndStatusOrderByCreatedAtDesc(coachId,
 				CoachAssignmentStatus.ACTIVE, pageable);
@@ -85,7 +84,7 @@ public class CoachAssignedMemberService {
 	@Transactional
 	public CoachMemberTrainingProfileResponse getMemberTrainingProfile(UUID coachId, UUID memberId) {
 		ensureActiveCoach(coachId);
-		assignments.endActiveAssignmentIfPlusExpired(memberId, clock.instant());
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, clock.instant());
 
 		CoachAssignment assignment = assignments
 				.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId, CoachAssignmentStatus.ACTIVE)

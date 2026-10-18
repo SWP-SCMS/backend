@@ -4,7 +4,7 @@ info:
   version: "1.0"
   description: |
     US48 - Personal Coach - Create / Edit Feedback.
-    An ACTIVE Personal Coach with the Member's current ACTIVE assignment and PLUS Membership
+    An ACTIVE Personal Coach with the Member's current ACTIVE assignment and TRAINING_FEEDBACK Benefit
     may create or edit Feedback for exactly one owned Training Plan Version or Personal Training Result.
     Per BR-FDB-03, Group/Yoga Session Feedback is outside US48 and follows Teaching Coach ownership in US49.
 paths:
@@ -174,7 +174,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     Conflict:
-      description: The Member does not have an active PLUS Membership.
+      description: The Member does not have an active Membership with the TRAINING_FEEDBACK Benefit.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

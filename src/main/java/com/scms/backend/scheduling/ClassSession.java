@@ -93,7 +93,7 @@ public class ClassSession {
 	RecurringSchedule getRecurringSchedule() { return recurringSchedule; }
 	Account getTeachingCoach() { return teachingCoach; }
 	Room getRoom() { return room; }
-	Instant getStartTime() { return startTime; }
+	public Instant getStartTime() { return startTime; }
 	Instant getEndTime() { return endTime; }
 	int getCapacity() { return capacity; }
 	ClassSessionStatus getStatus() { return status; }
