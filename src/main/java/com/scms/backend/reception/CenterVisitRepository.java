@@ -13,12 +13,13 @@ import org.springframework.data.domain.Pageable;
 public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> {
 
 	@Query(value = """
-		select id from memberships
-		where member_account_id = :memberId
-		and status = 'ACTIVE'
-		and plan_code_snapshot in ('BASIC', 'PLUS')
-		and starts_at <= :at and ends_at > :at
-		order by ends_at desc, id
+		select m.id from memberships m
+		join membership_plan_benefits mpb on mpb.plan_code = m.plan_code_snapshot
+		where m.member_account_id = :memberId
+		and m.status = 'ACTIVE'
+		and mpb.benefit_code = 'CENTER_ACCESS'
+		and m.starts_at <= :at and m.ends_at > :at
+		order by m.ends_at desc, m.id
 		limit 1
 		""", nativeQuery = true)
 	Optional<UUID> findCurrentMembership(@Param("memberId") UUID memberId, @Param("at") Instant at);
