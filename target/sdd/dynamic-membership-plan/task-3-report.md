@@ -87,3 +87,25 @@ The two pre-existing untracked files under `docs/` were not modified or staged:
 - Docker is unavailable in the execution environment, so container-backed integration tests cannot start and report `Could not find a valid Docker environment`. This is an environment limitation; the full non-container suite passed.
 - Existing Mockito/JDK dynamic-agent and SpringDoc warnings remain non-fatal.
 - Existing Membership Order snapshots remain enum-based by design; dynamic snapshot migration is explicitly outside Task 3.
+
+## Fix Round 1
+
+### Findings addressed
+
+1. Plan audit create/update events now use `UUID.randomUUID()` for the event ID. The plan code remains the deterministic target UUID only, so CREATE and UPDATE persist as distinct audit rows. `MembershipPlanAdminServiceTests.createAndUpdatePersistDistinctAuditEvents` proves both actions and distinct IDs.
+2. Added `MembershipPlanRepository.findByPlanCodeForUpdate` with `@Lock(PESSIMISTIC_WRITE)`. Plan PATCH acquires this row lock before checking order usage; Membership Order creation acquires the same lock before checking/creating the order. This serializes the benefit-lock check against order creation.
+3. Restored `MembershipOfferResponse.planCode` to `MembershipPlanCode` and convert the internal String ID only at the response boundary. The generated OpenAPI contract is asserted as a string enum containing exactly `BASIC` and `PLUS`.
+
+### Fix-round TDD and verification
+
+- RED: the new focused tests initially failed to compile because the locking repository method and `MembershipOrderService` dependency were absent.
+- RED: after the first production pass, the OpenAPI assertion failed because SpringDoc renders the restored enum inline rather than as a `$ref`; the assertion was corrected to verify the actual enum contract.
+- `./mvnw.cmd '-Dtest=MembershipPlanAdminServiceTests,MembershipPlanRepositoryLockContractTests,MembershipOrderServiceTests,MembershipOfferResponseCompatibilityTests,GeneratedOpenApiTests' test` — **24 tests passed; 0 failures/errors/skipped; BUILD SUCCESS**.
+- `./mvnw.cmd '-Dtest=!**/*IntegrationTests,!**/*MigrationV*Tests,!**/*PaymentMigrationV9Tests,!**/*PaymentDestinationMigrationV13Tests' test` — **464 tests passed; 0 failures/errors/skipped; BUILD SUCCESS**.
+- `git diff --check` — passed with no output before fix-round commit.
+
+### Lock-test limitation and CI requirement
+
+The environment has no valid Docker runtime, so a PostgreSQL-backed concurrent PATCH/order integration test could not run. Deterministic coverage now verifies the repository method is annotated with `PESSIMISTIC_WRITE`, the Plan PATCH uses it, and order creation uses the same method. CI must run the container-backed membership integration/concurrency coverage on a Docker-enabled runner before release.
+
+Fix-round implementation commit SHA: `f2b5f39`.
