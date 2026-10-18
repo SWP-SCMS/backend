@@ -320,13 +320,15 @@ class CenterVisitServiceTests {
 	}
 
 	@Test
-	void currentBasicOrPlusMembershipIsRequired() {
+	void currentMembershipWithCenterAccessBenefitIsRequired() {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findCurrentMembership(memberId, now)).thenReturn(Optional.empty());
 
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), null), "CENTER_VISIT_MEMBERSHIP_REQUIRED");
+		assertThatThrownBy(() -> service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true), null))
+			.isInstanceOf(CenterVisitException.class)
+			.hasMessage("An active membership with the CENTER_ACCESS benefit is required for center check-in.");
 		verify(visits, never()).saveAndFlush(any());
 	}
 

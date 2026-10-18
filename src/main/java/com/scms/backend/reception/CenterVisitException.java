@@ -34,7 +34,7 @@ public class CenterVisitException extends RuntimeException {
 
 	static CenterVisitException membershipRequired() {
 		return new CenterVisitException("CENTER_VISIT_MEMBERSHIP_REQUIRED",
-			"An active BASIC or PLUS Membership is required for center check-in.");
+			"An active membership with the CENTER_ACCESS benefit is required for center check-in.");
 	}
 
 	static CenterVisitException invalidIdempotencyKey() {

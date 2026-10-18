@@ -74,6 +74,26 @@ class CenterVisitIntegrationTests {
 	}
 
 	@Test
+	void currentMembershipRequiresCenterAccessBenefitWhileSeededBasicStillWorks() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile withoutCenterAccess = member(AccountStatus.ACTIVE, "photo");
+		String planWithoutCenterAccess = "NO_CENTER_ACCESS_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+		membership(withoutCenterAccess.getAccountId(), receptionist.getId(), planWithoutCenterAccess, "No Center Access");
+
+		checkIn(receptionist, request(withoutCenterAccess))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("CENTER_VISIT_MEMBERSHIP_REQUIRED"))
+			.andExpect(jsonPath("$.message").value(
+				"An active membership with the CENTER_ACCESS benefit is required for center check-in."));
+
+		MemberProfile basic = member(AccountStatus.ACTIVE, "photo");
+		UUID basicMembership = membership(basic.getAccountId(), receptionist.getId());
+		checkIn(receptionist, request(basic))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.membershipId").value(basicMembership.toString()));
+	}
+
+	@Test
 	void receptionistCreatesSeparateVisitsByMemberCodeOrPhone() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
@@ -306,21 +326,31 @@ class CenterVisitIntegrationTests {
 	}
 
 	private UUID membership(UUID memberId, UUID actorId) {
+		return membership(memberId, actorId, "BASIC", "Basic US36");
+	}
+
+	private UUID membership(UUID memberId, UUID actorId, String planCode, String offerName) {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID paymentId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
 		jdbc.update("""
+			insert into membership_plans (plan_code, display_name, supports_booking, supports_personal_coaching)
+			values (?, ?, false, false)
+			on conflict (plan_code) do nothing
+			""", planCode, offerName);
+		jdbc.update("""
 			insert into membership_offers (id, plan_code, name, description, price_amount, duration_days,
 				status, created_by_account_id)
-			values (?, 'BASIC', 'Basic US36', 'Center access', 12000, 30, 'ACTIVE', ?)
-			""", offerId, actorId);
+			values (?, ?, ?, 'Center access', 12000, 30, 'ACTIVE', ?)
+			""", offerId, planCode, offerName, actorId);
 		jdbc.update("""
 			insert into membership_orders (id, order_number, member_account_id, created_by_account_id, offer_id,
 				offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot,
 				duration_days_snapshot, payment_method, status, expires_at, paid_at)
-			values (?, ?, ?, ?, ?, 'Basic US36', 'BASIC', 12000, 'VND', 30, 'CASH', 'PAID', ?, ?)
+			values (?, ?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'CASH', 'PAID', ?, ?)
 			""", orderId, "ORD-" + orderId, memberId, actorId, offerId,
+			offerName, planCode,
 			java.sql.Timestamp.from(Instant.now().plusSeconds(3600)), java.sql.Timestamp.from(Instant.now()));
 		jdbc.update("""
 			insert into payments (id, order_id, method, status, amount, currency_code,
@@ -331,8 +361,8 @@ class CenterVisitIntegrationTests {
 			insert into memberships (id, member_account_id, order_id, offer_id, plan_code_snapshot,
 				offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot,
 				status, starts_at, ends_at)
-			values (?, ?, ?, ?, 'BASIC', 'Basic US36', 12000, 'VND', 30, 'ACTIVE', ?, ?)
-			""", membershipId, memberId, orderId, offerId,
+			values (?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'ACTIVE', ?, ?)
+			""", membershipId, memberId, orderId, offerId, planCode, offerName,
 			java.sql.Timestamp.from(Instant.now().minusSeconds(60)),
 			java.sql.Timestamp.from(Instant.now().plusSeconds(3600)));
 		return membershipId;
