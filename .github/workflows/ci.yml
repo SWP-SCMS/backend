@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -14,4 +14,61 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - run: chmod +x mvnw && ./mvnw test
+      - name: Run unit and web tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x mvnw
+          mapfile -t test_classes < <(
+            find src/test/java -type f -name '*Tests.java' -print0 \
+              | xargs -0 -n1 bash -c '
+                  file="$1"
+                  if ! grep -q "@Testcontainers" "$file"; then
+                    basename "$file" .java
+                  fi
+                ' bash \
+              | sort
+          )
+          test_pattern=$(IFS=,; printf '%s' "${test_classes[*]}")
+          ./mvnw -ntp -Dtest="$test_pattern" test
+
+  integration-tests:
+    name: integration-tests (shard ${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run Testcontainers shard
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARD_COUNT: 4
+        run: |
+          set -euo pipefail
+          chmod +x mvnw
+          mapfile -t test_classes < <(
+            find src/test/java -type f -name '*Tests.java' -print0 \
+              | xargs -0 -n1 bash -c '
+                  file="$1"
+                  if grep -q "@Testcontainers" "$file"; then
+                    basename "$file" .java
+                  fi
+                ' bash \
+              | sort
+          )
+          shard_classes=()
+          for index in "${!test_classes[@]}"; do
+            if (( index % SHARD_COUNT == SHARD )); then
+              shard_classes+=("${test_classes[$index]}")
+            fi
+          done
+          test_pattern=$(IFS=,; printf '%s' "${shard_classes[*]}")
+          ./mvnw -ntp -Dtest="$test_pattern" test
