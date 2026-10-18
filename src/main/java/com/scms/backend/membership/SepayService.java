@@ -52,10 +52,31 @@ class SepayService {
 		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
+		return createPayment(actor, actor, orderId);
+	}
+
+	@Transactional
+	SepayPaymentResponse createForReceptionist(UUID actor, String memberCode, UUID orderId) {
+		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		UUID memberId;
+		try {
+			memberId = db.queryForObject("""
+				select a.id from accounts a join member_profiles p on p.account_id=a.id
+				where p.member_code=? and a.role='MEMBER' and a.status='ACTIVE'
+				""", UUID.class, memberCode == null ? null : memberCode.trim());
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Active Member was not found");
+		}
+		return createPayment(actor, memberId, orderId);
+	}
+
+	private SepayPaymentResponse createPayment(UUID actor, UUID memberId, UUID orderId) {
 		Map<String, Object> order;
 		try {
 			order = db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update",
-				orderId, actor);
+				orderId, memberId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Membership Order was not found");
 		}
