@@ -34,12 +34,33 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 	Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
 	@Query(value = """
-		select id from memberships
-		where member_account_id = :memberId and status = 'ACTIVE' and plan_code_snapshot = 'PLUS'
-		  and starts_at <= :sessionStart and ends_at > :sessionStart
-		order by ends_at desc limit 1
+		select membership.id
+		from memberships membership
+		join membership_plan_benefits booking_benefit
+		  on booking_benefit.plan_code = membership.plan_code_snapshot
+		 and booking_benefit.benefit_code = 'CLASS_BOOKING'
+		join class_sessions session on session.id = :sessionId
+		join sport_classes sport_class on sport_class.id = session.sport_class_id
+		where membership.member_account_id = :memberId
+		  and membership.status = 'ACTIVE'
+		  and membership.starts_at <= :sessionStart
+		  and membership.ends_at > :sessionStart
+		  and not exists (
+			select 1
+			from discipline_required_benefits required_benefit
+			where required_benefit.discipline_id = sport_class.discipline_id
+			  and not exists (
+				select 1
+				from membership_plan_benefits provided_benefit
+				where provided_benefit.plan_code = membership.plan_code_snapshot
+				  and provided_benefit.benefit_code = required_benefit.benefit_code
+			  )
+		  )
+		order by membership.ends_at desc
+		limit 1
 		""", nativeQuery = true)
-	Optional<UUID> findEligiblePlusMembership(@Param("memberId") UUID memberId,
+	Optional<UUID> findEligibleMembership(@Param("memberId") UUID memberId,
+		@Param("sessionId") UUID sessionId,
 		@Param("sessionStart") Instant sessionStart);
 
 	Page<Booking> findByMemberAccountId(UUID memberAccountId, Pageable pageable);

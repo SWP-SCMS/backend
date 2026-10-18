@@ -1,6 +1,7 @@
 package com.scms.backend.scheduling;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -24,6 +25,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,6 +51,7 @@ class ReceptionClassSessionIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired ClassSessionRepository sessions;
 	@Autowired BookingRepository bookings;
+	@Autowired BookingService bookingService;
 	@Autowired DisciplineRepository disciplines;
 	@Autowired SportClassRepository classes;
 	@Autowired RoomRepository rooms;
@@ -155,6 +158,44 @@ class ReceptionClassSessionIntegrationTests {
 				.with(receptionistJwt(fixture.receptionist().getId())))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+	}
+
+	@Test
+	@Transactional
+	void bookingRequiresEveryBenefitRequiredByTheSessionDiscipline() {
+		Fixture fixture = fixture();
+		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
+			fixture.openSession().getSportClass().getDiscipline().getId());
+
+		assertThatThrownBy(() -> bookingService.book(fixture.dynamicMember().getId(), fixture.openSession().getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
+	}
+
+	@Test
+	@Transactional
+	void bookingSucceedsWhenMembershipProvidesEveryDisciplineBenefit() {
+		Fixture fixture = fixture();
+		UUID disciplineId = fixture.openSession().getSportClass().getDiscipline().getId();
+		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
+			disciplineId);
+		jdbc.update("insert into membership_plan_benefits(plan_code, benefit_code) values ('PLUS', 'POOL_ACCESS')");
+
+		BookingResponse response = bookingService.book(fixture.dynamicMember().getId(), fixture.openSession().getId());
+
+		org.assertj.core.api.Assertions.assertThat(response.status()).isEqualTo(BookingStatus.BOOKED);
+	}
+
+	@Test
+	@Transactional
+	void databaseBookingTriggerRequiresEveryDisciplineBenefit() {
+		Fixture fixture = fixture();
+		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
+			fixture.openSession().getSportClass().getDiscipline().getId());
+
+		assertThatThrownBy(() -> bookings.saveAndFlush(new Booking(UUID.randomUUID(), fixture.openSession().getId(),
+			fixture.dynamicMember().getId(), fixture.dynamicMembershipId(), fixture.receptionist().getId(), NOW)))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	private org.springframework.test.web.servlet.request.RequestPostProcessor receptionistJwt(UUID accountId) {

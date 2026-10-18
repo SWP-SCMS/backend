@@ -61,9 +61,9 @@ class BookingServiceTests {
 	}
 
 	@Test
-	void booksWithPlusMembershipCoveringSessionStart() {
+	void booksWithMembershipBenefitsCoveringSessionStart() {
 		UUID membershipId = UUID.randomUUID();
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
 			.thenReturn(Optional.of(membershipId));
 		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));
@@ -81,15 +81,15 @@ class BookingServiceTests {
 	}
 
 	@Test
-	void plusMembershipMustCoverSessionStart() {
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime())).thenReturn(Optional.empty());
+	void membershipMustProvideRequiredBenefitsAndCoverSessionStart() {
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime())).thenReturn(Optional.empty());
 
 		assertCode("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
 	}
 
 	@Test
 	void duplicateBookedSessionIsRejected() {
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
 			.thenReturn(Optional.of(UUID.randomUUID()));
 		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, session.getId(),
 			BookingStatus.BOOKED)).thenReturn(true);
@@ -99,7 +99,7 @@ class BookingServiceTests {
 
 	@Test
 	void overlappingBookingIsRejected() {
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
 			.thenReturn(Optional.of(UUID.randomUUID()));
 		when(bookings.existsBookedOverlap(memberId, session.getStartTime(), session.getEndTime())).thenReturn(true);
 
@@ -108,7 +108,7 @@ class BookingServiceTests {
 
 	@Test
 	void fullSessionIsRejected() {
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
 			.thenReturn(Optional.of(UUID.randomUUID()));
 		when(bookings.countByClassSessionIdAndStatus(session.getId(), BookingStatus.BOOKED))
 			.thenReturn((long) session.getCapacity());
@@ -160,7 +160,7 @@ class BookingServiceTests {
 	@Test
 	void receptionistBooksForMemberWithoutBypassingMemberRules() {
 		UUID membershipId = UUID.randomUUID();
-		when(bookings.findEligiblePlusMembership(memberId, session.getStartTime()))
+		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
 			.thenReturn(Optional.of(membershipId));
 		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));

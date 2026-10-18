@@ -33,7 +33,7 @@ public class BookingException extends RuntimeException {
 
 	static BookingException plusRequired() {
 		return new BookingException(HttpStatus.CONFLICT, "BOOKING_PLUS_MEMBERSHIP_REQUIRED",
-			"An active PLUS Membership must cover the Session start time.");
+			"An active Membership with the required booking benefits must cover the Session start time.");
 	}
 
 	static BookingException duplicate() {

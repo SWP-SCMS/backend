@@ -59,7 +59,7 @@ public class BookingService {
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED || !session.getStartTime().isAfter(now)) {
 			throw BookingException.sessionUnavailable();
 		}
-		UUID membershipId = bookings.findEligiblePlusMembership(memberId, session.getStartTime())
+		UUID membershipId = bookings.findEligibleMembership(memberId, sessionId, session.getStartTime())
 			.orElseThrow(BookingException::plusRequired);
 		if (bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
 				BookingStatus.BOOKED)) throw BookingException.duplicate();
