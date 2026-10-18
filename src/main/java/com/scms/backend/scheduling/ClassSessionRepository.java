@@ -96,6 +96,19 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 			@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
 			@Param("endTime") Instant endTime);
 
+	@Query("""
+		select session.id from ClassSession session
+		where session.id <> :sessionId
+		  and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+		  and (session.room.id = :roomId or session.teachingCoach.id = :coachId)
+		  and session.startTime < :endTime and session.endTime > :startTime
+		order by session.startTime, session.id
+		""")
+	java.util.Optional<UUID> findConflictIdExcluding(@Param("sessionId") UUID sessionId,
+			@Param("coachId") UUID coachId, @Param("roomId") UUID roomId,
+			@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
+
 	@Query(value = """
 		select class_session_id as "sessionId", count(*) as "bookedCount"
 		from bookings
