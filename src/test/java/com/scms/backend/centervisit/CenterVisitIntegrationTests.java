@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.centervisit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

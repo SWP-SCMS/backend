@@ -42,7 +42,7 @@ public class ReceptionMemberProfileService {
 	}
 
 	@Transactional(readOnly = true)
-	ReceptionMemberSearchResponse search(UUID receptionistAccountId, String memberId, String phone) {
+	public ReceptionMemberSearchResponse search(UUID receptionistAccountId, String memberId, String phone) {
 		ensureActiveReceptionist(receptionistAccountId);
 		if ((memberId == null) == (phone == null)) {
 			throw new ReceptionMemberValidationException("criteria",

@@ -31,7 +31,7 @@ import com.scms.backend.membership.MembershipPlanNotFoundException;
 import com.scms.backend.membership.MembershipPlanValidationException;
 import com.scms.backend.reception.ReceptionMemberNotFoundException;
 import com.scms.backend.reception.ReceptionMemberValidationException;
-import com.scms.backend.reception.CenterVisitException;
+import com.scms.backend.centervisit.CenterVisitException;
 import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
