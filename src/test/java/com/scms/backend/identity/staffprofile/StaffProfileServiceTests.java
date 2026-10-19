@@ -1,4 +1,4 @@
-package com.scms.backend.manager;
+package com.scms.backend.identity.staffprofile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
