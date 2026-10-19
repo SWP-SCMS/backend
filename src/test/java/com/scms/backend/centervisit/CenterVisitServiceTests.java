@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.centervisit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,6 +26,8 @@ import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.reception.ReceptionMemberProfileService;
+import com.scms.backend.reception.ReceptionMemberSearchResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

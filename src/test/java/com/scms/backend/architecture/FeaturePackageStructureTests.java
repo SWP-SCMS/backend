@@ -20,4 +20,23 @@ class FeaturePackageStructureTests {
 				() -> Class.forName("com.scms.backend.manager." + type));
 		}
 	}
+
+	@Test
+	void centerVisitBelongsToItsFeaturePackage() {
+		for (String type : new String[] {
+			"CenterVisit",
+			"CenterVisitController",
+			"CenterVisitException",
+			"CenterVisitPageResponse",
+			"CenterVisitRepository",
+			"CenterVisitRequest",
+			"CenterVisitResponse",
+			"CenterVisitService",
+			"CheckoutSource"
+		}) {
+			assertDoesNotThrow(() -> Class.forName("com.scms.backend.centervisit." + type));
+			assertThrows(ClassNotFoundException.class,
+				() -> Class.forName("com.scms.backend.reception." + type));
+		}
+	}
 }

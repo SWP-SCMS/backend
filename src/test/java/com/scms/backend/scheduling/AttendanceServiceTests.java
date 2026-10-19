@@ -21,7 +21,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.reception.CenterVisitRepository;
+import com.scms.backend.centervisit.CenterVisitRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

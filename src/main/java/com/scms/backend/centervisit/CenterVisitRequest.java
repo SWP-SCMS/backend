@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.centervisit;
 
 public record CenterVisitRequest(String memberId, String phone, Boolean identityVerified) {
 
