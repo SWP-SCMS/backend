@@ -2,7 +2,7 @@ package com.scms.backend.member;
 
 import java.util.UUID;
 
-import com.scms.backend.reception.ReceptionMemberProfileService;
+import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
