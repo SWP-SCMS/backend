@@ -1,4 +1,4 @@
-package com.scms.backend.manager;
+package com.scms.backend.identity.staffprofile;
 
 import java.util.UUID;
 
