@@ -134,17 +134,25 @@ class SepayService {
 		}
 		String paymentReference = request.code() == null || request.code().isBlank()
 			? request.content().trim() : request.code().trim();
+		String normalizedPaymentReference = normalizeReference(paymentReference);
 		UUID paymentId;
 		try {
 			paymentId = db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 				UUID.class, paymentReference);
 		} catch (EmptyResultDataAccessException exception) {
-			throw PaymentException.notFound("SePay Payment was not found");
+			try {
+				paymentId = db.queryForObject(
+					"select id from payments where provider='SEPAY' and replace(provider_reference, '-', '')=?",
+					UUID.class, normalizedPaymentReference);
+			} catch (EmptyResultDataAccessException fallbackException) {
+				throw PaymentException.notFound("SePay Payment was not found");
+			}
 		}
 		Map<String, Object> payment = fulfillment.payment(paymentId);
 		String expectedReference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
-		if (!paymentReference.equals(expectedReference)
-				|| request.content() == null || !request.content().trim().contains(expectedReference)) {
+		if (!normalizedPaymentReference.equals(normalizeReference(expectedReference))
+				|| request.content() == null
+				|| !normalizeReference(request.content()).contains(normalizeReference(expectedReference))) {
 			throw PaymentException.validation("SePay transfer content does not match Payment");
 		}
 		if (!PaymentFulfillmentService.amount(payment, "payment_amount").equals(request.transferAmount())) {
@@ -158,6 +166,10 @@ class SepayService {
 		String providerTransactionId = String.valueOf(request.id());
 		return fulfillment.fulfill(paymentId, null, providerTransactionId,
 			"SePay webhook transaction " + providerTransactionId, "SePay incoming transfer confirmed");
+	}
+
+	private static String normalizeReference(String value) {
+		return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
 	}
 
 	private Map<String, Object> pendingPayment(UUID orderId) {
