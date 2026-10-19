@@ -20,7 +20,7 @@ class RefreshTokenCookieServiceTests {
 		assertThat(cookie.isHttpOnly()).isTrue();
 		assertThat(cookie.isSecure()).isTrue();
 		assertThat(cookie.getPath()).isEqualTo("/api/v1/auth");
-		assertThat(cookie.getSameSite()).isEqualTo("Lax");
+		assertThat(cookie.getSameSite()).isEqualTo("None");
 		assertThat(cookie.getDomain()).isNull();
 		assertThat(cookie.getMaxAge()).isEqualTo(Duration.ofDays(7));
 	}

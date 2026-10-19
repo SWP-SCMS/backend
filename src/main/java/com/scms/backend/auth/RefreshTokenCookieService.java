@@ -33,7 +33,7 @@ public class RefreshTokenCookieService {
 		return ResponseCookie.from(COOKIE_NAME, value)
 			.httpOnly(true)
 			.secure(properties.refreshCookieSecure())
-			.sameSite("Lax")
+			.sameSite(properties.refreshCookieSecure() ? "None" : "Lax")
 			.path(COOKIE_PATH);
 	}
 }
