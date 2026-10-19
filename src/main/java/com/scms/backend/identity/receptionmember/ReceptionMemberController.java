@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.identity.receptionmember;
 
 import java.util.UUID;
 

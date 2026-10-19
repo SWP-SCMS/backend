@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.identity.receptionmember;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;

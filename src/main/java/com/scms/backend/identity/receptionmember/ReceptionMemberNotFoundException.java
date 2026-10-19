@@ -1,4 +1,4 @@
-package com.scms.backend.reception;
+package com.scms.backend.identity.receptionmember;
 
 public class ReceptionMemberNotFoundException extends RuntimeException {
 

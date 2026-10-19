@@ -39,4 +39,21 @@ class FeaturePackageStructureTests {
 				() -> Class.forName("com.scms.backend.reception." + type));
 		}
 	}
+
+	@Test
+	void receptionMemberManagementBelongsToItsIdentityFeaturePackage() {
+		for (String type : new String[] {
+			"ReceptionMemberController",
+			"ReceptionMemberCreateRequest",
+			"ReceptionMemberNotFoundException",
+			"ReceptionMemberProfileService",
+			"ReceptionMemberSearchResponse",
+			"ReceptionMemberService",
+			"ReceptionMemberValidationException"
+		}) {
+			assertDoesNotThrow(() -> Class.forName("com.scms.backend.identity.receptionmember." + type));
+			assertThrows(ClassNotFoundException.class,
+				() -> Class.forName("com.scms.backend.reception." + type));
+		}
+	}
 }
