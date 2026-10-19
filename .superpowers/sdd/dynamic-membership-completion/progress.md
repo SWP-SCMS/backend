@@ -26,7 +26,7 @@
 - Post-merge focused smoke: 17/17 passed.
 - Independent final review: no Critical or Important findings.
 
-## Progress 7: in progress
+## Progress 7: complete
 
 - Base: `origin/main@10f574481c349b5f66206d59823c86e30b34e740`.
 - Branch: `codex/task-7-coach-training-benefits`.
@@ -60,3 +60,23 @@
 - Post-merge smoke on `main`: focused assignment/training service and OpenAPI suite passed; 16 selected classes, 78 tests, 0 failures/errors.
 - Local full test after fix: 523 tests, 0 failures, 50 Docker/Testcontainers-only errors because Docker is unavailable locally.
 - Progress 8 may now start from `origin/main@71a783a`.
+
+## Progress 8: complete
+
+- Base: `origin/main@3017b7180f1fbea5b792e53a5ad4aef3277893d2`.
+- Commit before merge: `4f2f02f`.
+- PR: https://github.com/SWP-SCMS/backend/pull/89.
+- Squash merge: `03df03418b401285743a65504a0f2484aa27eac9`.
+- Scope: reject new Yoga Discipline/Class/Session/Recurring Schedule mutations while preserving legacy Yoga reads/history; document legacy `YOGA` OpenAPI response semantics.
+- Push-CI: runs `39180446790` and `39180449760`, both success (unit plus four integration shards).
+- PR-CI: same required CI runs above, both success.
+- Main CI after merge: `39180902366`, success (unit plus four integration shards).
+- Focused pre-merge: 51/51 passed after rebase and fixture correction.
+- Full local after rebase: 526 tests, 0 failures, 50 Docker/Testcontainers-only errors because Docker is unavailable locally.
+- Post-merge smoke on `main`: 51/51 passed.
+- CI initially exposed mutation fixtures incorrectly using legacy Yoga; corrected them to Pilates/GROUP on the same PR before merge. Historical Yoga fixtures were retained.
+- Report: `.superpowers/sdd/dynamic-membership-completion/task-8-report.md`.
+
+## Progress 9: pending
+
+- Final regression, FE contract/OpenAPI reconciliation, and handoff remain.
