@@ -3,8 +3,8 @@ package com.scms.backend.identity.receptionmember;
 import java.util.UUID;
 
 import com.scms.backend.auth.RegistrationResponse;
-import com.scms.backend.member.MemberProfilePatchRequest;
-import com.scms.backend.member.MemberProfileResponse;
+import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
+import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;

@@ -12,7 +12,7 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.member.MemberProfileDetailsValidator;
+import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

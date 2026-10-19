@@ -1,5 +1,6 @@
 package com.scms.backend.member;
 
+import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import java.util.UUID;
 
 import org.springframework.http.MediaType;

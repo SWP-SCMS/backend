@@ -56,4 +56,20 @@ class FeaturePackageStructureTests {
 				() -> Class.forName("com.scms.backend.reception." + type));
 		}
 	}
+
+	@Test
+	void memberProfileCrudBelongsToItsIdentityFeaturePackage() {
+		for (String type : new String[] {
+			"MemberProfileController",
+			"MemberProfileDetailsValidator",
+			"MemberProfilePatchRequest",
+			"MemberProfileResponse",
+			"MemberProfileService",
+			"MemberProfileValidationException"
+		}) {
+			assertDoesNotThrow(() -> Class.forName("com.scms.backend.identity.memberprofile." + type));
+			assertThrows(ClassNotFoundException.class,
+				() -> Class.forName("com.scms.backend.member." + type));
+		}
+	}
 }

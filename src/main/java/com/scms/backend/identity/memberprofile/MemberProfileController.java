@@ -1,4 +1,4 @@
-package com.scms.backend.member;
+package com.scms.backend.identity.memberprofile;
 
 import java.util.UUID;
 

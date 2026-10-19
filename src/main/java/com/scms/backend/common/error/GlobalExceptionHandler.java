@@ -15,7 +15,7 @@ import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
 import com.scms.backend.auth.RegistrationValidationException;
-import com.scms.backend.member.MemberProfileValidationException;
+import com.scms.backend.identity.memberprofile.MemberProfileValidationException;
 import com.scms.backend.membership.ActiveMembershipExistsException;
 import com.scms.backend.membership.InvalidPlanCodeException;
 import com.scms.backend.membership.MemberNotActiveException;
