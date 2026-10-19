@@ -7,7 +7,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.member.MemberProfileDetailsValidator;
+import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

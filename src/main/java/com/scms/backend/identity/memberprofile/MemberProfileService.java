@@ -1,4 +1,4 @@
-package com.scms.backend.member;
+package com.scms.backend.identity.memberprofile;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -22,7 +22,7 @@ public class MemberProfileService {
 	private final AccountIdentifierAvailability identifierAvailability;
 	private final MemberProfileDetailsValidator validator;
 
-	MemberProfileService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
+	public MemberProfileService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
 			AccountIdentifierAvailability identifierAvailability, MemberProfileDetailsValidator validator) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
@@ -31,12 +31,12 @@ public class MemberProfileService {
 	}
 
 	@Transactional(readOnly = true)
-	MemberProfileResponse getProfile(UUID accountId) {
+	public MemberProfileResponse getProfile(UUID accountId) {
 		return toResponse(loadMemberAccount(accountId), loadProfile(accountId));
 	}
 
 	@Transactional
-	MemberProfileResponse updateProfile(UUID accountId, MemberProfilePatchRequest request) {
+	public MemberProfileResponse updateProfile(UUID accountId, MemberProfilePatchRequest request) {
 		Account account = loadMemberAccount(accountId);
 		MemberProfile profile = loadProfile(accountId);
 
@@ -81,7 +81,7 @@ public class MemberProfileService {
 	}
 
 	@Transactional
-	String replaceProfileImage(UUID accountId, String profileImageUrl) {
+	public String replaceProfileImage(UUID accountId, String profileImageUrl) {
 		Account account = loadMemberAccount(accountId);
 		MemberProfile profile = loadProfile(accountId);
 		String oldProfileImageUrl = profile.getProfileImageUrl();

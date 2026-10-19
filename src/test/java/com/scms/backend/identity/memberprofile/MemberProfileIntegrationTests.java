@@ -1,4 +1,4 @@
-package com.scms.backend.member;
+package com.scms.backend.identity.memberprofile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;

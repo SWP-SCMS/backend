@@ -1,5 +1,6 @@
 package com.scms.backend.member;
 
+import com.scms.backend.identity.memberprofile.MemberProfileValidationException;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;

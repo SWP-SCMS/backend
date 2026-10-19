@@ -22,8 +22,8 @@ import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.member.MemberProfileDetailsValidator;
-import com.scms.backend.member.MemberProfilePatchRequest;
+import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
+import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

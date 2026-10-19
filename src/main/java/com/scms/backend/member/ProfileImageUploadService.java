@@ -2,6 +2,8 @@ package com.scms.backend.member;
 
 import java.util.UUID;
 
+import com.scms.backend.identity.memberprofile.MemberProfileResponse;
+import com.scms.backend.identity.memberprofile.MemberProfileService;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 
 import org.slf4j.Logger;

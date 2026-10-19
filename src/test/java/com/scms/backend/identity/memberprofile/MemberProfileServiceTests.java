@@ -1,4 +1,4 @@
-package com.scms.backend.member;
+package com.scms.backend.identity.memberprofile;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;

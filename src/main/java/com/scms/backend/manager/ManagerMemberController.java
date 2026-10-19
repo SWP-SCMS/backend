@@ -3,7 +3,7 @@ package com.scms.backend.manager;
 import java.util.UUID;
 
 import com.scms.backend.account.AccountStatus;
-import com.scms.backend.member.MemberProfilePatchRequest;
+import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;

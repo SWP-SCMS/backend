@@ -1,10 +1,10 @@
-package com.scms.backend.member;
+package com.scms.backend.identity.memberprofile;
 
 public class MemberProfileValidationException extends RuntimeException {
 
 	private final String field;
 
-	MemberProfileValidationException(String field, String message) {
+	public MemberProfileValidationException(String field, String message) {
 		super(message);
 		this.field = field;
 	}

@@ -11,6 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
+import com.scms.backend.identity.memberprofile.MemberProfileResponse;
+import com.scms.backend.identity.memberprofile.MemberProfileService;
+import com.scms.backend.identity.memberprofile.MemberProfileValidationException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 
 import javax.imageio.ImageIO;
