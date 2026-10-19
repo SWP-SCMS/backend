@@ -110,8 +110,8 @@ class ClassSessionAssignmentServiceTests {
 			"Studio A", 20, RoomStatus.ACTIVE);
 		Room target = new Room(UUID.fromString("00000000-0000-0000-0000-000000000002"),
 			"Studio B", 30, RoomStatus.ACTIVE);
-		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
-		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP,
 			null, SportClassStatus.ACTIVE);
 		Account currentCoach = coach("Coach");
 		ClassSession session = new ClassSession(UUID.randomUUID(), sportClass, null, currentCoach, source,
@@ -183,8 +183,8 @@ class ClassSessionAssignmentServiceTests {
 	}
 
 	private ClassSession session() {
-		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
-		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA,
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP,
 			null, SportClassStatus.ACTIVE);
 		return new ClassSession(UUID.randomUUID(), sportClass, null, coach("Coach"),
 			new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE), now.plusSeconds(3600),

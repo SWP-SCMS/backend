@@ -60,10 +60,10 @@ class SingleSessionIntegrationTests {
 	private Fixture fixture() {
 		Account manager = saveAccount(AccountRole.MANAGER, "Manager");
 		Account coach = saveAccount(AccountRole.COACH, "Coach");
-		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Yoga", null,
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Pilates", null,
 			DisciplineStatus.ACTIVE));
-		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Vinyasa",
-			SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Reformer",
+			SportClassType.GROUP, null, SportClassStatus.ACTIVE));
 		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE));
 		return new Fixture(manager.getId(), coach.getId(), sportClass.getId(), room.getId());
 	}

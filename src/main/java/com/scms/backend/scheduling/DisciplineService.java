@@ -52,6 +52,10 @@ public class DisciplineService {
 			throw new DisciplineValidationException("request", "must be a JSON object");
 		}
 		String name = normalizeName(request.name());
+		if (isLegacyYoga(name)) {
+			throw new DisciplineValidationException("name",
+				"Yoga is retained for legacy history and cannot be created.");
+		}
 		if (disciplines.existsByName(name)) {
 			throw new DuplicateDisciplineException();
 		}
@@ -80,6 +84,10 @@ public class DisciplineService {
 		Discipline discipline = findForUpdate(disciplineId);
 		Map<String, Object> before = snapshot(discipline);
 		String name = request.name() == null ? discipline.getName() : normalizeName(request.name());
+		if (!isLegacyYoga(discipline.getName()) && isLegacyYoga(name)) {
+			throw new DisciplineValidationException("name",
+				"Yoga is retained for legacy history and cannot be assigned to a new discipline.");
+		}
 		if (!name.equals(discipline.getName()) && disciplines.existsByNameAndIdNot(name, disciplineId)) {
 			throw new DuplicateDisciplineException();
 		}
@@ -145,5 +153,9 @@ public class DisciplineService {
 			return null;
 		}
 		return value.trim();
+	}
+
+	private boolean isLegacyYoga(String name) {
+		return "yoga".equalsIgnoreCase(name.trim());
 	}
 }

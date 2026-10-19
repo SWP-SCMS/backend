@@ -60,6 +60,7 @@ public class SportClassService {
 		if (discipline.getStatus() != DisciplineStatus.ACTIVE) {
 			throw SportClassException.inactiveDiscipline();
 		}
+		if (isLegacyYoga(discipline.getName())) throw SportClassException.unsupportedType();
 		String name = normalizeName(request.name());
 		if (classes.existsByDisciplineIdAndName(discipline.getId(), name)) {
 			throw SportClassException.duplicateName();
@@ -156,5 +157,9 @@ public class SportClassService {
 	private String normalizeDescription(String value) {
 		if (value == null || value.trim().isEmpty()) return null;
 		return value.trim();
+	}
+
+	private boolean isLegacyYoga(String name) {
+		return "yoga".equalsIgnoreCase(name.trim());
 	}
 }
