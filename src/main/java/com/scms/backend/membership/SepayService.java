@@ -132,16 +132,18 @@ class SepayService {
 		if (!"in".equalsIgnoreCase(request.transferType())) {
 			throw PaymentException.validation("SePay transfer must be incoming");
 		}
+		String paymentReference = request.code() == null || request.code().isBlank()
+			? request.content().trim() : request.code().trim();
 		UUID paymentId;
 		try {
 			paymentId = db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
-				UUID.class, request.code().trim());
+				UUID.class, paymentReference);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("SePay Payment was not found");
 		}
 		Map<String, Object> payment = fulfillment.payment(paymentId);
 		String expectedReference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
-		if (!request.code().trim().equals(expectedReference)
+		if (!paymentReference.equals(expectedReference)
 				|| request.content() == null || !request.content().trim().contains(expectedReference)) {
 			throw PaymentException.validation("SePay transfer content does not match Payment");
 		}
