@@ -77,6 +77,13 @@
 - CI initially exposed mutation fixtures incorrectly using legacy Yoga; corrected them to Pilates/GROUP on the same PR before merge. Historical Yoga fixtures were retained.
 - Report: `.superpowers/sdd/dynamic-membership-completion/task-8-report.md`.
 
-## Progress 9: pending
+## Progress 9: complete
 
-- Final regression, FE contract/OpenAPI reconciliation, and handoff remain.
+- Final regression completed on merged `main` at `bdfe8df`.
+- OpenAPI assertions cover Staff profile, Reception SePay, Membership Benefit/Plan, Audit actor identity, Center Visit `memberName`, legacy Yoga semantics, Coach/Training reads and Membership eligibility contracts.
+- Direct code inspection confirmed the Excel/MD items are implemented, including session min/max duration, room impact/cancellation flows, class/discipline deactivation guards, profile image upload, dynamic Plan/Benefit, Staff profile, SePay, Audit actor fields and Center Visit member name.
+- CI evidence: PR #89 Push-CI and PR-CI green; Main CI after feature merge `39180902366` green; final ledger Main CI `39181508091` green. The preceding ledger-only CI `39181491649` also completed green.
+- Final focused smoke: 51/51 scheduling/Yoga tests passed on `main`.
+- Full local suite evidence: 526 tests, 0 failures, 50 Docker/Testcontainers-only errors because Docker is unavailable locally; GitHub integration shards provide the required container coverage.
+- Workbook discrepancy recorded: the Pictures workbook marks Room Impact as `fail`, while the PRN212 workbook marks it `done`; merged code and Main CI integration tests pass the room-impact/cancellation flows. No production change was made solely to reconcile stale sheet status.
+- Preserved known untracked files without staging or deletion.
