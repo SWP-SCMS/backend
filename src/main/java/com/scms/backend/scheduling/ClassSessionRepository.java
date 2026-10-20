@@ -131,6 +131,18 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 		""", nativeQuery = true)
 	List<BookingCountView> countBookedBySessionIds(@Param("sessionIds") Collection<UUID> sessionIds);
 
+	@Query(value = """
+		select session.id as "sessionId", required_benefit.benefit_code as "benefitCode"
+		from class_sessions session
+		join sport_classes sport_class on sport_class.id = session.sport_class_id
+		join discipline_required_benefits required_benefit
+		  on required_benefit.discipline_id = sport_class.discipline_id
+		where session.id in (:sessionIds)
+		order by session.id, required_benefit.benefit_code
+		""", nativeQuery = true)
+	List<SessionRequiredBenefitView> findRequiredBenefitsBySessionIds(
+		@Param("sessionIds") Collection<UUID> sessionIds);
+
 	@Query("""
 		select session from ClassSession session
 		where session.id in :sessionIds
@@ -173,5 +185,10 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	interface BookingCountView {
 		UUID getSessionId();
 		long getBookedCount();
+	}
+
+	interface SessionRequiredBenefitView {
+		UUID getSessionId();
+		String getBenefitCode();
 	}
 }

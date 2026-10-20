@@ -374,6 +374,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Booking request failed");
 		problem.setProperty("code", exception.getCode());
+		if (exception.getRequiredBenefitCodes() != null) {
+			problem.setProperty("requiredBenefitCodes", exception.getRequiredBenefitCodes());
+			problem.setProperty("missingBenefitCodes", exception.getMissingBenefitCodes());
+		}
 		return problem;
 	}
 

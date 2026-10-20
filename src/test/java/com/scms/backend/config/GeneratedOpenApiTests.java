@@ -350,6 +350,42 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedContractDocumentsDisciplineBenefitsAndBothBookingConflictVariants() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String schema : List.of("DisciplineCreateRequest", "DisciplinePatchRequest", "DisciplineResponse",
+			"MemberClassSessionResponse")) {
+			JsonNode requiredBenefits = document.at("/components/schemas/" + schema
+				+ "/properties/requiredBenefitCodes");
+			assertThat(requiredBenefits.path("type").asText()).as(schema).isEqualTo("array");
+			assertThat(requiredBenefits.path("items").path("type").asText()).as(schema).isEqualTo("string");
+		}
+		JsonNode problem = document.at("/components/schemas/ApiProblem/properties");
+		assertThat(problem.path("requiredBenefitCodes").path("type").asText()).isEqualTo("array");
+		assertThat(problem.path("missingBenefitCodes").path("type").asText()).isEqualTo("array");
+		for (String path : List.of("/members/class-sessions/{sessionId}/bookings",
+			"/reception/members/{memberId}/bookings")) {
+			assertThat(response(document, path, "post", "409").path("$ref").asText())
+				.as(path).isEqualTo("#/components/responses/BookingConflict");
+		}
+		JsonNode variants = document.at("/components/responses/BookingConflict/content/application~1problem+json/schema/oneOf");
+		assertThat(variants).hasSize(2);
+		assertThat(variants.get(0).path("$ref").asText())
+			.isEqualTo("#/components/schemas/OrdinaryBookingConflictProblem");
+		assertThat(variants.get(1).path("$ref").asText())
+			.isEqualTo("#/components/schemas/MembershipBenefitRequiredProblem");
+		JsonNode ordinaryCode = document.at("/components/schemas/OrdinaryBookingConflictProblem/properties/code");
+		assertThat(ordinaryCode.path("type").asText()).isEqualTo("string");
+		assertThat(ordinaryCode.at("/not/enum/0").asText()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+		JsonNode benefitProblem = document.at("/components/schemas/MembershipBenefitRequiredProblem");
+		assertThat(benefitProblem.path("required").toString())
+			.contains("requiredBenefitCodes", "missingBenefitCodes");
+		assertThat(benefitProblem.at("/properties/code/enum/0").asText())
+			.isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+		assertThat(document.at("/components/schemas/ApiProblem/required").toString())
+			.doesNotContain("requiredBenefitCodes", "missingBenefitCodes");
+	}
+
+	@Test
 	void generatedContractDocumentsStaffMembershipHistory() throws Exception {
 		JsonNode document = generatedDocument();
 		for (String path : List.of(

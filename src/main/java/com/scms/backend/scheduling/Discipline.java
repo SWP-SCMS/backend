@@ -1,13 +1,20 @@
 package com.scms.backend.scheduling;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
@@ -28,6 +35,12 @@ public class Discipline {
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private DisciplineStatus status;
+
+	@ElementCollection
+	@CollectionTable(name = "discipline_required_benefits",
+		joinColumns = @JoinColumn(name = "discipline_id"))
+	@Column(name = "benefit_code", nullable = false, length = 50)
+	private Set<String> requiredBenefitCodes = new HashSet<>();
 
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
@@ -70,5 +83,19 @@ public class Discipline {
 
 	DisciplineStatus getStatus() {
 		return status;
+	}
+
+	List<String> getRequiredBenefitCodes() {
+		return requiredBenefitCodes.stream().sorted().toList();
+	}
+
+	List<String> getEffectiveRequiredBenefitCodes() {
+		return java.util.stream.Stream.concat(java.util.stream.Stream.of("CLASS_BOOKING"),
+			requiredBenefitCodes.stream()).distinct().sorted().toList();
+	}
+
+	void replaceRequiredBenefitCodes(Collection<String> benefitCodes) {
+		requiredBenefitCodes.clear();
+		requiredBenefitCodes.addAll(benefitCodes);
 	}
 }

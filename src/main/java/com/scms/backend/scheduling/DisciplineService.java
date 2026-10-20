@@ -1,7 +1,10 @@
 package com.scms.backend.scheduling;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -11,8 +14,9 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.membership.MembershipBenefitRepository;
+import com.scms.backend.membership.MembershipBenefitStatus;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,20 +27,21 @@ public class DisciplineService {
 	private final SportClassRepository classes;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
+	private final MembershipBenefitRepository benefits;
 
 	DisciplineService(DisciplineRepository disciplines, SportClassRepository classes, AccountRepository accounts,
-			AuditEventRepository audits) {
+			AuditEventRepository audits, MembershipBenefitRepository benefits) {
 		this.disciplines = disciplines;
 		this.classes = classes;
 		this.accounts = accounts;
 		this.audits = audits;
+		this.benefits = benefits;
 	}
 
 	@Transactional(readOnly = true)
 	List<DisciplineResponse> list(UUID managerId) {
 		ensureActiveManager(managerId);
-		Sort sort = Sort.by("name").ascending().and(Sort.by("id").ascending());
-		return disciplines.findAll(sort).stream().map(DisciplineResponse::from).toList();
+		return disciplines.findAllWithRequiredBenefitCodes().stream().map(DisciplineResponse::from).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -61,6 +66,7 @@ public class DisciplineService {
 		}
 		Discipline discipline = new Discipline(UUID.randomUUID(), name, normalizeDescription(request.description()),
 			DisciplineStatus.ACTIVE);
+		discipline.replaceRequiredBenefitCodes(normalizeRequiredBenefitCodes(request.requiredBenefitCodes()));
 		try {
 			disciplines.saveAndFlush(discipline);
 		}
@@ -75,7 +81,8 @@ public class DisciplineService {
 	@Transactional
 	DisciplineResponse update(UUID managerId, UUID disciplineId, DisciplinePatchRequest request) {
 		ensureActiveManager(managerId);
-		if (request == null || (request.name() == null && request.description() == null && request.status() == null)) {
+		if (request == null || (request.name() == null && request.description() == null && request.status() == null
+				&& request.requiredBenefitCodes() == null)) {
 			throw new DisciplineValidationException("request", "at least one field is required");
 		}
 		if (request.status() == DisciplineStatus.INACTIVE) {
@@ -94,6 +101,12 @@ public class DisciplineService {
 		String description = request.description() == null
 			? discipline.getDescription() : normalizeDescription(request.description());
 		DisciplineStatus status = request.status() == null ? discipline.getStatus() : request.status();
+		if (request.requiredBenefitCodes() != null) {
+			List<String> requiredBenefitCodes = normalizeRequiredBenefitCodes(request.requiredBenefitCodes());
+			if (!discipline.getRequiredBenefitCodes().equals(requiredBenefitCodes)) {
+				discipline.replaceRequiredBenefitCodes(requiredBenefitCodes);
+			}
+		}
 		if (discipline.getStatus() != DisciplineStatus.INACTIVE && status == DisciplineStatus.INACTIVE) {
 			List<DisciplineSessionConflict> blockers = disciplines.findBlockingSessions(disciplineId).stream()
 				.map(DisciplineSessionConflict::from).toList();
@@ -122,7 +135,31 @@ public class DisciplineService {
 		data.put("name", discipline.getName());
 		data.put("description", discipline.getDescription());
 		data.put("status", discipline.getStatus().name());
+		data.put("requiredBenefitCodes", discipline.getEffectiveRequiredBenefitCodes());
 		return data;
+	}
+
+	private List<String> normalizeRequiredBenefitCodes(List<String> values) {
+		if (values == null || values.isEmpty()) return List.of();
+		List<String> normalized = new ArrayList<>(values.size());
+		for (String value : values) {
+			if (value == null || value.trim().isEmpty()) {
+				throw invalidRequiredBenefits();
+			}
+			normalized.add(value.trim().toUpperCase(Locale.ROOT));
+		}
+		if (new HashSet<>(normalized).size() != normalized.size()) throw invalidRequiredBenefits();
+		var resolved = benefits.findAllByCodeIn(normalized);
+		if (resolved.size() != normalized.size() || resolved.stream()
+				.anyMatch(benefit -> benefit.getStatus() != MembershipBenefitStatus.ACTIVE)) {
+			throw invalidRequiredBenefits();
+		}
+		return normalized.stream().filter(code -> !"CLASS_BOOKING".equals(code)).sorted().toList();
+	}
+
+	private DisciplineValidationException invalidRequiredBenefits() {
+		return new DisciplineValidationException("requiredBenefitCodes",
+			"must contain unique, non-blank codes for ACTIVE Benefits");
 	}
 
 	private Discipline find(UUID id) {

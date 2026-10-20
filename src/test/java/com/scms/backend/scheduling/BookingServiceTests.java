@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -10,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.lang.reflect.Method;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.List;
@@ -28,12 +30,16 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.repository.Lock;
+
+import jakarta.persistence.LockModeType;
 
 @ExtendWith(MockitoExtension.class)
 class BookingServiceTests {
 
 	@Mock BookingRepository bookings;
 	@Mock ClassSessionRepository sessions;
+	@Mock DisciplineRepository disciplines;
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
 	@Mock NotificationWriter notifications;
@@ -47,7 +53,7 @@ class BookingServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new BookingService(bookings, sessions, accounts, audits, notifications, lifecycle,
+		service = new BookingService(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 		memberId = UUID.randomUUID();
 		receptionistId = UUID.randomUUID();
@@ -58,13 +64,40 @@ class BookingServiceTests {
 		session = session();
 		org.mockito.Mockito.lenient().when(sessions.findByIdForUpdate(session.getId()))
 			.thenReturn(Optional.of(session));
+		org.mockito.Mockito.lenient().when(disciplines.findBySessionIdForUpdate(session.getId()))
+			.thenReturn(Optional.of(session.getSportClass().getDiscipline()));
+	}
+
+	@Test
+	void locksSessionDisciplineBeforeComputingEligibility() {
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
+		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.book(memberId, session.getId());
+
+		var order = inOrder(sessions, disciplines, bookings);
+		order.verify(sessions).findByIdForUpdate(session.getId());
+		order.verify(disciplines).findBySessionIdForUpdate(session.getId());
+		order.verify(bookings).findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime());
+	}
+
+	@Test
+	void bookingUsesSharedDisciplineLockWhilePatchRetainsExclusiveLock() throws Exception {
+		Method bookingLock = DisciplineRepository.class.getMethod("findBySessionIdForUpdate", UUID.class);
+		Method patchLock = DisciplineRepository.class.getMethod("findByIdForUpdate", UUID.class);
+
+		assertThat(bookingLock.getAnnotation(Lock.class).value()).isEqualTo(LockModeType.PESSIMISTIC_READ);
+		assertThat(patchLock.getAnnotation(Lock.class).value()).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
 	}
 
 	@Test
 	void booksWithMembershipBenefitsCoveringSessionStart() {
 		UUID membershipId = UUID.randomUUID();
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
-			.thenReturn(Optional.of(membershipId));
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
 		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -82,15 +115,39 @@ class BookingServiceTests {
 
 	@Test
 	void membershipMustProvideRequiredBenefitsAndCoverSessionStart() {
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime())).thenReturn(Optional.empty());
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(
+				eligibility(membershipId, "CLASS_BOOKING", true),
+				eligibility(membershipId, "POOL_ACCESS", false)));
 
-		assertCode("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
+		assertThatThrownBy(() -> service.book(memberId, session.getId()))
+			.isInstanceOfSatisfying(BookingException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+				assertThat(exception.getRequiredBenefitCodes())
+					.containsExactly("CLASS_BOOKING", "POOL_ACCESS");
+				assertThat(exception.getMissingBenefitCodes()).containsExactly("POOL_ACCESS");
+			});
+	}
+
+	@Test
+	void receptionistReceivesTheSameStructuredBenefitFailure() {
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(null, "CLASS_BOOKING", false)));
+
+		assertThatThrownBy(() -> service.bookForMember(receptionistId, memberId, session.getId()))
+			.isInstanceOfSatisfying(BookingException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+				assertThat(exception.getRequiredBenefitCodes()).containsExactly("CLASS_BOOKING");
+				assertThat(exception.getMissingBenefitCodes()).containsExactly("CLASS_BOOKING");
+			});
 	}
 
 	@Test
 	void duplicateBookedSessionIsRejected() {
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
-			.thenReturn(Optional.of(UUID.randomUUID()));
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
 		when(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, session.getId(),
 			BookingStatus.BOOKED)).thenReturn(true);
 
@@ -99,8 +156,9 @@ class BookingServiceTests {
 
 	@Test
 	void overlappingBookingIsRejected() {
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
-			.thenReturn(Optional.of(UUID.randomUUID()));
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
 		when(bookings.existsBookedOverlap(memberId, session.getStartTime(), session.getEndTime())).thenReturn(true);
 
 		assertCode("BOOKING_TIME_CONFLICT");
@@ -108,8 +166,9 @@ class BookingServiceTests {
 
 	@Test
 	void fullSessionIsRejected() {
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
-			.thenReturn(Optional.of(UUID.randomUUID()));
+		UUID membershipId = UUID.randomUUID();
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
 		when(bookings.countByClassSessionIdAndStatus(session.getId(), BookingStatus.BOOKED))
 			.thenReturn((long) session.getCapacity());
 
@@ -160,8 +219,8 @@ class BookingServiceTests {
 	@Test
 	void receptionistBooksForMemberWithoutBypassingMemberRules() {
 		UUID membershipId = UUID.randomUUID();
-		when(bookings.findEligibleMembership(memberId, session.getId(), session.getStartTime()))
-			.thenReturn(Optional.of(membershipId));
+		when(bookings.findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
 		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any(Booking.class)))
 			.thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -284,5 +343,14 @@ class BookingServiceTests {
 	private Account account(UUID id, AccountRole role, AccountStatus status, String name) {
 		return new Account(id, role, status, name, "09" + id.toString().replace("-", "").substring(0, 8),
 			id + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password");
+	}
+
+	private BookingRepository.BookingBenefitEligibilityView eligibility(UUID membershipId, String code,
+			boolean provided) {
+		return new BookingRepository.BookingBenefitEligibilityView() {
+			@Override public UUID getMembershipId() { return membershipId; }
+			@Override public String getRequiredBenefitCode() { return code; }
+			@Override public boolean getProvided() { return provided; }
+		};
 	}
 }
