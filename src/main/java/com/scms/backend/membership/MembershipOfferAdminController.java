@@ -11,7 +11,9 @@ import org.springframework.web.bind.annotation.*;
 class MembershipOfferAdminController {
 	private final MembershipOfferAdminService service;
 	MembershipOfferAdminController(MembershipOfferAdminService service) { this.service = service; }
-	@GetMapping ResponseEntity<List<MembershipOfferAdminResponse>> all(@AuthenticationPrincipal Jwt jwt) { return ResponseEntity.ok(service.all(UUID.fromString(jwt.getSubject()))); }
+	@GetMapping ResponseEntity<List<MembershipOfferAdminDetailResponse>> all(@AuthenticationPrincipal Jwt jwt) { return ResponseEntity.ok(service.all(UUID.fromString(jwt.getSubject()))); }
+	@GetMapping("/{offerId}") ResponseEntity<MembershipOfferAdminDetailResponse> get(@AuthenticationPrincipal Jwt jwt,
+		@PathVariable UUID offerId) { return ResponseEntity.ok(service.get(UUID.fromString(jwt.getSubject()), offerId)); }
 	@PostMapping @ResponseStatus(HttpStatus.CREATED) ResponseEntity<MembershipOfferAdminResponse> create(@AuthenticationPrincipal Jwt jwt, @RequestBody MembershipOfferAdminRequest r) { return ResponseEntity.status(201).body(service.create(UUID.fromString(jwt.getSubject()), r)); }
 	@PatchMapping("/{id}") ResponseEntity<MembershipOfferAdminResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, @RequestBody MembershipOfferPatchRequest r) { return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), id, r)); }
 }

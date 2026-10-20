@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.List;
 import java.util.TimeZone;
 import java.util.UUID;
 
@@ -129,6 +130,35 @@ class MembershipOfferDetailIntegrationTests {
 		assertThat(count("membership_offers")).isEqualTo(offerCount);
 		assertThat(auditEventRepository.count()).isEqualTo(auditCount);
 		assertThat(notificationRepository.count()).isEqualTo(notificationCount);
+	}
+
+	@Test
+	void managerCanReadInactiveOfferAndPlanWithBenefitsAndMissingIsNotFound() throws Exception {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE);
+		insertPlan("ARCHIVED_MANAGER", "Archived Manager Plan", "INACTIVE", true);
+		UUID offerId = UUID.randomUUID();
+		insertOffer(offerId, "ARCHIVED_MANAGER", "Archived Offer", "Still visible to manager",
+			BigInteger.valueOf(700000), 30, "INACTIVE", manager);
+
+		MvcResult result = mockMvc.perform(get("/api/v1/manager/membership-offers/{offerId}", offerId)
+				.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken(manager)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.planDisplayName").value("Archived Manager Plan"))
+			.andExpect(jsonPath("$.status").value("INACTIVE"))
+			.andExpect(jsonPath("$.benefitCodes[0]").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$.benefits[0].code").value("CENTER_ACCESS"))
+			.andReturn();
+		List<?> benefitCodes = JsonPath.read(result.getResponse().getContentAsString(), "$.benefitCodes");
+		assertThat(benefitCodes).isEqualTo(List.of("CENTER_ACCESS"));
+
+		mockMvc.perform(get("/api/v1/manager/membership-offers/{offerId}", UUID.randomUUID())
+				.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken(manager)))
+			.andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_FOUND"));
+
+		String listBody = mockMvc.perform(get("/api/v1/manager/membership-offers")
+				.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken(manager)))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(listBody).contains(offerId.toString(), "ARCHIVED_MANAGER", "CENTER_ACCESS");
 	}
 
 	@Test

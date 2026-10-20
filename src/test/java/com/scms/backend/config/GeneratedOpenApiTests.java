@@ -80,6 +80,7 @@ class GeneratedOpenApiTests {
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
 		"GET /manager/membership-offers",
+		"GET /manager/membership-offers/{offerId}",
 		"POST /manager/membership-offers",
 		"PATCH /manager/membership-offers/{id}",
 		"GET /manager/membership-benefits",
@@ -460,6 +461,9 @@ class GeneratedOpenApiTests {
 		JsonNode offerResponse = document.at("/components/schemas/MembershipOfferResponse/properties");
 		assertThat(offerResponse.properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.contains("benefitCodes", "benefits", "supportsBooking", "supportsPersonalCoaching");
+		JsonNode adminOfferResponse = document.at("/components/schemas/MembershipOfferAdminDetailResponse/properties");
+		assertThat(adminOfferResponse.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("planDisplayName", "benefitCodes", "benefits");
 		JsonNode orderPlanCode = document.at("/components/schemas/MembershipOrderResponse/properties/planCode");
 		assertThat(orderPlanCode.path("type").asText()).isEqualTo("string");
 		assertThat(orderPlanCode.path("enum").isMissingNode()).isTrue();
