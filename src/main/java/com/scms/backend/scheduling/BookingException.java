@@ -1,16 +1,27 @@
 package com.scms.backend.scheduling;
 
+import java.util.List;
+
 import org.springframework.http.HttpStatus;
 
 public class BookingException extends RuntimeException {
 
 	private final HttpStatus status;
 	private final String code;
+	private final List<String> requiredBenefitCodes;
+	private final List<String> missingBenefitCodes;
 
 	private BookingException(HttpStatus status, String code, String message) {
+		this(status, code, message, null, null);
+	}
+
+	private BookingException(HttpStatus status, String code, String message,
+			List<String> requiredBenefitCodes, List<String> missingBenefitCodes) {
 		super(message);
 		this.status = status;
 		this.code = code;
+		this.requiredBenefitCodes = requiredBenefitCodes;
+		this.missingBenefitCodes = missingBenefitCodes;
 	}
 
 	static BookingException sessionNotFound() {
@@ -31,9 +42,10 @@ public class BookingException extends RuntimeException {
 			"Booking requires a future scheduled Session.");
 	}
 
-	static BookingException plusRequired() {
-		return new BookingException(HttpStatus.CONFLICT, "BOOKING_PLUS_MEMBERSHIP_REQUIRED",
-			"An active Membership with the required booking benefits must cover the Session start time.");
+	static BookingException benefitRequired(List<String> requiredBenefitCodes, List<String> missingBenefitCodes) {
+		return new BookingException(HttpStatus.CONFLICT, "MEMBERSHIP_BENEFIT_REQUIRED",
+			"An active Membership must provide every required Benefit at the Session start time.",
+			List.copyOf(requiredBenefitCodes), List.copyOf(missingBenefitCodes));
 	}
 
 	static BookingException duplicate() {
@@ -71,4 +83,6 @@ public class BookingException extends RuntimeException {
 
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
+	public List<String> getRequiredBenefitCodes() { return requiredBenefitCodes; }
+	public List<String> getMissingBenefitCodes() { return missingBenefitCodes; }
 }

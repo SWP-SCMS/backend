@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -140,8 +141,14 @@ public class ClassSessionService {
 		Map<UUID, Long> booked = ids.isEmpty() ? Map.of() : sessions.countBookedBySessionIds(ids).stream()
 			.collect(Collectors.toMap(ClassSessionRepository.BookingCountView::getSessionId,
 				ClassSessionRepository.BookingCountView::getBookedCount));
+		Map<UUID, List<String>> requiredBenefits = ids.isEmpty() ? Map.of()
+			: sessions.findRequiredBenefitsBySessionIds(ids).stream().collect(Collectors.groupingBy(
+				ClassSessionRepository.SessionRequiredBenefitView::getSessionId,
+				Collectors.mapping(ClassSessionRepository.SessionRequiredBenefitView::getBenefitCode,
+					Collectors.toList())));
 		var content = page.getContent().stream()
-			.map(session -> MemberClassSessionResponse.from(session, booked.getOrDefault(session.getId(), 0L), now))
+			.map(session -> MemberClassSessionResponse.from(session, booked.getOrDefault(session.getId(), 0L), now,
+				requiredBenefits.getOrDefault(session.getId(), List.of())))
 			.toList();
 		return new MemberClassSessionPageResponse(content, page.getNumber(), page.getSize(),
 			page.getTotalElements(), page.getTotalPages());

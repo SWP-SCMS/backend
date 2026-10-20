@@ -64,6 +64,8 @@ class ReceptionClassSessionServiceTests {
 				@Override public UUID getSessionId() { return session.getId(); }
 				@Override public long getBookedCount() { return 15; }
 			}));
+		when(sessions.findRequiredBenefitsBySessionIds(List.of(session.getId())))
+			.thenReturn(List.of(requiredBenefit(session.getId(), "POOL_ACCESS")));
 
 		MemberClassSessionPageResponse result = service.receptionSchedule(receptionistId, null, null, null,
 			pageable);
@@ -77,7 +79,9 @@ class ReceptionClassSessionServiceTests {
 			assertThat(item.bookedCount()).isEqualTo(15);
 			assertThat(item.availableCapacity()).isZero();
 			assertThat(item.bookingAvailable()).isFalse();
+			assertThat(item.requiredBenefitCodes()).containsExactly("CLASS_BOOKING", "POOL_ACCESS");
 		});
+		verify(sessions).findRequiredBenefitsBySessionIds(List.of(session.getId()));
 	}
 
 	@Test
@@ -104,5 +108,12 @@ class ReceptionClassSessionServiceTests {
 			LocalDate.of(1990, 1, 1), "{noop}password");
 		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, now.plusSeconds(3600),
 			now.plusSeconds(7200), capacity, UUID.randomUUID());
+	}
+
+	private ClassSessionRepository.SessionRequiredBenefitView requiredBenefit(UUID sessionId, String code) {
+		return new ClassSessionRepository.SessionRequiredBenefitView() {
+			@Override public UUID getSessionId() { return sessionId; }
+			@Override public String getBenefitCode() { return code; }
+		};
 	}
 }

@@ -34,32 +34,35 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 	Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
 	@Query(value = """
-		select membership.id
-		from memberships membership
-		join membership_plan_benefits booking_benefit
-		  on booking_benefit.plan_code = membership.plan_code_snapshot
-		 and booking_benefit.benefit_code = 'CLASS_BOOKING'
-		join class_sessions session on session.id = :sessionId
-		join sport_classes sport_class on sport_class.id = session.sport_class_id
-		where membership.member_account_id = :memberId
-		  and membership.status = 'ACTIVE'
-		  and membership.starts_at <= :sessionStart
-		  and membership.ends_at > :sessionStart
-		  and not exists (
-			select 1
-			from discipline_required_benefits required_benefit
-			where required_benefit.discipline_id = sport_class.discipline_id
-			  and not exists (
-				select 1
-				from membership_plan_benefits provided_benefit
-				where provided_benefit.plan_code = membership.plan_code_snapshot
-				  and provided_benefit.benefit_code = required_benefit.benefit_code
-			  )
-		  )
-		order by membership.ends_at desc
-		limit 1
+		with required_benefits as (
+			select 'CLASS_BOOKING'::varchar(50) as benefit_code
+			union
+			select required_benefit.benefit_code
+			from class_sessions session
+			join sport_classes sport_class on sport_class.id = session.sport_class_id
+			join discipline_required_benefits required_benefit
+			  on required_benefit.discipline_id = sport_class.discipline_id
+			where session.id = :sessionId
+		), covering_memberships as (
+			select membership.id, membership.plan_code_snapshot, membership.ends_at
+			from memberships membership
+			where membership.member_account_id = :memberId
+			  and membership.status = 'ACTIVE'
+			  and membership.starts_at <= :sessionStart
+			  and membership.ends_at > :sessionStart
+		)
+		select membership.id as "membershipId",
+			required_benefit.benefit_code as "requiredBenefitCode",
+			(provided_benefit.benefit_code is not null) as "provided"
+		from required_benefits required_benefit
+		left join covering_memberships membership on true
+		left join membership_plan_benefits provided_benefit
+		  on provided_benefit.plan_code = membership.plan_code_snapshot
+		 and provided_benefit.benefit_code = required_benefit.benefit_code
+		order by membership.ends_at desc nulls last, membership.id nulls last,
+			required_benefit.benefit_code
 		""", nativeQuery = true)
-	Optional<UUID> findEligibleMembership(@Param("memberId") UUID memberId,
+	List<BookingBenefitEligibilityView> findBookingBenefitEligibility(@Param("memberId") UUID memberId,
 		@Param("sessionId") UUID sessionId,
 		@Param("sessionStart") Instant sessionStart);
 
@@ -91,4 +94,10 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		String getProfileImageUrl();
 	}
 	interface AttendanceMemberView { UUID getAttendanceId(); UUID getBookingId(); UUID getMemberId(); String getMemberCode(); String getFullName(); }
+
+	interface BookingBenefitEligibilityView {
+		UUID getMembershipId();
+		String getRequiredBenefitCode();
+		boolean getProvided();
+	}
 }

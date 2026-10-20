@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,14 +46,18 @@ class ManagedResourceAuditRollbackIntegrationTests {
 	void auditFailureRollsBackDisciplineCreation() {
 		Account manager = saveManager("Discipline manager");
 		long before = disciplines.count();
+		long requiredBenefitsBefore = jdbc.queryForObject(
+			"select count(*) from discipline_required_benefits", Long.class);
 		String constraint = "chk_test_reject_discipline_audit";
 		installFailureConstraint(constraint, "DISCIPLINE_CREATED");
 
 		try {
 			assertThatThrownBy(() -> disciplineService.create(manager.getId(),
-				new DisciplineCreateRequest("Rollback discipline", "Must roll back")))
+				new DisciplineCreateRequest("Rollback discipline", "Must roll back", List.of("POOL_ACCESS"))))
 				.rootCause().hasMessageContaining(constraint);
 			assertThat(disciplines.count()).isEqualTo(before);
+			assertThat(jdbc.queryForObject("select count(*) from discipline_required_benefits", Long.class))
+				.isEqualTo(requiredBenefitsBefore);
 		}
 		finally {
 			dropConstraint(constraint);
@@ -102,13 +107,16 @@ class ManagedResourceAuditRollbackIntegrationTests {
 		Account manager = saveManager("Discipline update manager");
 		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Original discipline",
 			"Original description", DisciplineStatus.ACTIVE));
+		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
+			discipline.getId());
 		long originalVersion = version("disciplines", discipline.getId());
 		String constraint = "chk_test_reject_discipline_update_audit";
 		installFailureConstraint(constraint, "DISCIPLINE_UPDATED");
 
 		try {
 			assertThatThrownBy(() -> disciplineService.update(manager.getId(), discipline.getId(),
-				new DisciplinePatchRequest("Changed discipline", "Changed description", DisciplineStatus.INACTIVE)))
+				new DisciplinePatchRequest("Changed discipline", "Changed description", DisciplineStatus.INACTIVE,
+					List.of("MASSAGE_ACCESS"))))
 				.rootCause().hasMessageContaining(constraint);
 			entityManager.clear();
 
@@ -119,6 +127,9 @@ class ManagedResourceAuditRollbackIntegrationTests {
 				.containsEntry("description", "Original description")
 				.containsEntry("status", "ACTIVE");
 			assertThat(((Number) row.get("version")).longValue()).isEqualTo(originalVersion);
+			assertThat(jdbc.queryForList(
+				"select benefit_code from discipline_required_benefits where discipline_id=? order by benefit_code",
+				String.class, discipline.getId())).containsExactly("POOL_ACCESS");
 			assertNoAudit("DISCIPLINE_UPDATED", discipline.getId());
 		}
 		finally {

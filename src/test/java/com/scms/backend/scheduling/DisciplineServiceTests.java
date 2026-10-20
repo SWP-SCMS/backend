@@ -19,6 +19,9 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.membership.MembershipBenefit;
+import com.scms.backend.membership.MembershipBenefitRepository;
+import com.scms.backend.membership.MembershipBenefitStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -26,7 +29,6 @@ import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Sort;
 
 @ExtendWith(MockitoExtension.class)
 class DisciplineServiceTests {
@@ -42,6 +44,9 @@ class DisciplineServiceTests {
 
 	@Mock
 	private AuditEventRepository audits;
+
+	@Mock
+	private MembershipBenefitRepository benefits;
 
 	@InjectMocks
 	private DisciplineService service;
@@ -71,11 +76,61 @@ class DisciplineServiceTests {
 		UUID managerId = activeManager();
 		when(disciplines.existsByName("Pilates")).thenReturn(false);
 
-		service.create(managerId, new DisciplineCreateRequest("Pilates", null));
+		DisciplineResponse response = service.create(managerId,
+			new DisciplineCreateRequest("Pilates", null, null));
 
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
-		assertThat(audit.getValue().getAfterData()).containsEntry("description", null);
+		assertThat(response.requiredBenefitCodes()).containsExactly("CLASS_BOOKING");
+		assertThat(audit.getValue().getAfterData()).containsEntry("description", null)
+			.containsEntry("requiredBenefitCodes", List.of("CLASS_BOOKING"));
+	}
+
+	@Test
+	void createNormalizesSortsAndStoresOnlySpecializedBenefits() {
+		UUID managerId = activeManager();
+		when(disciplines.existsByName("Pilates")).thenReturn(false);
+		MembershipBenefit poolAccess = activeBenefit("POOL_ACCESS");
+		MembershipBenefit classBooking = activeBenefit("CLASS_BOOKING");
+		when(benefits.findAllByCodeIn(List.of("POOL_ACCESS", "CLASS_BOOKING")))
+			.thenReturn(List.of(poolAccess, classBooking));
+
+		DisciplineResponse response = service.create(managerId,
+			new DisciplineCreateRequest("Pilates", null, List.of(" pool_access ", "class_booking")));
+
+		assertThat(response.requiredBenefitCodes()).containsExactly("CLASS_BOOKING", "POOL_ACCESS");
+		ArgumentCaptor<Discipline> saved = ArgumentCaptor.forClass(Discipline.class);
+		verify(disciplines).saveAndFlush(saved.capture());
+		assertThat(saved.getValue().getRequiredBenefitCodes()).containsExactly("POOL_ACCESS");
+	}
+
+	@Test
+	void createRejectsNullBlankAndDuplicateBenefitCodes() {
+		UUID managerId = activeManager();
+
+		for (List<String> codes : List.of(java.util.Arrays.asList("POOL_ACCESS", null),
+			List.of("POOL_ACCESS", "  "), List.of("pool_access", " POOL_ACCESS "))) {
+			assertThatThrownBy(() -> service.create(managerId,
+				new DisciplineCreateRequest("Pilates", null, codes)))
+				.isInstanceOf(DisciplineValidationException.class)
+				.extracting("field").isEqualTo("requiredBenefitCodes");
+		}
+	}
+
+	@Test
+	void createRejectsUnknownOrInactiveBenefitCodes() {
+		UUID managerId = activeManager();
+		when(benefits.findAllByCodeIn(List.of("UNKNOWN"))).thenReturn(List.of());
+		MembershipBenefit inactivePoolAccess = benefit("POOL_ACCESS", MembershipBenefitStatus.INACTIVE);
+		when(benefits.findAllByCodeIn(List.of("POOL_ACCESS")))
+			.thenReturn(List.of(inactivePoolAccess));
+
+		for (List<String> codes : List.of(List.of("UNKNOWN"), List.of("pool_access"))) {
+			assertThatThrownBy(() -> service.create(managerId,
+				new DisciplineCreateRequest("Pilates", null, codes)))
+				.isInstanceOf(DisciplineValidationException.class)
+				.extracting("field").isEqualTo("requiredBenefitCodes");
+		}
 	}
 
 	@Test
@@ -100,15 +155,16 @@ class DisciplineServiceTests {
 	@Test
 	void listIsStableByNameThenId() {
 		UUID managerId = activeManager();
-		when(disciplines.findAll(any(Sort.class))).thenReturn(List.of(
-			new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE)));
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
+		discipline.replaceRequiredBenefitCodes(List.of("POOL_ACCESS", "MASSAGE_ACCESS"));
+		when(disciplines.findAllWithRequiredBenefitCodes()).thenReturn(List.of(discipline));
 
-		assertThat(service.list(managerId)).singleElement().extracting(DisciplineResponse::name)
-			.isEqualTo("Yoga");
-		ArgumentCaptor<Sort> sort = ArgumentCaptor.forClass(Sort.class);
-		verify(disciplines).findAll(sort.capture());
-		assertThat(sort.getValue().getOrderFor("name")).isNotNull();
-		assertThat(sort.getValue().getOrderFor("id")).isNotNull();
+		assertThat(service.list(managerId)).singleElement().satisfies(response -> {
+			assertThat(response.name()).isEqualTo("Yoga");
+			assertThat(response.requiredBenefitCodes())
+				.containsExactly("CLASS_BOOKING", "MASSAGE_ACCESS", "POOL_ACCESS");
+		});
+		verify(disciplines).findAllWithRequiredBenefitCodes();
 	}
 
 	@Test
@@ -142,9 +198,45 @@ class DisciplineServiceTests {
 		assertThat(audit.getValue().getTargetType()).isEqualTo("DISCIPLINE");
 		assertThat(audit.getValue().getTargetId()).isEqualTo(disciplineId);
 		assertThat(audit.getValue().getBeforeData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Yoga", "description", "Old", "status", "ACTIVE"));
+			"name", "Yoga", "description", "Old", "status", "ACTIVE",
+			"requiredBenefitCodes", List.of("CLASS_BOOKING")));
 		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Pilates", "description", "Core control", "status", "INACTIVE"));
+			"name", "Pilates", "description", "Core control", "status", "INACTIVE",
+			"requiredBenefitCodes", List.of("CLASS_BOOKING")));
+	}
+
+	@Test
+	void patchNullBenefitsPreservesExistingRequirements() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		discipline.replaceRequiredBenefitCodes(List.of("POOL_ACCESS"));
+		when(disciplines.findById(discipline.getId())).thenReturn(Optional.of(discipline));
+
+		DisciplineResponse result = service.update(managerId, discipline.getId(),
+			new DisciplinePatchRequest("Pilates 2", null, null, null));
+
+		assertThat(result.requiredBenefitCodes()).containsExactly("CLASS_BOOKING", "POOL_ACCESS");
+		assertThat(discipline.getRequiredBenefitCodes()).containsExactly("POOL_ACCESS");
+	}
+
+	@Test
+	void patchEmptyBenefitsRemovesSpecializedRequirements() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		discipline.replaceRequiredBenefitCodes(List.of("POOL_ACCESS"));
+		when(disciplines.findById(discipline.getId())).thenReturn(Optional.of(discipline));
+
+		DisciplineResponse result = service.update(managerId, discipline.getId(),
+			new DisciplinePatchRequest(null, null, null, List.of()));
+
+		assertThat(result.requiredBenefitCodes()).containsExactly("CLASS_BOOKING");
+		assertThat(discipline.getRequiredBenefitCodes()).isEmpty();
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getBeforeData())
+			.containsEntry("requiredBenefitCodes", List.of("CLASS_BOOKING", "POOL_ACCESS"));
+		assertThat(audit.getValue().getAfterData())
+			.containsEntry("requiredBenefitCodes", List.of("CLASS_BOOKING"));
 	}
 
 	@Test
@@ -229,5 +321,15 @@ class DisciplineServiceTests {
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
 			.thenReturn(true);
 		return managerId;
+	}
+
+	private MembershipBenefit activeBenefit(String code) {
+		return benefit(code, MembershipBenefitStatus.ACTIVE);
+	}
+
+	private MembershipBenefit benefit(String code, MembershipBenefitStatus status) {
+		MembershipBenefit benefit = mock(MembershipBenefit.class);
+		when(benefit.getStatus()).thenReturn(status);
+		return benefit;
 	}
 }

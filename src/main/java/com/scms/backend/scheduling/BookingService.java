@@ -3,6 +3,9 @@ package com.scms.backend.scheduling;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,17 +25,19 @@ public class BookingService {
 
 	private final BookingRepository bookings;
 	private final ClassSessionRepository sessions;
+	private final DisciplineRepository disciplines;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 
-	BookingService(BookingRepository bookings, ClassSessionRepository sessions, AccountRepository accounts,
-			AuditEventRepository audits, NotificationWriter notifications, SessionLifecycleService lifecycle,
-			Clock clock) {
+	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
+			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
+			SessionLifecycleService lifecycle, Clock clock) {
 		this.bookings = bookings;
 		this.sessions = sessions;
+		this.disciplines = disciplines;
 		this.accounts = accounts;
 		this.audits = audits;
 		this.notifications = notifications;
@@ -59,8 +64,27 @@ public class BookingService {
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED || !session.getStartTime().isAfter(now)) {
 			throw BookingException.sessionUnavailable();
 		}
-		UUID membershipId = bookings.findEligibleMembership(memberId, sessionId, session.getStartTime())
-			.orElseThrow(BookingException::plusRequired);
+		disciplines.findBySessionIdForUpdate(sessionId).orElseThrow(BookingException::sessionNotFound);
+		List<BookingRepository.BookingBenefitEligibilityView> eligibility =
+			bookings.findBookingBenefitEligibility(memberId, sessionId, session.getStartTime());
+		List<String> requiredBenefitCodes = eligibility.stream()
+			.map(BookingRepository.BookingBenefitEligibilityView::getRequiredBenefitCode)
+			.distinct().sorted().toList();
+		Map<UUID, List<BookingRepository.BookingBenefitEligibilityView>> byMembership = new LinkedHashMap<>();
+		eligibility.stream().filter(row -> row.getMembershipId() != null).forEach(row ->
+			byMembership.computeIfAbsent(row.getMembershipId(), ignored -> new java.util.ArrayList<>()).add(row));
+		UUID membershipId = byMembership.entrySet().stream()
+			.filter(entry -> entry.getValue().stream()
+				.allMatch(BookingRepository.BookingBenefitEligibilityView::getProvided))
+			.map(Map.Entry::getKey).findFirst().orElse(null);
+		if (membershipId == null) {
+			List<String> missingBenefitCodes = byMembership.values().stream()
+				.map(rows -> rows.stream().filter(row -> !row.getProvided())
+					.map(BookingRepository.BookingBenefitEligibilityView::getRequiredBenefitCode)
+					.sorted().toList())
+				.min(Comparator.comparingInt(List::size)).orElse(requiredBenefitCodes);
+			throw BookingException.benefitRequired(requiredBenefitCodes, missingBenefitCodes);
+		}
 		if (bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId, sessionId,
 				BookingStatus.BOOKED)) throw BookingException.duplicate();
 		if (bookings.existsBookedOverlap(memberId, session.getStartTime(), session.getEndTime())) {

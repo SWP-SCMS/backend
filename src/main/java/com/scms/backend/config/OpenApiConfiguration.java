@@ -9,6 +9,7 @@ import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem.HttpMethod;
 import io.swagger.v3.oas.models.media.ArraySchema;
+import io.swagger.v3.oas.models.media.ComposedSchema;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.IntegerSchema;
 import io.swagger.v3.oas.models.media.ObjectSchema;
@@ -35,11 +36,14 @@ public class OpenApiConfiguration {
 			Components components = openApi.getComponents() == null ? new Components() : openApi.getComponents();
 			openApi.setComponents(components);
 			components.addSchemas("ApiProblem", problemSchema());
+			components.addSchemas("OrdinaryBookingConflictProblem", ordinaryBookingConflictProblemSchema());
+			components.addSchemas("MembershipBenefitRequiredProblem", membershipBenefitRequiredProblemSchema());
 			addErrorResponse(components, "BadRequest", "The request is invalid.");
 			addErrorResponse(components, "Unauthorized", "Authentication failed or is required.");
 			addErrorResponse(components, "Forbidden", "The authenticated account is not allowed to perform this operation.");
 			addErrorResponse(components, "NotFound", "The requested resource was not found.");
 			addErrorResponse(components, "Conflict", "The request conflicts with current resource state.");
+			addBookingConflictResponse(components);
 			addErrorResponse(components, "MembershipOrderConflict",
 				"Membership Order creation conflicts with current state; an unavailable Offer uses code MEMBERSHIP_OFFER_NOT_AVAILABLE.");
 			addErrorResponse(components, "TooManyRequests", "The request rate limit was exceeded.");
@@ -100,6 +104,10 @@ public class OpenApiConfiguration {
 		if (method == HttpMethod.POST && path.equals("/reception/membership-orders/{orderId}/cash")) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 		}
+		if (method == HttpMethod.POST && (path.equals("/members/class-sessions/{sessionId}/bookings")
+				|| path.equals("/reception/members/{memberId}/bookings"))) {
+			operation.getResponses().addApiResponse("409", reference("BookingConflict"));
+		}
 	}
 
 	private Schema<?> problemSchema() {
@@ -112,6 +120,8 @@ public class OpenApiConfiguration {
 			.addProperty("errors", new ObjectSchema().additionalProperties(
 				new ArraySchema().items(new StringSchema())))
 			.addProperty("affectedSessionIds", new ArraySchema().items(new StringSchema().format("uuid")))
+			.addProperty("requiredBenefitCodes", new ArraySchema().items(new StringSchema()))
+			.addProperty("missingBenefitCodes", new ArraySchema().items(new StringSchema()))
 			.addProperty("affectedSessions", new ArraySchema().items(new ObjectSchema()
 				.addProperty("sessionId", new StringSchema().format("uuid"))
 				.addProperty("classId", new StringSchema().format("uuid"))
@@ -120,6 +130,31 @@ public class OpenApiConfiguration {
 				.addProperty("endTime", new StringSchema().format("date-time"))))
 			.addProperty("traceId", new StringSchema())
 			.required(List.of("title", "status", "detail", "instance", "code"));
+	}
+
+	private Schema<?> membershipBenefitRequiredProblemSchema() {
+		Schema<?> schema = problemSchema();
+		schema.addProperty("code", new StringSchema()._enum(List.of("MEMBERSHIP_BENEFIT_REQUIRED")));
+		schema.required(List.of("title", "status", "detail", "instance", "code", "requiredBenefitCodes",
+			"missingBenefitCodes"));
+		return schema;
+	}
+
+	private Schema<?> ordinaryBookingConflictProblemSchema() {
+		Schema<?> schema = problemSchema();
+		schema.addProperty("code", new StringSchema()
+			.not(new StringSchema()._enum(List.of("MEMBERSHIP_BENEFIT_REQUIRED"))));
+		return schema;
+	}
+
+	private void addBookingConflictResponse(Components components) {
+		Schema<?> schema = new ComposedSchema()
+			.addOneOfItem(new Schema<>().$ref("#/components/schemas/OrdinaryBookingConflictProblem"))
+			.addOneOfItem(new Schema<>().$ref("#/components/schemas/MembershipBenefitRequiredProblem"));
+		components.addResponses("BookingConflict", new ApiResponse()
+			.description("A booking conflict, including MEMBERSHIP_BENEFIT_REQUIRED when required Benefits are missing.")
+			.content(new Content().addMediaType("application/problem+json",
+				new io.swagger.v3.oas.models.media.MediaType().schema(schema))));
 	}
 
 	private void addErrorResponse(Components components, String name, String description) {

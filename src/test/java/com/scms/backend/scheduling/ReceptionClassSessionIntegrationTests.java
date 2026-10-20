@@ -1,8 +1,10 @@
 package com.scms.backend.scheduling;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -75,6 +78,7 @@ class ReceptionClassSessionIntegrationTests {
 			.andExpect(jsonPath("$.content[0].bookedCount").value(0))
 			.andExpect(jsonPath("$.content[0].availableCapacity").value(2))
 			.andExpect(jsonPath("$.content[0].bookingAvailable").value(true))
+			.andExpect(jsonPath("$.content[0].requiredBenefitCodes[0]").value("CLASS_BOOKING"))
 			.andExpect(jsonPath("$.content[1].id").value(fixture.fullSession().getId().toString()))
 			.andExpect(jsonPath("$.content[1].bookedCount").value(1))
 			.andExpect(jsonPath("$.content[1].availableCapacity").value(0))
@@ -115,6 +119,24 @@ class ReceptionClassSessionIntegrationTests {
 			.andExpect(jsonPath("$.content[0].bookedCount").value(1))
 			.andExpect(jsonPath("$.content[0].availableCapacity").value(1))
 			.andExpect(jsonPath("$.content[0].bookingAvailable").value(true));
+	}
+
+	@Test
+	@Transactional
+	void memberAndReceptionCataloguesExposeSortedEffectiveDisciplineBenefits() throws Exception {
+		Fixture fixture = fixture();
+		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
+			fixture.openSession().getSportClass().getDiscipline().getId());
+
+		for (var request : java.util.List.of(
+			get("/members/class-sessions").with(memberJwt(fixture.dynamicMember().getId())),
+			get("/reception/class-sessions").with(receptionistJwt(fixture.receptionist().getId())))) {
+			mvc.perform(request)
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.content[0].requiredBenefitCodes[0]").value("CLASS_BOOKING"))
+				.andExpect(jsonPath("$.content[0].requiredBenefitCodes[1]").value("POOL_ACCESS"))
+				.andExpect(jsonPath("$.content[0].requiredBenefitCodes.length()").value(2));
+		}
 	}
 
 	@Test
@@ -162,14 +184,28 @@ class ReceptionClassSessionIntegrationTests {
 
 	@Test
 	@Transactional
-	void bookingRequiresEveryBenefitRequiredByTheSessionDiscipline() {
+	void memberAndReceptionBookingReturnStructuredMissingBenefitConflict() throws Exception {
 		Fixture fixture = fixture();
 		jdbc.update("insert into discipline_required_benefits(discipline_id, benefit_code) values (?, 'POOL_ACCESS')",
 			fixture.openSession().getSportClass().getDiscipline().getId());
 
-		assertThatThrownBy(() -> bookingService.book(fixture.dynamicMember().getId(), fixture.openSession().getId()))
-			.isInstanceOf(BookingException.class)
-			.extracting("code").isEqualTo("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
+		mvc.perform(post("/members/class-sessions/{sessionId}/bookings", fixture.openSession().getId())
+				.with(memberJwt(fixture.dynamicMember().getId())))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_BENEFIT_REQUIRED"))
+			.andExpect(jsonPath("$.requiredBenefitCodes[0]").value("CLASS_BOOKING"))
+			.andExpect(jsonPath("$.requiredBenefitCodes[1]").value("POOL_ACCESS"))
+			.andExpect(jsonPath("$.missingBenefitCodes[0]").value("POOL_ACCESS"));
+
+		mvc.perform(post("/reception/members/{memberId}/bookings", fixture.dynamicMember().getId())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"sessionId\":\"" + fixture.openSession().getId() + "\"}")
+				.with(receptionistJwt(fixture.receptionist().getId())))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_BENEFIT_REQUIRED"))
+			.andExpect(jsonPath("$.requiredBenefitCodes[0]").value("CLASS_BOOKING"))
+			.andExpect(jsonPath("$.requiredBenefitCodes[1]").value("POOL_ACCESS"))
+			.andExpect(jsonPath("$.missingBenefitCodes[0]").value("POOL_ACCESS"));
 	}
 
 	@Test
@@ -210,8 +246,11 @@ class ReceptionClassSessionIntegrationTests {
 			"CUSTOM_ACCESS");
 
 		assertThatThrownBy(() -> bookingService.book(customMember.getId(), fixture.openSession().getId()))
-			.isInstanceOf(BookingException.class)
-			.extracting("code").isEqualTo("BOOKING_PLUS_MEMBERSHIP_REQUIRED");
+			.isInstanceOfSatisfying(BookingException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+				assertThat(exception.getRequiredBenefitCodes()).containsExactly("CLASS_BOOKING");
+				assertThat(exception.getMissingBenefitCodes()).containsExactly("CLASS_BOOKING");
+			});
 		assertThatThrownBy(() -> bookings.saveAndFlush(new Booking(UUID.randomUUID(), fixture.openSession().getId(),
 			customMember.getId(), membershipId, fixture.receptionist().getId(), NOW)))
 			.isInstanceOf(DataIntegrityViolationException.class);
@@ -232,6 +271,11 @@ class ReceptionClassSessionIntegrationTests {
 	private org.springframework.test.web.servlet.request.RequestPostProcessor receptionistJwt(UUID accountId) {
 		return jwt().jwt(token -> token.subject(accountId.toString()))
 			.authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"));
+	}
+
+	private org.springframework.test.web.servlet.request.RequestPostProcessor memberJwt(UUID accountId) {
+		return jwt().jwt(token -> token.subject(accountId.toString()))
+			.authorities(new SimpleGrantedAuthority("ROLE_MEMBER"));
 	}
 
 	private Fixture fixture() {
