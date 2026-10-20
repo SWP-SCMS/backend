@@ -17,7 +17,10 @@ public record AuditHistoryResponse(UUID id, UUID actorAccountId,
 
 	static AuditHistoryResponse from(AuditEvent event, Account actor) {
 		return new AuditHistoryResponse(event.getId(), event.getActorAccountId(),
-			actor == null ? null : actor.getFullName(), actor == null ? null : actor.getRole(),
+			event.getActorNameSnapshot() != null ? event.getActorNameSnapshot()
+				: actor == null ? null : actor.getFullName(),
+			event.getActorRoleSnapshot() != null ? event.getActorRoleSnapshot()
+				: actor == null ? null : actor.getRole(),
 			event.getAction(), event.getTargetType(), event.getTargetId(), event.getReason(), event.getBeforeData(),
 			event.getAfterData(), event.getCreatedAt());
 	}

@@ -43,9 +43,11 @@ class AuditHistoryService {
 		Page<AuditEvent> page = audits.findAll(
 			AuditHistorySpecifications.filtered(actorId, normalizedAction, normalizedTargetType, targetId, from, to),
 			pageable);
-		Set<UUID> actorIds = page.getContent().stream().map(AuditEvent::getActorAccountId).filter(Objects::nonNull)
+		Set<UUID> actorIds = page.getContent().stream()
+			.filter(event -> event.getActorNameSnapshot() == null || event.getActorRoleSnapshot() == null)
+			.map(AuditEvent::getActorAccountId).filter(Objects::nonNull)
 			.collect(Collectors.toSet());
-		Map<UUID, Account> actors = accounts.findAllById(actorIds).stream()
+		Map<UUID, Account> actors = actorIds.isEmpty() ? Map.of() : accounts.findAllById(actorIds).stream()
 			.collect(Collectors.toMap(Account::getId, Function.identity()));
 		return new AuditHistoryPageResponse(page.getContent().stream()
 			.map(event -> AuditHistoryResponse.from(event, actors.get(event.getActorAccountId()))).toList(),

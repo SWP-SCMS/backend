@@ -7,8 +7,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
+import com.scms.backend.account.AccountRole;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Generated;
@@ -26,6 +30,15 @@ public class AuditEvent {
 
 	@Column(name = "actor_account_id")
 	private UUID actorAccountId;
+
+	@Generated(event = EventType.INSERT)
+	@Column(name = "actor_name_snapshot", length = 200, insertable = false, updatable = false)
+	private String actorNameSnapshot;
+
+	@Generated(event = EventType.INSERT)
+	@Enumerated(EnumType.STRING)
+	@Column(name = "actor_role_snapshot", length = 20, insertable = false, updatable = false)
+	private AccountRole actorRoleSnapshot;
 
 	@Column(nullable = false, length = 120, updatable = false)
 	private String action;
@@ -81,6 +94,14 @@ public class AuditEvent {
 
 	public UUID getActorAccountId() {
 		return actorAccountId;
+	}
+
+	public String getActorNameSnapshot() {
+		return actorNameSnapshot;
+	}
+
+	public AccountRole getActorRoleSnapshot() {
+		return actorRoleSnapshot;
 	}
 
 	public String getAction() {

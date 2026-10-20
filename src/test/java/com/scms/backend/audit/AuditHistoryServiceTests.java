@@ -28,8 +28,62 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class AuditHistoryServiceTests {
+
+	@Test
+	void prefersStoredActorSnapshotWithoutAccountLookup() {
+		AuditEventRepository audits = mock(AuditEventRepository.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		AuditHistoryService service = new AuditHistoryService(audits, accounts);
+		UUID managerId = UUID.randomUUID();
+		UUID actorId = UUID.randomUUID();
+		AuditEvent event = new AuditEvent(UUID.randomUUID(), actorId, "ACCOUNT_UPDATED", "ACCOUNT",
+			UUID.randomUUID(), Map.of());
+		ReflectionTestUtils.setField(event, "actorNameSnapshot", "Original Actor");
+		ReflectionTestUtils.setField(event, "actorRoleSnapshot", AccountRole.COACH);
+		Pageable pageable = PageRequest.of(0, 20);
+		when(accounts.existsByIdAndRoleAndStatus(eq(managerId), any(), any())).thenReturn(true);
+		when(audits.findAll(any(Specification.class), eq(pageable)))
+			.thenReturn(new PageImpl<>(List.of(event), pageable, 1));
+
+		AuditHistoryResponse result = service.list(managerId, null, null, null, null, null, null, pageable)
+			.content().getFirst();
+
+		assertThat(result.actorName()).isEqualTo("Original Actor");
+		assertThat(result.actorRole()).isEqualTo(AccountRole.COACH);
+		verify(accounts, never()).findAllById(any());
+	}
+
+	@Test
+	void bulkLoadsOnlyActorsWhoseSnapshotIsMissing() {
+		AuditEventRepository audits = mock(AuditEventRepository.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		AuditHistoryService service = new AuditHistoryService(audits, accounts);
+		UUID managerId = UUID.randomUUID();
+		UUID snapshottedActorId = UUID.randomUUID();
+		UUID legacyActorId = UUID.randomUUID();
+		AuditEvent snapshotted = new AuditEvent(UUID.randomUUID(), snapshottedActorId, "UPDATED", "ACCOUNT",
+			UUID.randomUUID(), Map.of());
+		ReflectionTestUtils.setField(snapshotted, "actorNameSnapshot", "Snapshot Actor");
+		ReflectionTestUtils.setField(snapshotted, "actorRoleSnapshot", AccountRole.MANAGER);
+		AuditEvent legacy = new AuditEvent(UUID.randomUUID(), legacyActorId, "UPDATED", "ACCOUNT",
+			UUID.randomUUID(), Map.of());
+		Account legacyActor = new Account(legacyActorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE,
+			"Legacy Actor", "0901234568", "legacy@example.test", LocalDate.of(1990, 1, 1), "{noop}password");
+		Pageable pageable = PageRequest.of(0, 20);
+		when(accounts.existsByIdAndRoleAndStatus(eq(managerId), any(), any())).thenReturn(true);
+		when(audits.findAll(any(Specification.class), eq(pageable)))
+			.thenReturn(new PageImpl<>(List.of(snapshotted, legacy), pageable, 2));
+		when(accounts.findAllById(Set.of(legacyActorId))).thenReturn(List.of(legacyActor));
+
+		AuditHistoryPageResponse result = service.list(managerId, null, null, null, null, null, null, pageable);
+
+		assertThat(result.content()).extracting(AuditHistoryResponse::actorName)
+			.containsExactly("Snapshot Actor", "Legacy Actor");
+		verify(accounts).findAllById(Set.of(legacyActorId));
+	}
 
 	@Test
 	void resolvesRepeatedActorWithOneBulkLookupAndPreservesPagination() {
