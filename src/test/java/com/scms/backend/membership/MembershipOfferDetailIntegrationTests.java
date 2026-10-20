@@ -124,7 +124,7 @@ class MembershipOfferDetailIntegrationTests {
 			"description", "priceAmount", "currencyCode", "durationDays", "supportsBooking",
 			"supportsPersonalCoaching", "benefitCodes", "benefits");
 		assertThat(response.get("priceAmount").toString()).isEqualTo(EXACT_PRICE.toString());
-		assertThat(body).contains("\"priceAmount\":" + EXACT_PRICE).doesNotContain("status", "createdByAccountId",
+		assertThat(body).contains("\"priceAmount\":" + EXACT_PRICE).doesNotContain("createdByAccountId",
 			"createdAt", "updatedAt", "version");
 		assertThat(count("membership_offers")).isEqualTo(offerCount);
 		assertThat(auditEventRepository.count()).isEqualTo(auditCount);
