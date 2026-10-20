@@ -1,14 +1,19 @@
 package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -34,6 +39,9 @@ class MembershipOrderServiceTests {
 
 	private UUID memberAccountId;
 	private UUID offerId;
+	private MembershipPlan plan;
+	private MembershipOffer offer;
+	private MemberProfile member;
 
 	@BeforeEach
 	void prepareValidCreation() {
@@ -42,25 +50,32 @@ class MembershipOrderServiceTests {
 		Account account = mock(Account.class);
 		when(account.getRole()).thenReturn(AccountRole.MEMBER);
 		when(account.getStatus()).thenReturn(AccountStatus.ACTIVE);
-		MemberProfile member = mock(MemberProfile.class);
+		member = mock(MemberProfile.class);
 		when(member.getAccountId()).thenReturn(memberAccountId);
 		when(member.getAccount()).thenReturn(account);
 		when(member.getMemberCode()).thenReturn("MB-100001");
 		when(memberProfileRepository.findById(memberAccountId)).thenReturn(Optional.of(member));
+		when(memberProfileRepository.findVisibleMemberByCode(eq("MB-100001"), eq(AccountRole.MEMBER), any()))
+			.thenReturn(Optional.of(member));
+		when(accountRepository.existsByIdAndRoleAndStatus(any(), eq(AccountRole.RECEPTIONIST),
+			eq(AccountStatus.ACTIVE))).thenReturn(true);
 
-		MembershipPlan plan = mock(MembershipPlan.class);
+		plan = mock(MembershipPlan.class);
 		when(plan.getPlanCode()).thenReturn(MembershipPlanCode.BASIC.name());
-		MembershipOffer offer = mock(MembershipOffer.class);
+		when(plan.getStatus()).thenReturn(MembershipPlanStatus.ACTIVE);
+		offer = mock(MembershipOffer.class);
 		when(offer.getId()).thenReturn(offerId);
 		when(offer.getPlan()).thenReturn(plan);
 		when(offer.getName()).thenReturn("Race Offer");
 		when(offer.getPriceAmount()).thenReturn(BigInteger.valueOf(500000));
 		when(offer.getCurrencyCode()).thenReturn("VND");
 		when(offer.getDurationDays()).thenReturn(30);
-		when(offerRepository.findByIdAndStatus(offerId, MembershipOfferStatus.ACTIVE))
+		when(offerRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE))
 			.thenReturn(Optional.of(offer));
 		when(planRepository.findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
 			.thenReturn(Optional.of(plan));
+		when(planRepository.findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
+			.thenReturn(Optional.of(MembershipPlanStatus.ACTIVE.name()));
 	}
 
 	@Test
@@ -86,12 +101,58 @@ class MembershipOrderServiceTests {
 	}
 
 	@Test
-	void orderCreationLocksTheOfferPlanBeforeCheckingOrderState() {
+	void activeMemberCreationUsesAvailableOfferAndLocksActivePlan() {
 		when(orderRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		AtomicReference<MembershipOrderResponse> response = new AtomicReference<>();
 
-		service.createForMember(memberAccountId, new MembershipOrderCreateRequest(offerId));
+		assertThatCode(() -> response.set(service.createForMember(memberAccountId,
+			new MembershipOrderCreateRequest(offerId)))).doesNotThrowAnyException();
 
-		org.mockito.Mockito.verify(planRepository).findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name());
+		assertThat(response.get().offerId()).isEqualTo(offerId);
+		verify(offerRepository).findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE);
+		verify(planRepository).findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name());
+	}
+
+	@Test
+	void activeReceptionistCreationUsesAvailableOfferAndActivePlan() {
+		when(orderRepository.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		AtomicReference<MembershipOrderResponse> response = new AtomicReference<>();
+
+		assertThatCode(() -> response.set(service.createForReceptionist(UUID.randomUUID(), "MB-100001",
+			new MembershipOrderCreateRequest(offerId)))).doesNotThrowAnyException();
+
+		assertThat(response.get().memberId()).isEqualTo("MB-100001");
+		assertThat(response.get().offerId()).isEqualTo(offerId);
+	}
+
+	@Test
+	void memberCreationRejectsUnavailableOffer() {
+		when(offerRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE))
+			.thenReturn(Optional.empty());
+
+		assertUnavailable(() -> service.createForMember(memberAccountId,
+			new MembershipOrderCreateRequest(offerId)));
+		verify(orderRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void receptionistCreationRejectsUnavailableOffer() {
+		when(offerRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE))
+			.thenReturn(Optional.empty());
+
+		assertUnavailable(() -> service.createForReceptionist(UUID.randomUUID(), "MB-100001",
+			new MembershipOrderCreateRequest(offerId)));
+		verify(orderRepository, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void creationRejectsFreshInactiveStatusWhenManagedPlanIsStaleActive() {
+		when(planRepository.findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
+			.thenReturn(Optional.of(MembershipPlanStatus.INACTIVE.name()));
+
+		assertUnavailable(() -> service.createForMember(memberAccountId,
+			new MembershipOrderCreateRequest(offerId)));
+		verify(orderRepository, never()).saveAndFlush(any());
 	}
 
 	@Test
@@ -110,5 +171,10 @@ class MembershipOrderServiceTests {
 			memberAccountId, offer);
 
 		assertThat(order.getPlanCodeSnapshot()).isEqualTo("FAMILY");
+	}
+
+	private void assertUnavailable(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
+		assertThatThrownBy(action)
+			.isInstanceOf(MembershipOfferUnavailableException.class);
 	}
 }

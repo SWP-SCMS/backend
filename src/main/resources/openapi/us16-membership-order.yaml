@@ -31,8 +31,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/OfferNotFound'
         '409':
           $ref: '#/components/responses/SelfOrderConflict'
   /members/me/membership-orders/pending:
@@ -76,7 +74,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          description: MEMBERSHIP_OFFER_NOT_FOUND or MEMBER_NOT_FOUND
+          description: Target does not exist or is not a MEMBER; code is MEMBER_NOT_FOUND
           content:
             application/problem+json:
               schema:
@@ -165,12 +163,6 @@ components:
         Bearer token is missing, invalid, or expired, or its Account no longer exists with ACTIVE status.
     Forbidden:
       description: Authenticated Account does not have the endpoint's required role
-    OfferNotFound:
-      description: Offer does not exist or is INACTIVE; code is MEMBERSHIP_OFFER_NOT_FOUND
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/ProblemDetail'
     MemberNotActive:
       description: Target Member is SUSPENDED or INACTIVE; code is MEMBER_NOT_ACTIVE
       content:
@@ -178,14 +170,17 @@ components:
           schema:
             $ref: '#/components/schemas/ProblemDetail'
     SelfOrderConflict:
-      description: ACTIVE_MEMBERSHIP_EXISTS or PENDING_MEMBERSHIP_ORDER_EXISTS.
+      description: >-
+        MEMBERSHIP_OFFER_NOT_AVAILABLE, ACTIVE_MEMBERSHIP_EXISTS, or
+        PENDING_MEMBERSHIP_ORDER_EXISTS.
       content:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetail'
     OrderConflict:
       description: >-
-        MEMBER_NOT_ACTIVE, ACTIVE_MEMBERSHIP_EXISTS, or PENDING_MEMBERSHIP_ORDER_EXISTS.
+        MEMBERSHIP_OFFER_NOT_AVAILABLE, MEMBER_NOT_ACTIVE, ACTIVE_MEMBERSHIP_EXISTS, or
+        PENDING_MEMBERSHIP_ORDER_EXISTS.
       content:
         application/problem+json:
           schema:
@@ -278,7 +273,7 @@ components:
           enum:
             - VALIDATION_ERROR
             - MALFORMED_REQUEST
-            - MEMBERSHIP_OFFER_NOT_FOUND
+            - MEMBERSHIP_OFFER_NOT_AVAILABLE
             - MEMBER_NOT_FOUND
             - MEMBER_NOT_ACTIVE
             - ACTIVE_MEMBERSHIP_EXISTS

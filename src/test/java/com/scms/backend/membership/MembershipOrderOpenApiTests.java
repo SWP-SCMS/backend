@@ -27,8 +27,10 @@ class MembershipOrderOpenApiTests {
 				"/members/me/membership-orders", "post");
 			Map<String, Object> selfPostConflict = resolveResponse(selfPostResponses, responseComponents, "409");
 			assertThat((String) selfPostConflict.get("description"))
-				.contains("ACTIVE_MEMBERSHIP_EXISTS", "PENDING_MEMBERSHIP_ORDER_EXISTS")
+				.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE", "ACTIVE_MEMBERSHIP_EXISTS",
+					"PENDING_MEMBERSHIP_ORDER_EXISTS")
 				.doesNotContain("MEMBER_NOT_ACTIVE");
+			assertThat(selfPostResponses).doesNotContainKey("404");
 
 			Map<String, Object> selfPendingResponses = responses(paths,
 				"/members/me/membership-orders/pending", "get");
@@ -37,7 +39,11 @@ class MembershipOrderOpenApiTests {
 			Map<String, Object> receptionPostResponses = responses(paths,
 				"/reception/members/{memberId}/membership-orders", "post");
 			assertThat((String) resolveResponse(receptionPostResponses, responseComponents, "409")
-				.get("description")).contains("MEMBER_NOT_ACTIVE");
+				.get("description")).contains("MEMBERSHIP_OFFER_NOT_AVAILABLE", "MEMBER_NOT_ACTIVE");
+			Map<String, Object> receptionNotFound = (Map<String, Object>) receptionPostResponses.get("404");
+			assertThat((String) receptionNotFound.get("description"))
+				.contains("MEMBER_NOT_FOUND")
+				.doesNotContain("MEMBERSHIP_OFFER_NOT_FOUND");
 
 			Map<String, Object> receptionPendingResponses = responses(paths,
 				"/reception/members/{memberId}/membership-orders/pending", "get");
@@ -49,6 +55,12 @@ class MembershipOrderOpenApiTests {
 			Map<String, Object> planCode = (Map<String, Object>) orderProperties.get("planCode");
 			assertThat(planCode).doesNotContainKey("enum")
 				.containsEntry("pattern", "^[A-Z][A-Z0-9_]{1,49}$");
+			Map<String, Object> problem = (Map<String, Object>) schemas.get("ProblemDetail");
+			Map<String, Object> problemProperties = (Map<String, Object>) problem.get("properties");
+			Map<String, Object> code = (Map<String, Object>) problemProperties.get("code");
+			assertThat((java.util.List<String>) code.get("enum"))
+				.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE")
+				.doesNotContain("MEMBERSHIP_OFFER_NOT_FOUND");
 		}
 		catch (java.io.IOException exception) {
 			throw new AssertionError(exception);

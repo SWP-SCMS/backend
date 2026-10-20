@@ -19,4 +19,7 @@ public interface MembershipPlanRepository extends JpaRepository<MembershipPlan, 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select plan from MembershipPlan plan where plan.planCode = :code")
 	Optional<MembershipPlan> findByPlanCodeForUpdate(@Param("code") String code);
+
+	@Query(value = "select status from membership_plans where plan_code = :code for update", nativeQuery = true)
+	Optional<String> findStatusByPlanCodeForUpdate(@Param("code") String code);
 }

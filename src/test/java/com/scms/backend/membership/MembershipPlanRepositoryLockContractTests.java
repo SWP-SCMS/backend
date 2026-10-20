@@ -19,4 +19,17 @@ class MembershipPlanRepositoryLockContractTests {
 		assertThat(method.getAnnotation(Query.class).value())
 			.contains("MembershipPlan", "plan.planCode = :code");
 	}
+
+	@Test
+	void currentPlanStatusLockUsesNativeScalarQueryOutsideThePersistenceContext() {
+		Method method = java.util.Arrays.stream(MembershipPlanRepository.class.getMethods())
+			.filter(candidate -> candidate.getName().equals("findStatusByPlanCodeForUpdate"))
+			.findFirst().orElse(null);
+
+		assertThat(method).isNotNull();
+		Query query = method.getAnnotation(Query.class);
+		assertThat(query.nativeQuery()).isTrue();
+		assertThat(query.value())
+			.contains("select status", "membership_plans", "plan_code = :code", "for update");
+	}
 }

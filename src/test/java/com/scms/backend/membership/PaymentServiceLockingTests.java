@@ -46,10 +46,9 @@ class PaymentServiceLockingTests {
 		Account member = account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE);
 		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
 			.thenReturn(true);
-		when(db.queryForMap(argThat(sql -> sql.contains("join member_profiles")), eq("MB-100001")))
+		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
 			.thenReturn(Map.of("account_id", memberId));
-		when(db.queryForMap("select * from membership_offers where id=? and status='ACTIVE'", offerId))
-			.thenReturn(offer(offerId));
+		stubAvailableOffer(db, offerId);
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
 		when(db.queryForObject(
 			"select count(*) from memberships where member_account_id=? and status='ACTIVE'", Long.class, memberId))
@@ -60,6 +59,7 @@ class PaymentServiceLockingTests {
 
 		service.cash(actorId, "MB-100001", new CashPaymentRequest(offerId));
 
+		verify(db).queryForMap(argThat(this::isAvailableOfferLockQuery), eq(offerId));
 		InOrder order = inOrder(accounts, db);
 		order.verify(accounts).findByIdForUpdate(memberId);
 		order.verify(db).queryForObject(
@@ -80,10 +80,9 @@ class PaymentServiceLockingTests {
 		UUID offerId = UUID.randomUUID();
 		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
 			.thenReturn(true);
-		when(db.queryForMap(argThat(sql -> sql.contains("join member_profiles")), eq("MB-100001")))
+		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
 			.thenReturn(Map.of("account_id", memberId));
-		when(db.queryForMap("select * from membership_offers where id=? and status='ACTIVE'", offerId))
-			.thenReturn(offer(offerId));
+		stubAvailableOffer(db, offerId);
 		when(accounts.findByIdForUpdate(memberId))
 			.thenReturn(Optional.of(account(memberId, AccountRole.MEMBER, AccountStatus.SUSPENDED)));
 
@@ -106,10 +105,9 @@ class PaymentServiceLockingTests {
 		UUID offerId = UUID.randomUUID();
 		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
 			.thenReturn(true);
-		when(db.queryForMap(argThat(sql -> sql.contains("join member_profiles")), eq("MB-100001")))
+		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
 			.thenReturn(Map.of("account_id", memberId));
-		when(db.queryForMap("select * from membership_offers where id=? and status='ACTIVE'", offerId))
-			.thenReturn(offer(offerId));
+		stubAvailableOffer(db, offerId);
 		when(accounts.findByIdForUpdate(memberId))
 			.thenReturn(Optional.of(account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)));
 		when(db.queryForObject(any(String.class), eq(Long.class), eq(memberId))).thenReturn(0L);
@@ -147,6 +145,28 @@ class PaymentServiceLockingTests {
 		verify(fulfillment).fulfill(paymentId, actorId, "TX-1", "bank statement", "manual confirmation");
 	}
 
+	@Test
+	void cashRejectsOfferWithoutAnActivePlanUsingOrderAvailabilityContract() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		PaymentFulfillmentService fulfillment = mock(PaymentFulfillmentService.class);
+		PaymentService service = service(db, accounts, fulfillment);
+		UUID actorId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		UUID offerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
+			.thenReturn(Map.of("account_id", memberId));
+		when(db.queryForMap(argThat(this::isAvailableOfferLockQuery), eq(offerId)))
+			.thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
+
+		assertThatThrownBy(() -> service.cash(actorId, "MB-100001", new CashPaymentRequest(offerId)))
+			.isInstanceOf(MembershipOfferUnavailableException.class);
+		verify(accounts, never()).findByIdForUpdate(memberId);
+		verify(fulfillment, never()).fulfillCash(any(), any(), any(), any(), any());
+	}
+
 	private PaymentService service(JdbcTemplate db, AccountRepository accounts,
 			PaymentFulfillmentService fulfillment) {
 		return new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
@@ -167,5 +187,18 @@ class PaymentServiceLockingTests {
 			"price_amount", BigDecimal.valueOf(12000),
 			"currency_code", "VND",
 			"duration_days", 30);
+	}
+
+	private void stubAvailableOffer(JdbcTemplate db, UUID offerId) {
+		when(db.queryForMap(argThat(this::isAvailableOfferLockQuery), eq(offerId)))
+			.thenReturn(offer(offerId));
+	}
+
+	private boolean isAvailableOfferLockQuery(String sql) {
+		return sql != null
+			&& sql.contains("join membership_plans")
+			&& sql.contains("offer.status='ACTIVE'")
+			&& sql.contains("plan.status='ACTIVE'")
+			&& sql.contains("for update of plan");
 	}
 }

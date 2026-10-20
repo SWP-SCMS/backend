@@ -40,6 +40,8 @@ public class OpenApiConfiguration {
 			addErrorResponse(components, "Forbidden", "The authenticated account is not allowed to perform this operation.");
 			addErrorResponse(components, "NotFound", "The requested resource was not found.");
 			addErrorResponse(components, "Conflict", "The request conflicts with current resource state.");
+			addErrorResponse(components, "MembershipOrderConflict",
+				"Membership Order creation conflicts with current state; an unavailable Offer uses code MEMBERSHIP_OFFER_NOT_AVAILABLE.");
 
 			openApi.getPaths().forEach((path, item) -> item.readOperationsMap().forEach((method, operation) -> {
 				boolean publicOperation = operation.getSecurity() != null && operation.getSecurity().isEmpty();
@@ -77,6 +79,11 @@ public class OpenApiConfiguration {
 		if (method == HttpMethod.GET && (path.equals("/members/me/membership-orders/pending")
 				|| path.equals("/reception/members/{memberId}/membership-orders/pending"))) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No pending order."));
+		}
+		if (method == HttpMethod.POST && (path.equals("/members/me/membership-orders")
+				|| path.equals("/reception/members/{memberId}/membership-orders")
+				|| path.equals("/reception/members/{memberId}/cash-payments"))) {
+			operation.getResponses().addApiResponse("409", reference("MembershipOrderConflict"));
 		}
 		if (method == HttpMethod.GET && path.equals("/manager/members/{memberId}/coach-assignment")) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No active Coach assignment found."));

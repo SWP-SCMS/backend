@@ -296,6 +296,16 @@ class GeneratedOpenApiTests {
 			.contains("title", "status", "detail", "instance", "code");
 		assertThat(document.at("/paths/~1auth~1login/post/responses/403").isMissingNode()).isTrue();
 		assertThat(document.at("/paths/~1manager~1staff-accounts/post/responses/409").isMissingNode()).isFalse();
+		for (String orderCreationPath : List.of(
+			"/members/me/membership-orders",
+			"/reception/members/{memberId}/membership-orders",
+			"/reception/members/{memberId}/cash-payments")) {
+			assertThat(response(document, orderCreationPath, "post", "409").path("$ref").asText())
+				.as(orderCreationPath)
+				.isEqualTo("#/components/responses/MembershipOrderConflict");
+		}
+		assertThat(document.at("/components/responses/MembershipOrderConflict/description").asText())
+			.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE");
 
 		assertProblemReference(document, "/reception/members/search", "get", "404");
 		assertProblemReference(document, "/coach/class-sessions/{sessionId}/attendance", "get", "409");

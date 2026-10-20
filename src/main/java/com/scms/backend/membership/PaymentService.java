@@ -54,9 +54,18 @@ class PaymentService {
 				select a.id account_id from accounts a join member_profiles m on m.account_id=a.id
 				where m.member_code=? and a.role='MEMBER' and a.status='ACTIVE'
 				""", memberCode);
-			offer = db.queryForMap("select * from membership_offers where id=? and status='ACTIVE'", request.offerId());
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Active Member or Membership Offer was not found");
+		}
+		try {
+			offer = db.queryForMap("""
+				select offer.id,offer.name,offer.plan_code,offer.price_amount,offer.currency_code,offer.duration_days
+				from membership_offers offer join membership_plans plan on plan.plan_code=offer.plan_code
+				where offer.id=? and offer.status='ACTIVE' and plan.status='ACTIVE'
+				for update of plan
+				""", request.offerId());
+		} catch (EmptyResultDataAccessException exception) {
+			throw new MembershipOfferUnavailableException();
 		}
 		UUID memberId=(UUID)member.get("account_id");
 		accounts.findByIdForUpdate(memberId)

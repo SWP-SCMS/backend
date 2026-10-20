@@ -15,6 +15,9 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.TimeZone;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.jayway.jsonpath.JsonPath;
 import com.scms.backend.account.Account;
@@ -47,7 +50,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -93,6 +99,9 @@ class MembershipOrderIntegrationTests {
 
 	@Autowired
 	private EntityManager entityManager;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	@Test
 	void activeMemberCreatesBankTransferOrderWithSnapshotAndNoOutOfScopeSideEffects() throws Exception {
@@ -183,6 +192,44 @@ class MembershipOrderIntegrationTests {
 	}
 
 	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void memberOrderWaitsForPlanDeactivationAndThenReturnsUnavailable() throws Exception {
+		MemberProfile member = createMember(AccountStatus.ACTIVE);
+		String planCode = "RACE_ORDER_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+		insertPlan(planCode, "Race Order", "ACTIVE", true);
+		UUID offerId = insertOffer(member.getAccount(), planCode, "Race Offer", BigInteger.valueOf(500000),
+			30, "ACTIVE");
+		CountDownLatch planLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var deactivation = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					jdbcTemplate.update("update membership_plans set status='INACTIVE' where plan_code=?", planCode);
+					planLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(planLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var creation = executor.submit(() -> createForMember(accessToken(member.getAccount()), offerId)
+				.andReturn());
+			try {
+				awaitPlanStatusLock();
+			}
+			finally {
+				allowCommit.countDown();
+			}
+			deactivation.get(10, TimeUnit.SECONDS);
+			MvcResult result = creation.get(10, TimeUnit.SECONDS);
+
+			assertThat(result.getResponse().getStatus()).isEqualTo(409);
+			assertThat(JsonPath.<String>read(result.getResponse().getContentAsString(), "$.code"))
+				.isEqualTo("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		}
+
+		assertNoCommerceArtifacts(member.getAccountId());
+	}
+
+	@Test
 	void twoMembersReceiveUniqueWellFormedOrderNumbers() throws Exception {
 		Account creator = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile first = createMember(AccountStatus.ACTIVE);
@@ -234,17 +281,28 @@ class MembershipOrderIntegrationTests {
 	}
 
 	@Test
-	void nonexistentAndInactiveOffersUseSameNotFoundContract() throws Exception {
+	void memberAndReceptionistRejectUnavailableOffersWithConflict() throws Exception {
 		MemberProfile member = createMember(AccountStatus.ACTIVE);
+		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		UUID inactiveOffer = insertOffer(member.getAccount(), "BASIC", "Inactive", BigInteger.valueOf(100000),
 			10, "INACTIVE");
+		insertPlan("DISABLED_ORDER", "Disabled Order", "INACTIVE", true);
+		UUID disabledPlanOffer = insertOffer(member.getAccount(), "DISABLED_ORDER", "Disabled plan offer",
+			BigInteger.valueOf(100000), 10, "ACTIVE");
 
 		createForMember(accessToken(member.getAccount()), UUID.randomUUID())
-			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_FOUND"));
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
 		createForMember(accessToken(member.getAccount()), inactiveOffer)
-			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_FOUND"));
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
+		createForMember(accessToken(member.getAccount()), disabledPlanOffer)
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
+		createForReceptionist(accessToken(receptionist), member.getMemberCode(), disabledPlanOffer)
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
+		assertThat(membershipOrderRepository.count()).isZero();
 	}
 
 	@Test
@@ -539,5 +597,41 @@ class MembershipOrderIntegrationTests {
 
 	private void dropAccountRoleLifecycleConstraint() {
 		jdbcTemplate.execute("alter table accounts drop constraint chk_accounts_role_lifecycle");
+	}
+
+	private void awaitPlanStatusLock() throws InterruptedException {
+		for (int attempt = 0; attempt < 200; attempt++) {
+			Long waiters = jdbcTemplate.queryForObject("""
+				select count(*) from pg_stat_activity
+				where datname=current_database() and pid<>pg_backend_pid()
+					and wait_event_type='Lock' and query ilike '%membership_plans%'
+				""", Long.class);
+			if (waiters != null && waiters > 0) return;
+			Thread.sleep(25);
+		}
+		throw new AssertionError("Order creation did not wait on the membership plan lock");
+	}
+
+	private void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Timed out waiting to commit plan status");
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(exception);
+		}
+	}
+
+	private void assertNoCommerceArtifacts(UUID memberAccountId) {
+		assertThat(jdbcTemplate.queryForObject(
+			"select count(*) from membership_orders where member_account_id=?", Long.class, memberAccountId)).isZero();
+		assertThat(jdbcTemplate.queryForObject("""
+			select count(*) from payments p join membership_orders o on o.id=p.order_id
+			where o.member_account_id=?
+			""", Long.class, memberAccountId)).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"select count(*) from memberships where member_account_id=?", Long.class, memberAccountId)).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"select count(*) from receipts where member_account_id=?", Long.class, memberAccountId)).isZero();
 	}
 }
