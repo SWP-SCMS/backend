@@ -63,6 +63,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -92,6 +94,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired PaymentFulfillmentService fulfillment;
 	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
 	@Autowired Clock clock;
+	@Autowired PlatformTransactionManager transactionManager;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
@@ -173,6 +176,63 @@ class PaymentFlowIntegrationTests {
 
 		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isConflict());
 		assertThat(count("select count(*) from memberships where member_account_id=?", member.getAccountId())).isOne();
+	}
+
+	@Test
+	void cashRejectsInactiveOfferAndInactivePlanWithOrderAvailabilityContract() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile inactiveOfferMember = member();
+		MemberProfile inactivePlanMember = member();
+		UUID inactiveOffer = offer(receptionist, "BASIC", 12000, false);
+		db.update("update membership_offers set status='INACTIVE' where id=?", inactiveOffer);
+		insertPlan("DISABLED_CASH", "Disabled Cash", "INACTIVE", true);
+		UUID inactivePlanOffer = offer(receptionist, "DISABLED_CASH", 12000, false);
+
+		cash(receptionist, inactiveOfferMember.getMemberCode(), inactiveOffer)
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
+		cash(receptionist, inactivePlanMember.getMemberCode(), inactivePlanOffer)
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_OFFER_NOT_AVAILABLE"));
+		assertThat(count("select count(*) from membership_orders where member_account_id in (?,?)",
+			inactiveOfferMember.getAccountId(), inactivePlanMember.getAccountId())).isZero();
+	}
+
+	@Test
+	void cashWaitsForPlanDeactivationAndThenReturnsUnavailable() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		String planCode = "RACE_CASH_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+		insertPlan(planCode, "Race Cash", "ACTIVE", true);
+		UUID offerId = offer(receptionist, planCode, 12000, false);
+		CountDownLatch planLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<?> deactivation = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					db.update("update membership_plans set status='INACTIVE' where plan_code=?", planCode);
+					planLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(planLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> creation = executor.submit(() -> cash(receptionist, member.getMemberCode(), offerId)
+				.andReturn());
+			try {
+				awaitPlanStatusLock();
+			}
+			finally {
+				allowCommit.countDown();
+			}
+			deactivation.get(10, TimeUnit.SECONDS);
+			MvcResult result = creation.get(10, TimeUnit.SECONDS);
+
+			assertThat(result.getResponse().getStatus()).isEqualTo(409);
+			assertThat(JsonPath.<String>read(result.getResponse().getContentAsString(), "$.code"))
+				.isEqualTo("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		}
+
+		assertNoCommerceArtifacts(member.getAccountId());
 	}
 
 	@Test
@@ -994,6 +1054,39 @@ class PaymentFlowIntegrationTests {
 
 	private long count(String sql, Object... args) {
 		return db.queryForObject(sql, Long.class, args);
+	}
+
+	private void awaitPlanStatusLock() throws InterruptedException {
+		for (int attempt = 0; attempt < 200; attempt++) {
+			Long waiters = db.queryForObject("""
+				select count(*) from pg_stat_activity
+				where datname=current_database() and pid<>pg_backend_pid()
+					and wait_event_type='Lock' and query ilike '%membership_plans%'
+				""", Long.class);
+			if (waiters != null && waiters > 0) return;
+			Thread.sleep(25);
+		}
+		throw new AssertionError("Cash creation did not wait on the membership plan lock");
+	}
+
+	private void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Timed out waiting to commit plan status");
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(exception);
+		}
+	}
+
+	private void assertNoCommerceArtifacts(UUID memberAccountId) {
+		assertThat(count("select count(*) from membership_orders where member_account_id=?", memberAccountId)).isZero();
+		assertThat(count("""
+			select count(*) from payments p join membership_orders o on o.id=p.order_id
+			where o.member_account_id=?
+			""", memberAccountId)).isZero();
+		assertThat(count("select count(*) from memberships where member_account_id=?", memberAccountId)).isZero();
+		assertThat(count("select count(*) from receipts where member_account_id=?", memberAccountId)).isZero();
 	}
 
 	private Map<String, String> queryParameters(String url) {

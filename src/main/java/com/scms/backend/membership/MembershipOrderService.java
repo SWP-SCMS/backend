@@ -73,8 +73,9 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
-		membershipPlanRepository.findByPlanCodeForUpdate(offer.getPlan().getPlanCode())
-			.orElseThrow(MembershipOfferNotFoundException::new);
+		membershipPlanRepository.findStatusByPlanCodeForUpdate(offer.getPlan().getPlanCode())
+			.filter(MembershipPlanStatus.ACTIVE.name()::equals)
+			.orElseThrow(MembershipOfferUnavailableException::new);
 		membershipRepository.expireDue(Instant.now());
 		ensureActiveMember(member);
 		UUID memberAccountId = member.getAccountId();
@@ -109,8 +110,8 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOffer findActiveOffer(UUID offerId) {
-		return membershipOfferRepository.findByIdAndStatus(offerId, MembershipOfferStatus.ACTIVE)
-			.orElseThrow(MembershipOfferNotFoundException::new);
+		return membershipOfferRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE)
+			.orElseThrow(MembershipOfferUnavailableException::new);
 	}
 
 	private MemberProfile findSelfMember(UUID accountId) {

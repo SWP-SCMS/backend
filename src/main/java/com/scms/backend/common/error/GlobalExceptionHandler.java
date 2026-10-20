@@ -20,6 +20,7 @@ import com.scms.backend.membership.ActiveMembershipExistsException;
 import com.scms.backend.membership.InvalidPlanCodeException;
 import com.scms.backend.membership.MemberNotActiveException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
+import com.scms.backend.membership.MembershipOfferUnavailableException;
 import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
 import com.scms.backend.membership.PendingMembershipOrderExistsException;
 import com.scms.backend.membership.PaymentException;
@@ -393,6 +394,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 			"The requested membership offer was not found.");
 		problem.setTitle("Membership offer not found");
 		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipOfferUnavailableException.class)
+	ProblemDetail handleMembershipOfferUnavailable() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"The requested membership offer is not available.");
+		problem.setTitle("Membership offer not available");
+		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_AVAILABLE");
 		return problem;
 	}
 
