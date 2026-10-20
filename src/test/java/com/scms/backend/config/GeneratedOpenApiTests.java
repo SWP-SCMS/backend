@@ -402,12 +402,20 @@ class GeneratedOpenApiTests {
 		}
 		JsonNode schema = document.at("/components/schemas/StaffMembershipResponse");
 		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+			.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt",
+				"benefitCodes", "benefits");
 		assertThat(schema.path("required").toString())
-			.contains("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+			.contains("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt", "benefitCodes",
+				"benefits");
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"ACTIVE\",\"EXPIRED\"]");
+		assertThat(schema.at("/properties/benefitCodes/type").asText()).isEqualTo("array");
+		assertThat(schema.at("/properties/benefits/items/$ref").asText())
+			.isEqualTo("#/components/schemas/MembershipBenefitResponse");
+		JsonNode memberHistory = document.at("/components/schemas/MembershipHistoryResponse/properties");
+		assertThat(memberHistory.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("benefitCodes", "benefits");
 	}
 
 	@Test
@@ -449,6 +457,9 @@ class GeneratedOpenApiTests {
 		assertThat(offerPlanCode.path("type").asText()).isEqualTo("string");
 		assertThat(offerPlanCode.path("enum").isMissingNode()).isTrue();
 		assertThat(offerPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
+		JsonNode offerResponse = document.at("/components/schemas/MembershipOfferResponse/properties");
+		assertThat(offerResponse.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("benefitCodes", "benefits", "supportsBooking", "supportsPersonalCoaching");
 		JsonNode orderPlanCode = document.at("/components/schemas/MembershipOrderResponse/properties/planCode");
 		assertThat(orderPlanCode.path("type").asText()).isEqualTo("string");
 		assertThat(orderPlanCode.path("enum").isMissingNode()).isTrue();

@@ -83,7 +83,8 @@ class PaymentOpenApiDocumentationTests {
 			JsonNode schema = document.at("/components/schemas/StaffMembershipResponse");
 			assertThat(schema.path("additionalProperties").asBoolean()).isFalse();
 			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-				.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt");
+				.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt",
+					"benefitCodes", "benefits");
 		}
 	}
 

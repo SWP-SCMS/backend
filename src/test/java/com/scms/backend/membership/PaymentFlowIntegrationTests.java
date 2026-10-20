@@ -747,6 +747,8 @@ class PaymentFlowIntegrationTests {
 			.andExpect(jsonPath("$[0].membershipId").value(firstId.toString()))
 			.andExpect(jsonPath("$[0].planCode").value("PLUS"))
 			.andExpect(jsonPath("$[0].offerName").value("Snapshot Plus"))
+			.andExpect(jsonPath("$[0].benefitCodes[0]").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$[0].benefits[0].code").value("CENTER_ACCESS"))
 			.andExpect(jsonPath("$[0].status").value("EXPIRED"))
 			.andExpect(jsonPath("$[0].startsAt").value(startsAt.toString()))
 			.andExpect(jsonPath("$[1].membershipId").value(secondId.toString()))
@@ -756,6 +758,11 @@ class PaymentFlowIntegrationTests {
 			.isEqualTo("EXPIRED");
 		assertThat(db.queryForObject("select status from memberships where id=?", String.class, otherMembershipId))
 			.isEqualTo("ACTIVE");
+
+		getAuthorized(member.getAccount(), "/api/v1/members/me/memberships")
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].benefitCodes[0]").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$[0].benefits[0].code").value("CENTER_ACCESS"));
 
 		db.update("update accounts set status='SUSPENDED' where id=?", member.getAccountId());
 		getAuthorized(manager, "/api/v1/manager/members/" + member.getAccountId() + "/memberships")

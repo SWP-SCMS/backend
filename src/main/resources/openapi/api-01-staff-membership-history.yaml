@@ -87,7 +87,7 @@ components:
     StaffMembershipResponse:
       type: object
       additionalProperties: false
-      required: [membershipId, planCode, offerName, status, startsAt, endsAt]
+      required: [membershipId, planCode, offerName, status, startsAt, endsAt, benefitCodes, benefits]
       properties:
         membershipId:
           type: string
@@ -109,6 +109,29 @@ components:
           type: string
           format: date-time
           description: UTC ISO-8601 instant
+        benefitCodes:
+          type: array
+          items:
+            type: string
+          description: Benefit codes resolved from the immutable Plan code snapshot; empty for unresolved legacy Plans.
+        benefits:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipBenefitResponse'
+    MembershipBenefitResponse:
+      type: object
+      additionalProperties: false
+      required: [code, displayName, description, status]
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
     ApiProblem:
       type: object
       required: [title, status, detail, instance, code]

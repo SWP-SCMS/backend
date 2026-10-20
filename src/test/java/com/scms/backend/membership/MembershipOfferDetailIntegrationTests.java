@@ -111,6 +111,9 @@ class MembershipOfferDetailIntegrationTests {
 			.andExpect(jsonPath("$.priceAmount").isNumber())
 			.andExpect(jsonPath("$.currencyCode").value("VND"))
 			.andExpect(jsonPath("$.durationDays").value(90))
+			.andExpect(jsonPath("$.benefitCodes[0]").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$.benefitCodes[1]").value("CLASS_BOOKING"))
+			.andExpect(jsonPath("$.benefits[0].code").value("CENTER_ACCESS"))
 			.andExpect(jsonPath("$.supportsBooking").value(true))
 			.andExpect(jsonPath("$.supportsPersonalCoaching").value(true))
 			.andReturn();
@@ -119,7 +122,7 @@ class MembershipOfferDetailIntegrationTests {
 		Map<String, Object> response = JsonPath.read(body, "$");
 		assertThat(response.keySet()).containsExactlyInAnyOrder("offerId", "planCode", "planDisplayName", "name",
 			"description", "priceAmount", "currencyCode", "durationDays", "supportsBooking",
-			"supportsPersonalCoaching");
+			"supportsPersonalCoaching", "benefitCodes", "benefits");
 		assertThat(response.get("priceAmount").toString()).isEqualTo(EXACT_PRICE.toString());
 		assertThat(body).contains("\"priceAmount\":" + EXACT_PRICE).doesNotContain("status", "createdByAccountId",
 			"createdAt", "updatedAt", "version");
