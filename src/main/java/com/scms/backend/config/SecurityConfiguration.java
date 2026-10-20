@@ -71,6 +71,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
+				.requestMatchers(HttpMethod.POST, "/auth/email-verification/verify",
+					"/auth/email-verification/resend", "/auth/email-verification/change-email").permitAll()
 				.requestMatchers("/docs", "/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*").permitAll()
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-orders").hasRole("MEMBER")
@@ -85,10 +87,12 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/receipts")
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers(HttpMethod.GET, "/reception/class-sessions").hasRole("RECEPTIONIST")
+				.requestMatchers("/reception/email-verification/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/center-visits/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/members/me/center-visits/**").hasRole("MEMBER")
 				.requestMatchers("/manager/staff-accounts/**").hasRole("MANAGER")
+				.requestMatchers("/manager/email-verification/manual-activation-requests/**").hasRole("MANAGER")
 				.requestMatchers("/manager/disciplines", "/manager/disciplines/**").hasRole("MANAGER")
 				.requestMatchers("/manager/classes", "/manager/classes/**").hasRole("MANAGER")
 				.requestMatchers("/manager/rooms", "/manager/rooms/**").hasRole("MANAGER")
@@ -198,7 +202,7 @@ public class SecurityConfiguration {
 		configuration.setAllowCredentials(true);
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE,
-			HttpHeaders.ACCEPT, "Idempotency-Key"));
+			HttpHeaders.ACCEPT, "Idempotency-Key", "X-Pending-CSRF"));
 		configuration.setMaxAge(3600L);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

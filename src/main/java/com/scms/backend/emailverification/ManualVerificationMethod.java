@@ -1,0 +1,2 @@
+package com.scms.backend.emailverification;
+public enum ManualVerificationMethod { IN_PERSON_GOVERNMENT_ID_CHECK, IN_PERSON_PROFILE_AND_REGISTERED_PHONE_MATCH, OTHER_APPROVED_PROCEDURE }

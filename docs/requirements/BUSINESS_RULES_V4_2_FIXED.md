@@ -44,7 +44,7 @@ Các quy tắc dưới đây nêu quyền hạn của tác nhân, điều kiện
 
 | ID | Quy tắc nghiệp vụ |
 | --- | --- |
-| BR-ACC-01 | Member có thể tự đăng ký. Account Member vượt qua kiểm tra hợp lệ sẽ được tạo ở trạng thái ACTIVE. |
+| BR-ACC-01 | Member có thể tự đăng ký. Sau khi dữ liệu đăng ký hợp lệ, hệ thống tạo Account MEMBER ở trạng thái INACTIVE và yêu cầu xác thực email bằng OTP. Account chỉ chuyển sang ACTIVE sau khi OTP hợp lệ được xác nhận trong thời hạn đăng ký. Luồng Receptionist tạo Member tiếp tục tạo Account ACTIVE và không bắt buộc OTP theo quy tắc này. |
 | BR-ACC-02 | Receptionist có thể tạo Account MEMBER tại quầy lễ tân. Account được tạo ở trạng thái ACTIVE và dùng số điện thoại đăng ký hiện tại của Member làm mật khẩu mặc định. |
 | BR-ACC-03 | Manager có thể tạo Account COACH, RECEPTIONIST và MANAGER. Mỗi Account mới được tạo ở trạng thái ACTIVE và dùng số điện thoại đăng ký hiện tại của người đó làm mật khẩu mặc định. |
 | BR-ACC-04 | Manager đang ACTIVE có thể tạo một Account MANAGER khác. |
@@ -71,8 +71,9 @@ Các quy tắc dưới đây nêu quyền hạn của tác nhân, điều kiện
 | BR-ACC-25 | Mọi thao tác tạo Account, đặt lại mật khẩu, đình chỉ hoặc kích hoạt lại Member, và chuyển staff hoặc Manager sang INACTIVE phải tạo Audit event. |
 | BR-ACC-26 | Account MANAGER đầu tiên được hệ thống provision/seed khi triển khai. Sau đó, chỉ Manager đang ACTIVE mới có thể tạo thêm Account MANAGER theo BR-ACC-04. |
 | BR-ACC-27 | Khi Account MEMBER được tạo thành công, hệ thống sinh một Member ID duy nhất cho Member đó. Member ID được giữ cố định và có thể dùng cùng số điện thoại để Receptionist tra cứu Member tại quầy. |
+| BR-ACC-28 | Khi Member self-registration không thể hoàn tất email OTP, Receptionist sau khi xác minh danh tính trực tiếp có thể tạo yêu cầu kích hoạt thủ công kèm lý do, phương thức và ghi chú bằng chứng. Một Manager ACTIVE có thể phê duyệt hoặc từ chối. Phê duyệt chuyển Account sang ACTIVE và bỏ yêu cầu email verification nhưng không đánh dấu email đã được xác thực. Receptionist không được tự phê duyệt và status API thông thường không được bypass workflow này. |
 | BR-AUTH-01 | User đăng nhập bằng email hoặc số điện thoại đã đăng ký kết hợp với mật khẩu của Account. |
-| BR-AUTH-02 | Đăng nhập chỉ thành công khi thông tin đăng nhập khớp với Account và trạng thái Account cho phép đăng nhập. MEMBER phải ở trạng thái ACTIVE; COACH, RECEPTIONIST và MANAGER phải ở trạng thái ACTIVE. |
+| BR-AUTH-02 | Đăng nhập chỉ thành công khi thông tin đăng nhập khớp với Account và trạng thái Account cho phép đăng nhập. MEMBER phải ở trạng thái ACTIVE và không còn yêu cầu xác thực email; COACH, RECEPTIONIST và MANAGER phải ở trạng thái ACTIVE. Account pending email verification, SUSPENDED hoặc INACTIVE bị từ chối bằng lỗi xác thực chung. |
 | BR-AUTH-03 | Yêu cầu đăng nhập có thông tin xác thực không hợp lệ hoặc Account không đủ điều kiện đăng nhập phải bị từ chối. |
 | BR-AUTH-04 | Thông báo lỗi đăng nhập không được tiết lộ riêng lẻ rằng email, số điện thoại hay mật khẩu nào là thành phần sai của thông tin xác thực. |
 
@@ -232,7 +233,7 @@ Các quy tắc dưới đây nêu quyền hạn của tác nhân, điều kiện
 | --- | --- |
 | BR-NOT-01 | Mỗi Notification có đúng một người nhận. Một sự kiện nhiều người nhận sẽ tạo một Notification riêng cho từng người |
 | BR-NOT-02 | Notification được tạo cho các sự kiện liên quan đến tạo Account, Payment, Membership, Booking hoặc hủy Booking, hủy Session, đình chỉ hoặc kích hoạt lại Member và Training. |
-| BR-AUD-01 | SCMS lưu giữ bằng chứng Audit cho Payment và đối soát, Booking và hủy Booking, thay đổi Attendance, đình chỉ và kích hoạt lại Member, hủy Session, tạo và chuyển nhân viên hoặc Manager sang INACTIVE, đặt lại mật khẩu và các thay đổi Training quan trọng. |
+| BR-AUD-01 | SCMS lưu giữ bằng chứng Audit cho Payment và đối soát, Booking và hủy Booking, thay đổi Attendance, đình chỉ và kích hoạt lại Member, hủy Session, tạo và chuyển nhân viên hoặc Manager sang INACTIVE, đặt lại mật khẩu, các thay đổi Training quan trọng, và việc tạo/duyệt/từ chối/hết hạn kích hoạt thủ công. Audit kích hoạt thủ công ghi Account mục tiêu, Receptionist yêu cầu, Manager quyết định, lý do, phương thức, request ID và thời điểm nhưng không chứa giấy tờ định danh đầy đủ. |
 | BR-AUD-02 | Một Audit event ghi nhận actor, action, target, timestamp và reason hoặc các giá trị trước và sau khi thao tác yêu cầu. |
 | BR-AUD-03 | Manager có thể xem và tìm kiếm Audit History. |
 | BR-AUD-04 | Người dùng thông thường không thể sửa hoặc xóa Audit event. |
@@ -260,7 +261,7 @@ Các quy tắc này xác định đầu vào bắt buộc, giá trị được p
 | BR-VAL-ACC-04 | Ảnh hồ sơ là tùy chọn khi tạo Account. Mục tiêu thể chất và liên hệ khẩn cấp là các trường tùy chọn của Profile Member. |
 | BR-VAL-ACC-05 | Mật khẩu do người dùng nhập hoặc thay đổi phải có ít nhất 8 ký tự. |
 | BR-VAL-ACC-06 | Số điện thoại và email phải theo định dạng được hệ thống chấp nhận; ngày sinh không được là ngày trong tương lai. |
-| BR-VAL-ACC-07 | Số điện thoại và email phải là duy nhất trong các Account không ở trạng thái INACTIVE. Số điện thoại hoặc email của Account COACH, RECEPTIONIST hoặc MANAGER ở trạng thái INACTIVE có thể được tái sử dụng khi tạo Account mới. |
+| BR-VAL-ACC-07 | Số điện thoại và email phải là duy nhất trong tập Account đang chiếm identifier: mọi Account có trạng thái khác INACTIVE và Account self-registration INACTIVE đang chờ xác thực email. Staff INACTIVE và self-registration đã hết hạn sau cleanup không còn chiếm identifier; tái sử dụng không thay đổi hoặc xóa Account lịch sử. |
 | BR-VAL-ACC-08 | Việc tái sử dụng số điện thoại hoặc email không bao giờ thay đổi hoặc xóa Account INACTIVE cũ; mọi tham chiếu vẫn gắn với Account ID ban đầu. |
 | BR-VAL-ACC-09 | Các giá trị họ và tên, số điện thoại, email, ngày sinh và vai trò mà luồng tạo yêu cầu không được để trống sau khi chuẩn hóa khoảng trắng. |
 | BR-VAL-ACC-10 | Yêu cầu chuyển sang INACTIVE phải xác định Account mục tiêu và ghi lại lý do. Yêu cầu chuyển Manager sang INACTIVE còn phải vượt qua kiểm tra Manager ACTIVE cuối cùng. |
@@ -323,7 +324,7 @@ Các mục sau được chủ ý loại khỏi MVP. Chúng được nhóm tại 
 
 | ID | Quy tắc nghiệp vụ |
 | --- | --- |
-| BR-LIM-01 | MVP không có luồng kích hoạt qua email, liên kết kích hoạt hoặc trạng thái PENDING_ACTIVATION. Việc tạo Account hợp lệ hoàn tất ở trạng thái ACTIVE. |
+| BR-LIM-01 | MVP hỗ trợ OTP qua email cho Member self-registration và fallback Receptionist đề nghị -> Manager phê duyệt để kích hoạt thủ công sau khi xác minh danh tính tại quầy. MVP chưa yêu cầu OTP cho Member do Receptionist tạo, chưa hỗ trợ OTP SMS, auto-login sau verify hoặc xác thực lại khi Account ACTIVE đổi email. |
 | BR-LIM-02 | MVP không có tính năng đổi vai trò. Vai trò nhân viên khác yêu cầu Account cũ chuyển sang INACTIVE và Account mới được tạo. |
 | BR-LIM-03 | Membership Plan chỉ giới hạn ở BASIC và PLUS. BASIC không có phần bổ sung theo Session để mở khóa quyền lợi Booking của PLUS. |
 | BR-LIM-04 | MVP không gia hạn, nâng cấp hoặc sửa trực tiếp Membership đang ACTIVE. Sau khi hết hạn, Member mua Membership mới. |

@@ -1,11 +1,10 @@
 package com.scms.backend.auth;
 
-import java.time.LocalDate;
-import java.util.UUID;
+import java.time.Instant;
 
-import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 
-public record RegistrationResponse(UUID accountId, String memberId, String fullName, String phone, String email,
-		LocalDate birthDate, AccountRole role, AccountStatus status) {
+public record RegistrationResponse(boolean verificationRequired, AccountStatus status, String maskedEmail,
+		String csrfToken, Instant otpExpiresAt, Instant resendAvailableAt, Instant registrationExpiresAt,
+		Instant serverTime) {
 }

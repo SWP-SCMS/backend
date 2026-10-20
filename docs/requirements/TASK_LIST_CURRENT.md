@@ -7,6 +7,8 @@
 - Phạm vi: 54 User Stories (US01–US54).
 - Quy tắc ưu tiên: task list quản lý tên US, phân công và phạm vi màn hình; **Business Rules v4.2 FIXED vẫn là nguồn chân lý cao nhất cho hành vi nghiệp vụ**.
 
+> Cập nhật 20/10/2026 cho US02: self-registration tạo `MEMBER / INACTIVE`, sau đó kích hoạt bằng email OTP hoặc yêu cầu thủ công do Receptionist tạo và Manager phê duyệt. Member do Receptionist tạo theo US15 vẫn `ACTIVE`. Các câu “Creates ACTIVE MEMBER” và BR-LIM-01 cũ trong snapshot bảng bên dưới đã lỗi thời; xem BR-ACC-01, BR-ACC-28, BR-AUTH-02, BR-VAL-ACC-07 và BR-LIM-01 trong `BUSINESS_RULES_V4_2_FIXED.md`.
+
 ## Task list đầy đủ
 
 | US | Main Flow | Function / Screen | BR Ref | Level | FE | BE | Sprint | From-To | Status | Review Note |

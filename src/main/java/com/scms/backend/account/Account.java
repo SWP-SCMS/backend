@@ -46,6 +46,15 @@ public class Account {
 	@Column(name = "password_hash", nullable = false, length = 255)
 	private String passwordHash;
 
+	@Column(name = "email_verified_at")
+	private Instant emailVerifiedAt;
+
+	@Column(name = "email_verification_required", nullable = false)
+	private boolean emailVerificationRequired;
+
+	@Column(name = "registration_expires_at")
+	private Instant registrationExpiresAt;
+
 	@Generated(event = EventType.INSERT)
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
@@ -73,6 +82,15 @@ public class Account {
 		this.passwordHash = Objects.requireNonNull(passwordHash);
 	}
 
+	public static Account pendingSelfRegistration(UUID id, String fullName, String phone, String email,
+			LocalDate birthDate, String passwordHash, Instant registrationExpiresAt) {
+		Account account = new Account(id, AccountRole.MEMBER, AccountStatus.INACTIVE, fullName, phone, email,
+			birthDate, passwordHash);
+		account.emailVerificationRequired = true;
+		account.registrationExpiresAt = Objects.requireNonNull(registrationExpiresAt);
+		return account;
+	}
+
 	public UUID getId() {
 		return id;
 	}
@@ -90,10 +108,56 @@ public class Account {
 
 	public void changeMemberStatus(AccountStatus newStatus) {
 		Objects.requireNonNull(newStatus);
+		if (emailVerificationRequired || (status == AccountStatus.INACTIVE && registrationExpiresAt != null)) {
+			throw new IllegalStateException("Pending or expired self-registration cannot use member status changes");
+		}
 		if (role != AccountRole.MEMBER || (newStatus != AccountStatus.ACTIVE && newStatus != AccountStatus.SUSPENDED)) {
 			throw new IllegalStateException("Only Member accounts can transition between ACTIVE and SUSPENDED");
 		}
 		this.status = newStatus;
+	}
+
+	public void verifyPendingEmail(Instant now) {
+		ensurePending(now);
+		status = AccountStatus.ACTIVE;
+		emailVerificationRequired = false;
+		emailVerifiedAt = now;
+	}
+
+	public void approveManualEmailVerificationBypass(Instant now) {
+		ensurePending(now);
+		status = AccountStatus.ACTIVE;
+		emailVerificationRequired = false;
+	}
+
+	public void expirePendingRegistration(Instant now) {
+		if (!emailVerificationRequired || status != AccountStatus.INACTIVE || registrationExpiresAt == null
+				|| registrationExpiresAt.isAfter(now)) {
+			throw new IllegalStateException("Registration is not eligible for expiration");
+		}
+		emailVerificationRequired = false;
+	}
+
+	public void changePendingEmail(String newEmail, Instant now) {
+		ensurePending(now);
+		email = Objects.requireNonNull(newEmail);
+	}
+
+	public void reviveSelfRegistration(String fullName,String phone,String email,LocalDate birthDate,
+			String passwordHash,Instant registrationExpiresAt) {
+		if (role!=AccountRole.MEMBER || status!=AccountStatus.INACTIVE || emailVerificationRequired
+				|| this.registrationExpiresAt==null) throw new IllegalStateException("Account is not an expired self-registration");
+		this.fullName=Objects.requireNonNull(fullName);this.phone=Objects.requireNonNull(phone);
+		this.email=Objects.requireNonNull(email);this.birthDate=Objects.requireNonNull(birthDate);
+		this.passwordHash=Objects.requireNonNull(passwordHash);this.registrationExpiresAt=Objects.requireNonNull(registrationExpiresAt);
+		this.emailVerifiedAt=null;this.emailVerificationRequired=true;
+	}
+
+	private void ensurePending(Instant now) {
+		if (role != AccountRole.MEMBER || status != AccountStatus.INACTIVE || !emailVerificationRequired
+				|| registrationExpiresAt == null || !registrationExpiresAt.isAfter(now)) {
+			throw new IllegalStateException("Account is not an active pending self-registration");
+		}
 	}
 
 	public void deactivateStaff() {
@@ -129,6 +193,12 @@ public class Account {
 	public String getPasswordHash() {
 		return passwordHash;
 	}
+
+	public Instant getEmailVerifiedAt() { return emailVerifiedAt; }
+
+	public boolean isEmailVerificationRequired() { return emailVerificationRequired; }
+
+	public Instant getRegistrationExpiresAt() { return registrationExpiresAt; }
 
 	public Instant getCreatedAt() {
 		return createdAt;

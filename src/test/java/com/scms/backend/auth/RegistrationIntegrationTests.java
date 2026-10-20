@@ -93,14 +93,12 @@ class RegistrationIntegrationTests {
 			"  MEMBER@Example.COM  ", "https://cdn.example/member.png", "Run a marathon"))
 			.andExpect(status().isCreated())
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-			.andExpect(jsonPath("$.accountId").isString())
-			.andExpect(jsonPath("$.memberId", matchesPattern("MB-[0-9]+")))
-			.andExpect(jsonPath("$.fullName").value("Nguyen Van A"))
-			.andExpect(jsonPath("$.phone").value("0901234567"))
-			.andExpect(jsonPath("$.email").value("member@example.com"))
-			.andExpect(jsonPath("$.birthDate").value("2000-01-15"))
-			.andExpect(jsonPath("$.role").value("MEMBER"))
+			.andExpect(jsonPath("$.verificationRequired").value(false))
 			.andExpect(jsonPath("$.status").value("ACTIVE"))
+			.andExpect(jsonPath("$.maskedEmail").value("m***@example.com"))
+			.andExpect(jsonPath("$.serverTime").isString())
+			.andExpect(jsonPath("$.accountId").doesNotExist())
+			.andExpect(jsonPath("$.memberId").doesNotExist())
 			.andExpect(jsonPath("$.accessToken").doesNotExist())
 			.andExpect(jsonPath("$.refreshToken").doesNotExist())
 			.andExpect(jsonPath("$.password").doesNotExist())
@@ -109,13 +107,11 @@ class RegistrationIntegrationTests {
 			.andReturn();
 
 		String responseBody = result.getResponse().getContentAsString();
-		String accountIdText = com.jayway.jsonpath.JsonPath.read(responseBody, "$.accountId");
-		String memberId = com.jayway.jsonpath.JsonPath.read(responseBody, "$.memberId");
-		UUID accountId = UUID.fromString(accountIdText);
 		entityManager.flush();
 		entityManager.clear();
 
-		Account account = accountRepository.findById(accountId).orElseThrow();
+		Account account = accountRepository.findByEmailIgnoreCaseAndStatus("member@example.com",AccountStatus.ACTIVE).orElseThrow();
+		UUID accountId=account.getId();
 		assertThat(account.getRole()).isEqualTo(AccountRole.MEMBER);
 		assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
 		assertThat(account.getFullName()).isEqualTo("Nguyen Van A");
@@ -125,6 +121,7 @@ class RegistrationIntegrationTests {
 		assertThat(passwordEncoder.matches(PASSWORD, account.getPasswordHash())).isTrue();
 
 		MemberProfile profile = memberProfileRepository.findById(accountId).orElseThrow();
+		String memberId=profile.getMemberCode();
 		assertThat(profile.getMemberCode()).isEqualTo(memberId).matches("MB-[0-9]+");
 		assertThat(profile.getProfileImageUrl()).isEqualTo("https://cdn.example/member.png");
 		assertThat(profile.getFitnessGoal()).isEqualTo("Run a marathon");
@@ -169,11 +166,12 @@ class RegistrationIntegrationTests {
 			}
 			""")
 			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.memberId", matchesPattern("MB-[0-9]+")))
+			.andExpect(jsonPath("$.verificationRequired").value(false))
 			.andReturn();
 
-		String accountIdText = com.jayway.jsonpath.JsonPath.read(result.getResponse().getContentAsString(), "$.accountId");
-		MemberProfile profile = memberProfileRepository.findById(UUID.fromString(accountIdText)).orElseThrow();
+		Account registered=accountRepository.findByEmailIgnoreCaseAndStatus("optional@example.com",AccountStatus.ACTIVE).orElseThrow();
+		String accountIdText=registered.getId().toString();
+		MemberProfile profile = memberProfileRepository.findById(registered.getId()).orElseThrow();
 		assertThat(profile.getProfileImageUrl()).isNull();
 		assertThat(profile.getFitnessGoal()).isNull();
 		assertThat(profile.getEmergencyContactName()).isNull();
@@ -290,7 +288,7 @@ class RegistrationIntegrationTests {
 
 		performRegistration(request("Replacement Member", "0900000004", "inactive@example.com", null, null))
 			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.role").value("MEMBER"))
+			.andExpect(jsonPath("$.verificationRequired").value(false))
 			.andExpect(jsonPath("$.status").value("ACTIVE"));
 
 		assertThat(accountRepository.count()).isEqualTo(2);

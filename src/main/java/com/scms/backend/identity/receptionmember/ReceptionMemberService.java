@@ -14,7 +14,6 @@ import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.auth.RegistrationResponse;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.notification.NotificationWriter;
 
@@ -50,7 +49,7 @@ public class ReceptionMemberService {
 	}
 
 	@Transactional
-	RegistrationResponse createMember(UUID receptionistAccountId, ReceptionMemberCreateRequest request) {
+	ReceptionMemberCreateResponse createMember(UUID receptionistAccountId, ReceptionMemberCreateRequest request) {
 		validateBirthDate(request.birthDate());
 		identifierAvailability.ensureAvailableForRegistration(request.email(), request.phone());
 
@@ -81,7 +80,7 @@ public class ReceptionMemberService {
 		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, ACCOUNT_CREATED, ACCOUNT, accountId,
 			Map.of("memberId", memberId));
 
-		return new RegistrationResponse(accountId, memberId, account.getFullName(), account.getPhone(),
+		return new ReceptionMemberCreateResponse(accountId, memberId, account.getFullName(), account.getPhone(),
 			account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus());
 	}
 

@@ -42,6 +42,7 @@ public class OpenApiConfiguration {
 			addErrorResponse(components, "Conflict", "The request conflicts with current resource state.");
 			addErrorResponse(components, "MembershipOrderConflict",
 				"Membership Order creation conflicts with current state; an unavailable Offer uses code MEMBERSHIP_OFFER_NOT_AVAILABLE.");
+			addErrorResponse(components, "TooManyRequests", "The request rate limit was exceeded.");
 
 			openApi.getPaths().forEach((path, item) -> item.readOperationsMap().forEach((method, operation) -> {
 				boolean publicOperation = operation.getSecurity() != null && operation.getSecurity().isEmpty();
@@ -58,6 +59,9 @@ public class OpenApiConfiguration {
 				}
 				if (method != HttpMethod.GET) {
 					operation.getResponses().addApiResponse("409", reference("Conflict"));
+				}
+				if (path.contains("email-verification") || path.equals("/auth/register")) {
+					operation.getResponses().addApiResponse("429", reference("TooManyRequests"));
 				}
 				applyKnownResponseVariants(path, method, operation);
 			}));

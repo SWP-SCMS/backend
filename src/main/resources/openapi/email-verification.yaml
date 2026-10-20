@@ -1,0 +1,297 @@
+openapi: 3.1.0
+info:
+  title: SCMS Email Verification and Manual Activation API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /auth/register:
+    post:
+      security: []
+      summary: Register a Member, optionally starting email verification
+      responses:
+        '201':
+          description: Registration created
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RegistrationResponse' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /auth/email-verification/verify:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
+      responses:
+        '200':
+          description: Email verified; caller must log in separately
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerifyEmailResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /auth/email-verification/resend:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResendEmailRequest' }
+      responses:
+        '202':
+          description: Generic accepted response, including unknown or ineligible email
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResendEmailResponse' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /auth/email-verification/change-email:
+    post:
+      security: []
+      parameters:
+        - in: header
+          name: X-Pending-CSRF
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePendingEmailRequest' }
+      responses:
+        '200':
+          description: Pending email changed and session rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangePendingEmailResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/Problem' }
+  /reception/email-verification/pending-accounts:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Exact pending-account match
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PendingVerificationAccountResponse' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /reception/email-verification/manual-activation-requests:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Requests created by the authenticated Receptionist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationPageResponse' }
+    post:
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualActivationCreateRequest' }
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationResponse' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /reception/email-verification/manual-activation-requests/{requestId}:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200':
+          description: Request detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationResponse' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /manager/email-verification/manual-activation-requests:
+    get:
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Manager request queue
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationPageResponse' }
+  /manager/email-verification/manual-activation-requests/{requestId}:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses:
+        '200':
+          description: Request detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationResponse' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /manager/email-verification/manual-activation-requests/{requestId}/approve:
+    post:
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualActivationDecisionRequest' }
+      responses:
+        '200':
+          description: Request approved and account activated without marking email verified
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationResponse' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /manager/email-verification/manual-activation-requests/{requestId}/reject:
+    post:
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ManualActivationDecisionRequest' }
+      responses:
+        '200':
+          description: Request rejected; OTP flow remains available
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ManualActivationResponse' }
+        '409': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    RequestId:
+      in: path
+      name: requestId
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Problem:
+      description: RFC 9457 problem response with stable code
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+  schemas:
+    RegistrationResponse:
+      type: object
+      required: [verificationRequired, status, maskedEmail, serverTime]
+      properties:
+        verificationRequired: { type: boolean }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+        maskedEmail: { type: string }
+        csrfToken: { type: [string, 'null'] }
+        otpExpiresAt: { type: [string, 'null'], format: date-time }
+        resendAvailableAt: { type: [string, 'null'], format: date-time }
+        registrationExpiresAt: { type: [string, 'null'], format: date-time }
+        serverTime: { type: string, format: date-time }
+    VerifyEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [email, otp]
+      properties:
+        email: { type: string, format: email }
+        otp: { type: string, pattern: '^[0-9]{6}$' }
+    VerifyEmailResponse:
+      type: object
+      required: [verified, status]
+      properties:
+        verified: { type: boolean, const: true }
+        status: { type: string, const: ACTIVE }
+    ResendEmailRequest:
+      type: object
+      required: [email]
+      properties: { email: { type: string, format: email } }
+    ResendEmailResponse:
+      type: object
+      required: [accepted, resendAvailableAt, serverTime]
+      properties:
+        accepted: { type: boolean, const: true }
+        resendAvailableAt: { type: string, format: date-time }
+        serverTime: { type: string, format: date-time }
+    ChangePendingEmailRequest:
+      type: object
+      required: [newEmail]
+      properties: { newEmail: { type: string, format: email } }
+    ChangePendingEmailResponse:
+      type: object
+      required: [changed, maskedEmail, csrfToken, otpExpiresAt, resendAvailableAt, registrationExpiresAt, serverTime]
+      properties:
+        changed: { type: boolean, const: true }
+        maskedEmail: { type: string }
+        csrfToken: { type: string }
+        otpExpiresAt: { type: string, format: date-time }
+        resendAvailableAt: { type: string, format: date-time }
+        registrationExpiresAt: { type: string, format: date-time }
+        serverTime: { type: string, format: date-time }
+    PendingVerificationAccountResponse:
+      type: object
+      properties:
+        accountId: { type: string, format: uuid }
+        memberId: { type: string }
+        fullName: { type: string }
+        phone: { type: string }
+        maskedEmail: { type: string }
+        registrationExpiresAt: { type: string, format: date-time }
+    ManualActivationCreateRequest:
+      type: object
+      required: [memberId, reasonCode, reasonDetail, verificationMethod, evidenceNote, identityChecked]
+      properties:
+        memberId: { type: string }
+        reasonCode: { type: string, enum: [EMAIL_DELIVERY_FAILED, MEMBER_CANNOT_ACCESS_EMAIL, ACCESSIBILITY_SUPPORT, OTHER] }
+        reasonDetail: { type: string, maxLength: 1000 }
+        verificationMethod: { type: string, enum: [IN_PERSON_GOVERNMENT_ID_CHECK, IN_PERSON_PROFILE_AND_REGISTERED_PHONE_MATCH, OTHER_APPROVED_PROCEDURE] }
+        evidenceNote: { type: string, maxLength: 2000 }
+        identityChecked: { type: boolean, const: true }
+    ManualActivationDecisionRequest:
+      type: object
+      required: [decisionNote]
+      properties: { decisionNote: { type: string, maxLength: 1000 } }
+    ManualActivationResponse:
+      type: object
+      properties:
+        requestId: { type: string, format: uuid }
+        accountId: { type: string, format: uuid }
+        memberId: { type: string }
+        maskedEmail: { type: string }
+        requestedByAccountId: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXPIRED] }
+        requestedAt: { type: string, format: date-time }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: string, format: date-time }
+    ManualActivationPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/ManualActivationResponse' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }

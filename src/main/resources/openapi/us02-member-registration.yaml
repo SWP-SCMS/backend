@@ -94,40 +94,32 @@ components:
     RegistrationResponse:
       type: object
       required:
-        - accountId
-        - memberId
-        - fullName
-        - phone
-        - email
-        - birthDate
-        - role
+        - verificationRequired
         - status
+        - maskedEmail
+        - serverTime
       properties:
-        accountId:
-          type: string
-          format: uuid
-        memberId:
-          type: string
-          pattern: '^MB-[0-9]+$'
-          readOnly: true
-          description: System-generated Member ID read from member_profiles.member_code after persistence.
-        fullName:
-          type: string
-        phone:
-          type: string
-          pattern: '^0[0-9]{9}$'
-        email:
-          type: string
-          format: email
-        birthDate:
-          type: string
-          format: date
-        role:
-          type: string
-          const: MEMBER
+        verificationRequired:
+          type: boolean
         status:
           type: string
-          const: ACTIVE
+          enum: [ACTIVE, INACTIVE]
+        maskedEmail:
+          type: string
+        csrfToken:
+          type: [string, 'null']
+        otpExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        resendAvailableAt:
+          type: [string, 'null']
+          format: date-time
+        registrationExpiresAt:
+          type: [string, 'null']
+          format: date-time
+        serverTime:
+          type: string
+          format: date-time
     ProblemDetail:
       type: object
       required:

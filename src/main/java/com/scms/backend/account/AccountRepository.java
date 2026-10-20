@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.repository.query.Param;
 
 public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpecificationExecutor<Account> {
 
@@ -29,6 +30,24 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 	boolean existsByIdAndRoleAndStatus(UUID id, AccountRole role, AccountStatus status);
 
 	boolean existsByRole(AccountRole role);
+
+	@Query("select count(a) > 0 from Account a where lower(a.email) = lower(:email) and "
+		+ "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
+	boolean existsByOccupiedEmail(@Param("email") String email);
+
+	@Query("select count(a) > 0 from Account a where a.phone = :phone and "
+		+ "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
+	boolean existsByOccupiedPhone(@Param("phone") String phone);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select a from Account a where lower(a.email) = lower(:email)")
+	List<Account> findByEmailForUpdate(@Param("email") String email);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select a from Account a where lower(a.email)=lower(:email) and a.phone=:phone and "
+		+ "a.role=com.scms.backend.account.AccountRole.MEMBER and a.status=com.scms.backend.account.AccountStatus.INACTIVE "
+		+ "and a.emailVerificationRequired=false and a.registrationExpiresAt is not null order by a.registrationExpiresAt desc")
+	List<Account> findExpiredSelfRegistrationForUpdate(@Param("email") String email,@Param("phone") String phone);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from Account a where a.role = com.scms.backend.account.AccountRole.MANAGER and a.status = com.scms.backend.account.AccountStatus.ACTIVE order by a.id")

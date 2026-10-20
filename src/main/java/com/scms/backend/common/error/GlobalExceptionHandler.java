@@ -52,6 +52,8 @@ import com.scms.backend.training.CoachAssignmentException;
 import com.scms.backend.training.TrainingFeedbackException;
 import com.scms.backend.training.TrainingPlanException;
 import com.scms.backend.training.TrainingResultException;
+import com.scms.backend.emailverification.EmailVerificationException;
+import com.scms.backend.emailverification.PendingRegistrationException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -203,6 +205,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		problem.setTitle("Account conflict");
 		problem.setProperty("code", exception.getCode());
 		return problem;
+	}
+
+	@ExceptionHandler(PendingRegistrationException.class)
+	ProblemDetail handlePendingRegistration(PendingRegistrationException exception) {
+		ProblemDetail problem=ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,exception.getMessage());
+		problem.setTitle("Email verification pending"); problem.setProperty("code","EMAIL_VERIFICATION_PENDING");
+		problem.setProperty("otpExpiresAt",exception.getOtpExpiresAt());
+		problem.setProperty("resendAvailableAt",exception.getResendAvailableAt());
+		problem.setProperty("registrationExpiresAt",exception.getRegistrationExpiresAt());
+		problem.setProperty("serverTime",exception.getServerTime()); return problem;
+	}
+
+	@ExceptionHandler(EmailVerificationException.class)
+	ResponseEntity<ProblemDetail> handleEmailVerification(EmailVerificationException exception) {
+		ProblemDetail problem=ProblemDetail.forStatusAndDetail(exception.getStatus(),exception.getMessage());
+		problem.setTitle("Email verification failed"); problem.setProperty("code",exception.getCode());
+		ResponseEntity.BodyBuilder response=ResponseEntity.status(exception.getStatus());
+		if(exception.getRetryAfter()!=null) response.header(HttpHeaders.RETRY_AFTER,exception.getRetryAfter().toString());
+		return response.contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem);
 	}
 
 	@ExceptionHandler(MemberProfileValidationException.class)

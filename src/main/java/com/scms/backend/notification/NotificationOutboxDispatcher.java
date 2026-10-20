@@ -23,7 +23,8 @@ public class NotificationOutboxDispatcher {
 		this.clock = clock;
 	}
 
-	@Scheduled(fixedDelayString = "${scms.notification-outbox-delay-ms:10000}")
+	@Scheduled(fixedDelayString = "${scms.notification-outbox-delay-ms:10000}",
+		initialDelayString = "${scms.notification-outbox-initial-delay-ms:10000}")
 	public void dispatchAvailable() {
 		for (int index = 0; index < BATCH_SIZE; index++) {
 			Instant now = clock.instant();

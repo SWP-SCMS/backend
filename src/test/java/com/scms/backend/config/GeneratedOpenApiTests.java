@@ -50,6 +50,17 @@ class GeneratedOpenApiTests {
 		"POST /auth/logout",
 		"POST /auth/change-password",
 		"POST /auth/register",
+		"POST /auth/email-verification/verify",
+		"POST /auth/email-verification/resend",
+		"POST /auth/email-verification/change-email",
+		"GET /reception/email-verification/pending-accounts",
+		"POST /reception/email-verification/manual-activation-requests",
+		"GET /reception/email-verification/manual-activation-requests",
+		"GET /reception/email-verification/manual-activation-requests/{requestId}",
+		"GET /manager/email-verification/manual-activation-requests",
+		"GET /manager/email-verification/manual-activation-requests/{requestId}",
+		"POST /manager/email-verification/manual-activation-requests/{requestId}/approve",
+		"POST /manager/email-verification/manual-activation-requests/{requestId}/reject",
 		"GET /manager/members",
 		"GET /manager/members/{id}",
 		"PATCH /manager/members/{id}",
@@ -272,6 +283,9 @@ class GeneratedOpenApiTests {
 		for (String publicOperation : List.of(
 			"/paths/~1auth~1login/post", "/paths/~1auth~1refresh/post",
 			"/paths/~1auth~1logout/post", "/paths/~1auth~1register/post",
+			"/paths/~1auth~1email-verification~1verify/post",
+			"/paths/~1auth~1email-verification~1resend/post",
+			"/paths/~1auth~1email-verification~1change-email/post",
 			"/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get",
 			"/paths/~1payments~1sepay~1webhook/post")) {
 			assertThat(document.at(publicOperation + "/security").isArray()).as(publicOperation).isTrue();
@@ -358,6 +372,28 @@ class GeneratedOpenApiTests {
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"ACTIVE\",\"EXPIRED\"]");
+	}
+
+	@Test
+	void generatedContractDocumentsEmailVerificationAndManualActivation() throws Exception {
+		JsonNode document = generatedDocument();
+		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).contains("verificationRequired", "maskedEmail", "csrfToken",
+				"otpExpiresAt", "resendAvailableAt", "registrationExpiresAt", "serverTime");
+		assertThat(document.at("/components/schemas/RegistrationResponse/properties/accountId").isMissingNode()).isTrue();
+		assertThat(document.at("/components/schemas/VerifyEmailRequest/properties/otp/pattern").asText())
+			.isEqualTo("^[0-9]{6}$");
+		assertThat(response(document, "/auth/email-verification/resend", "post", "202").isMissingNode()).isFalse();
+		for (String path : List.of("/auth/register", "/auth/email-verification/verify",
+				"/auth/email-verification/resend", "/auth/email-verification/change-email")) {
+			assertThat(response(document, path, "post", "429").isMissingNode()).as(path).isFalse();
+		}
+		assertThat(document.at("/components/schemas/ManualActivationPageResponse/properties/content/type").asText())
+			.isEqualTo("array");
+		assertThat(document.at("/paths/~1reception~1email-verification~1pending-accounts/get/description").asText())
+			.contains("RECEPTIONIST");
+		assertThat(document.at("/paths/~1manager~1email-verification~1manual-activation-requests/get/description").asText())
+			.contains("MANAGER");
 	}
 
 	@Test

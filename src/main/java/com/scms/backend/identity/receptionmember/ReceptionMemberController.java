@@ -2,7 +2,6 @@ package com.scms.backend.identity.receptionmember;
 
 import java.util.UUID;
 
-import com.scms.backend.auth.RegistrationResponse;
 import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import jakarta.validation.Valid;
@@ -46,7 +45,7 @@ public class ReceptionMemberController {
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	ResponseEntity<RegistrationResponse> createMember(@AuthenticationPrincipal Jwt jwt,
+	ResponseEntity<ReceptionMemberCreateResponse> createMember(@AuthenticationPrincipal Jwt jwt,
 			@Valid @RequestBody ReceptionMemberCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED)
 			.body(service.createMember(UUID.fromString(jwt.getSubject()), request));

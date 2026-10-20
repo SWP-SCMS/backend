@@ -47,6 +47,11 @@ public class MemberStatusService {
 			.filter(account -> account.getRole() == AccountRole.MEMBER)
 			.orElseThrow(MemberAccountNotFoundException::new);
 		AccountStatus before = member.getStatus();
+		if (member.isEmailVerificationRequired() ||
+				(before == AccountStatus.INACTIVE && member.getRegistrationExpiresAt() != null)) {
+			throw new MemberStatusConflictException(
+				"Pending or expired self-registration must use the email verification workflow");
+		}
 		if (before == request.status()) {
 			throw new MemberStatusConflictException("Member is already " + before);
 		}

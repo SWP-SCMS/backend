@@ -16,6 +16,7 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.emailverification.EmailVerificationService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,13 +47,17 @@ class RegistrationServiceTests {
 	@Mock
 	private AccountIdentifierAvailability identifierAvailability;
 
+	@Mock
+	private EmailVerificationService emailVerificationService;
+
 	private RegistrationService registrationService;
 
 	@BeforeEach
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-09-29T00:00:00Z"), ZoneOffset.UTC);
 		registrationService = new RegistrationService(accountRepository, memberProfileRepository,
-			auditEventRepository, notificationWriter, passwordEncoder, clock, identifierAvailability);
+			auditEventRepository, notificationWriter, passwordEncoder, clock, identifierAvailability,
+			emailVerificationService);
 	}
 
 	@Test

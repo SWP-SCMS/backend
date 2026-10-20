@@ -19,10 +19,10 @@ public class AccountIdentifierAvailability {
 	}
 
 	public void ensureAvailableForRegistration(String email, String phone) {
-		if (accountRepository.existsByEmailIgnoreCaseAndStatusNot(email, AccountStatus.INACTIVE)) {
+		if (accountRepository.existsByOccupiedEmail(email)) {
 			throw DuplicateAccountException.email();
 		}
-		if (accountRepository.existsByPhoneAndStatusNot(phone, AccountStatus.INACTIVE)) {
+		if (accountRepository.existsByOccupiedPhone(phone)) {
 			throw DuplicateAccountException.phone();
 		}
 	}
