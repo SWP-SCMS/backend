@@ -55,7 +55,7 @@ class DisciplineBenefitIntegrationTests {
 	@Autowired MockMvc mvc;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate jdbc;
-	@Autowired ObjectMapper objectMapper;
+	ObjectMapper objectMapper = new ObjectMapper();
 	@Autowired DisciplineService disciplineService;
 	@Autowired BookingService bookingService;
 	@Autowired DisciplineRepository disciplineRepository;
