@@ -48,6 +48,24 @@ class AuditHistoryIntegrationTests {
 	@Autowired JdbcTemplate jdbc;
 
 	@Test
+	void keepsActorIdentityFromWhenTheEventWasCreated() {
+		UUID managerId = createAccount(AccountRole.MANAGER);
+		UUID actorId = createAccount(AccountRole.RECEPTIONIST);
+		UUID eventId = UUID.randomUUID();
+		audits.saveAndFlush(new AuditEvent(eventId, actorId, "ACCOUNT_UPDATED", "ACCOUNT", UUID.randomUUID(),
+			Map.of("status", "ACTIVE")));
+		Account actor = accounts.findById(actorId).orElseThrow();
+		actor.updateMemberProfileDetails("Renamed Actor", actor.getPhone(), actor.getEmail(), actor.getBirthDate());
+		accounts.saveAndFlush(actor);
+
+		AuditHistoryResponse result = service.list(managerId, actorId, null, null, null, null, null,
+			PageRequest.of(0, 20)).content().stream().filter(event -> event.id().equals(eventId)).findFirst().orElseThrow();
+
+		assertThat(result.actorName()).isEqualTo("RECEPTIONIST Audit User");
+		assertThat(result.actorRole()).isEqualTo(AccountRole.RECEPTIONIST);
+	}
+
+	@Test
 	void appliesCaseInsensitiveFiltersAndHalfOpenTimeWindow() {
 		UUID managerId = createAccount(AccountRole.MANAGER);
 		UUID actorId = createAccount(AccountRole.RECEPTIONIST);
