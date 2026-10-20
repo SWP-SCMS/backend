@@ -23,6 +23,7 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -54,6 +55,7 @@ class DisciplineBenefitIntegrationTests {
 
 	@Autowired MockMvc mvc;
 	@Autowired AccountRepository accounts;
+	@Autowired AuditEventRepository audits;
 	@Autowired JdbcTemplate jdbc;
 	ObjectMapper objectMapper = new ObjectMapper();
 	@Autowired DisciplineService disciplineService;
@@ -275,6 +277,7 @@ class DisciplineBenefitIntegrationTests {
 
 	@SuppressWarnings("unchecked")
 	private List<List<String>> auditBenefitSnapshots(String action, UUID disciplineId) throws Exception {
+		audits.flush();
 		List<List<String>> snapshots = new ArrayList<>();
 		for (String json : jdbc.queryForList("select after_data ->> 'requiredBenefitCodes' from audit_events "
 				+ "where action=? and target_id=?", String.class, action, disciplineId)) {
@@ -339,9 +342,9 @@ class DisciplineBenefitIntegrationTests {
 	private void createPlusMembership(UUID managerId, UUID memberId, Instant sessionStart) {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
-		jdbc.update("insert into membership_offers(id, plan_code, name, price_amount, currency_code, "
-			+ "duration_days, status, created_by_account_id) values (?, 'PLUS', ?, 12000, 'VND', 30, "
-			+ "'ACTIVE', ?)", offerId, "Lock offer " + offerId, managerId);
+		jdbc.update("insert into membership_offers(id, plan_code, name, description, price_amount, currency_code, "
+			+ "duration_days, status, created_by_account_id) values (?, 'PLUS', ?, 'Lock test offer', 12000, "
+			+ "'VND', 30, 'ACTIVE', ?)", offerId, "Lock offer " + offerId, managerId);
 		jdbc.update("insert into membership_orders(id, order_number, member_account_id, created_by_account_id, "
 			+ "offer_id, offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot, "
 			+ "duration_days_snapshot, payment_method, status, expires_at, paid_at) values (?, ?, ?, ?, ?, ?, "
