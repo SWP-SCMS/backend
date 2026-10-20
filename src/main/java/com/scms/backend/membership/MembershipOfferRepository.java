@@ -14,6 +14,22 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
 		left join fetch plan.benefits
+		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
+		""")
+	List<MembershipOffer> findAllWithPlanAndBenefits();
+
+	@Query("""
+		select distinct offer from MembershipOffer offer
+		join fetch offer.plan plan
+		left join fetch plan.benefits
+		where offer.id = :offerId
+		""")
+	Optional<MembershipOffer> findByIdWithPlanAndBenefits(@Param("offerId") UUID offerId);
+
+	@Query("""
+		select distinct offer from MembershipOffer offer
+		join fetch offer.plan plan
+		left join fetch plan.benefits
 		where offer.status = :status and plan.status = 'ACTIVE'
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")

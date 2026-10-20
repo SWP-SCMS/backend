@@ -52,7 +52,17 @@ public class MembershipOfferAdminService {
 	}
 
 	@Transactional(readOnly = true)
-	java.util.List<MembershipOfferAdminResponse> all(UUID managerId) { ensureManager(managerId); return offers.findAll().stream().map(MembershipOfferAdminResponse::from).toList(); }
+	java.util.List<MembershipOfferAdminDetailResponse> all(UUID managerId) {
+		ensureManager(managerId);
+		return offers.findAllWithPlanAndBenefits().stream().map(MembershipOfferAdminDetailResponse::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	MembershipOfferAdminDetailResponse get(UUID managerId, UUID offerId) {
+		ensureManager(managerId);
+		return offers.findByIdWithPlanAndBenefits(offerId).map(MembershipOfferAdminDetailResponse::from)
+			.orElseThrow(MembershipOfferNotFoundException::new);
+	}
 
 	@Transactional
 	MembershipOfferAdminResponse update(UUID managerId, UUID id, MembershipOfferPatchRequest request) {
