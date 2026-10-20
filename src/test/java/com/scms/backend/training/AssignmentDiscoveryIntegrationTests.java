@@ -1,6 +1,7 @@
 package com.scms.backend.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -8,7 +9,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -38,11 +41,18 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-@SpringBootTest(properties = "scms.membership-lifecycle-initial-delay-ms=86400000")
+@SpringBootTest(properties = {
+	"scms.membership-lifecycle-initial-delay-ms=86400000",
+	"scms.coach-assignment.maximum-member-count=2"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Transactional
 class AssignmentDiscoveryIntegrationTests {
+
+	static {
+		TimeZone.setDefault(TimeZone.getTimeZone(ZoneOffset.UTC));
+	}
 
 	@Container
 	@ServiceConnection
@@ -181,20 +191,20 @@ class AssignmentDiscoveryIntegrationTests {
 			.containsExactly(coachAlpha.getId(), coachBeta.getId());
 		assertThat(workloads.get(0).activeMemberCount()).isEqualTo(2);
 		assertThat(workloads.get(1).activeMemberCount()).isZero();
-		assertThat(workloads).allSatisfy(workload -> {
-			assertThat(workload.maximumMemberCount()).isNull();
-			assertThat(workload.availableForAssignment()).isTrue();
-		});
+		assertThat(workloads).allSatisfy(workload -> assertThat(workload.maximumMemberCount()).isEqualTo(2));
+		assertThat(workloads.get(0).availableForAssignment()).isFalse();
+		assertThat(workloads.get(1).availableForAssignment()).isTrue();
 		assertThat(jdbc.queryForObject("select status from coach_assignments where id = ?", String.class,
 			expiredAssignment)).isEqualTo("ENDED");
 		assertThat(jdbc.queryForObject("select status from coach_assignments where id = ?", String.class,
 			inactiveCoachAssignment)).isEqualTo("ACTIVE");
 
 		MemberProfile third = plusMember(manager, "Third Member", now.plusSeconds(86400));
-		CoachAssignmentResponse assigned = assignmentService.assign(manager.getId(), third.getAccountId(),
-			new CoachAssignmentAssignRequest(coachAlpha.getId(), "No capacity block"));
-		assertThat(assigned.status()).isEqualTo(CoachAssignmentStatus.ACTIVE);
-		assertThat(discovery.workloads(manager.getId()).get(0).activeMemberCount()).isEqualTo(3);
+		assertThatThrownBy(() -> assignmentService.assign(manager.getId(), third.getAccountId(),
+			new CoachAssignmentAssignRequest(coachAlpha.getId(), "Capacity enforced")))
+			.isInstanceOf(CoachAssignmentException.class)
+			.hasFieldOrPropertyWithValue("code", "COACH_CAPACITY_EXCEEDED");
+		assertThat(discovery.workloads(manager.getId()).get(0).activeMemberCount()).isEqualTo(2);
 	}
 
 	@Test

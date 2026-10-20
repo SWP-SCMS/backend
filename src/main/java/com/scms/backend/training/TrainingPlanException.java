@@ -6,11 +6,20 @@ public class TrainingPlanException extends RuntimeException {
 
 	private final HttpStatus status;
 	private final String code;
+	private final String field;
+	private final Integer currentVersionNumber;
 
 	private TrainingPlanException(HttpStatus status, String code, String message) {
+		this(status, code, message, null, null);
+	}
+
+	private TrainingPlanException(HttpStatus status, String code, String message, String field,
+			Integer currentVersionNumber) {
 		super(message);
 		this.status = status;
 		this.code = code;
+		this.field = field;
+		this.currentVersionNumber = currentVersionNumber;
 	}
 
 	static TrainingPlanException actorNotActiveCoach() {
@@ -43,6 +52,17 @@ public class TrainingPlanException extends RuntimeException {
 				"The Training Plan has no version history to update.");
 	}
 
+	static TrainingPlanException versionConflict(int currentVersionNumber) {
+		return new TrainingPlanException(HttpStatus.CONFLICT, "TRAINING_PLAN_VERSION_CONFLICT",
+				"The Training Plan changed after this edit started.", null, currentVersionNumber);
+	}
+
+	static TrainingPlanException validationError(String field, String message) {
+		return new TrainingPlanException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, field, null);
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
+	public String getField() { return field; }
+	public Integer getCurrentVersionNumber() { return currentVersionNumber; }
 }

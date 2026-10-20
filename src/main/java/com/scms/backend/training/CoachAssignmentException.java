@@ -56,6 +56,11 @@ public class CoachAssignmentException extends RuntimeException {
 		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_CONFLICT", "The Coach assignment could not be confirmed because state changed concurrently.");
 	}
 
+	public static CoachAssignmentException coachCapacityExceeded(int maximumMemberCount) {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_CAPACITY_EXCEEDED",
+				"The Coach already has the maximum of " + maximumMemberCount + " active Members.");
+	}
+
 	public static CoachAssignmentException validationError(String field, String message) {
 		return new CoachAssignmentException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, field);
 	}

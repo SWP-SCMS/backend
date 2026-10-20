@@ -13,6 +13,8 @@ public interface TrainingPlanVersionRepository extends JpaRepository<TrainingPla
 
 	Optional<TrainingPlanVersion> findTopByTrainingPlanIdOrderByVersionNumberDesc(UUID trainingPlanId);
 
+	List<TrainingPlanVersion> findByTrainingPlanIdOrderByVersionNumberDesc(UUID trainingPlanId);
+
 	@Query("select v from TrainingPlanVersion v where v.trainingPlanId in :planIds "
 			+ "order by v.trainingPlanId, v.versionNumber")
 	List<TrainingPlanVersion> findHistoryByTrainingPlanIds(@Param("planIds") Collection<UUID> planIds);

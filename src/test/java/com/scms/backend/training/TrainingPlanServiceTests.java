@@ -61,7 +61,7 @@ class TrainingPlanServiceTests {
 		when(plans.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 		when(versions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-		Map<String, Object> content = Map.of("goal", "Build strength", "sessionsPerWeek", 3);
+		Map<String, Object> content = Map.of("goal", "Build strength", "schedule", "3 sessions per week");
 		TrainingPlanResponse response = service.create(coachId, memberId,
 				new CreateTrainingPlanRequest("  Strength foundation  ", content));
 
@@ -177,7 +177,7 @@ class TrainingPlanServiceTests {
 		when(versions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		TrainingPlanResponse response = service.update(coachId, memberId, planId,
-				new UpdateTrainingPlanRequest("Progressive strength", Map.of("goal", "Progressive overload")));
+				new UpdateTrainingPlanRequest("Progressive strength", Map.of("goal", "Progressive overload"), 1));
 
 		assertThat(response.title()).isEqualTo("Progressive strength");
 		assertThat(response.versionNumber()).isEqualTo(2);
@@ -193,6 +193,149 @@ class TrainingPlanServiceTests {
 	}
 
 	@Test
+	void updateAllowsCurrentCoachToTakeOverPlanFromPreviousAssignmentAndRecordsVersionCreator() {
+		CoachAssignment current = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, UUID.randomUUID(), "Previous coach plan",
+				UUID.randomUUID(), now.minusSeconds(7200));
+		TrainingPlanVersion previous = new TrainingPlanVersion(UUID.randomUUID(), planId, 3,
+				Map.of("goal", "Maintain"), UUID.randomUUID(), now.minusSeconds(3600));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_PLAN", now)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(current));
+		when(plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)).thenReturn(Optional.of(plan));
+		when(versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)).thenReturn(Optional.of(previous));
+		when(plans.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		when(versions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		service.update(coachId, memberId, planId,
+				new UpdateTrainingPlanRequest("Taken over", Map.of("goal", "Progress"), 3));
+
+		ArgumentCaptor<TrainingPlanVersion> version = ArgumentCaptor.forClass(TrainingPlanVersion.class);
+		verify(versions).saveAndFlush(version.capture());
+		assertThat(version.getValue().getCreatedByAccountId()).isEqualTo(coachId);
+		assertThat(version.getValue().getVersionNumber()).isEqualTo(4);
+	}
+
+	@Test
+	void updateRejectsStaleVersionAndReturnsCurrentVersionNumber() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, assignment.getId(), "Current", coachId,
+				now.minusSeconds(7200));
+		TrainingPlanVersion current = new TrainingPlanVersion(UUID.randomUUID(), planId, 4,
+				Map.of("goal", "Current"), coachId, now.minusSeconds(60));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.hasActiveMembershipBenefit(memberId, "TRAINING_PLAN", now)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)).thenReturn(Optional.of(plan));
+		when(versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)).thenReturn(Optional.of(current));
+
+		assertThatThrownBy(() -> service.update(coachId, memberId, planId,
+				new UpdateTrainingPlanRequest("Stale", Map.of("goal", "Stale"), 3)))
+				.isInstanceOfSatisfying(TrainingPlanException.class, exception -> {
+					assertThat(exception.getCode()).isEqualTo("TRAINING_PLAN_VERSION_CONFLICT");
+					assertThat(exception.getCurrentVersionNumber()).isEqualTo(4);
+				});
+		verify(plans, never()).saveAndFlush(any());
+		verify(versions, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void versionsReturnsNewestFirstForPlanInAssignedMemberScope() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, assignment.getId(), "History", coachId, now);
+		TrainingPlanVersion v2 = new TrainingPlanVersion(UUID.randomUUID(), planId, 2, Map.of("goal", "B"),
+				coachId, now);
+		TrainingPlanVersion v1 = new TrainingPlanVersion(UUID.randomUUID(), planId, 1, Map.of("goal", "A"),
+				coachId, now.minusSeconds(60));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByIdAndMemberAccountId(planId, memberId)).thenReturn(Optional.of(plan));
+		when(versions.findByTrainingPlanIdOrderByVersionNumberDesc(planId)).thenReturn(List.of(v2, v1));
+
+		assertThat(service.versions(coachId, memberId, planId))
+				.extracting(TrainingPlanVersionResponse::versionNumber).containsExactly(2, 1);
+	}
+
+	@Test
+	void versionsRejectsPlanOutsideAssignedMemberScope() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByIdAndMemberAccountId(planId, memberId)).thenReturn(Optional.empty());
+
+		assertThatThrownBy(() -> service.versions(coachId, memberId, planId))
+				.isInstanceOfSatisfying(TrainingPlanException.class,
+						exception -> assertThat(exception.getCode()).isEqualTo("TRAINING_PLAN_NOT_FOUND"));
+		verify(versions, never()).findByTrainingPlanIdOrderByVersionNumberDesc(any());
+	}
+
+	@Test
+	void archiveChangesStatusWithoutDeletingHistoryAndWritesAssignmentAudit() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, assignment.getId(), "Archive", coachId,
+				now.minusSeconds(60));
+		TrainingPlanVersion latest = new TrainingPlanVersion(UUID.randomUUID(), planId, 2, Map.of("goal", "Done"),
+				coachId, now.minusSeconds(30));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)).thenReturn(Optional.of(plan));
+		when(versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)).thenReturn(Optional.of(latest));
+
+		TrainingPlanResponse response = service.archive(coachId, memberId, planId);
+
+		assertThat(response.status()).isEqualTo(TrainingPlanStatus.ARCHIVED);
+		assertThat(response.updatedAt()).isEqualTo(now);
+		verify(versions, never()).delete(any());
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("TRAINING_PLAN_ARCHIVED");
+		assertThat(audit.getValue().getAfterData())
+				.containsEntry("coachAssignmentId", assignment.getId().toString());
+	}
+
+	@Test
+	void archiveIsIdempotentForAlreadyArchivedPlan() {
+		CoachAssignment assignment = activeAssignment();
+		UUID planId = UUID.randomUUID();
+		TrainingPlan plan = new TrainingPlan(planId, memberId, assignment.getId(), "Archived", coachId,
+				now.minusSeconds(60));
+		plan.archive(now.minusSeconds(30));
+		TrainingPlanVersion latest = new TrainingPlanVersion(UUID.randomUUID(), planId, 1, Map.of("goal", "Done"),
+				coachId, now.minusSeconds(60));
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId, coachId,
+				CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(assignment));
+		when(plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)).thenReturn(Optional.of(plan));
+		when(versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)).thenReturn(Optional.of(latest));
+
+		assertThat(service.archive(coachId, memberId, planId).status()).isEqualTo(TrainingPlanStatus.ARCHIVED);
+		verify(plans, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void createRejectsUnknownContentField() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		assertThatThrownBy(() -> service.create(coachId, memberId,
+				new CreateTrainingPlanRequest("Plan", Map.of("sessionsPerWeek", 3))))
+				.isInstanceOfSatisfying(TrainingPlanException.class, exception -> {
+					assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+					assertThat(exception.getField()).isEqualTo("content.sessionsPerWeek");
+				});
+		verify(plans, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void updateRejectsPlanOutsideRequestedMemberScope() {
 		CoachAssignment assignment = activeAssignment();
 		UUID planId = UUID.randomUUID();
@@ -203,7 +346,7 @@ class TrainingPlanServiceTests {
 		when(plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.update(coachId, memberId, planId,
-				new UpdateTrainingPlanRequest("Updated", Map.of())))
+				new UpdateTrainingPlanRequest("Updated", Map.of(), 1)))
 				.isInstanceOfSatisfying(TrainingPlanException.class,
 						exception -> assertThat(exception.getCode()).isEqualTo("TRAINING_PLAN_NOT_FOUND"));
 
@@ -219,7 +362,7 @@ class TrainingPlanServiceTests {
 				memberId, coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.update(coachId, memberId, planId,
-				new UpdateTrainingPlanRequest("Updated", Map.of())))
+				new UpdateTrainingPlanRequest("Updated", Map.of(), 1)))
 				.isInstanceOfSatisfying(TrainingPlanException.class,
 						exception -> assertThat(exception.getCode()).isEqualTo("COACH_ASSIGNMENT_NOT_FOUND"));
 

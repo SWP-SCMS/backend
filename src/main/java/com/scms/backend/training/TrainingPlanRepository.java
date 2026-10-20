@@ -15,6 +15,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrainingPlanRepository extends JpaRepository<TrainingPlan, UUID> {
 
+	Optional<TrainingPlan> findByIdAndMemberAccountId(UUID id, UUID memberAccountId);
+
 	@Query("select p from TrainingPlan p where p.memberAccountId = :memberId "
 			+ "order by p.createdAt desc, p.id desc")
 	List<TrainingPlan> findByMemberAccountIdOrderByCreatedAtDesc(@Param("memberId") UUID memberId);

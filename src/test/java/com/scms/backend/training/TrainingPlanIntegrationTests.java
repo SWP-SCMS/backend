@@ -1,6 +1,7 @@
 package com.scms.backend.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -55,7 +56,7 @@ class TrainingPlanIntegrationTests {
 
 		TrainingPlanResponse response = trainingPlans.create(coach.getId(), member.getId(),
 				new CreateTrainingPlanRequest("Strength foundation",
-						Map.of("goal", "Build strength", "sessionsPerWeek", 3)));
+						Map.of("goal", "Build strength", "schedule", "3 sessions per week")));
 
 		assertThat(response.coachAssignmentId()).isEqualTo(assignment.id());
 		assertThat(jdbc.queryForObject("select title from training_plans where id = ?", String.class, response.id()))
@@ -72,6 +73,45 @@ class TrainingPlanIntegrationTests {
 	}
 
 	@Test
+	void reassignedCoachCanReadUpdateAndArchiveOldPlanWithStaleVersionGuard() {
+		Account manager = createAccount(AccountRole.MANAGER, "Manager gaps");
+		Account firstCoach = createAccount(AccountRole.COACH, "First Coach");
+		Account currentCoach = createAccount(AccountRole.COACH, "Current Coach");
+		Account member = createAccount(AccountRole.MEMBER, "Member gaps");
+		Instant now = Instant.now();
+		createPlusMembership(member.getId(), manager.getId(), now.minusSeconds(3600), now.plusSeconds(86400));
+		assignments.assign(manager.getId(), member.getId(),
+				new CoachAssignmentAssignRequest(firstCoach.getId(), "Initial coach"));
+		TrainingPlanResponse created = trainingPlans.create(firstCoach.getId(), member.getId(),
+				new CreateTrainingPlanRequest("Original", Map.of("goal", "Base")));
+		assignments.assign(manager.getId(), member.getId(),
+				new CoachAssignmentAssignRequest(currentCoach.getId(), "Coach handover"));
+
+		assertThat(trainingPlans.versions(currentCoach.getId(), member.getId(), created.id()))
+				.extracting(TrainingPlanVersionResponse::versionNumber).containsExactly(1);
+		TrainingPlanResponse updated = trainingPlans.update(currentCoach.getId(), member.getId(), created.id(),
+				new UpdateTrainingPlanRequest("Taken over", Map.of("goal", "Progress"), 1));
+		assertThat(updated.versionNumber()).isEqualTo(2);
+		assertThat(updated.updatedAt()).isEqualTo(updated.versionCreatedAt());
+		assertThat(updated.contentSchemaVersion()).isEqualTo(1);
+
+		assertThatThrownBy(() -> trainingPlans.update(currentCoach.getId(), member.getId(), created.id(),
+				new UpdateTrainingPlanRequest("Stale", Map.of("goal", "Old edit"), 1)))
+				.isInstanceOfSatisfying(TrainingPlanException.class, exception -> {
+					assertThat(exception.getCode()).isEqualTo("TRAINING_PLAN_VERSION_CONFLICT");
+					assertThat(exception.getCurrentVersionNumber()).isEqualTo(2);
+				});
+
+		TrainingPlanResponse archived = trainingPlans.archive(currentCoach.getId(), member.getId(), created.id());
+		assertThat(archived.status()).isEqualTo(TrainingPlanStatus.ARCHIVED);
+		assertThat(jdbc.queryForObject("select count(*) from training_plan_versions where training_plan_id = ?",
+				Long.class, created.id())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject(
+				"select count(*) from audit_events where action = 'TRAINING_PLAN_ARCHIVED' and target_id = ?",
+				Long.class, created.id())).isEqualTo(1L);
+	}
+
+	@Test
 	void updatePreservesVersionOneAndAppendsVersionTwo() {
 		Account manager = createAccount(AccountRole.MANAGER, "Manager US43");
 		Account coach = createAccount(AccountRole.COACH, "Coach US43");
@@ -84,7 +124,7 @@ class TrainingPlanIntegrationTests {
 				new CreateTrainingPlanRequest("Foundation", Map.of("goal", "Foundation")));
 
 		TrainingPlanResponse updated = trainingPlans.update(coach.getId(), member.getId(), created.id(),
-				new UpdateTrainingPlanRequest("Progressive strength", Map.of("goal", "Progressive overload")));
+				new UpdateTrainingPlanRequest("Progressive strength", Map.of("goal", "Progressive overload"), 1));
 
 		assertThat(updated.versionNumber()).isEqualTo(2);
 		assertThat(jdbc.queryForObject("select title from training_plans where id = ?", String.class, created.id()))

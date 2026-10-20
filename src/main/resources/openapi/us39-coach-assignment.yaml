@@ -8,6 +8,7 @@ paths:
   /manager/members/{memberId}/coach-assignment:
     post:
       summary: Assign or reassign personal coach to a Member
+      description: Enforces the configured maximum active Member count for the target Coach and returns COACH_CAPACITY_EXCEEDED when full.
       operationId: assignCoach
       security:
         - bearerAuth: []
@@ -310,6 +311,7 @@ components:
             - COACH_ASSIGNMENT_NOT_FOUND
             - ACTOR_NOT_ACTIVE_MANAGER
             - COACH_ASSIGNMENT_CONFLICT
+            - COACH_CAPACITY_EXCEEDED
         errors:
           type: object
           additionalProperties:

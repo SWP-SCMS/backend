@@ -44,7 +44,7 @@ class AssignmentDiscoveryServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new AssignmentDiscoveryService(assignments, memberships, accounts,
-			Clock.fixed(NOW, ZoneOffset.UTC));
+			Clock.fixed(NOW, ZoneOffset.UTC), 20);
 	}
 
 	@Test
@@ -90,16 +90,16 @@ class AssignmentDiscoveryServiceTests {
 		when(view.getFullName()).thenReturn("Coach One");
 		when(view.getPhone()).thenReturn("0900000002");
 		when(view.getEmail()).thenReturn("coach@example.test");
-		when(view.getActiveMemberCount()).thenReturn(7L);
+		when(view.getActiveMemberCount()).thenReturn(20L);
 		when(assignments.findAssignmentWorkloads()).thenReturn(List.of(view));
 
 		List<CoachAssignmentWorkloadResponse> result = service.workloads(managerId);
 
 		assertThat(result).singleElement().satisfies(workload -> {
 			assertThat(workload.coachAccountId()).isEqualTo(coachId);
-			assertThat(workload.activeMemberCount()).isEqualTo(7);
-			assertThat(workload.maximumMemberCount()).isNull();
-			assertThat(workload.availableForAssignment()).isTrue();
+			assertThat(workload.activeMemberCount()).isEqualTo(20);
+			assertThat(workload.maximumMemberCount()).isEqualTo(20);
+			assertThat(workload.availableForAssignment()).isFalse();
 		});
 		InOrder order = inOrder(memberships, assignments);
 		order.verify(memberships).expireDue(NOW);

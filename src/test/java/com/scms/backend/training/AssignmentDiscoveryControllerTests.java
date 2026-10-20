@@ -69,14 +69,14 @@ class AssignmentDiscoveryControllerTests {
 	void managerCanReadCoachWorkloads() throws Exception {
 		UUID coachId = UUID.randomUUID();
 		when(service.workloads(managerId)).thenReturn(List.of(new CoachAssignmentWorkloadResponse(
-			coachId, "Coach One", "0900000002", "coach@example.test", 4, null, true)));
+			coachId, "Coach One", "0900000002", "coach@example.test", 4, 20, true)));
 
 		mockMvc.perform(get("/api/v1/manager/coaches/assignment-workloads")
 			.contextPath("/api/v1").with(role("MANAGER")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$[0].coachAccountId").value(coachId.toString()))
 			.andExpect(jsonPath("$[0].activeMemberCount").value(4))
-			.andExpect(jsonPath("$[0].maximumMemberCount").value(org.hamcrest.Matchers.nullValue()))
+			.andExpect(jsonPath("$[0].maximumMemberCount").value(20))
 			.andExpect(jsonPath("$[0].availableForAssignment").value(true));
 	}
 

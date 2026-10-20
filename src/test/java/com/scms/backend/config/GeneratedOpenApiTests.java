@@ -156,6 +156,8 @@ class GeneratedOpenApiTests {
 		"GET /coach/members/{memberId}/training-plans",
 		"POST /coach/members/{memberId}/training-plans",
 		"PUT /coach/members/{memberId}/training-plans/{planId}",
+		"GET /coach/members/{memberId}/training-plans/{planId}/versions",
+		"POST /coach/members/{memberId}/training-plans/{planId}/archive",
 		"POST /coach/members/{memberId}/training-results",
 		"GET /coach/members/{memberId}/training-results",
 		"PUT /coach/members/{memberId}/training-results/{resultId}",
@@ -447,9 +449,27 @@ class GeneratedOpenApiTests {
 
 		JsonNode workload = document.at("/components/schemas/CoachAssignmentWorkloadResponse/properties");
 		assertThat(workload.path("activeMemberCount").path("format").asText()).isEqualTo("int64");
-		assertThat(workload.path("maximumMemberCount").path("type").toString())
-			.contains("integer", "null");
+		assertThat(workload.path("maximumMemberCount").path("type").asText()).isEqualTo("integer");
 		assertThat(workload.path("availableForAssignment").path("type").asText()).isEqualTo("boolean");
+	}
+
+	@Test
+	void generatedContractDocumentsTrainingPlanGapContracts() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode response = document.at("/components/schemas/TrainingPlanResponse/properties");
+		assertThat(response.path("updatedAt").path("format").asText()).isEqualTo("date-time");
+		assertThat(response.path("versionCreatedAt").path("format").asText()).isEqualTo("date-time");
+		JsonNode update = document.at("/components/schemas/UpdateTrainingPlanRequest");
+		assertThat(update.path("required").toString()).contains("expectedVersionNumber");
+		assertThat(update.at("/properties/expectedVersionNumber/minimum").asInt()).isEqualTo(1);
+		assertThat(document.at("/components/schemas/TrainingPlanContent/properties").properties()
+				.stream().map(java.util.Map.Entry::getKey).toList())
+				.containsExactlyInAnyOrder("goal", "schedule", "exercises", "notes");
+		assertThat(response.path("contentSchemaVersion").path("type").asText()).isEqualTo("integer");
+		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/versions", "get", "200")
+				.isMissingNode()).isFalse();
+		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/archive", "post", "200")
+				.isMissingNode()).isFalse();
 	}
 
 	@Test

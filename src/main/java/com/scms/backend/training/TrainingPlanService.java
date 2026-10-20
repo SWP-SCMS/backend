@@ -43,6 +43,7 @@ public class TrainingPlanService {
 	@Transactional
 	public TrainingPlanResponse create(UUID coachId, UUID memberId, CreateTrainingPlanRequest request) {
 		ensureActiveCoach(coachId);
+		TrainingPlanContentValidator.validate(request.content());
 		Instant now = clock.instant();
 		CoachAssignment assignment = currentAssignment(coachId, memberId, now, "TRAINING_PLAN");
 
@@ -68,6 +69,7 @@ public class TrainingPlanService {
 	public TrainingPlanResponse update(UUID coachId, UUID memberId, UUID planId,
 			UpdateTrainingPlanRequest request) {
 		ensureActiveCoach(coachId);
+		TrainingPlanContentValidator.validate(request.content());
 		Instant now = clock.instant();
 		currentAssignment(coachId, memberId, now, "TRAINING_PLAN");
 
@@ -79,6 +81,9 @@ public class TrainingPlanService {
 
 		TrainingPlanVersion previous = versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)
 				.orElseThrow(TrainingPlanException::versionHistoryNotFound);
+		if (previous.getVersionNumber() != request.expectedVersionNumber()) {
+			throw TrainingPlanException.versionConflict(previous.getVersionNumber());
+		}
 		String previousTitle = plan.getTitle();
 		plan.update(request.title().trim(), now);
 		plans.saveAndFlush(plan);
@@ -98,6 +103,40 @@ public class TrainingPlanService {
 				planId, null, beforeData, afterData));
 
 		return TrainingPlanResponse.from(plan, next);
+	}
+
+	@Transactional
+	public List<TrainingPlanVersionResponse> versions(UUID coachId, UUID memberId, UUID planId) {
+		ensureActiveCoach(coachId);
+		currentAssignment(coachId, memberId, clock.instant(), null);
+		plans.findByIdAndMemberAccountId(planId, memberId).orElseThrow(TrainingPlanException::planNotFound);
+		List<TrainingPlanVersion> history = versions.findByTrainingPlanIdOrderByVersionNumberDesc(planId);
+		if (history.isEmpty()) throw TrainingPlanException.versionHistoryNotFound();
+		return history.stream().map(TrainingPlanVersionResponse::from).toList();
+	}
+
+	@Transactional
+	public TrainingPlanResponse archive(UUID coachId, UUID memberId, UUID planId) {
+		ensureActiveCoach(coachId);
+		Instant now = clock.instant();
+		CoachAssignment assignment = currentAssignment(coachId, memberId, now, null);
+		TrainingPlan plan = plans.findByIdAndMemberAccountIdForUpdate(planId, memberId)
+				.orElseThrow(TrainingPlanException::planNotFound);
+		TrainingPlanVersion latest = versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(planId)
+				.orElseThrow(TrainingPlanException::versionHistoryNotFound);
+		if (plan.getStatus() == TrainingPlanStatus.ARCHIVED) {
+			return TrainingPlanResponse.from(plan, latest);
+		}
+		plan.archive(now);
+		plans.saveAndFlush(plan);
+		Map<String, Object> beforeData = Map.of("status", TrainingPlanStatus.ACTIVE.name());
+		Map<String, Object> afterData = new LinkedHashMap<>();
+		afterData.put("status", TrainingPlanStatus.ARCHIVED.name());
+		afterData.put("memberAccountId", memberId.toString());
+		afterData.put("coachAssignmentId", assignment.getId().toString());
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_PLAN_ARCHIVED", "TRAINING_PLAN",
+				planId, null, beforeData, afterData));
+		return TrainingPlanResponse.from(plan, latest);
 	}
 
 	@Transactional

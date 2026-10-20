@@ -1,8 +1,10 @@
 package com.scms.backend.training;
 
 import java.util.UUID;
+import java.util.List;
 
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -47,10 +49,25 @@ public class TrainingPlanController {
 	}
 
 	@PutMapping("/{planId}")
+	@Operation(description = "Requires the TRAINING_PLAN Benefit. The current assigned Coach may append a version to a plan created under an earlier assignment. Each version records its creator; expectedVersionNumber prevents stale updates.")
 	public ResponseEntity<TrainingPlanResponse> update(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID memberId, @PathVariable UUID planId,
 			@Valid @RequestBody UpdateTrainingPlanRequest request) {
 		return ResponseEntity.ok(service.update(UUID.fromString(jwt.getSubject()), memberId, planId, request));
+	}
+
+	@GetMapping("/{planId}/versions")
+	@Operation(description = "Returns immutable versions newest first. Requires the active Coach assignment and verifies that planId belongs to memberId.")
+	public ResponseEntity<List<TrainingPlanVersionResponse>> versions(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID planId) {
+		return ResponseEntity.ok(service.versions(UUID.fromString(jwt.getSubject()), memberId, planId));
+	}
+
+	@PostMapping("/{planId}/archive")
+	@Operation(description = "Archives an ACTIVE plan without deleting its versions. Repeated requests are idempotent; restore is not supported.")
+	public ResponseEntity<TrainingPlanResponse> archive(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID planId) {
+		return ResponseEntity.ok(service.archive(UUID.fromString(jwt.getSubject()), memberId, planId));
 	}
 
 	private void validatePage(int page, int size) {

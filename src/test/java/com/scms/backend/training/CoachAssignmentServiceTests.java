@@ -68,7 +68,7 @@ class CoachAssignmentServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new CoachAssignmentService(assignments, accounts, audits, notifications, clock);
+		service = new CoachAssignmentService(assignments, accounts, audits, notifications, clock, 20);
 
 		managerId = UUID.randomUUID();
 		memberId = UUID.randomUUID();
@@ -204,6 +204,23 @@ class CoachAssignmentServiceTests {
 				eq("TRAINING_COACH_ASSIGNED"), eq("COACH_ASSIGNMENT"), eq(response.id()), any());
 		verify(notifications).write(eq("COACH_ASSIGNED:" + response.id() + ":COACH"), eq(coachId),
 				eq("TRAINING_COACH_ASSIGNED"), eq("COACH_ASSIGNMENT"), eq(response.id()), any());
+	}
+
+	@Test
+	void assign_whenCoachIsAtCapacity_rejectsBeforeMutation() {
+		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
+		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
+		when(accounts.findById(coachId)).thenReturn(Optional.of(activeCoach));
+		when(assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", fixedNow)).thenReturn(true);
+		when(assignments.findByMemberAccountIdAndStatusForUpdate(memberId, CoachAssignmentStatus.ACTIVE))
+				.thenReturn(Optional.empty());
+		when(assignments.countByCoachAccountIdAndStatus(coachId, CoachAssignmentStatus.ACTIVE)).thenReturn(20L);
+
+		assertThatThrownBy(() -> service.assign(managerId, memberId,
+				new CoachAssignmentAssignRequest(coachId, "At capacity")))
+				.isInstanceOf(CoachAssignmentException.class)
+				.hasFieldOrPropertyWithValue("code", "COACH_CAPACITY_EXCEEDED");
+		verify(assignments, never()).saveAndFlush(any());
 	}
 
 	private void assertBenefitRequested(String benefitCode) {

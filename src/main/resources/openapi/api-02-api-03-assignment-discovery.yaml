@@ -48,13 +48,13 @@ paths:
   /manager/coaches/assignment-workloads:
     get:
       summary: List active Coach assignment workloads
-      description: Reconciles due Memberships and Coach assignments before returning informational active assignment counts for ACTIVE Coaches.
+      description: Reconciles due Memberships and Coach assignments before returning capacity-enforced active assignment counts for ACTIVE Coaches.
       operationId: listCoachAssignmentWorkloads
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Active Coaches and their current active Member counts. Availability is informational and does not block assignment mutation.
+          description: Active Coaches, their current active Member counts, and assignment availability enforced by assignment mutations.
           content:
             application/json:
               schema:
@@ -131,10 +131,10 @@ components:
         email: { type: string, format: email }
         activeMemberCount: { type: integer, format: int64, minimum: 0 }
         maximumMemberCount:
-          type: [integer, "null"]
+          type: integer
+          minimum: 1
         availableForAssignment:
           type: boolean
-          const: true
     ApiProblem:
       type: object
       required: [title, status, detail, instance, code]

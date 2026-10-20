@@ -8,6 +8,7 @@ paths:
     put:
       operationId: updatePersonalTrainingPlan
       summary: Update a Training Plan by appending a new immutable version
+      description: The current assigned Coach may take over a plan from an earlier assignment. Each version records its creator; expectedVersionNumber prevents stale updates.
       security:
         - bearerAuth: []
       parameters:
@@ -35,18 +36,67 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+  /coach/members/{memberId}/training-plans/{planId}/versions:
+    get:
+      operationId: listPersonalTrainingPlanVersions
+      summary: List immutable versions newest first
+      description: Requires the active Coach assignment for memberId; planId must belong to memberId.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Complete version history, newest version first.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/TrainingPlanVersionResponse" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /coach/members/{memberId}/training-plans/{planId}/archive:
+    post:
+      operationId: archivePersonalTrainingPlan
+      summary: Archive an active Training Plan
+      description: Idempotent; an already archived plan is returned unchanged. Restore is not supported.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: memberId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: planId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Archived plan with its latest immutable version.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingPlanResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   schemas:
     UpdateTrainingPlanRequest:
       type: object
-      required: [title, content]
+      required: [title, content, expectedVersionNumber]
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         content:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/TrainingPlanContent"
+        expectedVersionNumber: { type: integer, minimum: 1 }
+    TrainingPlanContent:
+      type: object
+      additionalProperties: false
+      properties:
+        goal: { type: string, maxLength: 4000 }
+        schedule: { type: string, maxLength: 4000 }
+        exercises:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        notes: { type: string, maxLength: 4000 }
     TrainingPlanResponse:
       type: object
       required:
@@ -57,8 +107,11 @@ components:
         - status
         - createdByAccountId
         - createdAt
+        - updatedAt
         - versionId
         - versionNumber
+        - versionCreatedAt
+        - contentSchemaVersion
         - content
       properties:
         id: { type: string, format: uuid }
@@ -68,11 +121,27 @@ components:
         status: { type: string, enum: [ACTIVE, ARCHIVED] }
         createdByAccountId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
         versionId: { type: string, format: uuid }
-        versionNumber: { type: integer, minimum: 2 }
+        versionNumber: { type: integer, minimum: 1 }
+        versionCreatedAt: { type: string, format: date-time }
+        contentSchemaVersion: { type: integer, const: 1 }
+        content:
+          type: object
+          description: Known v1 fields are documented by TrainingPlanContent; unknown legacy fields are preserved in responses.
+          additionalProperties: true
+    TrainingPlanVersionResponse:
+      type: object
+      required: [id, versionNumber, content, contentSchemaVersion, createdByAccountId, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        versionNumber: { type: integer, minimum: 1 }
         content:
           type: object
           additionalProperties: true
+        contentSchemaVersion: { type: integer, const: 1 }
+        createdByAccountId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
     ProblemDetail:
       type: object
       required: [title, status, detail, instance, code]
@@ -92,6 +161,7 @@ components:
             - TRAINING_PLAN_NOT_FOUND
             - TRAINING_PLAN_NOT_ACTIVE
             - TRAINING_PLAN_VERSION_NOT_FOUND
+            - TRAINING_PLAN_VERSION_CONFLICT
   responses:
     BadRequest:
       description: Invalid request.
@@ -114,7 +184,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     Conflict:
-      description: TRAINING_PLAN Benefit, plan status, or version state prevents the update.
+      description: TRAINING_PLAN Benefit, plan status, or version state prevents the update. A stale update includes currentVersionNumber.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

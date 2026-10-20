@@ -82,8 +82,18 @@ components:
           minLength: 1
           maxLength: 200
         content:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/TrainingPlanContent"
+    TrainingPlanContent:
+      type: object
+      additionalProperties: false
+      properties:
+        goal: { type: string, maxLength: 4000 }
+        schedule: { type: string, maxLength: 4000 }
+        exercises:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 500 }
+        notes: { type: string, maxLength: 4000 }
     TrainingPlanResponse:
       type: object
       required:
@@ -94,8 +104,11 @@ components:
         - status
         - createdByAccountId
         - createdAt
+        - updatedAt
         - versionId
         - versionNumber
+        - versionCreatedAt
+        - contentSchemaVersion
         - content
       properties:
         id: { type: string, format: uuid }
@@ -105,10 +118,14 @@ components:
         status: { type: string, enum: [ACTIVE, ARCHIVED] }
         createdByAccountId: { type: string, format: uuid }
         createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
         versionId: { type: string, format: uuid }
         versionNumber: { type: integer, minimum: 1 }
+        versionCreatedAt: { type: string, format: date-time }
+        contentSchemaVersion: { type: integer, const: 1 }
         content:
           type: object
+          description: Known v1 fields are documented by TrainingPlanContent; unknown legacy fields are preserved in responses.
           additionalProperties: true
     TrainingPlanPageResponse:
       type: object

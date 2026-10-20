@@ -18,6 +18,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,14 +32,18 @@ public class CoachAssignmentService {
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
+	private final int maximumMemberCount;
 
 	public CoachAssignmentService(CoachAssignmentRepository assignments, AccountRepository accounts,
-			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
+			AuditEventRepository audits, NotificationWriter notifications, Clock clock,
+			@Value("${scms.coach-assignment.maximum-member-count:20}") int maximumMemberCount) {
 		this.assignments = assignments;
 		this.accounts = accounts;
 		this.audits = audits;
 		this.notifications = notifications;
 		this.clock = clock;
+		if (maximumMemberCount < 1) throw new IllegalArgumentException("maximumMemberCount must be positive");
+		this.maximumMemberCount = maximumMemberCount;
 	}
 
 	@Transactional
@@ -84,6 +89,7 @@ public class CoachAssignmentService {
 			if (current.getCoachAccountId().equals(coachId)) {
 				throw CoachAssignmentException.alreadyAssignedToThisCoach();
 			}
+			enforceCapacity(coachId);
 
 			String endReason = request.reason() != null && !request.reason().isBlank()
 					? request.reason().trim() : "Reassigned to another coach";
@@ -124,6 +130,7 @@ public class CoachAssignmentService {
 			return CoachAssignmentResponse.from(newAssignment, coach);
 		}
 		else {
+			enforceCapacity(coachId);
 			CoachAssignment newAssignment = new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId,
 					CoachAssignmentStatus.ACTIVE, now, now);
 			try {
@@ -151,6 +158,13 @@ public class CoachAssignmentService {
 					Map.of("memberAccountId", memberId.toString(), "memberFullName", member.getFullName()));
 
 			return CoachAssignmentResponse.from(newAssignment, coach);
+		}
+	}
+
+	private void enforceCapacity(UUID coachId) {
+		if (assignments.countByCoachAccountIdAndStatus(coachId, CoachAssignmentStatus.ACTIVE)
+				>= maximumMemberCount) {
+			throw CoachAssignmentException.coachCapacityExceeded(maximumMemberCount);
 		}
 	}
 

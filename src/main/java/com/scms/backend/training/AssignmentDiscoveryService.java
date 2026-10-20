@@ -14,6 +14,7 @@ import com.scms.backend.membership.MembershipRepository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +25,17 @@ public class AssignmentDiscoveryService {
 	private final MembershipRepository memberships;
 	private final AccountRepository accounts;
 	private final Clock clock;
+	private final int maximumMemberCount;
 
 	public AssignmentDiscoveryService(CoachAssignmentRepository assignments, MembershipRepository memberships,
-			AccountRepository accounts, Clock clock) {
+			AccountRepository accounts, Clock clock,
+			@Value("${scms.coach-assignment.maximum-member-count:20}") int maximumMemberCount) {
 		this.assignments = assignments;
 		this.memberships = memberships;
 		this.accounts = accounts;
 		this.clock = clock;
+		if (maximumMemberCount < 1) throw new IllegalArgumentException("maximumMemberCount must be positive");
+		this.maximumMemberCount = maximumMemberCount;
 	}
 
 	@Transactional
@@ -51,7 +56,7 @@ public class AssignmentDiscoveryService {
 		ensureActiveManager(managerId);
 		reconcile();
 		return assignments.findAssignmentWorkloads().stream()
-			.map(CoachAssignmentWorkloadResponse::from).toList();
+			.map(view -> CoachAssignmentWorkloadResponse.from(view, maximumMemberCount)).toList();
 	}
 
 	private Instant reconcile() {

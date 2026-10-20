@@ -535,6 +535,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Training Plan request failed");
 		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
+		if (exception.getCurrentVersionNumber() != null) {
+			problem.setProperty("currentVersionNumber", exception.getCurrentVersionNumber());
+		}
 		return problem;
 	}
 

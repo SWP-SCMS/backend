@@ -66,6 +66,11 @@ public class TrainingPlan {
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}
 
+	public void archive(Instant updatedAt) {
+		this.status = TrainingPlanStatus.ARCHIVED;
+		this.updatedAt = Objects.requireNonNull(updatedAt);
+	}
+
 	public UUID getId() { return id; }
 	public UUID getMemberAccountId() { return memberAccountId; }
 	public UUID getCoachAssignmentId() { return coachAssignmentId; }

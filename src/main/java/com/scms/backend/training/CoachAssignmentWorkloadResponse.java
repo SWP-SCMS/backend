@@ -2,19 +2,19 @@ package com.scms.backend.training;
 
 import java.util.UUID;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-
 public record CoachAssignmentWorkloadResponse(
 	UUID coachAccountId,
 	String fullName,
 	String phone,
 	String email,
 	long activeMemberCount,
-	@Schema(nullable = true) Integer maximumMemberCount,
+	int maximumMemberCount,
 	boolean availableForAssignment
 ) {
-	static CoachAssignmentWorkloadResponse from(CoachAssignmentRepository.CoachAssignmentWorkloadView view) {
+	static CoachAssignmentWorkloadResponse from(CoachAssignmentRepository.CoachAssignmentWorkloadView view,
+			int maximumMemberCount) {
 		return new CoachAssignmentWorkloadResponse(view.getCoachAccountId(), view.getFullName(), view.getPhone(),
-			view.getEmail(), view.getActiveMemberCount(), null, true);
+			view.getEmail(), view.getActiveMemberCount(), maximumMemberCount,
+			view.getActiveMemberCount() < maximumMemberCount);
 	}
 }
