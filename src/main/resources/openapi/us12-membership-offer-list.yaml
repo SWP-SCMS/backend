@@ -73,6 +73,8 @@ components:
         - priceAmount
         - currencyCode
         - durationDays
+        - benefitCodes
+        - benefits
         - supportsBooking
         - supportsPersonalCoaching
       properties:
@@ -98,12 +100,35 @@ components:
         durationDays:
           type: integer
           minimum: 1
+        benefitCodes:
+          type: array
+          items:
+            type: string
+          description: Effective Plan Benefit codes sorted by code.
+        benefits:
+          type: array
+          items:
+            $ref: '#/components/schemas/MembershipBenefitResponse'
         supportsBooking:
           type: boolean
           description: Loaded from membership_plans.supports_booking.
         supportsPersonalCoaching:
           type: boolean
           description: Loaded from membership_plans.supports_personal_coaching.
+    MembershipBenefitResponse:
+      type: object
+      additionalProperties: false
+      required: [code, displayName, description, status]
+      properties:
+        code:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
     ProblemDetail:
       type: object
       required:

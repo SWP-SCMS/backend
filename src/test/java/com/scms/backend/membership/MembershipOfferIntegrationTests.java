@@ -117,6 +117,8 @@ class MembershipOfferIntegrationTests {
 			.andExpect(jsonPath("$[0].priceAmount").value(500000))
 			.andExpect(jsonPath("$[0].currencyCode").value("VND"))
 			.andExpect(jsonPath("$[0].durationDays").value(30))
+			.andExpect(jsonPath("$[0].benefitCodes[0]").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$[0].benefits[0].code").value("CENTER_ACCESS"))
 			.andExpect(jsonPath("$[0].supportsBooking").value(false))
 			.andExpect(jsonPath("$[0].supportsPersonalCoaching").value(false))
 			.andExpect(jsonPath("$[1].offerId").value(plusOfferId.toString()))
@@ -126,7 +128,7 @@ class MembershipOfferIntegrationTests {
 		Map<String, Object> firstOffer = JsonPath.read(result.getResponse().getContentAsString(), "$[0]");
 		assertThat(firstOffer.keySet()).containsExactlyInAnyOrder("offerId", "planCode", "planDisplayName", "name",
 			"description", "priceAmount", "currencyCode", "durationDays", "supportsBooking",
-			"supportsPersonalCoaching");
+			"supportsPersonalCoaching", "benefitCodes", "benefits");
 		assertThat(countOffers()).isEqualTo(offerCount);
 		assertThat(auditEventRepository.count()).isEqualTo(auditCount);
 		assertThat(notificationRepository.count()).isEqualTo(notificationCount);

@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -46,7 +48,17 @@ class PaymentServiceMembershipHistoryTests {
 
 		ArgumentCaptor<RowMapper<Object>> mapper = ArgumentCaptor.forClass(RowMapper.class);
 		when(db.query(anyString(), mapper.capture(), any(Object[].class))).thenAnswer(invocation -> {
+			String sql = invocation.getArgument(0);
+			RowMapper<Object> currentMapper = invocation.getArgument(1);
 			ResultSet rs = mock(ResultSet.class);
+			if (sql.contains("membership_plan_benefits")) {
+				when(rs.getString("plan_code")).thenReturn("PLUS");
+				when(rs.getString("code")).thenReturn("CLASS_BOOKING");
+				when(rs.getString("display_name")).thenReturn("Class booking");
+				when(rs.getString("description")).thenReturn("Book classes");
+				when(rs.getString("status")).thenReturn("ACTIVE");
+				return List.of(currentMapper.mapRow(rs, 0));
+			}
 			when(rs.getObject("id", UUID.class)).thenReturn(membershipId);
 			when(rs.getObject("order_id", UUID.class)).thenReturn(orderId);
 			when(rs.getString("plan_code_snapshot")).thenReturn("PLUS");
@@ -57,7 +69,7 @@ class PaymentServiceMembershipHistoryTests {
 			when(rs.getString("status")).thenReturn("ACTIVE");
 			when(rs.getTimestamp("starts_at")).thenReturn(Timestamp.from(startsAt));
 			when(rs.getTimestamp("ends_at")).thenReturn(Timestamp.from(endsAt));
-			return List.of(mapper.getValue().mapRow(rs, 0));
+			return List.of(currentMapper.mapRow(rs, 0));
 		});
 
 		ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules()
@@ -76,7 +88,45 @@ class PaymentServiceMembershipHistoryTests {
 		assertThat(item.get("status").asText()).isEqualTo("ACTIVE");
 		assertThat(item.get("startsAt").asText()).isEqualTo(startsAt.toString());
 		assertThat(item.get("endsAt").asText()).isEqualTo(endsAt.toString());
+		assertThat(item.at("/benefitCodes/0").asText()).isEqualTo("CLASS_BOOKING");
+		assertThat(item.at("/benefits/0/code").asText()).isEqualTo("CLASS_BOOKING");
+		assertThat(item.at("/benefits/0/displayName").asText()).isEqualTo("Class booking");
 		assertThat(item.has("order_id")).isFalse();
 		assertThat(item.has("offer_name_snapshot")).isFalse();
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void unresolvedLegacyPlanReturnsEmptyBenefitLists() throws Exception {
+		UUID actor = UUID.randomUUID();
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
+			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
+			mock(MembershipRepository.class), Clock.systemUTC());
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenAnswer(invocation -> {
+			String sql = invocation.getArgument(0);
+			if (sql.contains("membership_plan_benefits")) return List.of();
+			RowMapper<MembershipHistoryResponse> mapper = invocation.getArgument(1);
+			ResultSet rs = mock(ResultSet.class);
+			when(rs.getObject("id", UUID.class)).thenReturn(UUID.randomUUID());
+			when(rs.getObject("order_id", UUID.class)).thenReturn(UUID.randomUUID());
+			when(rs.getString("plan_code_snapshot")).thenReturn("LEGACY_MISSING");
+			when(rs.getString("offer_name_snapshot")).thenReturn("Legacy");
+			when(rs.getBigDecimal("price_amount_snapshot")).thenReturn(BigDecimal.ONE);
+			when(rs.getString("currency_code_snapshot")).thenReturn("VND");
+			when(rs.getInt("duration_days_snapshot")).thenReturn(1);
+			when(rs.getString("status")).thenReturn("EXPIRED");
+			when(rs.getTimestamp("starts_at")).thenReturn(Timestamp.from(Instant.EPOCH));
+			when(rs.getTimestamp("ends_at")).thenReturn(Timestamp.from(Instant.EPOCH.plusSeconds(1)));
+			return List.of(mapper.mapRow(rs, 0));
+		});
+
+		MembershipHistoryResponse response = service.memberHistory(actor).getFirst();
+
+		assertThat(response.benefitCodes()).isEmpty();
+		assertThat(response.benefits()).isEmpty();
+		verify(db, times(2)).query(anyString(), any(RowMapper.class), any(Object[].class));
 	}
 }

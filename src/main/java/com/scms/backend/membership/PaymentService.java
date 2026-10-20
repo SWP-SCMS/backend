@@ -6,8 +6,10 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -294,13 +296,21 @@ class PaymentService {
 	@Transactional(readOnly=true)
 	List<MembershipHistoryResponse> memberHistory(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
-		return db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",
+		List<MembershipHistoryResponse> history = db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",
 			(rs,row)->new MembershipHistoryResponse(rs.getObject("id",UUID.class),
 				rs.getObject("order_id",UUID.class),rs.getString("plan_code_snapshot"),
 				rs.getString("offer_name_snapshot"),rs.getBigDecimal("price_amount_snapshot").toBigIntegerExact(),
 				rs.getString("currency_code_snapshot").trim(),rs.getInt("duration_days_snapshot"),
 				rs.getString("status"),rs.getTimestamp("starts_at").toInstant(),
 				rs.getTimestamp("ends_at").toInstant()),actor);
+		Map<String, MembershipBenefits> benefits = benefitsByPlanCode(
+			history.stream().map(MembershipHistoryResponse::planCode).toList());
+		return history.stream().map(item -> {
+			MembershipBenefits planBenefits = benefits.getOrDefault(item.planCode(), MembershipBenefits.EMPTY);
+			return new MembershipHistoryResponse(item.id(), item.orderId(), item.planCode(), item.offerName(),
+				item.priceAmount(), item.currencyCode(), item.durationDays(), item.status(), item.startsAt(), item.endsAt(),
+				planBenefits.codes(), planBenefits.benefits());
+		}).toList();
 	}
 
 	@Transactional
@@ -327,13 +337,51 @@ class PaymentService {
 
 	private List<StaffMembershipResponse> staffMembershipHistory(UUID memberId) {
 		memberships.expireDueForMember(memberId, clock.instant());
-		return db.query("""
+		List<StaffMembershipResponse> history = db.query("""
 			select id,plan_code_snapshot,offer_name_snapshot,status,starts_at,ends_at
 			from memberships where member_account_id=? order by starts_at desc,id desc
 			""", (rs, row) -> new StaffMembershipResponse(rs.getObject("id", UUID.class),
 				rs.getString("plan_code_snapshot"), rs.getString("offer_name_snapshot"),
 				rs.getString("status"), rs.getTimestamp("starts_at").toInstant(),
 				rs.getTimestamp("ends_at").toInstant()), memberId);
+		Map<String, MembershipBenefits> benefits = benefitsByPlanCode(
+			history.stream().map(StaffMembershipResponse::planCode).toList());
+		return history.stream().map(item -> {
+			MembershipBenefits planBenefits = benefits.getOrDefault(item.planCode(), MembershipBenefits.EMPTY);
+			return new StaffMembershipResponse(item.membershipId(), item.planCode(), item.offerName(), item.status(),
+				item.startsAt(), item.endsAt(), planBenefits.codes(), planBenefits.benefits());
+		}).toList();
+	}
+
+	private Map<String, MembershipBenefits> benefitsByPlanCode(List<String> planCodes) {
+		List<String> codes = new ArrayList<>(new TreeSet<>(planCodes));
+		if (codes.isEmpty()) return Map.of();
+		String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
+		List<PlanBenefitRow> rows = db.query("""
+			select link.plan_code,benefit.code,benefit.display_name,benefit.description,benefit.status
+			from membership_plan_benefits link
+			join membership_benefits benefit on benefit.code=link.benefit_code
+			where link.plan_code in (%s)
+			order by link.plan_code,benefit.code
+			""".formatted(placeholders), (rs, row) -> new PlanBenefitRow(rs.getString("plan_code"),
+				rs.getString("code"), rs.getString("display_name"), rs.getString("description"),
+				MembershipBenefitStatus.valueOf(rs.getString("status"))), codes.toArray());
+		Map<String, List<MembershipBenefitResponse>> grouped = new LinkedHashMap<>();
+		for (PlanBenefitRow row : rows) {
+			grouped.computeIfAbsent(row.planCode(), ignored -> new ArrayList<>())
+				.add(new MembershipBenefitResponse(row.code(), row.displayName(), row.description(), row.status()));
+		}
+		Map<String, MembershipBenefits> result = new LinkedHashMap<>();
+		grouped.forEach((code, planBenefits) -> result.put(code, new MembershipBenefits(
+			planBenefits.stream().map(MembershipBenefitResponse::code).toList(), List.copyOf(planBenefits))));
+		return result;
+	}
+
+	private record PlanBenefitRow(String planCode, String code, String displayName, String description,
+		MembershipBenefitStatus status) { }
+
+	private record MembershipBenefits(List<String> codes, List<MembershipBenefitResponse> benefits) {
+		private static final MembershipBenefits EMPTY = new MembershipBenefits(List.of(), List.of());
 	}
 
 	@Transactional(readOnly=true)

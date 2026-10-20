@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -131,19 +132,37 @@ class StaffMembershipHistoryServiceTests {
 		when(accounts.findById(member.getId())).thenReturn(Optional.of(member));
 		ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
 		ArgumentCaptor<RowMapper<StaffMembershipResponse>> mapper = ArgumentCaptor.forClass(RowMapper.class);
-		when(db.query(sql.capture(), mapper.capture(), any(Object[].class))).thenAnswer(invocation -> List.of(
-			map(mapper.getValue(), firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd),
-			map(mapper.getValue(), secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd)));
+		when(db.query(sql.capture(), mapper.capture(), any(Object[].class))).thenAnswer(invocation -> {
+			String query = invocation.getArgument(0);
+			if (query.contains("membership_plan_benefits")) {
+				RowMapper<Object> benefitMapper = invocation.getArgument(1);
+				ResultSet rs = mock(ResultSet.class);
+				when(rs.getString("plan_code")).thenReturn("PLUS");
+				when(rs.getString("code")).thenReturn("CLASS_BOOKING");
+				when(rs.getString("display_name")).thenReturn("Class booking");
+				when(rs.getString("description")).thenReturn("Book classes");
+				when(rs.getString("status")).thenReturn("ACTIVE");
+				return List.of(benefitMapper.mapRow(rs, 0));
+			}
+			RowMapper<StaffMembershipResponse> historyMapper = invocation.getArgument(1);
+			return List.of(
+				map(historyMapper, firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd),
+				map(historyMapper, secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
+		});
 
 		List<StaffMembershipResponse> result = service.managerMembershipHistory(manager, member.getId());
 
 		assertThat(result).containsExactly(
-			new StaffMembershipResponse(firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd),
+			new StaffMembershipResponse(firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd,
+				List.of("CLASS_BOOKING"), List.of(new MembershipBenefitResponse("CLASS_BOOKING", "Class booking",
+					"Book classes", MembershipBenefitStatus.ACTIVE))),
 			new StaffMembershipResponse(secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
-		assertThat(sql.getValue()).contains("where member_account_id=?", "order by starts_at desc,id desc");
+		assertThat(sql.getAllValues().getFirst()).contains("where member_account_id=?", "order by starts_at desc,id desc");
+		assertThat(sql.getAllValues().get(1)).contains("membership_plan_benefits", "where link.plan_code in (?,?)");
 		InOrder order = inOrder(memberships, db);
 		order.verify(memberships).expireDueForMember(member.getId(), NOW);
-		order.verify(db).query(anyString(), any(RowMapper.class), any(Object[].class));
+		order.verify(db).query(eq(sql.getAllValues().getFirst()), any(RowMapper.class), any(Object[].class));
+		order.verify(db).query(eq(sql.getAllValues().get(1)), any(RowMapper.class), any(Object[].class));
 		verify(memberships, never()).expireDue(any());
 	}
 
