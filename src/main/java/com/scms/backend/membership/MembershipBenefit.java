@@ -7,6 +7,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 @Entity
@@ -21,6 +24,13 @@ public class MembershipBenefit {
 
 	@Column(nullable = false, columnDefinition = "text")
 	private String description;
+
+	@Column(name = "display_order", nullable = false)
+	private int displayOrder;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "group_code")
+	private MembershipBenefitGroup group;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
@@ -41,5 +51,7 @@ public class MembershipBenefit {
 	public String getCode() { return code; }
 	public String getDisplayName() { return displayName; }
 	public String getDescription() { return description; }
+	public int getDisplayOrder() { return displayOrder; }
+	public MembershipBenefitGroup getGroup() { return group; }
 	public MembershipBenefitStatus getStatus() { return status; }
 }
