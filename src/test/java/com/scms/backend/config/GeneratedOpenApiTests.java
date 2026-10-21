@@ -474,7 +474,10 @@ class GeneratedOpenApiTests {
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "createdAt",
-				"updatedAt", "version");
+				"updatedAt", "version", "benefitsLocked");
+		assertThat(response.path("benefitsLocked").path("type").asText()).isEqualTo("boolean");
+		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString())
+			.contains("benefitsLocked");
 		assertThat(response.path("status").path("enum").toString())
 			.isEqualTo("[\"ACTIVE\",\"INACTIVE\"]");
 		assertThat(response.path("benefitCodes").path("type").asText()).isEqualTo("array");

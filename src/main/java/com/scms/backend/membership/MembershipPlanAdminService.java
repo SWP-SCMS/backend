@@ -47,13 +47,18 @@ public class MembershipPlanAdminService {
 	@Transactional(readOnly = true)
 	List<MembershipPlanResponse> list(UUID managerId) {
 		ensureActiveManager(managerId);
-		return plans.findAllWithBenefits().stream().map(MembershipPlanResponse::from).toList();
+		List<MembershipPlan> found = plans.findAllWithBenefits();
+		Set<String> planCodes = found.stream().map(MembershipPlan::getPlanCode).collect(java.util.stream.Collectors.toSet());
+		Set<String> lockedCodes = planCodes.isEmpty() ? Set.of() : orders.findUsedPlanCodes(planCodes);
+		return found.stream().map(plan -> MembershipPlanResponse.from(plan, lockedCodes.contains(plan.getPlanCode())))
+			.toList();
 	}
 
 	@Transactional(readOnly = true)
 	MembershipPlanResponse get(UUID managerId, String code) {
 		ensureActiveManager(managerId);
-		return MembershipPlanResponse.from(find(code));
+		MembershipPlan plan = find(code);
+		return MembershipPlanResponse.from(plan, orders.existsByPlanCodeSnapshot(plan.getPlanCode()));
 	}
 
 	@Transactional
@@ -73,7 +78,7 @@ public class MembershipPlanAdminService {
 		}
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId,
 			"MEMBERSHIP_PLAN_CREATED", "MEMBERSHIP_PLAN", auditId(code), snapshot(plan)));
-		return MembershipPlanResponse.from(plan);
+		return MembershipPlanResponse.from(plan, false);
 	}
 
 	@Transactional
@@ -83,11 +88,11 @@ public class MembershipPlanAdminService {
 				&& request.benefitCodes() == null && request.code() == null)) throw invalid("request", "at least one field is required");
 		if (request.code() != null) throw invalid("code", "code cannot be changed");
 		MembershipPlan plan = plans.findByPlanCodeForUpdate(code).orElseThrow(MembershipPlanNotFoundException::new);
+		boolean locked = orders.existsByPlanCodeSnapshot(code);
 		Map<String, Object> before = snapshot(plan);
 		Set<MembershipBenefit> resolved = plan.getBenefits();
 		if (request.benefitCodes() != null) {
 			Set<String> requestedCodes = normalizeBenefitCodes(request.benefitCodes());
-			boolean locked = orders.existsByPlanCodeSnapshot(code);
 			if (!locked || !codes(plan.getBenefits()).equals(requestedCodes)) {
 				resolved = resolveBenefits(request.benefitCodes());
 				if (locked && !codes(plan.getBenefits()).equals(codes(resolved))) {
@@ -103,7 +108,7 @@ public class MembershipPlanAdminService {
 			audits.save(new AuditEvent(UUID.randomUUID(), managerId,
 				"MEMBERSHIP_PLAN_UPDATED", "MEMBERSHIP_PLAN", auditId(code), null, before, after));
 		}
-		return MembershipPlanResponse.from(plan);
+		return MembershipPlanResponse.from(plan, locked);
 	}
 
 	private MembershipPlan find(String code) {

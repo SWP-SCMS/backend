@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Set;
 import java.util.TimeZone;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -170,6 +171,32 @@ class MembershipOrderIntegrationTests {
 		resumeForMember(accessToken(member.getAccount()))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.planCode").value("FAMILY"));
+	}
+
+	@Test
+	void usedPlanCodesIncludesOrdersInEveryPersistedStatus() throws Exception {
+		Set<String> expected = new java.util.HashSet<>();
+		for (MembershipOrderStatus status : MembershipOrderStatus.values()) {
+			String planCode = "LOCK_" + status.name();
+			expected.add(planCode);
+			insertPlan(planCode, "Lock " + status.name(), "ACTIVE", true);
+			MemberProfile member = createMember(AccountStatus.ACTIVE);
+			UUID offerId = insertOffer(member.getAccount(), planCode, "Lock Offer", BigInteger.valueOf(500000),
+				30, "ACTIVE");
+			createForMember(accessToken(member.getAccount()), offerId).andExpect(status().isCreated());
+			if (status == MembershipOrderStatus.PAID) {
+				jdbcTemplate.update("update membership_orders set status=?, paid_at=current_timestamp "
+					+ "where plan_code_snapshot=?", status.name(), planCode);
+			}
+			else {
+				jdbcTemplate.update("update membership_orders set status=?, paid_at=null where plan_code_snapshot=?",
+					status.name(), planCode);
+			}
+		}
+
+		assertThat(membershipOrderRepository.findUsedPlanCodes(
+			Set.of("LOCK_PENDING_PAYMENT", "LOCK_PAID", "LOCK_EXPIRED", "UNUSED")))
+			.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
