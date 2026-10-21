@@ -10,10 +10,10 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface MembershipPlanRepository extends JpaRepository<MembershipPlan, String> {
-	@Query("select distinct plan from MembershipPlan plan left join fetch plan.benefits order by plan.planCode")
+	@Query("select distinct plan from MembershipPlan plan left join fetch plan.benefits benefit left join fetch benefit.group order by plan.planCode")
 	List<MembershipPlan> findAllWithBenefits();
 
-	@Query("select distinct plan from MembershipPlan plan left join fetch plan.benefits where plan.planCode = :code")
+	@Query("select distinct plan from MembershipPlan plan left join fetch plan.benefits benefit left join fetch benefit.group where plan.planCode = :code")
 	Optional<MembershipPlan> findByIdWithBenefits(@Param("code") String code);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)

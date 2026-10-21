@@ -42,13 +42,18 @@ class MembershipPlanAdminControllerTests {
 	void managerCanReadBenefitCatalog() throws Exception {
 		UUID managerId = UUID.randomUUID();
 		when(service.catalog(managerId)).thenReturn(List.of(
-			new MembershipBenefitResponse("A_ACCESS", "A", "A desc", MembershipBenefitStatus.ACTIVE)));
+			new MembershipBenefitResponse("A_ACCESS", "A", "A desc", MembershipBenefitStatus.ACTIVE,
+				20, "ACCESS", "Access", 10)));
 
 		mockMvc.perform(get("/api/v1/manager/membership-benefits").contextPath("/api/v1")
 				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
 					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$[0].code").value("A_ACCESS"));
+			.andExpect(jsonPath("$[0].code").value("A_ACCESS"))
+			.andExpect(jsonPath("$[0].displayOrder").value(20))
+			.andExpect(jsonPath("$[0].groupCode").value("ACCESS"))
+			.andExpect(jsonPath("$[0].groupDisplayName").value("Access"))
+			.andExpect(jsonPath("$[0].groupDisplayOrder").value(10));
 	}
 
 	@Test

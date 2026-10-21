@@ -116,7 +116,7 @@ components:
     MembershipBenefitResponse:
       type: object
       additionalProperties: false
-      required: [code, displayName, description, status]
+      required: [code, displayName, description, status, displayOrder, groupCode, groupDisplayName, groupDisplayOrder]
       properties:
         code:
           type: string
@@ -127,6 +127,16 @@ components:
         status:
           type: string
           enum: [ACTIVE, INACTIVE]
+        displayOrder:
+          type: integer
+          minimum: 0
+        groupCode:
+          type: [string, "null"]
+        groupDisplayName:
+          type: [string, "null"]
+        groupDisplayOrder:
+          type: [integer, "null"]
+          minimum: 0
     ProblemDetail:
       type: object
       required:

@@ -87,7 +87,8 @@ public class MembershipPlanAdminService {
 		if (request == null || (request.displayName() == null && request.status() == null
 				&& request.benefitCodes() == null && request.code() == null)) throw invalid("request", "at least one field is required");
 		if (request.code() != null) throw invalid("code", "code cannot be changed");
-		MembershipPlan plan = plans.findByPlanCodeForUpdate(code).orElseThrow(MembershipPlanNotFoundException::new);
+		plans.findByPlanCodeForUpdate(code).orElseThrow(MembershipPlanNotFoundException::new);
+		MembershipPlan plan = find(code);
 		boolean locked = orders.existsByPlanCodeSnapshot(code);
 		Map<String, Object> before = snapshot(plan);
 		Set<MembershipBenefit> resolved = plan.getBenefits();

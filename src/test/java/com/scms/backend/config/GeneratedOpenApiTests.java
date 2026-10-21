@@ -474,7 +474,7 @@ class GeneratedOpenApiTests {
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "createdAt",
+			.containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "benefits", "createdAt",
 				"updatedAt", "version", "benefitsLocked");
 		assertThat(response.path("benefitsLocked").path("type").asText()).isEqualTo("boolean");
 		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString())
@@ -487,7 +487,17 @@ class GeneratedOpenApiTests {
 
 		JsonNode benefit = document.at("/components/schemas/MembershipBenefitResponse/properties");
 		assertThat(benefit.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("code", "displayName", "description", "status");
+			.containsExactlyInAnyOrder("code", "displayName", "description", "status", "displayOrder",
+				"groupCode", "groupDisplayName", "groupDisplayOrder");
+		assertThat(document.at("/components/schemas/MembershipBenefitResponse/required").toString())
+			.contains("displayOrder", "groupCode", "groupDisplayName", "groupDisplayOrder");
+		assertThat(benefit.at("/displayOrder/minimum").asInt()).isZero();
+		assertThat(benefit.at("/groupCode/type").toString()).contains("string", "null");
+		assertThat(benefit.at("/groupDisplayName/type").toString()).contains("string", "null");
+		assertThat(benefit.at("/groupDisplayOrder/type").toString()).contains("integer", "null");
+		assertThat(benefit.at("/groupDisplayOrder/minimum").asInt()).isZero();
+		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString())
+			.contains("benefits");
 
 		assertThat(operation(document, "/manager/membership-benefits", "get").path("description").asText())
 			.isEqualTo("Requires MANAGER role.");

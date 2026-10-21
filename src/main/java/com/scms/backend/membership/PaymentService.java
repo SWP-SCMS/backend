@@ -358,27 +358,34 @@ class PaymentService {
 		if (codes.isEmpty()) return Map.of();
 		String placeholders = String.join(",", java.util.Collections.nCopies(codes.size(), "?"));
 		List<PlanBenefitRow> rows = db.query("""
-			select link.plan_code,benefit.code,benefit.display_name,benefit.description,benefit.status
+			select link.plan_code,benefit.code,benefit.display_name,benefit.description,benefit.status,
+			       benefit.display_order,benefit.group_code,benefit_group.display_name as group_display_name,
+			       benefit_group.display_order as group_display_order
 			from membership_plan_benefits link
 			join membership_benefits benefit on benefit.code=link.benefit_code
+			left join membership_benefit_groups benefit_group on benefit_group.code=benefit.group_code
 			where link.plan_code in (%s)
-			order by link.plan_code,benefit.code
+			order by link.plan_code,coalesce(benefit_group.display_order,benefit.display_order),benefit.display_order,benefit.code
 			""".formatted(placeholders), (rs, row) -> new PlanBenefitRow(rs.getString("plan_code"),
 				rs.getString("code"), rs.getString("display_name"), rs.getString("description"),
-				MembershipBenefitStatus.valueOf(rs.getString("status"))), codes.toArray());
+				MembershipBenefitStatus.valueOf(rs.getString("status")), rs.getInt("display_order"),
+				rs.getString("group_code"), rs.getString("group_display_name"),
+				rs.getObject("group_display_order", Integer.class)), codes.toArray());
 		Map<String, List<MembershipBenefitResponse>> grouped = new LinkedHashMap<>();
 		for (PlanBenefitRow row : rows) {
 			grouped.computeIfAbsent(row.planCode(), ignored -> new ArrayList<>())
-				.add(new MembershipBenefitResponse(row.code(), row.displayName(), row.description(), row.status()));
+				.add(new MembershipBenefitResponse(row.code(), row.displayName(), row.description(), row.status(),
+					row.displayOrder(), row.groupCode(), row.groupDisplayName(), row.groupDisplayOrder()));
 		}
 		Map<String, MembershipBenefits> result = new LinkedHashMap<>();
 		grouped.forEach((code, planBenefits) -> result.put(code, new MembershipBenefits(
-			planBenefits.stream().map(MembershipBenefitResponse::code).toList(), List.copyOf(planBenefits))));
+			planBenefits.stream().map(MembershipBenefitResponse::code).sorted().toList(), List.copyOf(planBenefits))));
 		return result;
 	}
 
 	private record PlanBenefitRow(String planCode, String code, String displayName, String description,
-		MembershipBenefitStatus status) { }
+		MembershipBenefitStatus status, int displayOrder, String groupCode, String groupDisplayName,
+		Integer groupDisplayOrder) { }
 
 	private record MembershipBenefits(List<String> codes, List<MembershipBenefitResponse> benefits) {
 		private static final MembershipBenefits EMPTY = new MembershipBenefits(List.of(), List.of());
