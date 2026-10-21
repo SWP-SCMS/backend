@@ -50,7 +50,11 @@ class AuditHistoryService {
 		Map<UUID, Account> actors = actorIds.isEmpty() ? Map.of() : accounts.findAllById(actorIds).stream()
 			.collect(Collectors.toMap(Account::getId, Function.identity()));
 		return new AuditHistoryPageResponse(page.getContent().stream()
-			.map(event -> AuditHistoryResponse.from(event, actors.get(event.getActorAccountId()))).toList(),
+			.map(event -> {
+				UUID actorIdForEvent = event.getActorAccountId();
+				Account actor = actorIdForEvent == null ? null : actors.get(actorIdForEvent);
+				return AuditHistoryResponse.from(event, actor);
+			}).toList(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
