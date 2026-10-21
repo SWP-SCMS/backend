@@ -16,6 +16,7 @@ import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import org.junit.jupiter.api.Test;
 import org.springdoc.core.configuration.SpringDocConfiguration;
@@ -534,6 +535,26 @@ class GeneratedOpenApiTests {
 		assertThat(schema.path("properties").properties().stream()
 			.map(java.util.Map.Entry::getKey).toList()).contains("memberName");
 		assertThat(schema.path("required").toString()).contains("memberName");
+	}
+
+	@Test
+	void staticOfferContractsDocumentPublicActiveCatalogue() throws Exception {
+		ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
+		for (String resourcePath : List.of("/openapi/us12-membership-offer-list.yaml",
+			"/openapi/us13-membership-offer-detail.yaml")) {
+			try (var stream = getClass().getResourceAsStream(resourcePath)) {
+				assertThat(stream).isNotNull();
+				JsonNode document = yaml.readTree(stream);
+				JsonNode operation = document.at(resourcePath.contains("us12")
+					? "/paths/~1membership-offers/get"
+					: "/paths/~1membership-offers~1{offerId}/get");
+				assertThat(operation.path("security").isMissingNode()).as(resourcePath).isTrue();
+				assertThat(operation.path("responses").path("401").isMissingNode()).as(resourcePath).isTrue();
+				assertThat(operation.path("responses").path("403").isMissingNode()).as(resourcePath).isTrue();
+				assertThat(operation.path("description").asText().toLowerCase()).as(resourcePath)
+					.contains("public", "active", "plan");
+			}
+		}
 	}
 
 	@Test

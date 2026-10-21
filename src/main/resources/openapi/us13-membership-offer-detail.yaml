@@ -13,12 +13,9 @@ paths:
       summary: Get an active Membership Offer
       operationId: getMembershipOffer
       description: >-
-        Returns an ACTIVE Membership Offer to an ACTIVE MEMBER or RECEPTIONIST. A nonexistent
-        offer and an INACTIVE offer produce the same not-found response, so the endpoint does
-        not disclose whether an inactive record exists. A MEMBER may use this endpoint even
-        when the Account already has an ACTIVE Membership.
-      security:
-        - BearerAuth: []
+        Public catalogue detail returning an ACTIVE Membership Offer belonging to an ACTIVE
+        Membership Plan. A nonexistent offer and an INACTIVE offer produce the same not-found
+        response, so the endpoint does not disclose whether an inactive record exists.
       parameters:
         - name: offerId
           in: path
@@ -40,12 +37,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/MalformedRequestProblem'
-        '401':
-          description: >-
-            Bearer token is missing, invalid, or expired, or its Account no longer exists with
-            ACTIVE status.
-        '403':
-          description: The authenticated Account is not a MEMBER or RECEPTIONIST
         '404':
           description: >-
             The offer does not exist or is INACTIVE; both cases use code
