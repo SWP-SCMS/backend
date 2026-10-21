@@ -61,4 +61,15 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 		""")
 	Optional<MembershipOffer> findByIdAndStatusAndActivePlan(@Param("offerId") UUID offerId,
 		@Param("status") MembershipOfferStatus status);
+
+	@Query(value = """
+		select offer.plan_code
+		from membership_offers offer
+		join membership_plans plan on plan.plan_code = offer.plan_code
+		where offer.id = :offerId
+		  and offer.status = 'ACTIVE'
+		  and plan.status = 'ACTIVE'
+		for update of offer, plan
+		""", nativeQuery = true)
+	Optional<String> findSellablePlanCodeForUpdate(@Param("offerId") UUID offerId);
 }

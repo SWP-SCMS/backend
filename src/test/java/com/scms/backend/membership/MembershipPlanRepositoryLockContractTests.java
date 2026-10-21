@@ -32,4 +32,18 @@ class MembershipPlanRepositoryLockContractTests {
 		assertThat(query.value())
 			.contains("select status", "membership_plans", "plan_code = :code", "for update");
 	}
+
+	@Test
+	void sellableOfferLockQueryLocksOfferAndPlanTogether() {
+		Method method = java.util.Arrays.stream(MembershipOfferRepository.class.getMethods())
+			.filter(candidate -> candidate.getName().equals("findSellablePlanCodeForUpdate"))
+			.findFirst().orElse(null);
+
+		assertThat(method).isNotNull();
+		Query query = method.getAnnotation(Query.class);
+		assertThat(query.nativeQuery()).isTrue();
+		assertThat(query.value())
+			.contains("membership_offers offer", "join membership_plans plan", "offer.id = :offerId",
+				"offer.status = 'ACTIVE'", "plan.status = 'ACTIVE'", "for update of offer, plan");
+	}
 }

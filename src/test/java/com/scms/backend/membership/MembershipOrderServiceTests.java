@@ -31,11 +31,10 @@ class MembershipOrderServiceTests {
 	private final AccountRepository accountRepository = mock(AccountRepository.class);
 	private final MemberProfileRepository memberProfileRepository = mock(MemberProfileRepository.class);
 	private final MembershipOfferRepository offerRepository = mock(MembershipOfferRepository.class);
-	private final MembershipPlanRepository planRepository = mock(MembershipPlanRepository.class);
 	private final MembershipRepository membershipRepository = mock(MembershipRepository.class);
 	private final MembershipOrderRepository orderRepository = mock(MembershipOrderRepository.class);
 	private final MembershipOrderService service = new MembershipOrderService(accountRepository,
-		memberProfileRepository, offerRepository, planRepository, membershipRepository, orderRepository);
+		memberProfileRepository, offerRepository, membershipRepository, orderRepository);
 
 	private UUID memberAccountId;
 	private UUID offerId;
@@ -72,10 +71,8 @@ class MembershipOrderServiceTests {
 		when(offer.getDurationDays()).thenReturn(30);
 		when(offerRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE))
 			.thenReturn(Optional.of(offer));
-		when(planRepository.findByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
-			.thenReturn(Optional.of(plan));
-		when(planRepository.findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
-			.thenReturn(Optional.of(MembershipPlanStatus.ACTIVE.name()));
+		when(offerRepository.findSellablePlanCodeForUpdate(offerId))
+			.thenReturn(Optional.of(MembershipPlanCode.BASIC.name()));
 	}
 
 	@Test
@@ -109,8 +106,8 @@ class MembershipOrderServiceTests {
 			new MembershipOrderCreateRequest(offerId)))).doesNotThrowAnyException();
 
 		assertThat(response.get().offerId()).isEqualTo(offerId);
+		verify(offerRepository).findSellablePlanCodeForUpdate(offerId);
 		verify(offerRepository).findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE);
-		verify(planRepository).findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name());
 	}
 
 	@Test
@@ -147,8 +144,7 @@ class MembershipOrderServiceTests {
 
 	@Test
 	void creationRejectsFreshInactiveStatusWhenManagedPlanIsStaleActive() {
-		when(planRepository.findStatusByPlanCodeForUpdate(MembershipPlanCode.BASIC.name()))
-			.thenReturn(Optional.of(MembershipPlanStatus.INACTIVE.name()));
+		when(offerRepository.findSellablePlanCodeForUpdate(offerId)).thenReturn(Optional.empty());
 
 		assertUnavailable(() -> service.createForMember(memberAccountId,
 			new MembershipOrderCreateRequest(offerId)));

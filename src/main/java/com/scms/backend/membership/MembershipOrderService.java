@@ -26,20 +26,17 @@ public class MembershipOrderService {
 	private final AccountRepository accountRepository;
 	private final MemberProfileRepository memberProfileRepository;
 	private final MembershipOfferRepository membershipOfferRepository;
-	private final MembershipPlanRepository membershipPlanRepository;
 	private final MembershipRepository membershipRepository;
 	private final MembershipOrderRepository membershipOrderRepository;
 
 	MembershipOrderService(AccountRepository accountRepository,
 			MemberProfileRepository memberProfileRepository,
 			MembershipOfferRepository membershipOfferRepository,
-			MembershipPlanRepository membershipPlanRepository,
 			MembershipRepository membershipRepository,
 			MembershipOrderRepository membershipOrderRepository) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.membershipOfferRepository = membershipOfferRepository;
-		this.membershipPlanRepository = membershipPlanRepository;
 		this.membershipRepository = membershipRepository;
 		this.membershipOrderRepository = membershipOrderRepository;
 	}
@@ -73,9 +70,6 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
-		membershipPlanRepository.findStatusByPlanCodeForUpdate(offer.getPlan().getPlanCode())
-			.filter(MembershipPlanStatus.ACTIVE.name()::equals)
-			.orElseThrow(MembershipOfferUnavailableException::new);
 		membershipRepository.expireDue(Instant.now());
 		ensureActiveMember(member);
 		UUID memberAccountId = member.getAccountId();
@@ -110,6 +104,8 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOffer findActiveOffer(UUID offerId) {
+		membershipOfferRepository.findSellablePlanCodeForUpdate(offerId)
+			.orElseThrow(MembershipOfferUnavailableException::new);
 		return membershipOfferRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE)
 			.orElseThrow(MembershipOfferUnavailableException::new);
 	}
