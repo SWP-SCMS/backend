@@ -23,7 +23,7 @@ public class RefreshTokenCookieService {
 			.build();
 	}
 
-	ResponseCookie clear() {
+	public ResponseCookie clear() {
 		return baseCookie("")
 			.maxAge(Duration.ZERO)
 			.build();

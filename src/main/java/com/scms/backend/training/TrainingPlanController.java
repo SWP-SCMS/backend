@@ -42,6 +42,7 @@ public class TrainingPlanController {
 	}
 
 	@PostMapping
+	@Operation(description = "Requires the TRAINING_PLAN Benefit and creates the only ACTIVE plan for the Member. If an ACTIVE plan exists, returns ACTIVE_TRAINING_PLAN_EXISTS. Supplying replaceActivePlanId and expectedActivePlanVersion archives it and creates the replacement atomically.")
 	public ResponseEntity<TrainingPlanResponse> create(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable UUID memberId, @Valid @RequestBody CreateTrainingPlanRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED)

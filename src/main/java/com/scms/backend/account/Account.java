@@ -55,6 +55,9 @@ public class Account {
 	@Column(name = "registration_expires_at")
 	private Instant registrationExpiresAt;
 
+	@Column(name = "auth_version", nullable = false)
+	private long authVersion;
+
 	@Generated(event = EventType.INSERT)
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
@@ -143,6 +146,15 @@ public class Account {
 		email = Objects.requireNonNull(newEmail);
 	}
 
+	public void changeVerifiedStaffEmail(String newEmail, Instant now) {
+		if (role == AccountRole.MEMBER || status != AccountStatus.ACTIVE) {
+			throw new IllegalStateException("Only an active staff account can change its verified email");
+		}
+		email = Objects.requireNonNull(newEmail);
+		emailVerifiedAt = Objects.requireNonNull(now);
+		authVersion++;
+	}
+
 	public void reviveSelfRegistration(String fullName,String phone,String email,LocalDate birthDate,
 			String passwordHash,Instant registrationExpiresAt) {
 		if (role!=AccountRole.MEMBER || status!=AccountStatus.INACTIVE || emailVerificationRequired
@@ -199,6 +211,8 @@ public class Account {
 	public boolean isEmailVerificationRequired() { return emailVerificationRequired; }
 
 	public Instant getRegistrationExpiresAt() { return registrationExpiresAt; }
+
+	public long getAuthVersion() { return authVersion; }
 
 	public Instant getCreatedAt() {
 		return createdAt;

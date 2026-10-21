@@ -33,7 +33,9 @@ public class ActiveAccountJwtValidator implements OAuth2TokenValidator<Jwt> {
 			return OAuth2TokenValidatorResult.failure(INVALID_TOKEN);
 		}
 
-		if (!accountRepository.existsByIdAndStatus(accountId, AccountStatus.ACTIVE)) {
+		Number version = jwt.getClaim("authVersion");
+		long authVersion = version == null ? 0L : version.longValue();
+		if (!accountRepository.existsByIdAndStatusAndAuthVersion(accountId, AccountStatus.ACTIVE, authVersion)) {
 			return OAuth2TokenValidatorResult.failure(INVALID_TOKEN);
 		}
 		return OAuth2TokenValidatorResult.success();

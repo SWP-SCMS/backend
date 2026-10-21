@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.TimeZone;
+import java.time.ZoneOffset;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 
@@ -30,6 +32,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest
 @ActiveProfiles("test")
 class NotificationDurabilityIntegrationTests {
+	static { TimeZone.setDefault(TimeZone.getTimeZone(ZoneOffset.UTC)); }
 
 	@Container
 	@ServiceConnection

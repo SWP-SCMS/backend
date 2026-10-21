@@ -578,6 +578,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if (exception.getCurrentVersionNumber() != null) {
 			problem.setProperty("currentVersionNumber", exception.getCurrentVersionNumber());
 		}
+		if (exception.getActivePlanId() != null) {
+			problem.setProperty("activePlanId", exception.getActivePlanId());
+			problem.setProperty("activePlanTitle", exception.getActivePlanTitle());
+		}
 		return problem;
 	}
 

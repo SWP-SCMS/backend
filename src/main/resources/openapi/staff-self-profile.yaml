@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: SCMS Staff Self Profile API
   version: 1.0.0
@@ -8,7 +8,11 @@ paths:
       summary: Get the authenticated staff profile
       security: [{bearerAuth: []}]
       responses:
-        '200': {description: Staff profile}
+        '200':
+          description: Staff profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StaffProfileResponse'}
     patch:
       summary: Update the authenticated staff profile
       security: [{bearerAuth: []}]
@@ -18,7 +22,45 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/StaffProfilePatchRequest'}
       responses:
-        '200': {description: Updated staff profile}
+        '200':
+          description: Updated staff profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StaffProfileResponse'}
+        '409': {description: Email changes require the verified email-change flow}
+  /staff/me/email-change:
+    post:
+      summary: Start a verified staff email change
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StaffEmailChangeRequest'}
+      responses:
+        '202': {description: OTP queued for the new email}
+    delete:
+      summary: Cancel the pending email change
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Pending request cancelled or already absent}
+  /staff/me/email-change/verify:
+    post:
+      summary: Verify the new email and revoke existing refresh tokens
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StaffEmailChangeVerifyRequest'}
+      responses:
+        '200': {description: Email promoted and sessions revoked}
+  /staff/me/email-change/resend:
+    post:
+      summary: Resend the pending email-change OTP
+      security: [{bearerAuth: []}]
+      responses:
+        '202': {description: Replacement OTP queued}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
@@ -28,5 +70,32 @@ components:
       properties:
         fullName: {type: string}
         phone: {type: string}
+        birthDate: {type: string, format: date}
+    StaffProfileResponse:
+      type: object
+      required: [accountId, fullName, phone, email, birthDate, role, status, pendingEmailChange]
+      properties:
+        accountId: {type: string, format: uuid}
+        fullName: {type: string}
+        phone: {type: string}
         email: {type: string, format: email}
         birthDate: {type: string, format: date}
+        role: {type: string, enum: [MANAGER, RECEPTIONIST, COACH]}
+        status: {type: string, enum: [ACTIVE, INACTIVE]}
+        pendingEmailChange: {type: boolean}
+        pendingEmailMasked: {type: [string, 'null']}
+        pendingEmailOtpExpiresAt: {type: [string, 'null'], format: date-time}
+        pendingEmailResendAvailableAt: {type: [string, 'null'], format: date-time}
+    StaffEmailChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [newEmail, currentPassword]
+      properties:
+        newEmail: {type: string, format: email, maxLength: 320}
+        currentPassword: {type: string, format: password}
+    StaffEmailChangeVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [otp]
+      properties:
+        otp: {type: string, pattern: '^[0-9]{6}$'}

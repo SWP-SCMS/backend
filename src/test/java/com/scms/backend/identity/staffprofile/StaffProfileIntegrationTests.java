@@ -70,8 +70,8 @@ class StaffProfileIntegrationTests {
 		String updatedPhone = "091000000" + role.ordinal();
 
 		patch(actor, """
-			{"fullName":"Updated Staff","phone":"%s","email":"updated-%s@example.com","birthDate":"1991-02-03"}
-			""".formatted(updatedPhone, role.name().toLowerCase()))
+			{"fullName":"Updated Staff","phone":"%s","birthDate":"1991-02-03"}
+			""".formatted(updatedPhone))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.accountId").value(actor.getId().toString()))
 			.andExpect(jsonPath("$.role").value(role.name()))
@@ -112,12 +112,13 @@ class StaffProfileIntegrationTests {
 	}
 
 	@Test
-	void duplicateIdentifiersReturnSpecificConflicts() throws Exception {
+	void directEmailChangeRequiresVerificationAndDuplicatePhoneKeepsSpecificConflict() throws Exception {
 		Account actor = createAccount(AccountRole.RECEPTIONIST);
 		Account existing = createAccount(AccountRole.COACH);
 
 		patch(actor, "{\"email\":\"" + existing.getEmail() + "\"}")
-			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
 		patch(actor, "{\"phone\":\"" + existing.getPhone() + "\"}")
 			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
 	}
@@ -125,11 +126,11 @@ class StaffProfileIntegrationTests {
 	@Test
 	void databaseUniqueRaceReturnsConflictAndRollsBackAccountAndAudit() throws Exception {
 		Account actor = createAccount(AccountRole.COACH);
-		String oldEmail = actor.getEmail();
+		String oldPhone = actor.getPhone();
 		long auditCount = audits.count();
 		installFailureTrigger();
 		try {
-			patch(actor, "{\"email\":\"race-staff@example.com\"}")
+			patch(actor, "{\"phone\":\"0999999999\"}")
 				.andExpect(status().isConflict())
 				.andExpect(jsonPath("$.code").value("ACCOUNT_IDENTIFIER_ALREADY_EXISTS"));
 		}
@@ -138,7 +139,7 @@ class StaffProfileIntegrationTests {
 		}
 
 		entityManager.clear();
-		assertThat(accounts.findById(actor.getId()).orElseThrow().getEmail()).isEqualTo(oldEmail);
+		assertThat(accounts.findById(actor.getId()).orElseThrow().getPhone()).isEqualTo(oldPhone);
 		assertThat(audits.count()).isEqualTo(auditCount);
 	}
 

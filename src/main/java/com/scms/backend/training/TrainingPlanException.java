@@ -8,18 +8,27 @@ public class TrainingPlanException extends RuntimeException {
 	private final String code;
 	private final String field;
 	private final Integer currentVersionNumber;
+	private final java.util.UUID activePlanId;
+	private final String activePlanTitle;
 
 	private TrainingPlanException(HttpStatus status, String code, String message) {
-		this(status, code, message, null, null);
+		this(status, code, message, null, null, null, null);
 	}
 
 	private TrainingPlanException(HttpStatus status, String code, String message, String field,
 			Integer currentVersionNumber) {
+		this(status, code, message, field, currentVersionNumber, null, null);
+	}
+
+	private TrainingPlanException(HttpStatus status, String code, String message, String field,
+			Integer currentVersionNumber, java.util.UUID activePlanId, String activePlanTitle) {
 		super(message);
 		this.status = status;
 		this.code = code;
 		this.field = field;
 		this.currentVersionNumber = currentVersionNumber;
+		this.activePlanId = activePlanId;
+		this.activePlanTitle = activePlanTitle;
 	}
 
 	static TrainingPlanException actorNotActiveCoach() {
@@ -57,6 +66,17 @@ public class TrainingPlanException extends RuntimeException {
 				"The Training Plan changed after this edit started.", null, currentVersionNumber);
 	}
 
+	static TrainingPlanException activePlanExists(TrainingPlan plan, int currentVersionNumber) {
+		return new TrainingPlanException(HttpStatus.CONFLICT, "ACTIVE_TRAINING_PLAN_EXISTS",
+			"This Member already has an active Training Plan.", null, currentVersionNumber,
+			plan.getId(), plan.getTitle());
+	}
+
+	static TrainingPlanException activePlanChanged() {
+		return new TrainingPlanException(HttpStatus.CONFLICT, "ACTIVE_TRAINING_PLAN_CHANGED",
+			"The active Training Plan changed after replacement was confirmed.");
+	}
+
 	static TrainingPlanException validationError(String field, String message) {
 		return new TrainingPlanException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", message, field, null);
 	}
@@ -65,4 +85,6 @@ public class TrainingPlanException extends RuntimeException {
 	public String getCode() { return code; }
 	public String getField() { return field; }
 	public Integer getCurrentVersionNumber() { return currentVersionNumber; }
+	public java.util.UUID getActivePlanId() { return activePlanId; }
+	public String getActivePlanTitle() { return activePlanTitle; }
 }

@@ -73,6 +73,41 @@ class TrainingPlanIntegrationTests {
 	}
 
 	@Test
+	void createConflictsWithActivePlanAndConfirmedReplacementIsAtomic() {
+		Account manager = createAccount(AccountRole.MANAGER, "Manager replace");
+		Account coach = createAccount(AccountRole.COACH, "Coach replace");
+		Account member = createAccount(AccountRole.MEMBER, "Member replace");
+		Instant now = Instant.now();
+		createPlusMembership(member.getId(), manager.getId(), now.minusSeconds(3600), now.plusSeconds(86400));
+		assignments.assign(manager.getId(), member.getId(),
+			new CoachAssignmentAssignRequest(coach.getId(), "Replacement test"));
+		TrainingPlanResponse original = trainingPlans.create(coach.getId(), member.getId(),
+			new CreateTrainingPlanRequest("Phase one", Map.of("goal", "Foundation")));
+
+		assertThatThrownBy(() -> trainingPlans.create(coach.getId(), member.getId(),
+			new CreateTrainingPlanRequest("Accidental duplicate", Map.of("goal", "Duplicate"))))
+			.isInstanceOfSatisfying(TrainingPlanException.class, exception -> {
+				assertThat(exception.getCode()).isEqualTo("ACTIVE_TRAINING_PLAN_EXISTS");
+				assertThat(exception.getActivePlanId()).isEqualTo(original.id());
+				assertThat(exception.getCurrentVersionNumber()).isEqualTo(1);
+			});
+
+		TrainingPlanResponse replacement = trainingPlans.create(coach.getId(), member.getId(),
+			new CreateTrainingPlanRequest("Phase two", Map.of("goal", "Progress"), original.id(), 1));
+		assertThat(replacement.status()).isEqualTo(TrainingPlanStatus.ACTIVE);
+		assertThat(jdbc.queryForObject("select status from training_plans where id=?",String.class,original.id()))
+			.isEqualTo("ARCHIVED");
+		assertThat(jdbc.queryForObject("select count(*) from training_plans where member_account_id=? and status='ACTIVE'",Long.class,member.getId()))
+			.isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from training_plan_versions where training_plan_id=?",Long.class,original.id()))
+			.isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action='TRAINING_PLAN_REPLACED' and target_id=?",Long.class,replacement.id()))
+			.isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select indexdef from pg_indexes where indexname='uq_training_plans_one_active_member'",String.class))
+			.contains("UNIQUE", "WHERE", "status", "ACTIVE");
+	}
+
+	@Test
 	void reassignedCoachCanReadUpdateAndArchiveOldPlanWithStaleVersionGuard() {
 		Account manager = createAccount(AccountRole.MANAGER, "Manager gaps");
 		Account firstCoach = createAccount(AccountRole.COACH, "First Coach");
