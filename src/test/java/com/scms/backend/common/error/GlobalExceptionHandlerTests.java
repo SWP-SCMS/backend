@@ -12,9 +12,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 
+import java.util.List;
+
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.StaffStatusConflictException;
 import com.scms.backend.membership.InvalidPlanCodeException;
+import com.scms.backend.membership.MembershipPlanConflictException;
+import com.scms.backend.membership.MembershipPlanValidationException;
 
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -104,6 +108,24 @@ class GlobalExceptionHandlerTests {
 	}
 
 	@Test
+	void returnsFieldLevelErrorsForMembershipPlanValidation() throws Exception {
+		mockMvc.perform(get("/plan-validation"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_PLAN_VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.detail").value("One or more request fields are invalid."))
+			.andExpect(jsonPath("$.errors.benefitCodes[0]").value("must contain only existing ACTIVE benefits"));
+	}
+
+	@Test
+	void preservesMembershipPlanConflictCodes() throws Exception {
+		for (String code : List.of("MEMBERSHIP_PLAN_CODE_CONFLICT", "MEMBERSHIP_PLAN_BENEFITS_LOCKED")) {
+			mockMvc.perform(get("/plan-conflict").param("code", code))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value(code));
+		}
+	}
+
+	@Test
 	void hidesInternalDetailsForUnexpectedErrors() throws Exception {
 		mockMvc.perform(get("/fail"))
 			.andExpect(status().isInternalServerError())
@@ -172,6 +194,16 @@ class GlobalExceptionHandlerTests {
 		@GetMapping("/invalid-plan")
 		void invalidPlan() {
 			throw new InvalidPlanCodeException();
+		}
+
+		@GetMapping("/plan-validation")
+		void planValidation() {
+			throw new MembershipPlanValidationException("benefitCodes", "must contain only existing ACTIVE benefits");
+		}
+
+		@GetMapping("/plan-conflict")
+		void planConflict(String code) {
+			throw new MembershipPlanConflictException(code);
 		}
 	}
 

@@ -39,13 +39,15 @@ public class MembershipPlanAdminController {
 
 	@PostMapping("/membership-plans")
 	ResponseEntity<MembershipPlanResponse> create(@AuthenticationPrincipal Jwt jwt,
-			@RequestBody MembershipPlanCreateRequest request) {
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true)
+			@RequestBody(required = false) MembershipPlanCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(service.create(accountId(jwt), request));
 	}
 
 	@PatchMapping("/membership-plans/{planCode}")
 	ResponseEntity<MembershipPlanResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable String planCode,
-			@RequestBody MembershipPlanPatchRequest request) {
+			@io.swagger.v3.oas.annotations.parameters.RequestBody(required = true)
+			@RequestBody(required = false) MembershipPlanPatchRequest request) {
 		return ResponseEntity.ok(service.update(accountId(jwt), planCode, request));
 	}
 
