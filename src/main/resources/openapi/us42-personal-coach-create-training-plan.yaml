@@ -34,6 +34,7 @@ paths:
     post:
       operationId: createPersonalTrainingPlan
       summary: Create a Training Plan and its initial immutable version
+      description: Requires the TRAINING_PLAN Benefit. A normal create conflicts when the Member already has an ACTIVE plan; replaceActivePlanId and expectedActivePlanVersion confirm an atomic archive-and-replace.
       security:
         - bearerAuth: []
       parameters:
@@ -83,6 +84,14 @@ components:
           maxLength: 200
         content:
           $ref: "#/components/schemas/TrainingPlanContent"
+        replaceActivePlanId:
+          type: string
+          format: uuid
+          description: ACTIVE plan to archive atomically. Must be supplied with expectedActivePlanVersion.
+        expectedActivePlanVersion:
+          type: integer
+          minimum: 1
+          description: Latest version observed when replacement was confirmed. Must be supplied with replaceActivePlanId.
     TrainingPlanContent:
       type: object
       additionalProperties: false
@@ -154,6 +163,11 @@ components:
             - ACTOR_NOT_ACTIVE_COACH
             - PLUS_MEMBERSHIP_REQUIRED
             - COACH_ASSIGNMENT_NOT_FOUND
+            - ACTIVE_TRAINING_PLAN_EXISTS
+            - ACTIVE_TRAINING_PLAN_CHANGED
+        activePlanId: { type: string, format: uuid }
+        activePlanTitle: { type: string }
+        currentVersionNumber: { type: integer, minimum: 1 }
   responses:
     BadRequest:
       description: Invalid request.
@@ -176,7 +190,7 @@ components:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }
     Conflict:
-      description: The Member does not have an active Membership with the TRAINING_PLAN Benefit.
+      description: Missing TRAINING_PLAN Benefit, an existing ACTIVE plan, or a stale replacement confirmation.
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/ProblemDetail" }

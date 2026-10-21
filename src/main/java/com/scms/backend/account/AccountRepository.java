@@ -27,6 +27,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 
 	boolean existsByIdAndStatus(UUID id, AccountStatus status);
 
+	boolean existsByIdAndStatusAndAuthVersion(UUID id, AccountStatus status, long authVersion);
+
 	boolean existsByIdAndRoleAndStatus(UUID id, AccountRole role, AccountStatus status);
 
 	boolean existsByRole(AccountRole role);

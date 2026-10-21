@@ -31,6 +31,11 @@ class TrainingPlanOpenApiTests {
 			Map<String, Object> components = (Map<String, Object>) document.get("components");
 			Map<String, Object> schemas = (Map<String, Object>) components.get("schemas");
 			assertThat(schemas).containsKeys("CreateTrainingPlanRequest", "TrainingPlanResponse", "ProblemDetail");
+			Map<String, Object> create = (Map<String, Object>) schemas.get("CreateTrainingPlanRequest");
+			Map<String, Object> properties = (Map<String, Object>) create.get("properties");
+			assertThat(properties).containsKeys("replaceActivePlanId", "expectedActivePlanVersion");
+			assertThat(yaml).contains("ACTIVE_TRAINING_PLAN_EXISTS", "ACTIVE_TRAINING_PLAN_CHANGED",
+				"activePlanId", "currentVersionNumber");
 		}
 	}
 }

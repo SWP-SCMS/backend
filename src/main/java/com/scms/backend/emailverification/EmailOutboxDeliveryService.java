@@ -34,11 +34,14 @@ class EmailOutboxDeliveryService {
 			 e.payload_ciphertext,e.payload_nonce,e.encryption_key_version,e.retry_count
 			""",this::map,Timestamp.from(now),Timestamp.from(now.minus(Duration.ofMinutes(5))),Timestamp.from(now),
 			Timestamp.from(now),worker,Timestamp.from(now));
-		return rows.stream().findFirst();
+		return rows.stream().findFirst().map(job -> new EmailJob(job.id(),job.accountId(),job.recipient(),
+			job.deliverBefore(),job.ciphertext(),job.nonce(),job.keyVersion(),job.retryCount(),
+			db.queryForObject("select full_name from accounts where id=?",String.class,job.accountId())));
 	}
 
 	void deliver(EmailJob job,Instant now){String otp=crypto.decryptOtp(job.ciphertext(),job.nonce(),job.keyVersion());
-		provider.sendVerificationOtp(job.recipient(),otp,Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes()));}
+		provider.sendVerificationOtp(job.recipient(),job.recipientName(),otp,
+			Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes()));}
 
 	@Transactional(propagation=Propagation.REQUIRES_NEW)
 	void sent(UUID id,Instant now){db.update("update email_outbox set status='SENT',sent_at=?,payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,last_error=null,updated_at=? where id=?",Timestamp.from(now),Timestamp.from(now),id);}
@@ -52,7 +55,7 @@ class EmailOutboxDeliveryService {
 	int expire(Instant now){var rows=db.query("update email_outbox set status='TERMINAL_FAILED',payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,last_error='OTP_EXPIRED',updated_at=? where status in ('PENDING','FAILED','PROCESSING') and deliver_before<=? returning id,account_id",(rs,n)->new TerminalJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class)),Timestamp.from(now),Timestamp.from(now));rows.forEach(job->auditTerminal(job.accountId(),job.id(),"OTP_EXPIRED"));return rows.size();}
 	private void auditTerminal(UUID accountId,UUID outboxId,String reason){audits.save(new AuditEvent(UUID.randomUUID(),"EMAIL_DELIVERY_TERMINAL_FAILED","ACCOUNT",accountId,java.util.Map.of("outboxId",outboxId.toString(),"reason",reason)));}
 
-	private EmailJob map(ResultSet rs,int n)throws SQLException{return new EmailJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getTimestamp(4).toInstant(),rs.getBytes(5),rs.getBytes(6),rs.getString(7),rs.getInt(8));}
-	record EmailJob(UUID id,UUID accountId,String recipient,Instant deliverBefore,byte[] ciphertext,byte[] nonce,String keyVersion,int retryCount){}
+	private EmailJob map(ResultSet rs,int n)throws SQLException{return new EmailJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getTimestamp(4).toInstant(),rs.getBytes(5),rs.getBytes(6),rs.getString(7),rs.getInt(8),null);}
+	record EmailJob(UUID id,UUID accountId,String recipient,Instant deliverBefore,byte[] ciphertext,byte[] nonce,String keyVersion,int retryCount,String recipientName){}
 	private record TerminalJob(UUID id,UUID accountId){}
 }

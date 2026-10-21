@@ -21,6 +21,9 @@ import com.scms.backend.auth.DuplicateAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
+import com.scms.backend.emailverification.StaffEmailChangeService;
+import com.scms.backend.emailverification.StaffEmailChangeStatus;
+import com.scms.backend.emailverification.EmailVerificationException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,13 +37,15 @@ class StaffProfileServiceTests {
 	@Mock AccountIdentifierAvailability identifiers;
 	@Mock MemberProfileDetailsValidator validator;
 	@Mock AuditEventRepository audits;
+	@Mock StaffEmailChangeService emailChanges;
 
 	private StaffProfileService service;
 
 	@BeforeEach
 	void setUp() {
 		MockitoAnnotations.openMocks(this);
-		service = new StaffProfileService(accounts, identifiers, validator, audits);
+		service = new StaffProfileService(accounts, identifiers, validator, audits, emailChanges);
+		when(emailChanges.status(any())).thenReturn(StaffEmailChangeStatus.none());
 	}
 
 	@Test
@@ -51,17 +56,16 @@ class StaffProfileServiceTests {
 		when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
 		when(validator.normalizeRequired(" New ", "fullName", 200)).thenReturn("New");
 		when(validator.normalizePhone("0900000002", "phone")).thenReturn("0900000002");
-		when(validator.normalizeEmail("NEW@example.com")).thenReturn("new@example.com");
 		when(validator.validateBirthDate(LocalDate.of(1991, 2, 2))).thenReturn(LocalDate.of(1991, 2, 2));
 
 		StaffProfileResponse response = service.updateProfile(id,
-			new StaffProfilePatchRequest(" New ", "0900000002", "NEW@example.com", LocalDate.of(1991, 2, 2)));
+			new StaffProfilePatchRequest(" New ", "0900000002", null, LocalDate.of(1991, 2, 2)));
 
 		assertThat(response.fullName()).isEqualTo("New");
 		assertThat(response.role()).isEqualTo(AccountRole.COACH);
 		assertThat(response.status()).isEqualTo(AccountStatus.ACTIVE);
 		assertThat(account.getPasswordHash()).isEqualTo("hash");
-		verify(identifiers).ensureAvailableForUpdate(id, "old@example.com", "0900000001", "new@example.com",
+		verify(identifiers).ensureAvailableForUpdate(id, "old@example.com", "0900000001", "old@example.com",
 			"0900000002");
 		var audit = org.mockito.ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
@@ -73,11 +77,25 @@ class StaffProfileServiceTests {
 			.containsEntry("email", "o***@example.com").containsEntry("phone", "******0001")
 			.doesNotContainKeys("password", "passwordHash", "role", "status");
 		assertThat(audit.getValue().getAfterData()).containsEntry("fullName", "New")
-			.containsEntry("email", "n***@example.com").containsEntry("phone", "******0002")
+			.containsEntry("email", "o***@example.com").containsEntry("phone", "******0002")
 			.doesNotContainKeys("password", "passwordHash", "role", "status");
 		var persistenceOrder = inOrder(accounts, audits);
 		persistenceOrder.verify(accounts).flush();
 		persistenceOrder.verify(audits).save(any());
+	}
+
+	@Test
+	void directEmailChangeRequiresVerifiedFlow() {
+		UUID id = UUID.randomUUID(); Account account = account(id);
+		when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
+		when(validator.normalizeEmail("new@example.com")).thenReturn("new@example.com");
+
+		assertThatThrownBy(() -> service.updateProfile(id,
+			new StaffProfilePatchRequest(null, null, "new@example.com", null)))
+			.isInstanceOfSatisfying(EmailVerificationException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		assertThat(account.getEmail()).isEqualTo("old@example.com");
+		verify(accounts, never()).flush();
 	}
 
 	@Test
@@ -101,12 +119,12 @@ class StaffProfileServiceTests {
 			"duplicate key value violates unique constraint uq_accounts_current_email");
 		DuplicateAccountException translated = org.mockito.Mockito.mock(DuplicateAccountException.class);
 		when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
-		when(validator.normalizeEmail("new@example.com")).thenReturn("new@example.com");
+		when(validator.normalizePhone("0900000099", "phone")).thenReturn("0900000099");
 		doThrow(databaseFailure).when(accounts).flush();
 		when(identifiers.fromDatabase(databaseFailure)).thenReturn(translated);
 
 		assertThatThrownBy(() -> service.updateProfile(id,
-			new StaffProfilePatchRequest(null, null, "new@example.com", null))).isSameAs(translated);
+			new StaffProfilePatchRequest(null, "0900000099", null, null))).isSameAs(translated);
 
 		verify(identifiers).fromDatabase(databaseFailure);
 		verify(audits, never()).save(any());

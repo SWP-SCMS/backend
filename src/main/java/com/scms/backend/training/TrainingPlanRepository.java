@@ -17,6 +17,10 @@ public interface TrainingPlanRepository extends JpaRepository<TrainingPlan, UUID
 
 	Optional<TrainingPlan> findByIdAndMemberAccountId(UUID id, UUID memberAccountId);
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p from TrainingPlan p where p.memberAccountId = :memberId and p.status = com.scms.backend.training.TrainingPlanStatus.ACTIVE")
+	Optional<TrainingPlan> findActiveByMemberAccountIdForUpdate(@Param("memberId") UUID memberId);
+
 	@Query("select p from TrainingPlan p where p.memberAccountId = :memberId "
 			+ "order by p.createdAt desc, p.id desc")
 	List<TrainingPlan> findByMemberAccountIdOrderByCreatedAtDesc(@Param("memberId") UUID memberId);

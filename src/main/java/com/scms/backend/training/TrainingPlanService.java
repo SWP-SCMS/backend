@@ -18,6 +18,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 
 @Service
 public class TrainingPlanService {
@@ -46,9 +47,35 @@ public class TrainingPlanService {
 		TrainingPlanContentValidator.validate(request.content());
 		Instant now = clock.instant();
 		CoachAssignment assignment = currentAssignment(coachId, memberId, now, "TRAINING_PLAN");
+		boolean replacing = request.replaceActivePlanId() != null || request.expectedActivePlanVersion() != null;
+		if ((request.replaceActivePlanId() == null) != (request.expectedActivePlanVersion() == null)) {
+			throw TrainingPlanException.validationError("replaceActivePlanId",
+				"replaceActivePlanId and expectedActivePlanVersion must be provided together.");
+		}
+		TrainingPlan active = plans.findActiveByMemberAccountIdForUpdate(memberId).orElse(null);
+		TrainingPlanVersion previous = active == null ? null
+			: versions.findTopByTrainingPlanIdOrderByVersionNumberDesc(active.getId())
+				.orElseThrow(TrainingPlanException::versionHistoryNotFound);
+		if (!replacing && active != null) {
+			throw TrainingPlanException.activePlanExists(active, previous.getVersionNumber());
+		}
+		if (replacing && (active == null || !active.getId().equals(request.replaceActivePlanId())
+				|| previous.getVersionNumber() != request.expectedActivePlanVersion())) {
+			throw TrainingPlanException.activePlanChanged();
+		}
+		if (active != null) {
+			active.archive(now);
+			plans.saveAndFlush(active);
+		}
 
-		TrainingPlan plan = plans.saveAndFlush(new TrainingPlan(UUID.randomUUID(), memberId, assignment.getId(),
+		TrainingPlan plan;
+		try {
+			plan = plans.saveAndFlush(new TrainingPlan(UUID.randomUUID(), memberId, assignment.getId(),
 				request.title().trim(), coachId, now));
+		}
+		catch (DataIntegrityViolationException exception) {
+			throw TrainingPlanException.activePlanChanged();
+		}
 		TrainingPlanVersion version = versions.saveAndFlush(new TrainingPlanVersion(UUID.randomUUID(), plan.getId(),
 				1, request.content(), coachId, now));
 
@@ -61,6 +88,16 @@ public class TrainingPlanService {
 		afterData.put("versionNumber", version.getVersionNumber());
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_PLAN_CREATED", "TRAINING_PLAN",
 				plan.getId(), afterData));
+		if (active != null) {
+			Map<String, Object> replacement = new LinkedHashMap<>();
+			replacement.put("memberAccountId", memberId.toString());
+			replacement.put("coachAssignmentId", assignment.getId().toString());
+			replacement.put("archivedPlanId", active.getId().toString());
+			replacement.put("archivedPlanVersion", previous.getVersionNumber());
+			replacement.put("newPlanId", plan.getId().toString());
+			audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_PLAN_REPLACED", "TRAINING_PLAN",
+				plan.getId(), replacement));
+		}
 
 		return TrainingPlanResponse.from(plan, version);
 	}

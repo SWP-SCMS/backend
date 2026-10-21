@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
+import java.util.TimeZone;
+import java.time.ZoneOffset;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
 class AuditActorSnapshotMigrationV22Tests {
+	static { TimeZone.setDefault(TimeZone.getTimeZone(ZoneOffset.UTC)); }
 
 	@Container
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");

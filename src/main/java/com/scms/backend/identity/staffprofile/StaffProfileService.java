@@ -18,6 +18,9 @@ import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.HttpStatus;
+import com.scms.backend.emailverification.EmailVerificationException;
+import com.scms.backend.emailverification.StaffEmailChangeService;
 
 @Service
 public class StaffProfileService {
@@ -25,13 +28,15 @@ public class StaffProfileService {
 	private final AccountIdentifierAvailability identifiers;
 	private final MemberProfileDetailsValidator validator;
 	private final AuditEventRepository audits;
+	private final StaffEmailChangeService emailChanges;
 
 	StaffProfileService(AccountRepository accounts, AccountIdentifierAvailability identifiers,
-			MemberProfileDetailsValidator validator, AuditEventRepository audits) {
+			MemberProfileDetailsValidator validator, AuditEventRepository audits, StaffEmailChangeService emailChanges) {
 		this.accounts = accounts;
 		this.identifiers = identifiers;
 		this.validator = validator;
 		this.audits = audits;
+		this.emailChanges = emailChanges;
 	}
 
 	@Transactional(readOnly = true)
@@ -47,6 +52,10 @@ public class StaffProfileService {
 		String phone = request.phone() == null ? account.getPhone()
 			: validator.normalizePhone(request.phone(), "phone");
 		String email = request.email() == null ? account.getEmail() : validator.normalizeEmail(request.email());
+		if (!Objects.equals(email, account.getEmail())) {
+			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_CHANGE_VERIFICATION_REQUIRED",
+				"Use the authenticated email-change verification flow to change email.");
+		}
 		LocalDate birthDate = request.birthDate() == null ? account.getBirthDate()
 			: validator.validateBirthDate(request.birthDate());
 		identifiers.ensureAvailableForUpdate(accountId, account.getEmail(), account.getPhone(), email, phone);
@@ -87,7 +96,9 @@ public class StaffProfileService {
 	}
 
 	private StaffProfileResponse toResponse(Account account) {
+		var pending = emailChanges.status(account.getId());
 		return new StaffProfileResponse(account.getId(), account.getFullName(), account.getPhone(), account.getEmail(),
-			account.getBirthDate(), account.getRole(), account.getStatus());
+			account.getBirthDate(), account.getRole(), account.getStatus(), pending.pending(), pending.maskedEmail(),
+			pending.otpExpiresAt(), pending.resendAvailableAt());
 	}
 }

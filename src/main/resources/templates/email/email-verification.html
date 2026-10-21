@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#172033">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:24px 12px">
+  <tr><td align="center">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;background:#fff;border-radius:16px;overflow:hidden">
+      <tr><td style="background:#123b69;padding:24px 32px;color:#fff;font-size:24px;font-weight:700">SCMS</td></tr>
+      <tr><td style="padding:32px">
+        <h1 style="margin:0 0 18px;font-size:24px">Xác thực tài khoản</h1>
+        <p style="margin:0 0 18px;line-height:1.6">Xin chào {{recipientName}},</p>
+        <p style="margin:0 0 20px;line-height:1.6">Dùng mã sau để hoàn tất xác thực tài khoản SCMS:</p>
+        <div style="background:#eef5ff;border:1px solid #c9ddf5;border-radius:12px;padding:20px;text-align:center;font-size:34px;font-weight:700;letter-spacing:8px;color:#123b69">{{otpCode}}</div>
+        <p style="margin:20px 0 8px;line-height:1.6">Mã có hiệu lực trong <strong>{{expiresInMinutes}} phút</strong>.</p>
+        <p style="margin:0 0 20px;line-height:1.6;color:#a33"><strong>Không chia sẻ mã này với bất kỳ ai.</strong></p>
+        <p style="margin:0;line-height:1.6;color:#526070">Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email hoặc liên hệ {{supportContact}}.</p>
+      </td></tr>
+      <tr><td style="padding:18px 32px;background:#f8fafc;color:#738096;font-size:12px;text-align:center">© {{currentYear}} SCMS</td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>

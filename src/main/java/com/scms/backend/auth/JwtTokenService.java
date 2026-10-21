@@ -36,6 +36,7 @@ public class JwtTokenService {
 			.expiresAt(expiresAt)
 			.id(UUID.randomUUID().toString())
 			.claim("role", account.getRole().name())
+			.claim("authVersion", account.getAuthVersion())
 			.build();
 		String token = jwtEncoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
 		return new AccessToken(token, properties.accessTokenTtl().toSeconds());

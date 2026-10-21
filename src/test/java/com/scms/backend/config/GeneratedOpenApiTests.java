@@ -78,6 +78,10 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/membership-orders/{orderId}/payments/sepay",
 		"GET /staff/me/profile",
 		"PATCH /staff/me/profile",
+		"POST /staff/me/email-change",
+		"POST /staff/me/email-change/verify",
+		"POST /staff/me/email-change/resend",
+		"DELETE /staff/me/email-change",
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
 		"GET /manager/membership-offers",
@@ -202,6 +206,7 @@ class GeneratedOpenApiTests {
 	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(
 		"POST /auth/logout",
 		"POST /auth/change-password",
+		"DELETE /staff/me/email-change",
 		"POST /manager/staff-accounts/{accountId}/reset-password",
 		"POST /reception/members/{memberId}/reset-password",
 		"GET /members/me/membership-orders/pending",
@@ -438,10 +443,29 @@ class GeneratedOpenApiTests {
 		}
 		assertThat(document.at("/components/schemas/ManualActivationPageResponse/properties/content/type").asText())
 			.isEqualTo("array");
+		JsonNode manualActivation = document.at("/components/schemas/ManualActivationResponse/properties");
+		assertThat(manualActivation.properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("reasonCode", "reasonDetail", "verificationMethod", "evidenceNote",
+				"reviewedByAccountId", "decisionNote");
+		for (String path : List.of("/reception/email-verification/manual-activation-requests",
+				"/manager/email-verification/manual-activation-requests")) {
+			JsonNode parameters = operation(document, path, "get").path("parameters");
+			assertThat(parameters.toString()).contains("status", "page", "size", "PENDING", "maximum");
+		}
 		assertThat(document.at("/paths/~1reception~1email-verification~1pending-accounts/get/description").asText())
 			.contains("RECEPTIONIST");
 		assertThat(document.at("/paths/~1manager~1email-verification~1manual-activation-requests/get/description").asText())
 			.contains("MANAGER");
+		assertThat(document.at("/components/schemas/StaffEmailChangeRequest/properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("newEmail", "currentPassword");
+		assertThat(document.at("/components/schemas/StaffEmailChangeVerifyRequest/properties/otp/pattern").asText())
+			.isEqualTo("^[0-9]{6}$");
+		assertThat(document.at("/components/schemas/StaffProfileResponse/properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).contains("pendingEmailChange", "pendingEmailMasked",
+				"pendingEmailOtpExpiresAt", "pendingEmailResendAvailableAt");
+		assertThat(document.at("/components/schemas/StaffProfilePatchRequest/properties/email").isMissingNode()).isTrue();
+		assertThat(document.at("/components/schemas/CreateTrainingPlanRequest/properties").properties().stream()
+			.map(java.util.Map.Entry::getKey).toList()).contains("replaceActivePlanId", "expectedActivePlanVersion");
 	}
 
 	@Test
