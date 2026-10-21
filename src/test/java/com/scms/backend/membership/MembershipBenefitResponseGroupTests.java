@@ -32,6 +32,18 @@ class MembershipBenefitResponseGroupTests {
 		assertThat(response.groupDisplayOrder()).isNull();
 	}
 
+	@Test
+	void benefitCodesCanRemainAlphabeticalWhileBenefitsUseDisplayOrdering() {
+		List<MembershipBenefitResponse> benefits = List.of(
+			benefit("TRAINING_FEEDBACK", 20, "TRAINING_TRACKING", "Tracking", 70),
+			benefit("TRAINING_RESULT", 10, "TRAINING_TRACKING", "Tracking", 70));
+
+		assertThat(benefits.stream().sorted(MembershipBenefitResponse.displayOrdering())
+			.map(MembershipBenefitResponse::code)).containsExactly("TRAINING_RESULT", "TRAINING_FEEDBACK");
+		assertThat(benefits.stream().map(MembershipBenefitResponse::code).sorted())
+			.containsExactly("TRAINING_FEEDBACK", "TRAINING_RESULT");
+	}
+
 	private MembershipBenefitResponse benefit(String code, int displayOrder, String groupCode,
 			String groupDisplayName, Integer groupDisplayOrder) {
 		return new MembershipBenefitResponse(code, code, code, MembershipBenefitStatus.ACTIVE,

@@ -25,8 +25,12 @@ class MembershipBenefitGroupOpenApiTests {
 					.map(JsonNode::asText).toList())
 					.contains("displayOrder", "groupCode", "groupDisplayName", "groupDisplayOrder");
 				assertThat(schema.at("/properties/displayOrder/minimum").asInt()).isZero();
-				assertThat(schema.at("/properties/groupCode/nullable").asBoolean()).isTrue();
-				assertThat(schema.at("/properties/groupDisplayOrder/nullable").asBoolean()).isTrue();
+				assertThat(StreamSupport.stream(schema.at("/properties/groupCode/type").spliterator(), false)
+					.map(JsonNode::asText).toList())
+					.containsExactly("string", "null");
+				assertThat(StreamSupport.stream(schema.at("/properties/groupDisplayOrder/type").spliterator(), false)
+					.map(JsonNode::asText).toList())
+					.containsExactly("integer", "null");
 			}
 		}
 	}

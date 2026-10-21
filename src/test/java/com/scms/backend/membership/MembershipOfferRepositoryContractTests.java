@@ -7,6 +7,7 @@ import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.EntityGraph;
 
 class MembershipOfferRepositoryContractTests {
 
@@ -25,6 +26,8 @@ class MembershipOfferRepositoryContractTests {
 
 		assertThat(catalogQuery).contains("join fetch benefit.group");
 		assertThat(plansQuery).contains("join fetch benefit.group");
+		assertThat(MembershipBenefitRepository.class.getMethod("findAllByCodeIn", Iterable.class)
+			.getAnnotation(EntityGraph.class).attributePaths()).containsExactly("group");
 	}
 
 	private void assertManagerReadQuery(String methodName) {

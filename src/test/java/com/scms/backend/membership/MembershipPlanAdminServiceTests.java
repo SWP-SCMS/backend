@@ -170,6 +170,7 @@ class MembershipPlanAdminServiceTests {
 			List.of("CENTER_ACCESS")));
 		MembershipPlan plan = new MembershipPlan("AUDITED_PLAN", "Audited", MembershipPlanStatus.ACTIVE, Set.of(benefit));
 		when(plans.findByPlanCodeForUpdate("AUDITED_PLAN")).thenReturn(Optional.of(plan));
+		when(plans.findByIdWithBenefits("AUDITED_PLAN")).thenReturn(Optional.of(plan));
 
 		service.update(managerId, "AUDITED_PLAN", new MembershipPlanPatchRequest("Renamed", null, null));
 
@@ -187,6 +188,7 @@ class MembershipPlanAdminServiceTests {
 		MembershipBenefit benefit = new MembershipBenefit("CENTER_ACCESS", "Center", "Access", MembershipBenefitStatus.ACTIVE);
 		MembershipPlan plan = new MembershipPlan("BASIC", "Basic", MembershipPlanStatus.ACTIVE, Set.of(benefit));
 		when(plans.findByPlanCodeForUpdate("BASIC")).thenReturn(Optional.of(plan));
+		when(plans.findByIdWithBenefits("BASIC")).thenReturn(Optional.of(plan));
 		when(orders.existsByPlanCodeSnapshot("BASIC")).thenReturn(true);
 
 		MembershipPlanResponse same = service.update(managerId, "BASIC",

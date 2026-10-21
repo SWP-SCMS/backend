@@ -2,9 +2,14 @@ package com.scms.backend.membership;
 
 import java.util.Comparator;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record MembershipBenefitResponse(String code, String displayName, String description,
-		MembershipBenefitStatus status, int displayOrder, String groupCode, String groupDisplayName,
-		Integer groupDisplayOrder) {
+		MembershipBenefitStatus status,
+		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") int displayOrder,
+		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) String groupCode,
+		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) String groupDisplayName,
+		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true, minimum = "0") Integer groupDisplayOrder) {
 	MembershipBenefitResponse(String code, String displayName, String description, MembershipBenefitStatus status) {
 		this(code, displayName, description, status, 0, null, null, null);
 	}

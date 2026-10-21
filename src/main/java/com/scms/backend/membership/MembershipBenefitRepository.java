@@ -3,6 +3,7 @@ package com.scms.backend.membership;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 
 public interface MembershipBenefitRepository extends JpaRepository<MembershipBenefit, String> {
@@ -13,5 +14,6 @@ public interface MembershipBenefitRepository extends JpaRepository<MembershipBen
 		order by coalesce(benefitGroup.displayOrder, benefit.displayOrder), benefit.displayOrder, benefit.code
 		""")
 	List<MembershipBenefit> findAllByOrderByCode();
+	@EntityGraph(attributePaths = "group")
 	List<MembershipBenefit> findAllByCodeIn(Iterable<String> codes);
 }

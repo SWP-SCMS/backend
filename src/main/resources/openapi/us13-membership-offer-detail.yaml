@@ -131,15 +131,12 @@ components:
           type: integer
           minimum: 0
         groupCode:
-          type: string
-          nullable: true
+          type: [string, "null"]
         groupDisplayName:
-          type: string
-          nullable: true
+          type: [string, "null"]
         groupDisplayOrder:
-          type: integer
+          type: [integer, "null"]
           minimum: 0
-          nullable: true
     ProblemDetail:
       type: object
       required:

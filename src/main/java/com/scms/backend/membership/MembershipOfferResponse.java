@@ -28,7 +28,7 @@ public record MembershipOfferResponse(
 			.toList();
 		return new MembershipOfferResponse(offer.getId(), plan.getPlanCode(), plan.getDisplayName(), offer.getName(),
 			offer.getDescription(), offer.getPriceAmount(), offer.getCurrencyCode(), offer.getDurationDays(),
-			benefits.stream().map(MembershipBenefitResponse::code).toList(), benefits,
+			benefits.stream().map(MembershipBenefitResponse::code).sorted().toList(), benefits,
 			plan.supportsBooking(), plan.supportsPersonalCoaching());
 	}
 }

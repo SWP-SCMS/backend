@@ -379,7 +379,7 @@ class PaymentService {
 		}
 		Map<String, MembershipBenefits> result = new LinkedHashMap<>();
 		grouped.forEach((code, planBenefits) -> result.put(code, new MembershipBenefits(
-			planBenefits.stream().map(MembershipBenefitResponse::code).toList(), List.copyOf(planBenefits))));
+			planBenefits.stream().map(MembershipBenefitResponse::code).sorted().toList(), List.copyOf(planBenefits))));
 		return result;
 	}
 
