@@ -57,6 +57,28 @@ class AuditHistoryServiceTests {
 	}
 
 	@Test
+	void returnsSystemAuditWithNullActorIdentity() {
+		AuditEventRepository audits = mock(AuditEventRepository.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		AuditHistoryService service = new AuditHistoryService(audits, accounts);
+		UUID managerId = UUID.randomUUID();
+		AuditEvent event = new AuditEvent(UUID.randomUUID(), (UUID) null, "SYSTEM_ACTION", "ACCOUNT",
+			UUID.randomUUID(), Map.of());
+		Pageable pageable = PageRequest.of(0, 20);
+		when(accounts.existsByIdAndRoleAndStatus(eq(managerId), any(), any())).thenReturn(true);
+		when(audits.findAll(any(Specification.class), eq(pageable)))
+			.thenReturn(new PageImpl<>(List.of(event), pageable, 1));
+
+		AuditHistoryResponse result = service.list(managerId, null, null, null, null, null, null, pageable)
+			.content().getFirst();
+
+		assertThat(result.actorAccountId()).isNull();
+		assertThat(result.actorName()).isNull();
+		assertThat(result.actorRole()).isNull();
+		verify(accounts, never()).findAllById(any());
+	}
+
+	@Test
 	void bulkLoadsOnlyActorsWhoseSnapshotIsMissing() {
 		AuditEventRepository audits = mock(AuditEventRepository.class);
 		AccountRepository accounts = mock(AccountRepository.class);
