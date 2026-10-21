@@ -787,6 +787,8 @@ class PaymentFlowIntegrationTests {
 			.andExpect(jsonPath("$[0].offerName").value("Snapshot Plus"))
 			.andExpect(jsonPath("$[0].benefitCodes[0]").value("CENTER_ACCESS"))
 			.andExpect(jsonPath("$[0].benefits[0].code").value("CENTER_ACCESS"))
+			.andExpect(jsonPath("$[0].benefits[2].groupCode").value("PERSONAL_TRAINING"))
+			.andExpect(jsonPath("$[0].benefits[2].groupDisplayOrder").value(60))
 			.andExpect(jsonPath("$[0].status").value("EXPIRED"))
 			.andExpect(jsonPath("$[0].startsAt").value(startsAt.toString()))
 			.andExpect(jsonPath("$[1].membershipId").value(secondId.toString()))

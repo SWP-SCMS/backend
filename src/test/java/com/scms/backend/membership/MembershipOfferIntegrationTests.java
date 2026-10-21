@@ -122,6 +122,11 @@ class MembershipOfferIntegrationTests {
 			.andExpect(jsonPath("$[0].supportsBooking").value(false))
 			.andExpect(jsonPath("$[0].supportsPersonalCoaching").value(false))
 			.andExpect(jsonPath("$[1].offerId").value(plusOfferId.toString()))
+			.andExpect(jsonPath("$[1].benefits[2].code").value("PERSONAL_COACHING"))
+			.andExpect(jsonPath("$[1].benefits[2].displayOrder").value(10))
+			.andExpect(jsonPath("$[1].benefits[2].groupCode").value("PERSONAL_TRAINING"))
+			.andExpect(jsonPath("$[1].benefits[2].groupDisplayName").value("Huấn luyện cá nhân"))
+			.andExpect(jsonPath("$[1].benefits[2].groupDisplayOrder").value(60))
 			.andExpect(jsonPath("$[2]").doesNotExist())
 			.andReturn();
 

@@ -13,7 +13,8 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
-		left join fetch plan.benefits
+		left join fetch plan.benefits benefit
+		left join fetch benefit.group
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
 	List<MembershipOffer> findAllWithPlanAndBenefits();
@@ -21,7 +22,8 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
-		left join fetch plan.benefits
+		left join fetch plan.benefits benefit
+		left join fetch benefit.group
 		where offer.id = :offerId
 		""")
 	Optional<MembershipOffer> findByIdWithPlanAndBenefits(@Param("offerId") UUID offerId);
@@ -29,7 +31,8 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
-		left join fetch plan.benefits
+		left join fetch plan.benefits benefit
+		left join fetch benefit.group
 		where offer.status = :status and plan.status = 'ACTIVE'
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
@@ -38,7 +41,8 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
-		left join fetch plan.benefits
+		left join fetch plan.benefits benefit
+		left join fetch benefit.group
 		where offer.status = :status and plan.status = 'ACTIVE' and plan.planCode = :planCode
 		order by plan.planCode asc, offer.durationDays asc, offer.name asc, offer.id asc
 		""")
@@ -56,7 +60,8 @@ public interface MembershipOfferRepository extends JpaRepository<MembershipOffer
 	@Query("""
 		select distinct offer from MembershipOffer offer
 		join fetch offer.plan plan
-		left join fetch plan.benefits
+		left join fetch plan.benefits benefit
+		left join fetch benefit.group
 		where offer.id = :offerId and offer.status = :status and plan.status = 'ACTIVE'
 		""")
 	Optional<MembershipOffer> findByIdAndStatusAndActivePlan(@Param("offerId") UUID offerId,

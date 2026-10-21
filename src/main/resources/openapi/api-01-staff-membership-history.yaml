@@ -121,7 +121,7 @@ components:
     MembershipBenefitResponse:
       type: object
       additionalProperties: false
-      required: [code, displayName, description, status]
+      required: [code, displayName, description, status, displayOrder, groupCode, groupDisplayName, groupDisplayOrder]
       properties:
         code:
           type: string
@@ -132,6 +132,19 @@ components:
         status:
           type: string
           enum: [ACTIVE, INACTIVE]
+        displayOrder:
+          type: integer
+          minimum: 0
+        groupCode:
+          type: string
+          nullable: true
+        groupDisplayName:
+          type: string
+          nullable: true
+        groupDisplayOrder:
+          type: integer
+          minimum: 0
+          nullable: true
     ApiProblem:
       type: object
       required: [title, status, detail, instance, code]

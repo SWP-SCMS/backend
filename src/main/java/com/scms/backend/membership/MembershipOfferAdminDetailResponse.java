@@ -1,7 +1,6 @@
 package com.scms.backend.membership;
 
 import java.math.BigInteger;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -11,7 +10,7 @@ record MembershipOfferAdminDetailResponse(UUID offerId, String planCode, String 
 	static MembershipOfferAdminDetailResponse from(MembershipOffer offer) {
 		List<MembershipBenefitResponse> benefits = offer.getPlan().getBenefits().stream()
 			.map(MembershipBenefitResponse::from)
-			.sorted(Comparator.comparing(MembershipBenefitResponse::code))
+			.sorted(MembershipBenefitResponse.displayOrdering())
 			.toList();
 		return new MembershipOfferAdminDetailResponse(offer.getId(), offer.getPlan().getPlanCode(),
 			offer.getPlan().getDisplayName(), offer.getName(), offer.getDescription(), offer.getPriceAmount(),
