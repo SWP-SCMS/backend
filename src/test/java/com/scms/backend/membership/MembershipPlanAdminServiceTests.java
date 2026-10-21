@@ -53,12 +53,16 @@ class MembershipPlanAdminServiceTests {
 		MembershipBenefit benefit = new MembershipBenefit("CENTER_ACCESS", "Center", "Access", MembershipBenefitStatus.ACTIVE);
 		when(plans.findAllWithBenefits()).thenReturn(List.of(
 			new MembershipPlan("OLD_PLAN", "Old", MembershipPlanStatus.INACTIVE, Set.of(benefit))));
+		when(orders.findUsedPlanCodes(Set.of("OLD_PLAN"))).thenReturn(Set.of("OLD_PLAN"));
 
 		assertThat(service.list(managerId)).singleElement().satisfies(plan -> {
 			assertThat(plan.code()).isEqualTo("OLD_PLAN");
 			assertThat(plan.status()).isEqualTo(MembershipPlanStatus.INACTIVE);
+			assertThat(plan.benefitsLocked()).isTrue();
 		});
 		verify(plans).findAllWithBenefits();
+		verify(orders).findUsedPlanCodes(Set.of("OLD_PLAN"));
+		verify(orders, never()).existsByPlanCodeSnapshot(any());
 	}
 
 	@Test
@@ -85,6 +89,7 @@ class MembershipPlanAdminServiceTests {
 		assertThat(result.displayName()).isEqualTo("New plan");
 		assertThat(result.status()).isEqualTo(MembershipPlanStatus.ACTIVE);
 		assertThat(result.benefitCodes()).containsExactly("CENTER_ACCESS");
+		assertThat(result.benefitsLocked()).isFalse();
 		verify(audits).save(any());
 	}
 
@@ -185,15 +190,26 @@ class MembershipPlanAdminServiceTests {
 		when(orders.existsByPlanCodeSnapshot("BASIC")).thenReturn(true);
 
 		MembershipPlanResponse same = service.update(managerId, "BASIC",
-			new MembershipPlanPatchRequest(null, null, List.of("CENTER_ACCESS")));
+			new MembershipPlanPatchRequest("Renamed", null, null));
 		assertThat(same.benefitCodes()).containsExactly("CENTER_ACCESS");
-		verify(plans, never()).saveAndFlush(any());
+		assertThat(same.benefitsLocked()).isTrue();
+		verify(plans).saveAndFlush(plan);
 
 		MembershipBenefit other = new MembershipBenefit("OTHER_ACCESS", "Other", "Other access", MembershipBenefitStatus.ACTIVE);
 		when(benefits.findAllByCodeIn(Set.of("OTHER_ACCESS"))).thenReturn(List.of(other));
 		assertThatThrownBy(() -> service.update(managerId, "BASIC",
 			new MembershipPlanPatchRequest(null, null, List.of("OTHER_ACCESS"))))
 			.isInstanceOf(MembershipPlanConflictException.class);
+	}
+
+	@Test
+	void detailReflectsWhetherPlanHasEverBeenUsedByAnOrder() {
+		UUID managerId = activeManager();
+		MembershipPlan plan = new MembershipPlan("BASIC", "Basic", MembershipPlanStatus.ACTIVE, Set.of());
+		when(plans.findByIdWithBenefits("BASIC")).thenReturn(Optional.of(plan));
+		when(orders.existsByPlanCodeSnapshot("BASIC")).thenReturn(true);
+
+		assertThat(service.get(managerId, "BASIC").benefitsLocked()).isTrue();
 	}
 
 	@Test
