@@ -64,7 +64,7 @@ class PaymentService {
 				select offer.id,offer.name,offer.plan_code,offer.price_amount,offer.currency_code,offer.duration_days
 				from membership_offers offer join membership_plans plan on plan.plan_code=offer.plan_code
 				where offer.id=? and offer.status='ACTIVE' and plan.status='ACTIVE'
-				for update of plan
+				for update of offer, plan
 				""", request.offerId());
 		} catch (EmptyResultDataAccessException exception) {
 			throw new MembershipOfferUnavailableException();

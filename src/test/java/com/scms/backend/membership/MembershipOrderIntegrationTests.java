@@ -257,6 +257,79 @@ class MembershipOrderIntegrationTests {
 	}
 
 	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void memberOrderWaitsForOfferDeactivationAndThenReturnsUnavailable() throws Exception {
+		MemberProfile member = createMember(AccountStatus.ACTIVE);
+		UUID offerId = insertOffer(member.getAccount(), "BASIC", "Race Offer", BigInteger.valueOf(500000),
+			30, "ACTIVE");
+		CountDownLatch offerLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var deactivation = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					jdbcTemplate.update("update membership_offers set status='INACTIVE' where id=?", offerId);
+					offerLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(offerLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var creation = executor.submit(() -> createForMember(accessToken(member.getAccount()), offerId)
+				.andReturn());
+			try {
+				awaitOfferStatusLock();
+			}
+			finally {
+				allowCommit.countDown();
+			}
+			deactivation.get(10, TimeUnit.SECONDS);
+			MvcResult result = creation.get(10, TimeUnit.SECONDS);
+
+			assertThat(result.getResponse().getStatus()).isEqualTo(409);
+			assertThat(JsonPath.<String>read(result.getResponse().getContentAsString(), "$.code"))
+				.isEqualTo("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		}
+
+		assertNoCommerceArtifacts(member.getAccountId());
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void receptionistOrderWaitsForOfferDeactivationAndThenReturnsUnavailable() throws Exception {
+		Account receptionist = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile member = createMember(AccountStatus.ACTIVE);
+		UUID offerId = insertOffer(receptionist, "BASIC", "Race Reception Offer", BigInteger.valueOf(500000),
+			30, "ACTIVE");
+		CountDownLatch offerLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var deactivation = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					jdbcTemplate.update("update membership_offers set status='INACTIVE' where id=?", offerId);
+					offerLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(offerLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var creation = executor.submit(() -> createForReceptionist(accessToken(receptionist),
+				member.getMemberCode(), offerId).andReturn());
+			try {
+				awaitOfferStatusLock();
+			}
+			finally {
+				allowCommit.countDown();
+			}
+			deactivation.get(10, TimeUnit.SECONDS);
+			MvcResult result = creation.get(10, TimeUnit.SECONDS);
+
+			assertThat(result.getResponse().getStatus()).isEqualTo(409);
+			assertThat(JsonPath.<String>read(result.getResponse().getContentAsString(), "$.code"))
+				.isEqualTo("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		}
+
+		assertNoCommerceArtifacts(member.getAccountId());
+	}
+
+	@Test
 	void twoMembersReceiveUniqueWellFormedOrderNumbers() throws Exception {
 		Account creator = createAccount(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile first = createMember(AccountStatus.ACTIVE);
@@ -637,6 +710,19 @@ class MembershipOrderIntegrationTests {
 			Thread.sleep(25);
 		}
 		throw new AssertionError("Order creation did not wait on the membership plan lock");
+	}
+
+	private void awaitOfferStatusLock() throws InterruptedException {
+		for (int attempt = 0; attempt < 200; attempt++) {
+			Long waiters = jdbcTemplate.queryForObject("""
+				select count(*) from pg_stat_activity
+				where datname=current_database() and pid<>pg_backend_pid()
+					and wait_event_type='Lock' and query ilike '%membership_offers%'
+				""", Long.class);
+			if (waiters != null && waiters > 0) return;
+			Thread.sleep(25);
+		}
+		throw new AssertionError("Order creation did not wait on the membership offer lock");
 	}
 
 	private void await(CountDownLatch latch) {

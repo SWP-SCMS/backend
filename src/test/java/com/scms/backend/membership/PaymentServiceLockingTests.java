@@ -199,6 +199,6 @@ class PaymentServiceLockingTests {
 			&& sql.contains("join membership_plans")
 			&& sql.contains("offer.status='ACTIVE'")
 			&& sql.contains("plan.status='ACTIVE'")
-			&& sql.contains("for update of plan");
+			&& sql.contains("for update of offer, plan");
 	}
 }
