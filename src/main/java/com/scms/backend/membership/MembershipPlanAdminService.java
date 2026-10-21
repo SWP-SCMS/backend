@@ -59,7 +59,7 @@ public class MembershipPlanAdminService {
 	@Transactional
 	MembershipPlanResponse create(UUID managerId, MembershipPlanCreateRequest request) {
 		ensureActiveManager(managerId);
-		if (request == null) throw invalid("request is required");
+		if (request == null) throw invalid("request", "request is required");
 		String code = normalizeCode(request.code());
 		if (plans.existsById(code)) throw new MembershipPlanConflictException("MEMBERSHIP_PLAN_CODE_CONFLICT");
 		Set<MembershipBenefit> resolved = resolveBenefits(request.benefitCodes());
@@ -80,8 +80,8 @@ public class MembershipPlanAdminService {
 	MembershipPlanResponse update(UUID managerId, String code, MembershipPlanPatchRequest request) {
 		ensureActiveManager(managerId);
 		if (request == null || (request.displayName() == null && request.status() == null
-				&& request.benefitCodes() == null && request.code() == null)) throw invalid("at least one field is required");
-		if (request.code() != null) throw invalid("code cannot be changed");
+				&& request.benefitCodes() == null && request.code() == null)) throw invalid("request", "at least one field is required");
+		if (request.code() != null) throw invalid("code", "code cannot be changed");
 		MembershipPlan plan = plans.findByPlanCodeForUpdate(code).orElseThrow(MembershipPlanNotFoundException::new);
 		Map<String, Object> before = snapshot(plan);
 		Set<MembershipBenefit> resolved = plan.getBenefits();
@@ -111,40 +111,42 @@ public class MembershipPlanAdminService {
 	}
 
 	private Set<MembershipBenefit> resolveBenefits(List<String> requestedCodes) {
-		if (requestedCodes == null || requestedCodes.isEmpty()) throw invalid("benefitCodes must not be empty");
+		if (requestedCodes == null || requestedCodes.isEmpty()) throw invalid("benefitCodes", "benefitCodes must not be empty");
 		Set<String> codes = normalizeBenefitCodes(requestedCodes);
-		if (codes.size() != requestedCodes.size()) throw invalid("benefitCodes must be unique");
+		if (codes.size() != requestedCodes.size()) throw invalid("benefitCodes", "benefitCodes must be unique");
 		List<MembershipBenefit> resolved = benefits.findAllByCodeIn(codes);
 		if (resolved.size() != codes.size() || resolved.stream().anyMatch(benefit -> benefit.getStatus() != MembershipBenefitStatus.ACTIVE)) {
-			throw invalid("benefitCodes must contain only existing ACTIVE Benefits");
+			throw invalid("benefitCodes", "benefitCodes must contain only existing ACTIVE benefits");
 		}
 		return new HashSet<>(resolved);
 	}
 
 	private Set<String> normalizeBenefitCodes(List<String> requestedCodes) {
-		if (requestedCodes == null || requestedCodes.isEmpty()) throw invalid("benefitCodes must not be empty");
+		if (requestedCodes == null || requestedCodes.isEmpty()) throw invalid("benefitCodes", "benefitCodes must not be empty");
 		Set<String> codes = requestedCodes.stream().map(this::normalizeBenefitCode)
 			.collect(java.util.stream.Collectors.toSet());
-		if (codes.size() != requestedCodes.size()) throw invalid("benefitCodes must be unique");
+		if (codes.size() != requestedCodes.size()) throw invalid("benefitCodes", "benefitCodes must be unique");
 		return codes;
 	}
 
 	private String normalizeCode(String value) {
-		if (value == null || !CODE.matcher(value.trim().toUpperCase()).matches()) throw invalid("code is invalid");
+		if (value == null || !CODE.matcher(value.trim().toUpperCase()).matches()) throw invalid("code", "code is invalid");
 		return value.trim().toUpperCase();
 	}
 
 	private String normalizeBenefitCode(String value) {
-		if (value == null || value.trim().isEmpty()) throw invalid("benefitCodes contains an invalid code");
+		if (value == null || value.trim().isEmpty()) throw invalid("benefitCodes", "benefitCodes contains an invalid code");
 		return value.trim().toUpperCase();
 	}
 
 	private String normalizeDisplayName(String value) {
-		if (value == null || value.trim().isEmpty() || value.trim().length() > 100) throw invalid("displayName is invalid");
+		if (value == null || value.trim().isEmpty() || value.trim().length() > 100) throw invalid("displayName", "displayName is invalid");
 		return value.trim();
 	}
 
-	private MembershipPlanValidationException invalid(String message) { return new MembershipPlanValidationException(message); }
+	private MembershipPlanValidationException invalid(String field, String message) {
+		return new MembershipPlanValidationException(field, message);
+	}
 
 	private void ensureActiveManager(UUID id) {
 		if (!accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)) {

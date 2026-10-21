@@ -100,7 +100,57 @@ class MembershipPlanAdminServiceTests {
 		when(benefits.findAllByCodeIn(Set.of("MISSING"))).thenReturn(List.of());
 		assertThatThrownBy(() -> service.create(managerId,
 			new MembershipPlanCreateRequest("NEW_PLAN", "New", null, List.of("MISSING"))))
-			.isInstanceOf(MembershipPlanValidationException.class);
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class, exception -> {
+				assertThat(exception.getField()).isEqualTo("benefitCodes");
+				assertThat(exception.getMessage()).contains("ACTIVE");
+			});
+	}
+
+	@Test
+	void validationErrorsIdentifyTheirRequestField() {
+		UUID managerId = activeManager();
+		assertThatThrownBy(() -> service.create(managerId, null))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("request"));
+		when(plans.existsById("VALID")).thenReturn(false);
+		MembershipBenefit active = new MembershipBenefit("CENTER_ACCESS", "Center", "Access", MembershipBenefitStatus.ACTIVE);
+		when(benefits.findAllByCodeIn(Set.of("CENTER_ACCESS"))).thenReturn(List.of(active));
+		assertThatThrownBy(() -> service.create(managerId,
+			new MembershipPlanCreateRequest("bad-code", "Valid", null, List.of("CENTER_ACCESS"))))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("code"));
+		assertThatThrownBy(() -> service.create(managerId,
+			new MembershipPlanCreateRequest("VALID", " ", null, List.of("CENTER_ACCESS"))))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("displayName"));
+		assertThatThrownBy(() -> service.update(managerId, "VALID", new MembershipPlanPatchRequest(null, null, null)))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("request"));
+		assertThatThrownBy(() -> service.update(managerId, "VALID",
+			new MembershipPlanPatchRequest("OTHER", null, null, null)))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("code"));
+	}
+
+	@Test
+	void benefitValidationErrorsAlwaysIdentifyBenefitCodes() {
+		UUID managerId = activeManager();
+		when(plans.existsById("VALID")).thenReturn(false);
+		for (List<String> codes : List.of(List.<String>of(), List.of("CENTER_ACCESS", "center_access"),
+				List.of(" "))) {
+			assertThatThrownBy(() -> service.create(managerId,
+				new MembershipPlanCreateRequest("VALID", "Valid", null, codes)))
+				.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+					exception -> assertThat(exception.getField()).isEqualTo("benefitCodes"));
+		}
+
+		MembershipBenefit inactive = new MembershipBenefit("CENTER_ACCESS", "Center", "Access",
+			MembershipBenefitStatus.INACTIVE);
+		when(benefits.findAllByCodeIn(Set.of("CENTER_ACCESS"))).thenReturn(List.of(inactive));
+		assertThatThrownBy(() -> service.create(managerId,
+			new MembershipPlanCreateRequest("VALID", "Valid", null, List.of("CENTER_ACCESS"))))
+			.isInstanceOfSatisfying(MembershipPlanValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("benefitCodes"));
 	}
 
 	@Test

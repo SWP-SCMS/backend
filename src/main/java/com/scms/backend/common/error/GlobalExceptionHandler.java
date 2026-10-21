@@ -485,9 +485,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 
 	@ExceptionHandler(MembershipPlanValidationException.class)
 	ProblemDetail handleMembershipPlanValidation(MembershipPlanValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+			"One or more request fields are invalid.");
 		problem.setTitle("Membership plan validation failed");
 		problem.setProperty("code", "MEMBERSHIP_PLAN_VALIDATION_ERROR");
+		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		return problem;
 	}
 

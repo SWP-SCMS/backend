@@ -361,6 +361,8 @@ class GeneratedOpenApiTests {
 			assertThat(requiredBenefits.path("items").path("type").asText()).as(schema).isEqualTo("string");
 		}
 		JsonNode problem = document.at("/components/schemas/ApiProblem/properties");
+		assertThat(problem.path("errors").path("type").asText()).isEqualTo("object");
+		assertThat(problem.path("errors").path("additionalProperties").path("type").asText()).isEqualTo("array");
 		assertThat(problem.path("requiredBenefitCodes").path("type").asText()).isEqualTo("array");
 		assertThat(problem.path("missingBenefitCodes").path("type").asText()).isEqualTo("array");
 		for (String path : List.of("/members/class-sessions/{sessionId}/bookings",
@@ -487,6 +489,10 @@ class GeneratedOpenApiTests {
 			.isEqualTo("Requires MANAGER role.");
 		assertThat(response(document, "/manager/membership-plans/{planCode}", "patch", "409")
 			.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		assertThat(operation(document, "/manager/membership-plans", "post")
+			.at("/requestBody/required").asBoolean()).isTrue();
+		assertThat(operation(document, "/manager/membership-plans/{planCode}", "patch")
+			.at("/requestBody/required").asBoolean()).isTrue();
 		assertThat(document.path("paths").path("/manager/membership-plans/{planCode}").has("delete"))
 			.isFalse();
 	}

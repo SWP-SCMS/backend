@@ -2,8 +2,11 @@ package com.scms.backend.membership;
 
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -56,6 +59,48 @@ class MembershipPlanAdminControllerTests {
 						.authorities(new SimpleGrantedAuthority("ROLE_" + role))))
 				.andExpect(status().isForbidden());
 		}
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void missingCreateBodyUsesMembershipPlanValidationContract() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		when(service.create(managerId, null))
+			.thenThrow(new MembershipPlanValidationException("request", "request is required"));
+
+		mockMvc.perform(post("/api/v1/manager/membership-plans").contextPath("/api/v1")
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_PLAN_VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.errors.request[0]").value("request is required"));
+	}
+
+	@Test
+	void nullPatchBodyUsesMembershipPlanValidationContract() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		when(service.update(managerId, "BASIC", null))
+			.thenThrow(new MembershipPlanValidationException("request", "at least one field is required"));
+
+		mockMvc.perform(patch("/api/v1/manager/membership-plans/BASIC").contextPath("/api/v1")
+				.contentType(APPLICATION_JSON).content("null")
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_PLAN_VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.errors.request[0]").value("at least one field is required"));
+	}
+
+	@Test
+	void malformedJsonStillUsesMalformedRequestContract() throws Exception {
+		UUID managerId = UUID.randomUUID();
+
+		mockMvc.perform(post("/api/v1/manager/membership-plans").contextPath("/api/v1")
+				.contentType(APPLICATION_JSON).content("{")
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
 		verifyNoInteractions(service);
 	}
 }
