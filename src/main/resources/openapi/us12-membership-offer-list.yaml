@@ -13,12 +13,10 @@ paths:
       summary: List active Membership Offers
       operationId: listMembershipOffers
       description: >-
-        Returns every ACTIVE Membership Offer, optionally restricted to one Membership
-        Plan. The endpoint is available only to ACTIVE MEMBER and RECEPTIONIST Accounts. Results
-        are not paginated and are sorted by planCode ASC, durationDays ASC, name ASC, then
-        offerId ASC. When no offer matches, the response is 200 with an empty JSON array.
-      security:
-        - BearerAuth: []
+        Public catalogue returning every ACTIVE Membership Offer belonging to an ACTIVE
+        Membership Plan, optionally restricted to one Membership Plan. Results are not paginated
+        and are sorted by planCode ASC, durationDays ASC, name ASC, then offerId ASC. When no
+        offer matches, the response is 200 with an empty JSON array.
       parameters:
         - name: planCode
           in: query
@@ -41,12 +39,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetail'
-        '401':
-          description: >-
-            Bearer token is missing, invalid, or expired, or its Account no longer exists with
-            ACTIVE status.
-        '403':
-          description: The authenticated Account is not a MEMBER or RECEPTIONIST
 components:
   securitySchemes:
     BearerAuth:
