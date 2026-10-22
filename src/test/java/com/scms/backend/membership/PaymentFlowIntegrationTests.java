@@ -210,7 +210,7 @@ class PaymentFlowIntegrationTests {
 		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isCreated());
 
 		UUID renewalOrder = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
-		Instant previousEnd = clock.instant().minusSeconds(3600);
+		Instant previousEnd = clock.instant().minusSeconds(3600).truncatedTo(ChronoUnit.MICROS);
 		db.update("update membership_orders set fulfillment_mode='RESERVED',payment_method='BANK_TRANSFER' where id=?",
 			renewalOrder);
 		db.update("update memberships set starts_at=?,ends_at=?,updated_at=current_timestamp where member_account_id=? and status='ACTIVE'",
