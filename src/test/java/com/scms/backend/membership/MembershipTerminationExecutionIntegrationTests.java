@@ -77,6 +77,8 @@ class MembershipTerminationExecutionIntegrationTests {
 		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at,fulfillment_mode) values(?,?,?,? ,?,'Termination offer','PLUS',100000,'VND',30,'CASH','PAID',?,?, 'IMMEDIATE')",
 			order, "TERM-" + order.toString().replace("-", ""), member, manager, offer, java.sql.Timestamp.from(now.plusSeconds(3600)),
 			java.sql.Timestamp.from(now));
+		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',?)",
+			UUID.randomUUID(), order, java.sql.Timestamp.from(now));
 		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Termination offer',100000,'VND',30,'ACTIVE',?,?)",
 			id, member, order, offer, "PLUS", java.sql.Timestamp.from(now.minusSeconds(86400)),
 			java.sql.Timestamp.from(now.plusSeconds(86400)));
