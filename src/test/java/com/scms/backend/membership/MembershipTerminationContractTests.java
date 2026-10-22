@@ -51,6 +51,13 @@ class MembershipTerminationContractTests {
 	}
 
 	@Test
+	void executionMigrationAllowsTerminationCleanupSources() throws Exception {
+		String migration = Files.readString(Path.of("src/main/resources/db/migration/V32__membership_termination_execution.sql"));
+		assertThat(migration).contains("MEMBERSHIP_TERMINATION");
+		assertThat(migration).contains("MEMBERSHIP_TERMINATED");
+	}
+
+	@Test
 	void memberCanReachOwnTerminationCollection() throws Exception {
 		UUID memberId = UUID.randomUUID();
 		when(service.listForMember(memberId, 0, 20)).thenReturn(MembershipTerminationRequestPageResponse.empty());

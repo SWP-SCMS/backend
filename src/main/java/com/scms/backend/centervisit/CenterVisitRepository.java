@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
@@ -34,6 +35,17 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		UUID memberAccountId);
 
 	Page<CenterVisit> findByCheckedOutAtIsNull(Pageable pageable);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+		update center_visits
+		set checked_out_at = :at,
+			checked_out_by_account_id = :actorId,
+			checkout_source = 'MEMBERSHIP_TERMINATION'
+		where member_account_id = :memberId and checked_out_at is null
+		""", nativeQuery = true)
+	int checkoutOpenForMembershipTermination(@Param("memberId") UUID memberId,
+		@Param("actorId") UUID actorId, @Param("at") Instant at);
 
 	@Query(value = """
 		select id from center_visits

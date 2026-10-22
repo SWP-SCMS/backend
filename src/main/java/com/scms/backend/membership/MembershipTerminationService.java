@@ -34,17 +34,20 @@ class MembershipTerminationService {
 	private final MembershipTerminationRequestRepository requests;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
+	private final MembershipTerminationExecutionService execution;
 	private final Clock clock;
 
 	MembershipTerminationService(AccountRepository accounts, MemberProfileRepository profiles,
 			MembershipRepository memberships, MembershipTerminationRequestRepository requests,
-			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
+			AuditEventRepository audits, NotificationWriter notifications,
+			MembershipTerminationExecutionService execution, Clock clock) {
 		this.accounts = accounts;
 		this.profiles = profiles;
 		this.memberships = memberships;
 		this.requests = requests;
 		this.audits = audits;
 		this.notifications = notifications;
+		this.execution = execution;
 		this.clock = clock;
 	}
 
@@ -106,6 +109,9 @@ class MembershipTerminationService {
 		audit(managerId, "APPROVED", request);
 		notifications.write("MEMBERSHIP_TERMINATION_APPROVED:" + requestId, request.getMemberAccountId(),
 			"MEMBERSHIP_TERMINATION_APPROVED", "MEMBERSHIP_TERMINATION_REQUEST", requestId, Map.of("mode", request.getMode().name()));
+		if (request.getMode() == MembershipTerminationMode.IMMEDIATE) {
+			execution.executeImmediate(requestId, managerId, now);
+		}
 		return MembershipTerminationRequestResponse.from(request);
 	}
 
