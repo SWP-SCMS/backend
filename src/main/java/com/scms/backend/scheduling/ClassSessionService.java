@@ -33,16 +33,17 @@ public class ClassSessionService {
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 	private final RoomImpactLockRendezvous lockRendezvous;
+	private final CoachLeaveRepository coachLeaves;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
-			RoomImpactLockRendezvous lockRendezvous) {
+			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -51,6 +52,7 @@ public class ClassSessionService {
 		this.lifecycle = lifecycle;
 		this.clock = clock;
 		this.lockRendezvous = lockRendezvous;
+		this.coachLeaves = coachLeaves;
 	}
 
 	@Transactional
@@ -196,6 +198,7 @@ public class ClassSessionService {
 				session.getEndTime())) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		ensureCoachAvailable(coachId, session.getStartTime(), session.getEndTime());
 		if (rooms.existsSuspensionOverlap(roomId, session.getStartTime(), session.getEndTime())) {
 			throw RecurringScheduleException.sessionConflict();
 		}
@@ -286,6 +289,13 @@ public class ClassSessionService {
 				|| rooms.existsSuspensionOverlap(resources.room().getId(), startTime, endTime)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		ensureCoachAvailable(resources.coach().getId(), startTime, endTime);
+	}
+
+	private void ensureCoachAvailable(UUID coachId, Instant startTime, Instant endTime) {
+		if (coachLeaves != null && coachLeaves.existsApprovedOverlap(coachId, startTime, endTime)) {
+			throw RecurringScheduleException.coachOnLeave();
+		}
 	}
 
 	void moveForRoomImpact(UUID managerId, ClassSession session, Room targetRoom, String reason) {
@@ -326,6 +336,7 @@ public class ClassSessionService {
 				|| rooms.existsSuspensionOverlap(session.getRoom().getId(), startTime, endTime)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		ensureCoachAvailable(session.getTeachingCoach().getId(), startTime, endTime);
 		Instant oldStart = session.getStartTime();
 		Instant oldEnd = session.getEndTime();
 		session.updateSchedule(startTime, endTime);

@@ -117,6 +117,9 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/rooms", "/manager/rooms/**").hasRole("MANAGER")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
+				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
+				.requestMatchers("/coach/leave-requests", "/coach/leave-requests/**",
+					"/coach/me/leave-requests").hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/members/class-sessions").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/coach/class-sessions", "/coach/class-sessions/*")
 					.hasRole("COACH")

@@ -52,6 +52,11 @@ public class RecurringScheduleException extends RuntimeException {
 			"The selected account is not an active Coach.");
 	}
 
+	static RecurringScheduleException coachOnLeave() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "COACH_ON_APPROVED_LEAVE", "coachId",
+			"The selected Coach is on approved leave during this interval.");
+	}
+
 	static RecurringScheduleException capacityConflict() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_CAPACITY_EXCEEDS_ROOM", "capacity",
 			"Session capacity cannot exceed room capacity.");

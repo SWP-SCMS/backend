@@ -35,6 +35,7 @@ class ClassSessionServiceTests {
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
 	@Mock SessionLifecycleService lifecycle;
+	@Mock CoachLeaveRepository coachLeaves;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-05T00:00:00Z");
@@ -42,7 +43,7 @@ class ClassSessionServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC));
+			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves);
 	}
 
 	@Test
@@ -170,6 +171,21 @@ class ClassSessionServiceTests {
 			fixture.coach().getId(), fixture.room().getId(), now.plusSeconds(3600), now.plusSeconds(7200), 10)))
 			.isInstanceOf(RecurringScheduleException.class)
 			.extracting("code").isEqualTo("SESSION_CONFLICT");
+		verify(sessions, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void approvedCoachLeaveRejectsNewSession() {
+		Fixture fixture = activeFixture(20);
+		Instant start = now.plusSeconds(3600);
+		Instant end = now.plusSeconds(7200);
+		when(sessions.existsOverlap(fixture.coach().getId(), fixture.room().getId(), start, end)).thenReturn(false);
+		when(coachLeaves.existsApprovedOverlap(fixture.coach().getId(), start, end)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), start, end, 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("COACH_ON_APPROVED_LEAVE");
 		verify(sessions, never()).saveAndFlush(any());
 	}
 

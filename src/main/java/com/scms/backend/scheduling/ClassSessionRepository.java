@@ -154,6 +154,17 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 			@Param("now") Instant now);
 
 	@Query("""
+		select session.id from ClassSession session
+		where session.teachingCoach.id = :coachId
+		  and session.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+			com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+		  and session.startTime < :endTime and session.endTime > :startTime
+		order by session.startTime, session.id
+		""")
+	List<UUID> findActiveOverlapIdsByCoach(@Param("coachId") UUID coachId,
+		@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
+
+	@Query("""
 		select session from ClassSession session
 		where session.room.id = :roomId
 		  and ((:permanentDisable = true and (session.status = com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS
