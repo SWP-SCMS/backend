@@ -18,7 +18,6 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.manager.StaffAccountValidationException;
-import com.scms.backend.membership.MembershipRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +34,6 @@ class AssignmentDiscoveryServiceTests {
 	private static final Instant NOW = Instant.parse("2026-10-18T12:00:00Z");
 
 	@Mock CoachAssignmentRepository assignments;
-	@Mock MembershipRepository memberships;
 	@Mock AccountRepository accounts;
 
 	private AssignmentDiscoveryService service;
@@ -43,7 +41,7 @@ class AssignmentDiscoveryServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new AssignmentDiscoveryService(assignments, memberships, accounts,
+		service = new AssignmentDiscoveryService(assignments, accounts,
 			Clock.fixed(NOW, ZoneOffset.UTC), 20);
 	}
 
@@ -75,8 +73,7 @@ class AssignmentDiscoveryServiceTests {
 			assertThat(candidate.membershipEndsAt()).isEqualTo(endsAt);
 			assertThat(candidate.assignmentStatus()).isEqualTo(AssignmentCandidateStatus.ASSIGNED);
 		});
-		InOrder order = inOrder(memberships, assignments);
-		order.verify(memberships).expireDue(NOW);
+		InOrder order = inOrder(assignments);
 		order.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(NOW);
 		order.verify(assignments).findAssignmentCandidates("member", "ASSIGNED", NOW, pageable);
 	}
@@ -101,8 +98,7 @@ class AssignmentDiscoveryServiceTests {
 			assertThat(workload.maximumMemberCount()).isEqualTo(20);
 			assertThat(workload.availableForAssignment()).isFalse();
 		});
-		InOrder order = inOrder(memberships, assignments);
-		order.verify(memberships).expireDue(NOW);
+		InOrder order = inOrder(assignments);
 		order.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(NOW);
 		order.verify(assignments).findAssignmentWorkloads();
 	}
@@ -114,7 +110,7 @@ class AssignmentDiscoveryServiceTests {
 			AssignmentCandidateStatus.ALL, PageRequest.of(0, 20)))
 			.isInstanceOf(StaffAccountValidationException.class)
 			.hasFieldOrPropertyWithValue("field", "query");
-		verifyNoInteractions(memberships, assignments);
+		verifyNoInteractions(assignments);
 	}
 
 	@Test
@@ -125,7 +121,7 @@ class AssignmentDiscoveryServiceTests {
 
 		assertThatThrownBy(() -> service.workloads(inactiveManagerId))
 			.isInstanceOf(InvalidAuthenticatedAccountException.class);
-		verifyNoInteractions(memberships, assignments);
+		verifyNoInteractions(assignments);
 	}
 
 	private void activeManager() {

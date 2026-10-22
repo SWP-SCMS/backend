@@ -42,7 +42,7 @@ class PaymentServiceMembershipHistoryTests {
 		AccountRepository accounts = mock(AccountRepository.class);
 		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
 			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
-			mock(MembershipRepository.class), Clock.systemUTC());
+			mock(MembershipLifecycleService.class), Clock.systemUTC());
 		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE))
 			.thenReturn(true);
 
@@ -103,7 +103,7 @@ class PaymentServiceMembershipHistoryTests {
 		AccountRepository accounts = mock(AccountRepository.class);
 		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
 			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
-			mock(MembershipRepository.class), Clock.systemUTC());
+			mock(MembershipLifecycleService.class), Clock.systemUTC());
 		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenAnswer(invocation -> {
 			String sql = invocation.getArgument(0);
@@ -128,5 +128,37 @@ class PaymentServiceMembershipHistoryTests {
 		assertThat(response.benefitCodes()).isEmpty();
 		assertThat(response.benefits()).isEmpty();
 		verify(db, times(2)).query(anyString(), any(RowMapper.class), any(Object[].class));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	void reservedMembershipReturnsNullableLifecycleTimestamps() throws Exception {
+		UUID actor = UUID.randomUUID();
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenAnswer(invocation -> {
+			if (((String) invocation.getArgument(0)).contains("membership_plan_benefits")) return List.of();
+			RowMapper<MembershipHistoryResponse> mapper = invocation.getArgument(1);
+			ResultSet rs = mock(ResultSet.class);
+			when(rs.getObject("id", UUID.class)).thenReturn(UUID.randomUUID());
+			when(rs.getObject("order_id", UUID.class)).thenReturn(UUID.randomUUID());
+			when(rs.getString("plan_code_snapshot")).thenReturn("PLUS");
+			when(rs.getString("offer_name_snapshot")).thenReturn("Renewal");
+			when(rs.getBigDecimal("price_amount_snapshot")).thenReturn(BigDecimal.ONE);
+			when(rs.getString("currency_code_snapshot")).thenReturn("VND");
+			when(rs.getInt("duration_days_snapshot")).thenReturn(30);
+			when(rs.getString("status")).thenReturn("RESERVED");
+			return List.of(mapper.mapRow(rs, 0));
+		});
+		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
+			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
+			mock(MembershipLifecycleService.class), Clock.systemUTC());
+
+		MembershipHistoryResponse response = service.memberHistory(actor).getFirst();
+
+		assertThat(response.status()).isEqualTo("RESERVED");
+		assertThat(response.startsAt()).isNull();
+		assertThat(response.endsAt()).isNull();
 	}
 }

@@ -158,19 +158,21 @@ class PaymentServiceLockingTests {
 			.thenReturn(true);
 		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
 			.thenReturn(Map.of("account_id", memberId));
+		when(accounts.findByIdForUpdate(memberId))
+			.thenReturn(Optional.of(account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)));
 		when(db.queryForMap(argThat(this::isAvailableOfferLockQuery), eq(offerId)))
 			.thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
 
 		assertThatThrownBy(() -> service.cash(actorId, "MB-100001", new CashPaymentRequest(offerId)))
 			.isInstanceOf(MembershipOfferUnavailableException.class);
-		verify(accounts, never()).findByIdForUpdate(memberId);
+		verify(accounts).findByIdForUpdate(memberId);
 		verify(fulfillment, never()).fulfillCash(any(), any(), any(), any(), any());
 	}
 
 	private PaymentService service(JdbcTemplate db, AccountRepository accounts,
 			PaymentFulfillmentService fulfillment) {
 		return new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
-			mock(com.scms.backend.account.MemberProfileRepository.class), mock(MembershipRepository.class),
+			mock(com.scms.backend.account.MemberProfileRepository.class), mock(MembershipLifecycleService.class),
 			Clock.systemUTC());
 	}
 

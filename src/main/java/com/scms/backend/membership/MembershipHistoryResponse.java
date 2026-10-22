@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record MembershipHistoryResponse(
 	UUID id,
 	UUID orderId,
@@ -13,9 +15,9 @@ public record MembershipHistoryResponse(
 	BigInteger priceAmount,
 	String currencyCode,
 	int durationDays,
-	String status,
-	Instant startsAt,
-	Instant endsAt,
+	@Schema(allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED" }) String status,
+	@Schema(nullable = true) Instant startsAt,
+	@Schema(nullable = true) Instant endsAt,
 	List<String> benefitCodes,
 	List<MembershipBenefitResponse> benefits) {
 

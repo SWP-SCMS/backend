@@ -28,23 +28,26 @@ public class MembershipOrderService {
 	private final MembershipOfferRepository membershipOfferRepository;
 	private final MembershipRepository membershipRepository;
 	private final MembershipOrderRepository membershipOrderRepository;
+	private final MembershipLifecycleService lifecycle;
 
 	MembershipOrderService(AccountRepository accountRepository,
 			MemberProfileRepository memberProfileRepository,
 			MembershipOfferRepository membershipOfferRepository,
 			MembershipRepository membershipRepository,
-			MembershipOrderRepository membershipOrderRepository) {
+			MembershipOrderRepository membershipOrderRepository, MembershipLifecycleService lifecycle) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.membershipOfferRepository = membershipOfferRepository;
 		this.membershipRepository = membershipRepository;
 		this.membershipOrderRepository = membershipOrderRepository;
+		this.lifecycle = lifecycle;
 	}
 
 	@Transactional
 	MembershipOrderResponse createForMember(UUID actorAccountId, MembershipOrderCreateRequest request) {
-		MembershipOffer offer = findActiveOffer(request.offerId());
 		MemberProfile member = findSelfMember(actorAccountId);
+		prepareMember(member);
+		MembershipOffer offer = findActiveOffer(request.offerId());
 		return create(actorAccountId, member, offer);
 	}
 
@@ -52,8 +55,9 @@ public class MembershipOrderService {
 	MembershipOrderResponse createForReceptionist(UUID actorAccountId, String memberId,
 			MembershipOrderCreateRequest request) {
 		ensureActiveActor(actorAccountId, AccountRole.RECEPTIONIST);
-		MembershipOffer offer = findActiveOffer(request.offerId());
 		MemberProfile member = findTargetMember(memberId);
+		prepareMember(member);
+		MembershipOffer offer = findActiveOffer(request.offerId());
 		return create(actorAccountId, member, offer);
 	}
 
@@ -70,8 +74,6 @@ public class MembershipOrderService {
 	}
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
-		membershipRepository.expireDue(Instant.now());
-		ensureActiveMember(member);
 		UUID memberAccountId = member.getAccountId();
 		if (membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.ACTIVE)) {
 			throw new ActiveMembershipExistsException();
@@ -94,6 +96,11 @@ public class MembershipOrderService {
 			throw exception;
 		}
 		return toResponse(order, member.getMemberCode());
+	}
+
+	private void prepareMember(MemberProfile member) {
+		ensureActiveMember(member);
+		lifecycle.reconcile(member.getAccountId(), Instant.now());
 	}
 
 	private Optional<MembershipOrderResponse> findPending(MemberProfile member) {

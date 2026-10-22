@@ -55,7 +55,7 @@ class PaymentServiceReceiptAccessTests {
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
 			.thenReturn(true);
 		service = new PaymentService(db, accounts, mock(AuditEventRepository.class), fulfillment,
-			mock(com.scms.backend.account.MemberProfileRepository.class), mock(MembershipRepository.class),
+			mock(com.scms.backend.account.MemberProfileRepository.class), mock(MembershipLifecycleService.class),
 			Clock.systemUTC());
 	}
 

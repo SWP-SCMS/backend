@@ -102,7 +102,7 @@ class AssignmentDiscoveryIntegrationTests {
 		createMembership(basic.getAccountId(), manager.getId(), "BASIC", now.minusSeconds(3600),
 			now.plusSeconds(86400));
 		UUID expiredMembershipId = createMembership(expired.getAccountId(), manager.getId(), "PLUS",
-			now.minusSeconds(172800), now.minusSeconds(60));
+			now.minusSeconds(172800), now.minusSeconds(60), "EXPIRED");
 
 		assignmentService.assign(manager.getId(), assigned.getAccountId(),
 			new CoachAssignmentAssignRequest(coach.getId(), "Candidate test"));
@@ -217,9 +217,9 @@ class AssignmentDiscoveryIntegrationTests {
 		MemberProfile singleMember = createMember(AccountStatus.ACTIVE, "Single Reconciliation Member",
 			"0900000201", "single-reconciliation@example.test");
 		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(10800),
-			now.minusSeconds(7200));
+			now.minusSeconds(7200), "EXPIRED");
 		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(7200),
-			latestPastExpiry);
+			latestPastExpiry, "EXPIRED");
 		createMembership(singleMember.getAccountId(), manager.getId(), "PLUS", now.plusSeconds(3600),
 			now.plusSeconds(86400));
 		UUID singleAssignment = insertActiveAssignment(singleMember.getAccountId(), coach.getId(), manager.getId(),
@@ -232,9 +232,9 @@ class AssignmentDiscoveryIntegrationTests {
 		MemberProfile bulkMember = createMember(AccountStatus.ACTIVE, "Bulk Reconciliation Member",
 			"0900000202", "bulk-reconciliation@example.test");
 		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(10800),
-			now.minusSeconds(7200));
+			now.minusSeconds(7200), "EXPIRED");
 		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.minusSeconds(7200),
-			latestPastExpiry);
+			latestPastExpiry, "EXPIRED");
 		createMembership(bulkMember.getAccountId(), manager.getId(), "PLUS", now.plusSeconds(3600),
 			now.plusSeconds(86400));
 		UUID bulkAssignment = insertActiveAssignment(bulkMember.getAccountId(), coach.getId(), manager.getId(),
@@ -327,6 +327,11 @@ class AssignmentDiscoveryIntegrationTests {
 	}
 
 	private UUID createMembership(UUID memberId, UUID actorId, String planCode, Instant startsAt, Instant endsAt) {
+		return createMembership(memberId, actorId, planCode, startsAt, endsAt, "ACTIVE");
+	}
+
+	private UUID createMembership(UUID memberId, UUID actorId, String planCode, Instant startsAt, Instant endsAt,
+			String status) {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
@@ -350,8 +355,9 @@ class AssignmentDiscoveryIntegrationTests {
 			insert into memberships (id, member_account_id, order_id, offer_id, plan_code_snapshot,
 				offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot,
 				status, starts_at, ends_at)
-			values (?, ?, ?, ?, ?, 'Offer', 1000, 'VND', 30, 'ACTIVE', ?, ?)
-			""", membershipId, memberId, orderId, offerId, planCode, Timestamp.from(startsAt), Timestamp.from(endsAt));
+			values (?, ?, ?, ?, ?, 'Offer', 1000, 'VND', 30, ?, ?, ?)
+			""", membershipId, memberId, orderId, offerId, planCode, status, Timestamp.from(startsAt),
+			Timestamp.from(endsAt));
 		return membershipId;
 	}
 

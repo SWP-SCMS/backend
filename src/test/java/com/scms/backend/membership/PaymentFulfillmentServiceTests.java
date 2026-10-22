@@ -46,7 +46,7 @@ class PaymentFulfillmentServiceTests {
 		when(db.queryForObject("select id from payments where id=? for update", UUID.class, paymentId))
 			.thenReturn(paymentId);
 		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(projection);
-		PaymentFulfillmentService service = new PaymentFulfillmentService(db, mock(AccountRepository.class), mock(AuditEventRepository.class),
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, mock(MembershipLifecycleService.class), mock(AuditEventRepository.class),
 			mock(NotificationWriter.class), Clock.systemUTC());
 
 		assertThat(service.paymentForUpdate(paymentId)).isSameAs(projection);
@@ -68,7 +68,7 @@ class PaymentFulfillmentServiceTests {
 		UUID paymentId = UUID.randomUUID();
 		when(db.queryForObject("select order_id from payments where id=?", UUID.class, paymentId))
 			.thenThrow(new EmptyResultDataAccessException(1));
-		PaymentFulfillmentService service = new PaymentFulfillmentService(db, mock(AccountRepository.class), mock(AuditEventRepository.class),
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, mock(MembershipLifecycleService.class), mock(AuditEventRepository.class),
 			mock(NotificationWriter.class), Clock.systemUTC());
 
 		assertThatThrownBy(() -> service.paymentForUpdate(paymentId))
@@ -79,14 +79,13 @@ class PaymentFulfillmentServiceTests {
 	@Test
 	void fulfillLocksMemberBeforeOrderAndPayment() {
 		JdbcTemplate db = mock(JdbcTemplate.class);
-		AccountRepository accounts = mock(AccountRepository.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		UUID paymentId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID memberId = UUID.randomUUID();
 		when(db.queryForObject(
 			"select o.member_account_id from payments p join membership_orders o on o.id=p.order_id where p.id=?",
 			UUID.class, paymentId)).thenReturn(memberId);
-		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member(memberId)));
 		when(db.queryForObject("select order_id from payments where id=?", UUID.class, paymentId)).thenReturn(orderId);
 		when(db.queryForObject("select id from membership_orders where id=? for update", UUID.class, orderId))
 			.thenReturn(orderId);
@@ -94,17 +93,17 @@ class PaymentFulfillmentServiceTests {
 			.thenReturn(paymentId);
 		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(Map.of(
 			"payment_status", "FAILED", "order_id", orderId, "member_account_id", memberId));
-		PaymentFulfillmentService service = new PaymentFulfillmentService(db, accounts,
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, lifecycle,
 			mock(AuditEventRepository.class), mock(NotificationWriter.class), Clock.systemUTC());
 
 		assertThatThrownBy(() -> service.fulfill(paymentId, null, "TX-1", "evidence", "reason"))
 			.isInstanceOf(PaymentException.class).hasMessage("Payment is terminal");
 
-		InOrder order = inOrder(db, accounts);
+		InOrder order = inOrder(db, lifecycle);
 		order.verify(db).queryForObject(
 			"select o.member_account_id from payments p join membership_orders o on o.id=p.order_id where p.id=?",
 			UUID.class, paymentId);
-		order.verify(accounts).findByIdForUpdate(memberId);
+		order.verify(lifecycle).reconcile(eq(memberId), org.mockito.ArgumentMatchers.any());
 		order.verify(db).queryForObject("select order_id from payments where id=?", UUID.class, paymentId);
 		order.verify(db).queryForObject("select id from membership_orders where id=? for update", UUID.class, orderId);
 		order.verify(db).queryForObject("select id from payments where id=? for update", UUID.class, paymentId);
@@ -113,24 +112,23 @@ class PaymentFulfillmentServiceTests {
 	@Test
 	void fulfillCashLocksMemberBeforeOrder() {
 		JdbcTemplate db = mock(JdbcTemplate.class);
-		AccountRepository accounts = mock(AccountRepository.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		UUID paymentId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID memberId = UUID.randomUUID();
 		when(db.queryForObject("select member_account_id from membership_orders where id=?", UUID.class, orderId))
 			.thenReturn(memberId);
-		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member(memberId)));
 		when(db.queryForMap(anyString(), eq(paymentId), eq(orderId))).thenReturn(Map.of(
 			"order_status", "PAID", "order_id", orderId, "member_account_id", memberId));
-		PaymentFulfillmentService service = new PaymentFulfillmentService(db, accounts,
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, lifecycle,
 			mock(AuditEventRepository.class), mock(NotificationWriter.class), Clock.systemUTC());
 
 		assertThatThrownBy(() -> service.fulfillCash(paymentId, orderId, UUID.randomUUID(), "evidence", "reason"))
 			.isInstanceOf(PaymentException.class).hasMessage("Order is not payable");
 
-		InOrder order = inOrder(db, accounts);
+		InOrder order = inOrder(db, lifecycle);
 		order.verify(db).queryForObject("select member_account_id from membership_orders where id=?", UUID.class, orderId);
-		order.verify(accounts).findByIdForUpdate(memberId);
+		order.verify(lifecycle).reconcile(eq(memberId), org.mockito.ArgumentMatchers.any());
 		order.verify(db).queryForMap(anyString(), eq(paymentId), eq(orderId));
 	}
 

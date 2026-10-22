@@ -38,7 +38,7 @@ class PaymentServiceOrderCancellationTests {
 		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
 		PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
 			mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
-			mock(MembershipRepository.class), Clock.fixed(now, ZoneOffset.UTC));
+			mock(MembershipLifecycleService.class), Clock.fixed(now, ZoneOffset.UTC));
 
 		MembershipOrderCancellationResponse response = service.cancelOrder(actor, orderId,
 			new MembershipOrderCancellationRequest(" Customer requested cancellation "));
