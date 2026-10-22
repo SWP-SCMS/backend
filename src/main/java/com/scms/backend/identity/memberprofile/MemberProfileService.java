@@ -9,8 +9,10 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
+import com.scms.backend.emailverification.EmailVerificationException;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +51,10 @@ public class MemberProfileService {
 		String email = request.hasEmail()
 			? validator.normalizeEmail(request.email())
 			: account.getEmail();
+		if (!email.equals(account.getEmail())) {
+			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_CHANGE_VERIFICATION_REQUIRED",
+				"Use the authenticated email-change verification flow to change email.");
+		}
 		LocalDate birthDate = request.hasBirthDate()
 			? validator.validateBirthDate(request.birthDate())
 			: account.getBirthDate();

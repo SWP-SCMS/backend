@@ -21,8 +21,8 @@ import com.scms.backend.auth.DuplicateAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
-import com.scms.backend.emailverification.StaffEmailChangeService;
-import com.scms.backend.emailverification.StaffEmailChangeStatus;
+import com.scms.backend.emailverification.AccountEmailChangeService;
+import com.scms.backend.emailverification.AccountEmailChangeStatus;
 import com.scms.backend.emailverification.EmailVerificationException;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +37,7 @@ class StaffProfileServiceTests {
 	@Mock AccountIdentifierAvailability identifiers;
 	@Mock MemberProfileDetailsValidator validator;
 	@Mock AuditEventRepository audits;
-	@Mock StaffEmailChangeService emailChanges;
+	@Mock AccountEmailChangeService emailChanges;
 
 	private StaffProfileService service;
 
@@ -45,7 +45,7 @@ class StaffProfileServiceTests {
 	void setUp() {
 		MockitoAnnotations.openMocks(this);
 		service = new StaffProfileService(accounts, identifiers, validator, audits, emailChanges);
-		when(emailChanges.status(any())).thenReturn(StaffEmailChangeStatus.none());
+		when(emailChanges.status(any())).thenReturn(AccountEmailChangeStatus.none());
 	}
 
 	@Test

@@ -55,6 +55,7 @@ import com.scms.backend.training.TrainingPlanException;
 import com.scms.backend.training.TrainingResultException;
 import com.scms.backend.emailverification.EmailVerificationException;
 import com.scms.backend.emailverification.PendingRegistrationException;
+import com.scms.backend.emailverification.PasswordResetException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -225,6 +226,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ResponseEntity.BodyBuilder response=ResponseEntity.status(exception.getStatus());
 		if(exception.getRetryAfter()!=null) response.header(HttpHeaders.RETRY_AFTER,exception.getRetryAfter().toString());
 		return response.contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem);
+	}
+
+	@ExceptionHandler(PasswordResetException.class)
+	ProblemDetail handlePasswordReset(PasswordResetException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Password reset failed");
+		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null)
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getFieldMessage())));
+		return problem;
 	}
 
 	@ExceptionHandler(MemberProfileValidationException.class)

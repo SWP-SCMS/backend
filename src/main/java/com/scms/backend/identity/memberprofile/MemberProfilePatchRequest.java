@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 public final class MemberProfilePatchRequest {
 
@@ -12,6 +13,7 @@ public final class MemberProfilePatchRequest {
 	private boolean phonePresent;
 	private String phone;
 	private boolean emailPresent;
+	@Schema(hidden = true)
 	private String email;
 	private boolean birthDatePresent;
 	private LocalDate birthDate;

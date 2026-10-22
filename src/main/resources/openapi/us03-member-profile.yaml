@@ -137,11 +137,6 @@ components:
           type: string
           pattern: '^0[0-9]{9}$'
           description: Trimmed canonical Vietnamese phone; explicit null is invalid.
-        email:
-          type: string
-          format: email
-          maxLength: 320
-          description: Trimmed and lowercased; explicit null is invalid.
         birthDate:
           type: string
           format: date

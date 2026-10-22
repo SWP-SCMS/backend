@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.http.HttpStatus;
 import com.scms.backend.emailverification.EmailVerificationException;
-import com.scms.backend.emailverification.StaffEmailChangeService;
+import com.scms.backend.emailverification.AccountEmailChangeService;
 
 @Service
 public class StaffProfileService {
@@ -28,10 +28,10 @@ public class StaffProfileService {
 	private final AccountIdentifierAvailability identifiers;
 	private final MemberProfileDetailsValidator validator;
 	private final AuditEventRepository audits;
-	private final StaffEmailChangeService emailChanges;
+	private final AccountEmailChangeService emailChanges;
 
 	StaffProfileService(AccountRepository accounts, AccountIdentifierAvailability identifiers,
-			MemberProfileDetailsValidator validator, AuditEventRepository audits, StaffEmailChangeService emailChanges) {
+			MemberProfileDetailsValidator validator, AuditEventRepository audits, AccountEmailChangeService emailChanges) {
 		this.accounts = accounts;
 		this.identifiers = identifiers;
 		this.validator = validator;
