@@ -16,6 +16,8 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.training.CoachAssignmentRepository;
+import com.scms.backend.training.CoachAssignmentStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -34,16 +36,18 @@ public class ClassSessionService {
 	private final Clock clock;
 	private final RoomImpactLockRendezvous lockRendezvous;
 	private final CoachLeaveRepository coachLeaves;
+	private final CoachAssignmentRepository coachAssignments;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
-			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves) {
+			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
+			CoachAssignmentRepository coachAssignments) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -53,6 +57,7 @@ public class ClassSessionService {
 		this.clock = clock;
 		this.lockRendezvous = lockRendezvous;
 		this.coachLeaves = coachLeaves;
+		this.coachAssignments = coachAssignments;
 	}
 
 	@Transactional
@@ -123,6 +128,32 @@ public class ClassSessionService {
 
 	private MemberClassSessionPageResponse futureSchedule(Instant from, Instant to, UUID classId,
 			Pageable pageable) {
+		return futureCatalogue(from, to, classId, null, false, pageable);
+	}
+
+	@Transactional
+	MemberClassSessionPageResponse memberPtSchedule(UUID memberId, Instant from, Instant to, Pageable pageable) {
+		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		UUID coachId = coachAssignments == null ? null : coachAssignments
+			.findByMemberAccountIdAndStatus(memberId, CoachAssignmentStatus.ACTIVE)
+			.map(assignment -> assignment.getCoachAccountId()).orElse(null);
+		if (coachId == null) return emptyCatalogue(pageable);
+		return futureCatalogue(from, to, null, coachId, true, pageable);
+	}
+
+	@Transactional
+	MemberClassSessionPageResponse staffPtSchedule(UUID staffId, AccountRole role, Instant from, Instant to,
+			Pageable pageable) {
+		if (!accounts.existsByIdAndRoleAndStatus(staffId, role, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		return futureCatalogue(from, to, null, null, true, pageable);
+	}
+
+	private MemberClassSessionPageResponse futureCatalogue(Instant from, Instant to, UUID classId, UUID coachId,
+			boolean ptOnly, Pageable pageable) {
 		if (from != null && to != null && !to.isAfter(from)) {
 			throw RecurringScheduleException.validation("to", "must be later than from");
 		}
@@ -130,13 +161,17 @@ public class ClassSessionService {
 		Instant now = clock.instant();
 		Specification<ClassSession> filters = (root, ignored, builder) -> builder.and(
 			builder.equal(root.get("status"), ClassSessionStatus.SCHEDULED),
-			builder.greaterThan(root.get("startTime"), now));
+			builder.greaterThan(root.get("startTime"), now),
+			ptOnly ? builder.equal(root.get("sportClass").get("classType"), SportClassType.PT_1_1)
+				: builder.notEqual(root.get("sportClass").get("classType"), SportClassType.PT_1_1));
 		if (from != null) filters = filters.and((root, ignored, builder) ->
 			builder.greaterThan(root.get("endTime"), from));
 		if (to != null) filters = filters.and((root, ignored, builder) ->
 			builder.lessThan(root.get("startTime"), to));
 		if (classId != null) filters = filters.and((root, ignored, builder) ->
 			builder.equal(root.get("sportClass").get("id"), classId));
+		if (coachId != null) filters = filters.and((root, ignored, builder) ->
+			builder.equal(root.get("teachingCoach").get("id"), coachId));
 
 		var page = sessions.findAll(filters, pageable);
 		var ids = page.getContent().stream().map(ClassSession::getId).toList();
@@ -154,6 +189,10 @@ public class ClassSessionService {
 			.toList();
 		return new MemberClassSessionPageResponse(content, page.getNumber(), page.getSize(),
 			page.getTotalElements(), page.getTotalPages());
+	}
+
+	private MemberClassSessionPageResponse emptyCatalogue(Pageable pageable) {
+		return new MemberClassSessionPageResponse(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
 	}
 
 	@Transactional
@@ -244,7 +283,6 @@ public class ClassSessionService {
 	Resources validateResources(UUID classId, UUID coachId, UUID roomId, Integer capacity) {
 		if (classId == null) throw RecurringScheduleException.validation("classId", "is required");
 		if (coachId == null) throw RecurringScheduleException.validation("coachId", "is required");
-		if (roomId == null) throw RecurringScheduleException.validation("roomId", "is required");
 		if (capacity == null || capacity <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
 		}
@@ -259,6 +297,9 @@ public class ClassSessionService {
 				|| "yoga".equalsIgnoreCase(sportClass.getDiscipline().getName().trim())) {
 			throw RecurringScheduleException.legacyYoga();
 		}
+		boolean pt = sportClass.getClassType() == SportClassType.PT_1_1;
+		if (pt && capacity != 1) throw RecurringScheduleException.ptCapacity();
+		if (!pt && roomId == null) throw RecurringScheduleException.validation("roomId", "is required");
 		Optional<Account> coachResult = accounts.findByIdForUpdate(coachId);
 		if (coachResult == null || coachResult.isEmpty()) coachResult = accounts.findById(coachId);
 		Account coach = coachResult
@@ -266,11 +307,14 @@ public class ClassSessionService {
 		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE) {
 			throw RecurringScheduleException.coachInvalid();
 		}
-		Optional<Room> roomResult = rooms.findByIdForUpdate(roomId);
-		if (roomResult == null || roomResult.isEmpty()) roomResult = rooms.findById(roomId);
-		Room room = roomResult.orElseThrow(() -> RecurringScheduleException.notFound("room"));
-		if (room.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
-		if (capacity > room.getCapacity()) throw RecurringScheduleException.capacityConflict();
+		Room room = null;
+		if (roomId != null) {
+			Optional<Room> roomResult = rooms.findByIdForUpdate(roomId);
+			if (roomResult == null || roomResult.isEmpty()) roomResult = rooms.findById(roomId);
+			room = roomResult.orElseThrow(() -> RecurringScheduleException.notFound("room"));
+			if (room.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
+			if (capacity > room.getCapacity()) throw RecurringScheduleException.capacityConflict();
+		}
 		return new Resources(sportClass, coach, room);
 	}
 
@@ -285,8 +329,9 @@ public class ClassSessionService {
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime) {
-		if (sessions.existsOverlap(resources.coach().getId(), resources.room().getId(), startTime, endTime)
-				|| rooms.existsSuspensionOverlap(resources.room().getId(), startTime, endTime)) {
+		UUID roomId = resources.room() == null ? null : resources.room().getId();
+		if (sessions.existsOverlap(resources.coach().getId(), roomId, startTime, endTime)
+				|| (roomId != null && rooms.existsSuspensionOverlap(roomId, startTime, endTime))) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		ensureCoachAvailable(resources.coach().getId(), startTime, endTime);

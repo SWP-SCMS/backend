@@ -8,7 +8,7 @@ public record ClassSessionResponse(UUID id, UUID classId, UUID coachId, UUID roo
 
 	static ClassSessionResponse from(ClassSession session) {
 		return new ClassSessionResponse(session.getId(), session.getSportClass().getId(),
-			session.getTeachingCoach().getId(), session.getRoom().getId(), session.getStartTime(),
+			session.getTeachingCoach().getId(), session.getRoom() == null ? null : session.getRoom().getId(), session.getStartTime(),
 			session.getEndTime(), session.getCapacity(), session.getStatus());
 	}
 }

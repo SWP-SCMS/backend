@@ -62,6 +62,11 @@ public class RecurringScheduleException extends RuntimeException {
 			"Session capacity cannot exceed room capacity.");
 	}
 
+	static RecurringScheduleException ptCapacity() {
+		return new RecurringScheduleException(HttpStatus.BAD_REQUEST, "PT_CAPACITY_MUST_BE_ONE", "capacity",
+			"A PT_1_1 Session must have capacity equal to one.");
+	}
+
 	static RecurringScheduleException sessionConflict() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_CONFLICT", null,
 			"The Coach or Room already has an overlapping Session.");

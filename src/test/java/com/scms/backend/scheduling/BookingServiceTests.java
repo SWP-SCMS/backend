@@ -22,6 +22,9 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.training.CoachAssignment;
+import com.scms.backend.training.CoachAssignmentRepository;
+import com.scms.backend.training.CoachAssignmentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +47,7 @@ class BookingServiceTests {
 	@Mock AuditEventRepository audits;
 	@Mock NotificationWriter notifications;
 	@Mock SessionLifecycleService lifecycle;
+	@Mock CoachAssignmentRepository coachAssignments;
 	BookingService service;
 
 	private final Instant now = Instant.parse("2026-10-06T03:00:00Z");
@@ -54,7 +58,7 @@ class BookingServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new BookingService(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC));
+			Clock.fixed(now, ZoneOffset.UTC), coachAssignments);
 		memberId = UUID.randomUUID();
 		receptionistId = UUID.randomUUID();
 		Account member = account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member");
@@ -173,6 +177,32 @@ class BookingServiceTests {
 			.thenReturn((long) session.getCapacity());
 
 		assertCode("SESSION_FULL");
+	}
+
+	@Test
+	void ptBookingRequiresMembersActiveAssignedCoach() {
+		ClassSession pt = ptSession();
+		when(sessions.findByIdForUpdate(pt.getId())).thenReturn(Optional.of(pt));
+
+		assertThatThrownBy(() -> service.book(memberId, pt.getId()))
+			.isInstanceOf(BookingException.class)
+			.extracting("code").isEqualTo("PT_COACH_ASSIGNMENT_MISMATCH");
+	}
+
+	@Test
+	void ptBookingWithAssignedCoachUsesNormalEligibilityAndCapacityRules() {
+		ClassSession pt = ptSession(); UUID membershipId = UUID.randomUUID();
+		when(sessions.findByIdForUpdate(pt.getId())).thenReturn(Optional.of(pt));
+		when(coachAssignments.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId,
+			pt.getTeachingCoach().getId(), CoachAssignmentStatus.ACTIVE)).thenReturn(Optional.of(
+				new CoachAssignment(UUID.randomUUID(), memberId, pt.getTeachingCoach().getId(), UUID.randomUUID(),
+					CoachAssignmentStatus.ACTIVE, now.minusSeconds(60), now.minusSeconds(60))));
+		when(disciplines.findBySessionIdForUpdate(pt.getId())).thenReturn(Optional.of(pt.getSportClass().getDiscipline()));
+		when(bookings.findBookingBenefitEligibility(memberId, pt.getId(), pt.getStartTime()))
+			.thenReturn(List.of(eligibility(membershipId, "CLASS_BOOKING", true)));
+		when(bookings.saveAndFlush(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		assertThat(service.book(memberId, pt.getId()).status()).isEqualTo(BookingStatus.BOOKED);
 	}
 
 	@Test
@@ -338,6 +368,15 @@ class BookingServiceTests {
 	private Booking booking(ClassSession targetSession) {
 		return new Booking(UUID.randomUUID(), targetSession.getId(), memberId, UUID.randomUUID(), memberId,
 			now.minusSeconds(60));
+	}
+
+	private ClassSession ptSession() {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Personal training", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "PT", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		Account coach = account(UUID.randomUUID(), AccountRole.COACH, AccountStatus.ACTIVE, "Coach");
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, null, now.plusSeconds(3600),
+			now.plusSeconds(7200), 1, UUID.randomUUID());
 	}
 
 	private Account account(UUID id, AccountRole role, AccountStatus status, String name) {

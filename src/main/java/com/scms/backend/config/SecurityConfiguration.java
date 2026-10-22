@@ -121,6 +121,10 @@ public class SecurityConfiguration {
 				.requestMatchers("/coach/leave-requests", "/coach/leave-requests/**",
 					"/coach/me/leave-requests").hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/members/class-sessions").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/members/pt-sessions").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/reception/pt-sessions").hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/manager/pt-sessions").hasRole("MANAGER")
+				.requestMatchers(HttpMethod.GET, "/coach/pt-sessions").hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/coach/class-sessions", "/coach/class-sessions/*")
 					.hasRole("COACH")
 				.requestMatchers("/coach/class-sessions/*/attendance", "/coach/class-sessions/*/attendance/*")

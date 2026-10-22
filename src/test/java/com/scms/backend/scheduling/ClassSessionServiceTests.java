@@ -43,7 +43,7 @@ class ClassSessionServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves);
+			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves, null);
 	}
 
 	@Test
@@ -187,6 +187,37 @@ class ClassSessionServiceTests {
 			.isInstanceOf(RecurringScheduleException.class)
 			.extracting("code").isEqualTo("COACH_ON_APPROVED_LEAVE");
 		verify(sessions, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void managerCreatesRoomlessPtSlotWithCapacityOne() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "PT", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "One to one", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		when(sessions.existsOverlap(coach.getId(), null, now.plusSeconds(3600), now.plusSeconds(7200))).thenReturn(false);
+		when(sessions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ClassSessionResponse response = service.create(managerId, new ClassSessionCreateRequest(sportClass.getId(),
+			coach.getId(), null, now.plusSeconds(3600), now.plusSeconds(7200), 1));
+		assertThat(response.roomId()).isNull();
+		assertThat(response.capacity()).isEqualTo(1);
+	}
+
+	@Test
+	void ptCapacityOtherThanOneIsRejected() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "PT", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "One to one", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		assertThatThrownBy(() -> service.create(managerId, new ClassSessionCreateRequest(sportClass.getId(),
+			UUID.randomUUID(), null, now.plusSeconds(3600), now.plusSeconds(7200), 2)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("PT_CAPACITY_MUST_BE_ONE");
 	}
 
 	@Test
