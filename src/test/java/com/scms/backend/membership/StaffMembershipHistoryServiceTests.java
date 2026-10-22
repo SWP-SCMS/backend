@@ -46,12 +46,12 @@ class StaffMembershipHistoryServiceTests {
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final PaymentFulfillmentService fulfillment = mock(PaymentFulfillmentService.class);
 	private final MemberProfileRepository profiles = mock(MemberProfileRepository.class);
-	private final MembershipRepository memberships = mock(MembershipRepository.class);
+	private final MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 	private PaymentService service;
 
 	@BeforeEach
 	void setUp() {
-		service = new PaymentService(db, accounts, audits, fulfillment, profiles, memberships,
+		service = new PaymentService(db, accounts, audits, fulfillment, profiles, lifecycle,
 			Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
@@ -68,8 +68,7 @@ class StaffMembershipHistoryServiceTests {
 		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
 
 		assertThat(service.receptionMembershipHistory(actor, "MB-100001")).isEmpty();
-		verify(memberships).expireDueForMember(member.getId(), NOW);
-		verify(memberships, never()).expireDue(any());
+		verify(lifecycle).reconcile(member.getId(), NOW);
 	}
 
 	@ParameterizedTest
@@ -83,8 +82,7 @@ class StaffMembershipHistoryServiceTests {
 		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
 
 		assertThat(service.managerMembershipHistory(actor, member.getId())).isEmpty();
-		verify(memberships).expireDueForMember(member.getId(), NOW);
-		verify(memberships, never()).expireDue(any());
+		verify(lifecycle).reconcile(member.getId(), NOW);
 	}
 
 	@Test
@@ -97,8 +95,7 @@ class StaffMembershipHistoryServiceTests {
 			.isInstanceOf(InvalidAuthenticatedAccountException.class);
 		verify(profiles, never()).findVisibleMemberByCode(anyString(), any(), any());
 		verify(accounts, never()).findById(any());
-		verify(memberships, never()).expireDue(any());
-		verify(memberships, never()).expireDueForMember(any(), any());
+		verify(lifecycle, never()).reconcile(any(), any());
 	}
 
 	@Test
@@ -159,11 +156,10 @@ class StaffMembershipHistoryServiceTests {
 			new StaffMembershipResponse(secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
 		assertThat(sql.getAllValues().getFirst()).contains("where member_account_id=?", "order by starts_at desc,id desc");
 		assertThat(sql.getAllValues().get(1)).contains("membership_plan_benefits", "where link.plan_code in (?,?)");
-		InOrder order = inOrder(memberships, db);
-		order.verify(memberships).expireDueForMember(member.getId(), NOW);
+		InOrder order = inOrder(lifecycle, db);
+		order.verify(lifecycle).reconcile(member.getId(), NOW);
 		order.verify(db).query(eq(sql.getAllValues().getFirst()), any(RowMapper.class), any(Object[].class));
 		order.verify(db).query(eq(sql.getAllValues().get(1)), any(RowMapper.class), any(Object[].class));
-		verify(memberships, never()).expireDue(any());
 	}
 
 	private StaffMembershipResponse map(RowMapper<StaffMembershipResponse> mapper, UUID id, String plan,

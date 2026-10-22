@@ -418,7 +418,8 @@ class GeneratedOpenApiTests {
 				"benefits");
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
-		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"ACTIVE\",\"EXPIRED\"]");
+		assertThat(schema.at("/properties/status/enum").toString())
+			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\"]");
 		assertThat(schema.at("/properties/benefitCodes/type").asText()).isEqualTo("array");
 		assertThat(schema.at("/properties/benefits/items/$ref").asText())
 			.isEqualTo("#/components/schemas/MembershipBenefitResponse");

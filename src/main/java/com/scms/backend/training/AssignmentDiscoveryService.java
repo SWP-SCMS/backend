@@ -10,7 +10,6 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.manager.StaffAccountValidationException;
-import com.scms.backend.membership.MembershipRepository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,16 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class AssignmentDiscoveryService {
 
 	private final CoachAssignmentRepository assignments;
-	private final MembershipRepository memberships;
 	private final AccountRepository accounts;
 	private final Clock clock;
 	private final int maximumMemberCount;
 
-	public AssignmentDiscoveryService(CoachAssignmentRepository assignments, MembershipRepository memberships,
-			AccountRepository accounts, Clock clock,
+	public AssignmentDiscoveryService(CoachAssignmentRepository assignments, AccountRepository accounts, Clock clock,
 			@Value("${scms.coach-assignment.maximum-member-count:20}") int maximumMemberCount) {
 		this.assignments = assignments;
-		this.memberships = memberships;
 		this.accounts = accounts;
 		this.clock = clock;
 		if (maximumMemberCount < 1) throw new IllegalArgumentException("maximumMemberCount must be positive");
@@ -61,7 +57,6 @@ public class AssignmentDiscoveryService {
 
 	private Instant reconcile() {
 		Instant now = clock.instant();
-		memberships.expireDue(now);
 		assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 		return now;
 	}

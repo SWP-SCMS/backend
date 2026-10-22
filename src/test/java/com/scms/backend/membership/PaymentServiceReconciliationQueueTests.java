@@ -35,7 +35,7 @@ class PaymentServiceReconciliationQueueTests {
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final PaymentService service = new PaymentService(db, accounts, mock(AuditEventRepository.class),
 		mock(PaymentFulfillmentService.class), mock(com.scms.backend.account.MemberProfileRepository.class),
-		mock(MembershipRepository.class), Clock.fixed(NOW, ZoneOffset.UTC));
+		mock(MembershipLifecycleService.class), Clock.fixed(NOW, ZoneOffset.UTC));
 
 	@BeforeEach
 	void allowManager() {

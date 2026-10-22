@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
@@ -21,21 +20,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class PaymentFulfillmentService {
 	private final JdbcTemplate db;
-	private final AccountRepository accounts;
+	private final MembershipLifecycleService lifecycle;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
 
-	PaymentFulfillmentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits,
+	PaymentFulfillmentService(JdbcTemplate db, MembershipLifecycleService lifecycle, AuditEventRepository audits,
 			NotificationWriter notifications, Clock clock) {
-		this.db = db; this.accounts = accounts; this.audits = audits; this.notifications = notifications; this.clock = clock;
+		this.db = db; this.lifecycle = lifecycle; this.audits = audits; this.notifications = notifications; this.clock = clock;
 	}
 
 	@Transactional
 	PaymentResultResponse fulfill(UUID paymentId, UUID actorId, String providerTransactionId,
 			String evidence, String reason) {
-		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
-		lockMember(memberIdForPayment(paymentId));
+		lifecycle.reconcile(memberIdForPayment(paymentId), clock.instant());
 		Map<String, Object> row = paymentForUpdate(paymentId);
 		String status = string(row, "payment_status");
 		if ("PAID".equals(status)) {
@@ -77,8 +75,7 @@ class PaymentFulfillmentService {
 
 	@Transactional
 	PaymentResultResponse fulfillCash(UUID paymentId, UUID orderId, UUID actorId, String evidence, String reason) {
-		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
-		lockMember(memberIdForOrder(orderId));
+		lifecycle.reconcile(memberIdForOrder(orderId), clock.instant());
 		Map<String, Object> row;
 		try {
 			row = db.queryForMap("""
@@ -124,11 +121,6 @@ class PaymentFulfillmentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Membership Order was not found");
 		}
-	}
-
-	private void lockMember(UUID memberId) {
-		accounts.findByIdForUpdate(memberId)
-			.orElseThrow(() -> PaymentException.notFound("Member was not found"));
 	}
 
 	private void ensureNoActiveMembership(Map<String, Object> row) {

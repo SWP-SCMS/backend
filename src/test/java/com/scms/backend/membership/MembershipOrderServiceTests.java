@@ -33,8 +33,9 @@ class MembershipOrderServiceTests {
 	private final MembershipOfferRepository offerRepository = mock(MembershipOfferRepository.class);
 	private final MembershipRepository membershipRepository = mock(MembershipRepository.class);
 	private final MembershipOrderRepository orderRepository = mock(MembershipOrderRepository.class);
+	private final MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 	private final MembershipOrderService service = new MembershipOrderService(accountRepository,
-		memberProfileRepository, offerRepository, membershipRepository, orderRepository);
+		memberProfileRepository, offerRepository, membershipRepository, orderRepository, lifecycle);
 
 	private UUID memberAccountId;
 	private UUID offerId;

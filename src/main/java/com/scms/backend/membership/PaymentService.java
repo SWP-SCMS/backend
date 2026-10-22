@@ -34,20 +34,19 @@ class PaymentService {
 	private final AuditEventRepository audits;
 	private final PaymentFulfillmentService fulfillment;
 	private final MemberProfileRepository profiles;
-	private final MembershipRepository memberships;
+	private final MembershipLifecycleService lifecycle;
 	private final Clock clock;
 
 	PaymentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits,
 			PaymentFulfillmentService fulfillment, MemberProfileRepository profiles,
-			MembershipRepository memberships, Clock clock) {
+			MembershipLifecycleService lifecycle, Clock clock) {
 		this.db=db; this.accounts=accounts; this.audits=audits; this.fulfillment=fulfillment;
-		this.profiles=profiles; this.memberships=memberships; this.clock=clock;
+		this.profiles=profiles; this.lifecycle=lifecycle; this.clock=clock;
 	}
 
 	@Transactional
 	PaymentResultResponse cash(UUID actor, String memberCode, CashPaymentRequest request) {
 		ensure(actor, AccountRole.RECEPTIONIST);
-		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
 		if (request == null || request.offerId() == null) throw PaymentException.validation("offerId is required");
 		Map<String,Object> member;
 		Map<String,Object> offer;
@@ -59,6 +58,11 @@ class PaymentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Active Member or Membership Offer was not found");
 		}
+		UUID memberId=(UUID)member.get("account_id");
+		accounts.findByIdForUpdate(memberId)
+			.filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(() -> PaymentException.notFound("Active Member or Membership Offer was not found"));
+		lifecycle.reconcile(memberId, clock.instant());
 		try {
 			offer = db.queryForMap("""
 				select offer.id,offer.name,offer.plan_code,offer.price_amount,offer.currency_code,offer.duration_days
@@ -69,10 +73,6 @@ class PaymentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw new MembershipOfferUnavailableException();
 		}
-		UUID memberId=(UUID)member.get("account_id");
-		accounts.findByIdForUpdate(memberId)
-			.filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE)
-			.orElseThrow(() -> PaymentException.notFound("Active Member or Membership Offer was not found"));
 		if (count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId)>0)
 			throw PaymentException.conflict("Member already has an active membership");
 		if (count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId)>0)
@@ -293,16 +293,17 @@ class PaymentService {
 		return fulfillment.result(row);
 	}
 
-	@Transactional(readOnly=true)
+	@Transactional
 	List<MembershipHistoryResponse> memberHistory(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
-		List<MembershipHistoryResponse> history = db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc",
+		lifecycle.reconcile(actor, clock.instant());
+		List<MembershipHistoryResponse> history = db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc nulls first,id desc",
 			(rs,row)->new MembershipHistoryResponse(rs.getObject("id",UUID.class),
 				rs.getObject("order_id",UUID.class),rs.getString("plan_code_snapshot"),
 				rs.getString("offer_name_snapshot"),rs.getBigDecimal("price_amount_snapshot").toBigIntegerExact(),
 				rs.getString("currency_code_snapshot").trim(),rs.getInt("duration_days_snapshot"),
-				rs.getString("status"),rs.getTimestamp("starts_at").toInstant(),
-				rs.getTimestamp("ends_at").toInstant()),actor);
+				rs.getString("status"),instant(rs.getTimestamp("starts_at")),
+				instant(rs.getTimestamp("ends_at"))),actor);
 		Map<String, MembershipBenefits> benefits = benefitsByPlanCode(
 			history.stream().map(MembershipHistoryResponse::planCode).toList());
 		return history.stream().map(item -> {
@@ -336,14 +337,14 @@ class PaymentService {
 	}
 
 	private List<StaffMembershipResponse> staffMembershipHistory(UUID memberId) {
-		memberships.expireDueForMember(memberId, clock.instant());
+		lifecycle.reconcile(memberId, clock.instant());
 		List<StaffMembershipResponse> history = db.query("""
 			select id,plan_code_snapshot,offer_name_snapshot,status,starts_at,ends_at
 			from memberships where member_account_id=? order by starts_at desc,id desc
 			""", (rs, row) -> new StaffMembershipResponse(rs.getObject("id", UUID.class),
 				rs.getString("plan_code_snapshot"), rs.getString("offer_name_snapshot"),
-				rs.getString("status"), rs.getTimestamp("starts_at").toInstant(),
-				rs.getTimestamp("ends_at").toInstant()), memberId);
+				rs.getString("status"), instant(rs.getTimestamp("starts_at")),
+				instant(rs.getTimestamp("ends_at"))), memberId);
 		Map<String, MembershipBenefits> benefits = benefitsByPlanCode(
 			history.stream().map(StaffMembershipResponse::planCode).toList());
 		return history.stream().map(item -> {
@@ -391,6 +392,10 @@ class PaymentService {
 		private static final MembershipBenefits EMPTY = new MembershipBenefits(List.of(), List.of());
 	}
 
+	private static Instant instant(Timestamp timestamp) {
+		return timestamp == null ? null : timestamp.toInstant();
+	}
+
 	@Transactional(readOnly=true)
 	RevenueReportResponse report(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		ensure(actor,AccountRole.MANAGER);
@@ -403,7 +408,7 @@ class PaymentService {
 			"count(*) filter(where "+pending+") pending_payments,count(*) filter(where "+failed+") failed_payments from payments p join membership_orders o on o.id=p.order_id where true"+test;
 		List<Object> args=new ArrayList<>(); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to);
 		Map<String,Object> row=db.queryForMap(sql,args.toArray());
-		Map<String,Object> memberships=db.queryForMap("select count(*) filter(where m.status='ACTIVE') active,count(*) filter(where m.status='EXPIRED') expired from memberships m join membership_orders o on o.id=m.order_id where true"+test);
+		Map<String,Object> memberships=db.queryForMap("select count(*) filter(where m.status='ACTIVE' and m.starts_at<=current_timestamp and m.ends_at>current_timestamp) active,count(*) filter(where m.status='EXPIRED' or (m.status='ACTIVE' and m.ends_at<=current_timestamp)) expired from memberships m join membership_orders o on o.id=m.order_id where true"+test);
 		return new RevenueReportResponse(from,to,number(row,"paid_payments"),big(row,"paid_revenue"),number(row,"pending_payments"),
 			number(row,"failed_payments"),number(memberships,"active"),number(memberships,"expired"),includeTestData);
 	}

@@ -37,7 +37,6 @@ class ManagerReportingService {
 	@Transactional
 	ManagerDashboardResponse dashboard(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return new ManagerDashboardResponse(from, to, membersData(from, to, includeTestData),
 			payments.report(actor, from, to, includeTestData), bookingsData(from, to, includeTestData),
 			attendanceData(from, to, includeTestData), visitsData(from, to, includeTestData),
@@ -47,28 +46,24 @@ class ManagerReportingService {
 	@Transactional
 	MemberReportResponse members(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return membersData(from, to, includeTestData);
 	}
 
 	@Transactional
 	BookingReportResponse bookings(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return bookingsData(from, to, includeTestData);
 	}
 
 	@Transactional
 	AttendanceReportResponse attendance(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return attendanceData(from, to, includeTestData);
 	}
 
 	@Transactional
 	CenterVisitReportResponse centerVisits(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return visitsData(from, to, includeTestData);
 	}
 
@@ -76,12 +71,7 @@ class ManagerReportingService {
 	ClassUtilizationReportResponse classUtilization(UUID actor, Instant from, Instant to,
 			boolean includeTestData) {
 		validate(actor, from, to);
-		reconcileExpiredMemberships();
 		return utilizationData(from, to, includeTestData);
-	}
-
-	private void reconcileExpiredMemberships() {
-		db.update("update memberships set status='EXPIRED' where status='ACTIVE' and ends_at <= current_timestamp");
 	}
 
 	private MemberReportResponse membersData(Instant from, Instant to, boolean includeTestData) {
@@ -94,8 +84,8 @@ class ManagerReportingService {
 			+ "where a.role='MEMBER'" + range + test, accountArgs.toArray());
 		List<Object> membershipArgs = args(from, to);
 		Map<String, Object> membership = db.queryForMap("select "
-			+ "count(*) filter(where m.status='ACTIVE') active, "
-			+ "count(*) filter(where m.status='EXPIRED') expired from memberships m "
+			+ "count(*) filter(where m.status='ACTIVE' and m.starts_at <= current_timestamp and m.ends_at > current_timestamp) active, "
+			+ "count(*) filter(where m.status='EXPIRED' or (m.status='ACTIVE' and m.ends_at <= current_timestamp)) expired from memberships m "
 			+ "join accounts a on a.id=m.member_account_id where true"
 			+ range("m.created_at", from, to) + test, membershipArgs.toArray());
 		return new MemberReportResponse(from, to, number(member, "total"), number(member, "active"),

@@ -100,13 +100,13 @@ components:
           description: Stored membership snapshot, never the current offer
         status:
           type: string
-          enum: [ACTIVE, EXPIRED]
+          enum: [RESERVED, ACTIVE, EXPIRED, TERMINATED]
         startsAt:
-          type: string
+          type: [string, "null"]
           format: date-time
           description: UTC ISO-8601 instant
         endsAt:
-          type: string
+          type: [string, "null"]
           format: date-time
           description: UTC ISO-8601 instant
         benefitCodes:

@@ -10,9 +10,10 @@ public record StaffMembershipResponse(
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID membershipId,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String planCode,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String offerName,
-	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = { "ACTIVE", "EXPIRED" }) String status,
-	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant startsAt,
-	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant endsAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+		allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED" }) String status,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) Instant startsAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) Instant endsAt,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<String> benefitCodes,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<MembershipBenefitResponse> benefits) {
 
