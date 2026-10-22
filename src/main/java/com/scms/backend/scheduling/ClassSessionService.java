@@ -18,6 +18,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.training.CoachAssignmentRepository;
 import com.scms.backend.training.CoachAssignmentStatus;
+import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -37,17 +38,18 @@ public class ClassSessionService {
 	private final RoomImpactLockRendezvous lockRendezvous;
 	private final CoachLeaveRepository coachLeaves;
 	private final CoachAssignmentRepository coachAssignments;
+	private final NotificationWriter notifications;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
 			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
-			CoachAssignmentRepository coachAssignments) {
+			CoachAssignmentRepository coachAssignments, NotificationWriter notifications) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -58,6 +60,7 @@ public class ClassSessionService {
 		this.lockRendezvous = lockRendezvous;
 		this.coachLeaves = coachLeaves;
 		this.coachAssignments = coachAssignments;
+		this.notifications = notifications;
 	}
 
 	@Transactional
@@ -335,6 +338,60 @@ public class ClassSessionService {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		ensureCoachAvailable(resources.coach().getId(), startTime, endTime);
+	}
+
+	@Transactional
+	ClassSessionDetailResponse reschedule(UUID managerId, UUID sessionId, ClassSessionScheduleRequest request) {
+		ensureActiveManager(managerId);
+		if (request == null) throw RecurringScheduleException.validation("request", "must be a JSON object");
+		if (request.expectedVersion() == null) throw RecurringScheduleException.validation("expectedVersion", "is required");
+		validateTimes(request.startTime(), request.endTime());
+		String reason = request.reason() == null ? "" : request.reason().trim();
+		if (reason.isEmpty()) throw RecurringScheduleException.validation("reason", "is required");
+		if (reason.length() > 1000) throw RecurringScheduleException.validation("reason", "must be at most 1000 characters");
+		advanceStatuses();
+		ClassSession session = sessions.findByIdForUpdate(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (session.getStatus() != ClassSessionStatus.SCHEDULED) throw RecurringScheduleException.sessionNotScheduled();
+		if (!request.expectedVersion().equals(session.getVersion())) throw RecurringScheduleException.versionConflict();
+		if (clock.instant().isAfter(session.getStartTime().minus(Duration.ofHours(24)))) {
+			throw RecurringScheduleException.rescheduleWindowClosed();
+		}
+		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
+		UUID currentRoomId = session.getRoom() == null ? null : session.getRoom().getId();
+		UUID roomId = request.roomId() == null ? currentRoomId : request.roomId();
+		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId, session.getCapacity());
+		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, request.startTime(), request.endTime())
+				|| (roomId != null && rooms.existsSuspensionOverlap(roomId, request.startTime(), request.endTime()))) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		ensureCoachAvailable(coachId, request.startTime(), request.endTime());
+		if (!sessions.findBookedMemberConflictIds(sessionId, request.startTime(), request.endTime()).isEmpty()) {
+			throw RecurringScheduleException.memberTimeConflict();
+		}
+		Map<String, Object> before = scheduleSnapshot(session);
+		session.updateAssignment(resources.coach(), resources.room());
+		session.updateSchedule(request.startTime(), request.endTime());
+		try { sessions.saveAndFlush(session); }
+		catch (DataIntegrityViolationException exception) { throw RecurringScheduleException.sessionConflict(); }
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_RESCHEDULED", "CLASS_SESSION", sessionId,
+			reason, before, scheduleSnapshot(session)));
+		if (notifications != null) {
+			for (UUID memberId : sessions.findBookedMemberIds(sessionId)) {
+				notifications.write("session-rescheduled:" + sessionId + ":" + session.getVersion(), memberId,
+					"SESSION_RESCHEDULED", "CLASS_SESSION", sessionId,
+					Map.of("startTime", request.startTime().toString(), "endTime", request.endTime().toString()));
+			}
+		}
+		return ClassSessionDetailResponse.from(session);
+	}
+
+	private Map<String, Object> scheduleSnapshot(ClassSession session) {
+		Map<String, Object> result = new java.util.HashMap<>();
+		result.put("startTime", session.getStartTime().toString()); result.put("endTime", session.getEndTime().toString());
+		result.put("coachId", session.getTeachingCoach().getId().toString());
+		result.put("roomId", session.getRoom() == null ? null : session.getRoom().getId().toString());
+		return result;
 	}
 
 	private void ensureCoachAvailable(UUID coachId, Instant startTime, Instant endTime) {

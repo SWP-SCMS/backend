@@ -177,6 +177,7 @@ class GeneratedOpenApiTests {
 		"GET /manager/class-sessions",
 		"GET /manager/class-sessions/{id}",
 		"PATCH /manager/class-sessions/{id}/assignment",
+		"PATCH /manager/class-sessions/{id}/schedule",
 		"PATCH /manager/class-sessions/{id}/cancel",
 		"POST /manager/class-sessions/cancellation-preview",
 		"POST /manager/class-sessions/bulk-cancel",
