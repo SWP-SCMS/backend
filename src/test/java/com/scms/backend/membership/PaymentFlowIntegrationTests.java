@@ -213,8 +213,9 @@ class PaymentFlowIntegrationTests {
 		Instant previousEnd = clock.instant().minusSeconds(3600);
 		db.update("update membership_orders set fulfillment_mode='RESERVED',payment_method='BANK_TRANSFER' where id=?",
 			renewalOrder);
-		db.update("update memberships set ends_at=?,updated_at=current_timestamp where member_account_id=? and status='ACTIVE'",
-			java.sql.Timestamp.from(previousEnd), member.getAccountId());
+		db.update("update memberships set starts_at=?,ends_at=?,updated_at=current_timestamp where member_account_id=? and status='ACTIVE'",
+			java.sql.Timestamp.from(previousEnd.minus(30, ChronoUnit.DAYS)), java.sql.Timestamp.from(previousEnd),
+			member.getAccountId());
 
 		JsonNode payment = objectMapper.readTree(sepay(member.getAccount(), renewalOrder)
 			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
