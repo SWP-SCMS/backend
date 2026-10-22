@@ -1,0 +1,235 @@
+openapi: 3.0.3
+info:
+  title: SCMS Membership Termination Requests
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /members/me/membership-termination-requests:
+    get:
+      summary: List the authenticated member's termination requests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of termination requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipTerminationRequestPageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      summary: Request termination of the authenticated member's active membership
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipTerminationCreateRequest'
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /members/me/membership-termination-requests/{requestId}:
+    delete:
+      summary: Withdraw a pending termination request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '204':
+          description: Request withdrawn
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /reception/members/{memberCode}/membership-termination-requests:
+    get:
+      summary: List termination requests for a member
+      parameters:
+        - $ref: '#/components/parameters/MemberCode'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of termination requests
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationRequestPageResponse' }
+    post:
+      summary: Create a termination request for a member
+      parameters:
+        - $ref: '#/components/parameters/MemberCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipTerminationCreateRequest' }
+      responses:
+        '201':
+          description: Request created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/membership-termination-requests:
+    get:
+      summary: List membership termination requests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of termination requests
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationRequestPageResponse' }
+  /manager/membership-termination-requests/{requestId}/approve:
+    post:
+      summary: Approve a membership termination request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipTerminationDecisionRequest' }
+      responses:
+        '200':
+          description: Request approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/membership-termination-requests/{requestId}/reject:
+    post:
+      summary: Reject a membership termination request
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipTerminationDecisionRequest' }
+      responses:
+        '200':
+          description: Request rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/members/{memberAccountId}/membership-termination-requests:
+    post:
+      summary: Create and approve a membership termination request
+      parameters:
+        - name: memberAccountId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipTerminationCreateRequest' }
+      responses:
+        '201':
+          description: Request created and approved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MemberCode:
+      name: memberCode
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    MembershipTerminationMode:
+      type: string
+      enum: [IMMEDIATE, END_OF_CYCLE]
+    MembershipTerminationRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, EXECUTED, REJECTED, WITHDRAWN, OBSOLETE]
+    MembershipTerminationCreateRequest:
+      type: object
+      required: [mode, reason]
+      properties:
+        mode: { $ref: '#/components/schemas/MembershipTerminationMode' }
+        reason: { type: string, maxLength: 1000 }
+    MembershipTerminationDecisionRequest:
+      type: object
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: string, maxLength: 1000 }
+    MembershipTerminationResponse:
+      type: object
+      required: [id, membershipId, memberAccountId, mode, status, reason, requesterAccountId, effectiveAt, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        membershipId: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        mode: { $ref: '#/components/schemas/MembershipTerminationMode' }
+        status: { $ref: '#/components/schemas/MembershipTerminationRequestStatus' }
+        reason: { type: string }
+        requesterAccountId: { type: string, format: uuid }
+        approverAccountId: { type: string, format: uuid, nullable: true }
+        effectiveAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MembershipTerminationRequestPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items: { $ref: '#/components/schemas/MembershipTerminationResponse' }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    ProblemDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, MEMBERSHIP_NOT_ACTIVE, MEMBERSHIP_TERMINATION_ALREADY_PENDING, MEMBERSHIP_TERMINATION_NOT_FOUND, MEMBERSHIP_TERMINATION_INVALID_TRANSITION, MEMBERSHIP_TERMINATION_CHANGED]
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    NotFound:
+      description: Request not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+    Conflict:
+      description: Membership termination request conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }

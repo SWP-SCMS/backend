@@ -119,6 +119,7 @@ public class Membership {
 	}
 
 	public MembershipStatus getStatus() { return status; }
+	public UUID getId() { return id; }
 	public Instant getStartsAt() { return startsAt; }
 	public Instant getEndsAt() { return endsAt; }
 }
