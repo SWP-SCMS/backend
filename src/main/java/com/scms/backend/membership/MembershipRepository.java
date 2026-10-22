@@ -13,6 +13,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface MembershipRepository extends JpaRepository<Membership, UUID> {
 
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select m from Membership m where m.id = :id")
+	Optional<Membership> findByIdForUpdate(@Param("id") UUID id);
+
 	boolean existsByMemberAccountIdAndStatus(UUID memberAccountId, MembershipStatus status);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
