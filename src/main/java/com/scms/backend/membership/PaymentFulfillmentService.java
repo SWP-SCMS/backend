@@ -147,6 +147,7 @@ class PaymentFulfillmentService {
 			row.get("currency_code_snapshot"), row.get("duration_days_snapshot"), immediate ? "ACTIVE" : "RESERVED",
 			immediate ? Timestamp.from(now) : null,
 			immediate ? Timestamp.from(now.plusSeconds(number(row, "duration_days_snapshot").longValue() * 86400)) : null);
+		if (!immediate) lifecycle.reconcile(memberId, now);
 		UUID receiptId = UUID.randomUUID();
 		db.update("""
 			insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,

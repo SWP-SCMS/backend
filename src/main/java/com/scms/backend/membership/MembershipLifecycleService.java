@@ -27,7 +27,11 @@ public class MembershipLifecycleService {
 		lockMember(memberId);
 		Membership active = memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)
 			.orElse(null);
-		if (active == null || active.getEndsAt().isAfter(now)) return;
+		if (active == null) {
+			activateReservedFromLatestExpired(memberId, now);
+			return;
+		}
+		if (active.getEndsAt().isAfter(now)) return;
 
 		Instant nextStart = active.getEndsAt();
 		active.expire();
@@ -39,6 +43,16 @@ public class MembershipLifecycleService {
 			});
 		memberships.flush();
 		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+	}
+
+	private void activateReservedFromLatestExpired(UUID memberId, Instant now) {
+		memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED)
+			.ifPresent(reserved -> memberships.findLatestExpiredByMemberAccountIdForUpdate(memberId, now)
+				.ifPresent(expired -> {
+					reserved.activate(expired.getEndsAt());
+					if (!reserved.getEndsAt().isAfter(now)) reserved.expire();
+					memberships.flush();
+				}));
 	}
 
 	@Transactional

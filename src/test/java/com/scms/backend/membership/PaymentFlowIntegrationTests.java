@@ -202,6 +202,40 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void lateSepayRenewalActivatesFromTheExpiredMembershipEnd() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isCreated());
+
+		UUID renewalOrder = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		Instant previousEnd = clock.instant().minusSeconds(3600);
+		db.update("update membership_orders set fulfillment_mode='RESERVED',payment_method='BANK_TRANSFER' where id=?",
+			renewalOrder);
+		db.update("update memberships set ends_at=?,updated_at=current_timestamp where member_account_id=? and status='ACTIVE'",
+			java.sql.Timestamp.from(previousEnd), member.getAccountId());
+
+		JsonNode payment = objectMapper.readTree(sepay(member.getAccount(), renewalOrder)
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		String reference = payment.path("paymentReference").asText();
+		UUID paymentId = UUID.fromString(payment.path("paymentId").asText());
+
+		webhook("hook-secret", webhookBody(9104, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"));
+
+		Map<String, Object> membership = db.queryForMap(
+			"select status,starts_at,ends_at from memberships where order_id=?", renewalOrder);
+		assertThat(membership.get("status")).isEqualTo("ACTIVE");
+		assertThat(((java.sql.Timestamp) membership.get("starts_at")).toInstant()).isEqualTo(previousEnd);
+		assertThat(((java.sql.Timestamp) membership.get("ends_at")).toInstant())
+			.isEqualTo(previousEnd.plus(30, ChronoUnit.DAYS));
+		assertThat(count("select count(*) from receipts where payment_id=?", paymentId)).isOne();
+		assertThat(count("select count(*) from memberships where member_account_id=? and status='ACTIVE'",
+			member.getAccountId())).isOne();
+	}
+
+	@Test
 	void cashRejectsInactiveOfferAndInactivePlanWithOrderAvailabilityContract() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile inactiveOfferMember = member();

@@ -130,7 +130,7 @@ class MembershipOrderIntegrationTests {
 		Map<String, Object> response = JsonPath.read(body, "$");
 		assertThat(response.keySet()).containsExactlyInAnyOrder("orderId", "orderNumber", "memberId", "offerId",
 			"offerName", "planCode", "priceAmount", "currencyCode", "durationDays", "paymentMethod", "status",
-			"createdAt");
+			"createdAt", "fulfillmentMode");
 		assertThat(response.get("priceAmount").toString()).isEqualTo(EXACT_PRICE.toString());
 		assertThat(response.get("orderNumber").toString()).matches("ORD-[0-9A-F]{32}");
 		assertThat(body).doesNotContain("password", "token", "version", "createdByAccountId", "expiresAt");
