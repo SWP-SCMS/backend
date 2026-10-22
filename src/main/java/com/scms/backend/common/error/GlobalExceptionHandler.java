@@ -32,6 +32,7 @@ import com.scms.backend.membership.MembershipPlanConflictException;
 import com.scms.backend.membership.MembershipPlanNotFoundException;
 import com.scms.backend.membership.MembershipPlanValidationException;
 import com.scms.backend.membership.MembershipTerminationException;
+import com.scms.backend.membership.MembershipFreezeException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberNotFoundException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberValidationException;
 import com.scms.backend.centervisit.CenterVisitException;
@@ -555,6 +556,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	ProblemDetail handleMembershipTermination(MembershipTerminationException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Membership termination request failed");
+		problem.setProperty("code", exception.getCode());
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipFreezeException.class)
+	ProblemDetail handleMembershipFreeze(MembershipFreezeException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Membership freeze request failed");
 		problem.setProperty("code", exception.getCode());
 		return problem;
 	}

@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info: { title: SCMS Membership Freeze Requests, version: 1.0.0 }
+servers: [{ url: /api/v1 }]
+security: [{ bearerAuth: [] }]
+paths:
+  /members/me/membership-freeze-requests:
+    get:
+      summary: List the authenticated member's membership freeze requests
+      responses: { '200': { description: Freeze requests, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequestPage' } } } } }
+    post:
+      summary: Create a membership freeze request
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeCreateRequest' } } } }
+      responses: { '201': { description: Request created, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequest' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /reception/members/{memberCode}/membership-freeze-requests:
+    get:
+      summary: List a member's freeze requests
+      parameters: [{ $ref: '#/components/parameters/MemberCode' }]
+      responses: { '200': { description: Freeze requests, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequestPage' } } } } }
+    post:
+      summary: Create a member's freeze request
+      parameters: [{ $ref: '#/components/parameters/MemberCode' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeCreateRequest' } } } }
+      responses: { '201': { description: Request created, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequest' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /manager/membership-freeze-requests:
+    get:
+      summary: List membership freeze requests
+      responses: { '200': { description: Freeze requests, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequestPage' } } } } }
+  /manager/membership-freeze-requests/{requestId}/approve:
+    post:
+      summary: Approve a freeze request and calculate its cash fee
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DecisionRequest' } } } }
+      responses: { '200': { description: Approved, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequest' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /manager/membership-freeze-requests/{requestId}/reject:
+    post:
+      summary: Reject a pending freeze request
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DecisionRequest' } } } }
+      responses: { '200': { description: Rejected, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequest' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+  /reception/membership-freeze-requests/{requestId}/cash-payment:
+    post:
+      summary: Collect the approved freeze fee in cash and schedule the freeze
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DecisionRequest' } } } }
+      responses: { '200': { description: Cash collected, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeCashPayment' } } } }, '409': { $ref: '#/components/responses/Conflict' } }
+components:
+  securitySchemes: { bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT } }
+  parameters:
+    RequestId: { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
+    MemberCode: { name: memberCode, in: path, required: true, schema: { type: string } }
+  schemas:
+    FreezeStatus: { type: string, enum: [PENDING, APPROVED_PENDING_PAYMENT, SCHEDULED, REJECTED] }
+    FreezeCreateRequest:
+      type: object
+      required: [startDate, endDate, reason]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        reason: { type: string, maxLength: 1000 }
+    DecisionRequest:
+      type: object
+      required: [expectedVersion]
+      properties: { expectedVersion: { type: integer, format: int64, minimum: 0 } }
+    FreezeRequest:
+      type: object
+      required: [id, membershipId, memberAccountId, startDate, endDate, reason, status, requesterAccountId, version, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        membershipId: { type: string, format: uuid }
+        memberAccountId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        reason: { type: string }
+        feeAmount: { type: integer, format: int64, nullable: true }
+        status: { $ref: '#/components/schemas/FreezeStatus' }
+        requesterAccountId: { type: string, format: uuid }
+        approverAccountId: { type: string, format: uuid, nullable: true }
+        version: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FreezeRequestPage:
+      type: object
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/FreezeRequest' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    FreezeCashPayment:
+      type: object
+      required: [requestId, paymentId, amount, currencyCode, status, paidAt]
+      properties:
+        requestId: { type: string, format: uuid }
+        paymentId: { type: string, format: uuid }
+        amount: { type: integer, format: int64 }
+        currencyCode: { type: string, enum: [VND] }
+        status: { $ref: '#/components/schemas/FreezeStatus' }
+        paidAt: { type: string, format: date-time }
+  responses:
+    BadRequest: { description: Validation failed }
+    Conflict: { description: Request conflict }

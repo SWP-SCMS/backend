@@ -120,6 +120,9 @@ public class Membership {
 
 	public MembershipStatus getStatus() { return status; }
 	public UUID getId() { return id; }
+	public UUID getMemberAccountId() { return memberAccountId; }
 	public Instant getStartsAt() { return startsAt; }
 	public Instant getEndsAt() { return endsAt; }
+	public BigInteger getPriceAmountSnapshot() { return priceAmountSnapshot; }
+	public int getDurationDaysSnapshot() { return durationDaysSnapshot; }
 }
