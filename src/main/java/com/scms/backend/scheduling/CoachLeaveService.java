@@ -1,0 +1,133 @@
+package com.scms.backend.scheduling;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+class CoachLeaveService {
+	private final CoachLeaveRepository leaves;
+	private final AccountRepository accounts;
+	private final ClassSessionRepository sessions;
+	private final AuditEventRepository audits;
+	private final NotificationWriter notifications;
+	private final Clock clock;
+
+	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
+			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
+		this.leaves = leaves; this.accounts = accounts; this.sessions = sessions; this.audits = audits;
+		this.notifications = notifications; this.clock = clock;
+	}
+
+	@Transactional
+	CoachLeaveResponse create(UUID coachId, CoachLeaveCreateRequest request) {
+		Account coach = activeAccount(coachId, AccountRole.COACH);
+		if (request == null) throw CoachLeaveException.validation("request", "must be a JSON object");
+		Instant now = clock.instant();
+		if (request.startTime() == null || !request.startTime().isAfter(now))
+			throw CoachLeaveException.validation("startTime", "must be in the future");
+		if (request.endTime() == null || !request.endTime().isAfter(request.startTime()))
+			throw CoachLeaveException.validation("endTime", "must be later than startTime");
+		String reason = normalize(request.reason(), true, "reason");
+		if (leaves.existsOpenOverlap(coachId, request.startTime(), request.endTime()))
+			throw CoachLeaveException.conflict("COACH_LEAVE_OVERLAP", "An open leave request already overlaps this interval.");
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, request.startTime(), request.endTime(), reason);
+		try { leaves.saveAndFlush(leave); }
+		catch (DataIntegrityViolationException exception) {
+			throw CoachLeaveException.conflict("COACH_LEAVE_OVERLAP", "An open leave request already overlaps this interval.");
+		}
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_REQUESTED", "COACH_LEAVE_REQUEST",
+			leave.getId(), reason, null, snapshot(leave)));
+		return response(leave);
+	}
+
+	@Transactional(readOnly = true)
+	List<CoachLeaveResponse> mine(UUID coachId) {
+		activeAccount(coachId, AccountRole.COACH);
+		return leaves.findByCoach_IdOrderByCreatedAtDesc(coachId).stream().map(this::response).toList();
+	}
+
+	@Transactional
+	CoachLeaveResponse withdraw(UUID coachId, UUID requestId) {
+		activeAccount(coachId, AccountRole.COACH);
+		CoachLeaveRequest leave = leaves.findByIdForUpdate(requestId).filter(item -> item.getCoach().getId().equals(coachId))
+			.orElseThrow(CoachLeaveException::notFound);
+		if (leave.getStatus() != CoachLeaveStatus.PENDING)
+			throw CoachLeaveException.conflict("COACH_LEAVE_NOT_PENDING", "Only a pending leave request can be withdrawn.");
+		Map<String, Object> before = snapshot(leave); leave.withdraw();
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_WITHDRAWN", "COACH_LEAVE_REQUEST",
+			leave.getId(), "Coach withdrew leave request", before, snapshot(leave)));
+		return response(leave);
+	}
+
+	@Transactional(readOnly = true)
+	List<CoachLeaveResponse> managerList(UUID managerId, CoachLeaveStatus status) {
+		activeAccount(managerId, AccountRole.MANAGER);
+		List<CoachLeaveRequest> result = status == null ? leaves.findAll() : leaves.findByStatusOrderByCreatedAtAsc(status);
+		return result.stream().map(this::response).toList();
+	}
+
+	@Transactional
+	CoachLeaveResponse approve(UUID managerId, UUID requestId, CoachLeaveReviewRequest request) {
+		return review(managerId, requestId, request, true);
+	}
+
+	@Transactional
+	CoachLeaveResponse reject(UUID managerId, UUID requestId, CoachLeaveReviewRequest request) {
+		return review(managerId, requestId, request, false);
+	}
+
+	private CoachLeaveResponse review(UUID managerId, UUID requestId, CoachLeaveReviewRequest request, boolean approve) {
+		activeAccount(managerId, AccountRole.MANAGER);
+		CoachLeaveRequest leave = leaves.findByIdForUpdate(requestId).orElseThrow(CoachLeaveException::notFound);
+		if (leave.getStatus() != CoachLeaveStatus.PENDING)
+			throw CoachLeaveException.conflict("COACH_LEAVE_NOT_PENDING", "Only a pending leave request can be reviewed.");
+		String note = normalize(request == null ? null : request.note(), false, "note");
+		Map<String, Object> before = snapshot(leave); Instant now = clock.instant();
+		if (approve) leave.approve(managerId, note, now); else leave.reject(managerId, note, now);
+		String event = approve ? "COACH_LEAVE_APPROVED" : "COACH_LEAVE_REJECTED";
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, event, "COACH_LEAVE_REQUEST", leave.getId(), note,
+			before, snapshot(leave)));
+		notifications.write("coach-leave:" + leave.getId() + ":" + leave.getStatus(), leave.getCoach().getId(), event,
+			"COACH_LEAVE_REQUEST", leave.getId(), Map.of("startTime", leave.getStartTime().toString(),
+				"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name()));
+		return response(leave);
+	}
+
+	private Account activeAccount(UUID id, AccountRole role) {
+		Account account = accounts.findById(id).orElseThrow(InvalidAuthenticatedAccountException::new);
+		if (account.getRole() != role || account.getStatus() != AccountStatus.ACTIVE)
+			throw new InvalidAuthenticatedAccountException();
+		return account;
+	}
+	private String normalize(String value, boolean required, String field) {
+		String normalized = value == null ? null : value.trim();
+		if (required && (normalized == null || normalized.isEmpty())) throw CoachLeaveException.validation(field, "is required");
+		if (normalized != null && normalized.isEmpty()) normalized = null;
+		if (normalized != null && normalized.length() > 1000) throw CoachLeaveException.validation(field, "must be at most 1000 characters");
+		return normalized;
+	}
+	private CoachLeaveResponse response(CoachLeaveRequest leave) {
+		return CoachLeaveResponse.from(leave, sessions.findActiveOverlapIdsByCoach(leave.getCoach().getId(),
+			leave.getStartTime(), leave.getEndTime()));
+	}
+	private Map<String, Object> snapshot(CoachLeaveRequest leave) {
+		return Map.of("coachId", leave.getCoach().getId().toString(), "startTime", leave.getStartTime().toString(),
+			"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name());
+	}
+}
+

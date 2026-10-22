@@ -1,0 +1,67 @@
+openapi: 3.1.0
+info: {title: SCMS Coach Leave, version: v1}
+servers: [{url: /api/v1}]
+paths:
+  /coach/leave-requests:
+    post:
+      summary: Submit a future leave request
+      security: [{bearerAuth: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveCreateRequest'}}}}
+      responses: {'201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}, '409': {description: Overlapping open request}}
+  /coach/me/leave-requests:
+    get:
+      summary: List the authenticated Coach's leave requests
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Requests, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}}
+  /coach/leave-requests/{requestId}:
+    delete:
+      summary: Withdraw a pending leave request
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses: {'200': {description: Withdrawn request, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}
+  /manager/coach-leave-requests:
+    get:
+      summary: List Coach leave requests
+      security: [{bearerAuth: []}]
+      parameters: [{name: status, in: query, schema: {$ref: '#/components/schemas/CoachLeaveStatus'}}]
+      responses: {'200': {description: Requests, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}}
+  /manager/coach-leave-requests/{requestId}/approve:
+    patch:
+      summary: Approve leave and expose sessions requiring reassignment or reschedule
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveReviewRequest'}}}}
+      responses: {'200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}
+  /manager/coach-leave-requests/{requestId}/reject:
+    patch:
+      summary: Reject a pending leave request
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveReviewRequest'}}}}
+      responses: {'200': {description: Rejected, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}
+components:
+  parameters:
+    RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    CoachLeaveStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, WITHDRAWN]}
+    CoachLeaveCreateRequest:
+      type: object
+      required: [startTime, endTime, reason]
+      properties: {startTime: {type: string, format: date-time}, endTime: {type: string, format: date-time}, reason: {type: string, maxLength: 1000}}
+    CoachLeaveReviewRequest: {type: object, properties: {note: {type: [string, 'null'], maxLength: 1000}}}
+    CoachLeaveResponse:
+      type: object
+      required: [id, coachId, startTime, endTime, reason, status, affectedSessionIds]
+      properties:
+        id: {type: string, format: uuid}
+        coachId: {type: string, format: uuid}
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        reason: {type: string}
+        status: {$ref: '#/components/schemas/CoachLeaveStatus'}
+        reviewedBy: {type: [string, 'null'], format: uuid}
+        reviewNote: {type: [string, 'null']}
+        reviewedAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+        affectedSessionIds: {type: array, items: {type: string, format: uuid}}
+  securitySchemes: {bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}}
