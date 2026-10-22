@@ -226,7 +226,6 @@ class GeneratedOpenApiTests {
 		"POST /auth/change-password",
 		"POST /auth/password-reset/confirm",
 		"DELETE /staff/me/email-change",
-<<<<<<< HEAD
 		"DELETE /accounts/me/email-change",
 		"DELETE /members/me/membership-termination-requests/{requestId}",
 		"POST /manager/staff-accounts/{accountId}/reset-password",
