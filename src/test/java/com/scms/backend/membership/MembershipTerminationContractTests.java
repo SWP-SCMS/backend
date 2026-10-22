@@ -44,7 +44,7 @@ class MembershipTerminationContractTests {
 
 	@Test
 	void migrationDefinesOnePendingTerminationRequestPerMembership() throws Exception {
-		String migration = Files.readString(Path.of("src/main/resources/db/migration/V29__membership_termination_requests.sql"));
+		String migration = Files.readString(Path.of("src/main/resources/db/migration/V31__membership_termination_requests.sql"));
 		assertThat(migration).contains("create table membership_termination_requests");
 		assertThat(migration).contains("unique index");
 		assertThat(migration).contains("status in ('PENDING','APPROVED','EXECUTED','REJECTED','WITHDRAWN','OBSOLETE')");
