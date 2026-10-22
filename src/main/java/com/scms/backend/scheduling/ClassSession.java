@@ -100,6 +100,7 @@ public class ClassSession {
 	Instant getCancelledAt() { return cancelledAt; }
 	String getCancellationReason() { return cancellationReason; }
 	UUID getCreatedBy() { return createdBy; }
+	Long getVersion() { return version; }
 
 	void updateAssignment(Account coach, Room room) {
 		this.teachingCoach = coach;

@@ -67,6 +67,12 @@ public class ClassSessionController {
 		return ResponseEntity.ok(service.updateAssignment(UUID.fromString(jwt.getSubject()), id, request));
 	}
 
+	@PatchMapping("/{id}/schedule")
+	ResponseEntity<ClassSessionDetailResponse> reschedule(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID id, @RequestBody ClassSessionScheduleRequest request) {
+		return ResponseEntity.ok(service.reschedule(UUID.fromString(jwt.getSubject()), id, request));
+	}
+
 	@PatchMapping("/{id}/cancel")
 	ResponseEntity<ClassSessionDetailResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
 			@RequestBody ClassSessionCancellationRequest request) {

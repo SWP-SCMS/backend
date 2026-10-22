@@ -77,6 +77,21 @@ public class RecurringScheduleException extends RuntimeException {
 			"Only a scheduled Session can be changed.");
 	}
 
+	static RecurringScheduleException rescheduleWindowClosed() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_RESCHEDULE_WINDOW_CLOSED", null,
+			"A Session must be rescheduled at least 24 hours before its current start time.");
+	}
+
+	static RecurringScheduleException versionConflict() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_VERSION_CONFLICT", null,
+			"The Session changed after it was loaded. Refresh and try again.");
+	}
+
+	static RecurringScheduleException memberTimeConflict() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_MEMBER_TIME_CONFLICT", null,
+			"One or more booked Members have another Booking overlapping the requested time.");
+	}
+
 	static RecurringScheduleException bulkSelectionChanged(List<UUID> eligibleSessionIds,
 			List<UUID> ineligibleSessionIds) {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_BULK_SELECTION_CHANGED", null,

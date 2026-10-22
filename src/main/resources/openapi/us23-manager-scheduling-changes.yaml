@@ -127,6 +127,25 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /manager/class-sessions/{id}/schedule:
+    patch:
+      summary: Atomically reschedule a Session and optionally change Coach or Room
+      description: Keeps existing Bookings, requires at least 24 hours before the current start, and rejects Member overlap at the new time.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionScheduleRequest'}}}
+      responses:
+        '200':
+          description: Session rescheduled and affected Members notified.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/class-sessions/cancellation-preview:
     post:
       summary: Preview future scheduled sessions eligible for cancellation
@@ -167,6 +186,16 @@ components:
       required: true
       schema: {type: string, format: uuid}
   schemas:
+    ClassSessionScheduleRequest:
+      type: object
+      required: [startTime, endTime, expectedVersion, reason]
+      properties:
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        coachId: {type: [string, 'null'], format: uuid}
+        roomId: {type: [string, 'null'], format: uuid}
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 1000}
     RoomSuspensionCreateRequest:
       type: object
       required: [startTime, endTime]
@@ -235,6 +264,7 @@ components:
         startTime: {type: string, format: date-time}
         endTime: {type: string, format: date-time}
         status: {type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]}
+        version: {type: integer, format: int64, minimum: 0}
         bookingCount: {type: integer, format: int64, minimum: 0}
     RoomResponse:
       type: object

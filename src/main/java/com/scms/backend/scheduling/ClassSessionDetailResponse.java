@@ -7,7 +7,7 @@ public record ClassSessionDetailResponse(UUID id, UUID classId, String className
 		UUID disciplineId, String disciplineName, UUID coachId, String coachName, UUID roomId, String roomName,
 		int roomCapacity, UUID recurringScheduleId, Instant startTime, Instant endTime, int capacity,
 		ClassSessionStatus status, Instant cancelledAt, String cancellationReason, UUID createdBy,
-		boolean canUpdateAssignment, boolean canCancel) {
+		boolean canUpdateAssignment, boolean canCancel, long version) {
 
 	static ClassSessionDetailResponse from(ClassSession session) {
 		SportClass sportClass = session.getSportClass();
@@ -20,6 +20,7 @@ public record ClassSessionDetailResponse(UUID id, UUID classId, String className
 			room == null ? null : room.getName(), room == null ? 0 : room.getCapacity(),
 			session.getRecurringSchedule() == null ? null : session.getRecurringSchedule().getId(),
 			session.getStartTime(), session.getEndTime(), session.getCapacity(), session.getStatus(),
-			session.getCancelledAt(), session.getCancellationReason(), session.getCreatedBy(), scheduled, scheduled);
+			session.getCancelledAt(), session.getCancellationReason(), session.getCreatedBy(), scheduled, scheduled,
+			session.getVersion() == null ? 0 : session.getVersion());
 	}
 }
