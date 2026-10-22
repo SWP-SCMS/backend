@@ -62,6 +62,10 @@ public class MembershipOrder {
 	@Column(nullable = false, length = 20)
 	private MembershipOrderStatus status;
 
+	@Enumerated(EnumType.STRING)
+	@Column(name = "fulfillment_mode", nullable = false, length = 20)
+	private FulfillmentMode fulfillmentMode;
+
 	@Column(name = "expires_at")
 	private Instant expiresAt;
 
@@ -85,6 +89,11 @@ public class MembershipOrder {
 
 	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId,
 			MembershipOffer offer) {
+		this(id, orderNumber, memberAccountId, createdByAccountId, offer, FulfillmentMode.IMMEDIATE);
+	}
+
+	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId,
+			MembershipOffer offer, FulfillmentMode fulfillmentMode) {
 		this.id = Objects.requireNonNull(id);
 		this.orderNumber = Objects.requireNonNull(orderNumber);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
@@ -97,6 +106,7 @@ public class MembershipOrder {
 		this.durationDaysSnapshot = offer.getDurationDays();
 		this.paymentMethod = PaymentMethod.BANK_TRANSFER;
 		this.status = MembershipOrderStatus.PENDING_PAYMENT;
+		this.fulfillmentMode = Objects.requireNonNull(fulfillmentMode);
 	}
 
 	public UUID getId() {
@@ -145,6 +155,10 @@ public class MembershipOrder {
 
 	public MembershipOrderStatus getStatus() {
 		return status;
+	}
+
+	public FulfillmentMode getFulfillmentMode() {
+		return fulfillmentMode;
 	}
 
 	public Instant getExpiresAt() {

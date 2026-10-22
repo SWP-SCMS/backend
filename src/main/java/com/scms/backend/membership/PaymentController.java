@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,8 +31,9 @@ class PaymentController {
 	@PostMapping("/reception/members/{memberId}/cash-payments")
 	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<PaymentResultResponse> cash(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberId,
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
 			@RequestBody CashPaymentRequest request) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(service.cash(id(jwt), memberId, request));
+		return ResponseEntity.status(HttpStatus.CREATED).body(service.cash(id(jwt), memberId, request, idempotencyKey));
 	}
 
 	@Deprecated

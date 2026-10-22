@@ -130,7 +130,7 @@ class MembershipOrderIntegrationTests {
 		Map<String, Object> response = JsonPath.read(body, "$");
 		assertThat(response.keySet()).containsExactlyInAnyOrder("orderId", "orderNumber", "memberId", "offerId",
 			"offerName", "planCode", "priceAmount", "currencyCode", "durationDays", "paymentMethod", "status",
-			"createdAt");
+			"createdAt", "fulfillmentMode");
 		assertThat(response.get("priceAmount").toString()).isEqualTo(EXACT_PRICE.toString());
 		assertThat(response.get("orderNumber").toString()).matches("ORD-[0-9A-F]{32}");
 		assertThat(body).doesNotContain("password", "token", "version", "createdByAccountId", "expiresAt");
@@ -449,15 +449,15 @@ class MembershipOrderIntegrationTests {
 	}
 
 	@Test
-	void activeMembershipBlocksNewOrder() throws Exception {
+	void activeMembershipCreatesReservedRenewalOrder() throws Exception {
 		MemberProfile member = createMember(AccountStatus.ACTIVE);
 		UUID offerId = insertOffer(member.getAccount(), "PLUS", "Membership Offer", BigInteger.valueOf(700000),
 			30, "ACTIVE");
 		insertActiveMembership(member.getAccount(), offerId);
 
 		createForMember(accessToken(member.getAccount()), offerId)
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("ACTIVE_MEMBERSHIP_EXISTS"));
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"));
 	}
 
 	@Test

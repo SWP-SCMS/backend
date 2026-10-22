@@ -181,6 +181,62 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void cashRenewalReplaysByIdempotencyKeyWithoutCreatingDuplicateArtifacts() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(receptionist, "BASIC", 12000, false);
+		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isCreated());
+
+		String firstRenewal = cash(receptionist, member.getMemberCode(), offer, "cash-renewal-1")
+			.andExpect(status().isCreated()).andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"))
+			.andReturn().getResponse().getContentAsString();
+		String replay = cash(receptionist, member.getMemberCode(), offer, "cash-renewal-1")
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+		assertThat((String) JsonPath.read(replay, "$.paymentId"))
+			.isEqualTo((String) JsonPath.read(firstRenewal, "$.paymentId"));
+		assertThat(count("select count(*) from membership_orders where member_account_id=?", member.getAccountId())).isEqualTo(2);
+		assertThat(count("select count(*) from payments p join membership_orders o on o.id=p.order_id where o.member_account_id=?",
+			member.getAccountId())).isEqualTo(2);
+		assertThat(count("select count(*) from receipts where member_account_id=?", member.getAccountId())).isEqualTo(2);
+	}
+
+	@Test
+	void lateSepayRenewalActivatesFromTheExpiredMembershipEnd() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isCreated());
+
+		UUID renewalOrder = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		Instant previousEnd = clock.instant().minusSeconds(3600).truncatedTo(ChronoUnit.MICROS);
+		db.update("update membership_orders set fulfillment_mode='RESERVED',payment_method='BANK_TRANSFER' where id=?",
+			renewalOrder);
+		db.update("update memberships set starts_at=?,ends_at=?,updated_at=current_timestamp where member_account_id=? and status='ACTIVE'",
+			java.sql.Timestamp.from(previousEnd.minus(30, ChronoUnit.DAYS)), java.sql.Timestamp.from(previousEnd),
+			member.getAccountId());
+
+		JsonNode payment = objectMapper.readTree(sepay(member.getAccount(), renewalOrder)
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		String reference = payment.path("paymentReference").asText();
+		UUID paymentId = UUID.fromString(payment.path("paymentId").asText());
+
+		webhook("hook-secret", webhookBody(9104, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"));
+
+		Map<String, Object> membership = db.queryForMap(
+			"select status,starts_at,ends_at from memberships where order_id=?", renewalOrder);
+		assertThat(membership.get("status")).isEqualTo("ACTIVE");
+		assertThat(((java.sql.Timestamp) membership.get("starts_at")).toInstant()).isEqualTo(previousEnd);
+		assertThat(((java.sql.Timestamp) membership.get("ends_at")).toInstant())
+			.isEqualTo(previousEnd.plus(30, ChronoUnit.DAYS));
+		assertThat(count("select count(*) from receipts where payment_id=?", paymentId)).isOne();
+		assertThat(count("select count(*) from memberships where member_account_id=? and status='ACTIVE'",
+			member.getAccountId())).isOne();
+	}
+
+	@Test
 	void cashRejectsInactiveOfferAndInactivePlanWithOrderAvailabilityContract() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile inactiveOfferMember = member();
@@ -1034,9 +1090,16 @@ class PaymentFlowIntegrationTests {
 
 	private org.springframework.test.web.servlet.ResultActions cash(Account actor, String memberCode, UUID offer)
 			throws Exception {
-		return mockMvc.perform(post("/api/v1/reception/members/{memberId}/cash-payments", memberCode)
+		return cash(actor, memberCode, offer, null);
+	}
+
+	private org.springframework.test.web.servlet.ResultActions cash(Account actor, String memberCode, UUID offer,
+		String idempotencyKey) throws Exception {
+		var request = post("/api/v1/reception/members/{memberId}/cash-payments", memberCode)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(actor))
-			.contentType(MediaType.APPLICATION_JSON).content("{\"offerId\":\"" + offer + "\"}"));
+			.contentType(MediaType.APPLICATION_JSON).content("{\"offerId\":\"" + offer + "\"}");
+		if (idempotencyKey != null) request.header("Idempotency-Key", idempotencyKey);
+		return mockMvc.perform(request);
 	}
 
 	private org.springframework.test.web.servlet.ResultActions patchOffer(Account actor, UUID offer, String body)

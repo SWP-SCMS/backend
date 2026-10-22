@@ -327,6 +327,12 @@ class GeneratedOpenApiTests {
 		}
 		assertThat(document.at("/components/responses/MembershipOrderConflict/description").asText())
 			.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		JsonNode cashParameters = operation(document, "/reception/members/{memberId}/cash-payments", "post")
+			.path("parameters");
+		List<JsonNode> cashParameterList = new ArrayList<>();
+		cashParameters.forEach(cashParameterList::add);
+		assertThat(cashParameterList).anyMatch(parameter -> "Idempotency-Key".equals(parameter.path("name").asText())
+			&& "header".equals(parameter.path("in").asText()) && !parameter.path("required").asBoolean());
 
 		assertProblemReference(document, "/reception/members/search", "get", "404");
 		assertProblemReference(document, "/coach/class-sessions/{sessionId}/attendance", "get", "409");
@@ -496,6 +502,14 @@ class GeneratedOpenApiTests {
 		assertThat(orderPlanCode.path("type").asText()).isEqualTo("string");
 		assertThat(orderPlanCode.path("enum").isMissingNode()).isTrue();
 		assertThat(orderPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
+		assertThat(document.at("/components/schemas/MembershipOrderResponse/properties/fulfillmentMode/enum").toString())
+			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
+		assertThat(document.at("/components/schemas/MembershipOrderResponse/required").toString())
+			.contains("fulfillmentMode");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/fulfillmentMode/enum").toString())
+			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/required").toString())
+			.contains("fulfillmentMode");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())

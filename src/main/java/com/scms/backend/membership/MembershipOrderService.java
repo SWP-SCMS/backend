@@ -75,22 +75,26 @@ public class MembershipOrderService {
 
 	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
 		UUID memberAccountId = member.getAccountId();
-		if (membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.ACTIVE)) {
-			throw new ActiveMembershipExistsException();
+		boolean active = membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.ACTIVE);
+		if (membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.RESERVED)) {
+			throw new MembershipRenewalAlreadyExistsException();
 		}
 		if (membershipOrderRepository.existsByMemberAccountIdAndStatus(memberAccountId,
 				MembershipOrderStatus.PENDING_PAYMENT)) {
+			if (active) throw new MembershipRenewalAlreadyExistsException();
 			throw new PendingMembershipOrderExistsException();
 		}
 
 		UUID orderId = UUID.randomUUID();
 		String orderNumber = "ORD-" + orderId.toString().replace("-", "").toUpperCase(Locale.ROOT);
-		MembershipOrder order = new MembershipOrder(orderId, orderNumber, memberAccountId, actorAccountId, offer);
+		MembershipOrder order = new MembershipOrder(orderId, orderNumber, memberAccountId, actorAccountId, offer,
+			active ? FulfillmentMode.RESERVED : FulfillmentMode.IMMEDIATE);
 		try {
 			membershipOrderRepository.saveAndFlush(order);
 		}
 		catch (DataIntegrityViolationException exception) {
 			if (MembershipOrderConstraintDetector.isPendingMemberConstraint(exception)) {
+				if (active) throw new MembershipRenewalAlreadyExistsException();
 				throw new PendingMembershipOrderExistsException();
 			}
 			throw exception;
@@ -101,6 +105,10 @@ public class MembershipOrderService {
 	private void prepareMember(MemberProfile member) {
 		ensureActiveMember(member);
 		lifecycle.reconcile(member.getAccountId(), Instant.now());
+		Account lockedMember = accountRepository.findByIdForUpdate(member.getAccountId())
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
+		if (lockedMember.getRole() != AccountRole.MEMBER) throw new InvalidAuthenticatedAccountException();
+		if (lockedMember.getStatus() != AccountStatus.ACTIVE) throw new MemberNotActiveException();
 	}
 
 	private Optional<MembershipOrderResponse> findPending(MemberProfile member) {
@@ -151,6 +159,6 @@ public class MembershipOrderService {
 		return new MembershipOrderResponse(order.getId(), order.getOrderNumber(), memberId, order.getOfferId(),
 			order.getOfferNameSnapshot(), order.getPlanCodeSnapshot(), order.getPriceAmountSnapshot(),
 			order.getCurrencyCodeSnapshot(), order.getDurationDaysSnapshot(), order.getPaymentMethod(),
-			order.getStatus(), order.getCreatedAt());
+			order.getStatus(), order.getCreatedAt(), order.getFulfillmentMode());
 	}
 }

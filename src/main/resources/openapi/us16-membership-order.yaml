@@ -171,7 +171,7 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     SelfOrderConflict:
       description: >-
-        MEMBERSHIP_OFFER_NOT_AVAILABLE, ACTIVE_MEMBERSHIP_EXISTS, or
+        MEMBERSHIP_OFFER_NOT_AVAILABLE, MEMBERSHIP_RENEWAL_ALREADY_EXISTS, or
         PENDING_MEMBERSHIP_ORDER_EXISTS.
       content:
         application/problem+json:
@@ -179,7 +179,7 @@ components:
             $ref: '#/components/schemas/ProblemDetail'
     OrderConflict:
       description: >-
-        MEMBERSHIP_OFFER_NOT_AVAILABLE, MEMBER_NOT_ACTIVE, ACTIVE_MEMBERSHIP_EXISTS, or
+        MEMBERSHIP_OFFER_NOT_AVAILABLE, MEMBER_NOT_ACTIVE, MEMBERSHIP_RENEWAL_ALREADY_EXISTS, or
         PENDING_MEMBERSHIP_ORDER_EXISTS.
       content:
         application/problem+json:
@@ -211,6 +211,7 @@ components:
         - paymentMethod
         - status
         - createdAt
+        - fulfillmentMode
       properties:
         orderId:
           type: string
@@ -252,6 +253,10 @@ components:
           type: string
           format: date-time
           description: Order creation time; it is not a payment deadline.
+        fulfillmentMode:
+          type: string
+          enum: [IMMEDIATE, RESERVED]
+          description: Whether payment creates an immediately active or reserved membership.
     ProblemDetail:
       type: object
       required: [title, status, detail, instance, code]
@@ -276,5 +281,5 @@ components:
             - MEMBERSHIP_OFFER_NOT_AVAILABLE
             - MEMBER_NOT_FOUND
             - MEMBER_NOT_ACTIVE
-            - ACTIVE_MEMBERSHIP_EXISTS
+            - MEMBERSHIP_RENEWAL_ALREADY_EXISTS
             - PENDING_MEMBERSHIP_ORDER_EXISTS

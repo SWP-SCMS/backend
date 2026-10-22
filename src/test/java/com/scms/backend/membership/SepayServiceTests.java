@@ -203,7 +203,7 @@ class SepayServiceTests {
 			"bank_account_number_snapshot", "old-account");
 		PaymentResultResponse expected = new PaymentResultResponse(
 			paymentId, orderId, "PAID", "BANK_TRANSFER", UUID.randomUUID(), UUID.randomUUID(),
-			Instant.parse("2026-10-08T00:00:00Z"));
+			Instant.parse("2026-10-08T00:00:00Z"), FulfillmentMode.IMMEDIATE);
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		when(fulfillment.payment(paymentId)).thenReturn(payment);
@@ -229,7 +229,7 @@ class SepayServiceTests {
 		payment.put("bank_account_number_snapshot", null);
 		PaymentResultResponse expected = new PaymentResultResponse(
 			paymentId, orderId, "PAID", "BANK_TRANSFER", UUID.randomUUID(), UUID.randomUUID(),
-			Instant.parse("2026-10-08T00:00:00Z"));
+			Instant.parse("2026-10-08T00:00:00Z"), FulfillmentMode.RESERVED);
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		when(fulfillment.payment(paymentId)).thenReturn(payment);

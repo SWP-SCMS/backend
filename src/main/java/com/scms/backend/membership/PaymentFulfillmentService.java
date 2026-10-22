@@ -56,7 +56,7 @@ class PaymentFulfillmentService {
 		if (duplicate != null && duplicate > 0) {
 			throw PaymentException.conflict("Provider transaction was already used");
 		}
-		ensureNoActiveMembership(row);
+		ensureMembershipCanFulfill(row);
 
 		Instant now = clock.instant();
 		try {
@@ -81,7 +81,7 @@ class PaymentFulfillmentService {
 			row = db.queryForMap("""
 				select ?::uuid payment_id,o.id order_id,'CASH' payment_method,'PENDING' payment_status,
 					o.price_amount_snapshot payment_amount,o.currency_code_snapshot payment_currency,
-					o.status order_status,o.member_account_id,o.offer_id,o.plan_code_snapshot,
+					o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot
 				from membership_orders o where o.id=? for update
@@ -90,7 +90,7 @@ class PaymentFulfillmentService {
 			throw PaymentException.notFound("Membership Order was not found");
 		}
 		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))) throw PaymentException.conflict("Order is not payable");
-		ensureNoActiveMembership(row);
+		ensureMembershipCanFulfill(row);
 		Instant now = clock.instant();
 		try {
 			db.update("""
@@ -123,25 +123,31 @@ class PaymentFulfillmentService {
 		}
 	}
 
-	private void ensureNoActiveMembership(Map<String, Object> row) {
+	private void ensureMembershipCanFulfill(Map<String, Object> row) {
 		Integer active = db.queryForObject("select count(*) from memberships where member_account_id=? and status='ACTIVE'",
 			Integer.class, uuid(row, "member_account_id"));
-		if (active != null && active > 0) throw PaymentException.conflict("Member already has an active membership");
+		if (fulfillmentMode(row) == FulfillmentMode.IMMEDIATE && active != null && active > 0) {
+			throw PaymentException.conflict("Member already has an active membership");
+		}
 	}
 
 	private PaymentResultResponse createArtifacts(Map<String, Object> row, UUID paymentId, UUID actorId,
 			String evidence, String reason, Instant now) {
 		UUID memberId = uuid(row, "member_account_id");
+		FulfillmentMode mode = fulfillmentMode(row);
+		boolean immediate = mode == FulfillmentMode.IMMEDIATE;
 		UUID membershipId = UUID.randomUUID();
 		db.update("""
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,
 				offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
 				status,starts_at,ends_at)
-			values(?,?,?,?,?,?,?,?,?,'ACTIVE',?,?)
+			values(?,?,?,?,?,?,?,?,?,?,?,?)
 			""", membershipId, memberId, uuid(row, "order_id"), uuid(row, "offer_id"),
 			row.get("plan_code_snapshot"), row.get("offer_name_snapshot"), row.get("price_amount_snapshot"),
-			row.get("currency_code_snapshot"), row.get("duration_days_snapshot"), Timestamp.from(now),
-			Timestamp.from(now.plusSeconds(number(row, "duration_days_snapshot").longValue() * 86400)));
+			row.get("currency_code_snapshot"), row.get("duration_days_snapshot"), immediate ? "ACTIVE" : "RESERVED",
+			immediate ? Timestamp.from(now) : null,
+			immediate ? Timestamp.from(now.plusSeconds(number(row, "duration_days_snapshot").longValue() * 86400)) : null);
+		if (!immediate) lifecycle.reconcile(memberId, now);
 		UUID receiptId = UUID.randomUUID();
 		db.update("""
 			insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,
@@ -154,7 +160,7 @@ class PaymentFulfillmentService {
 		notifications.write("PAYMENT_PAID:" + paymentId, memberId, "PAYMENT_PAID", "PAYMENT", paymentId,
 			Map.of("orderId", uuid(row, "order_id").toString(), "status", "PAID"));
 		return new PaymentResultResponse(paymentId, uuid(row, "order_id"), "PAID",
-			string(row, "payment_method"), membershipId, receiptId, now);
+			string(row, "payment_method"), membershipId, receiptId, now, mode);
 	}
 
 	Map<String, Object> paymentForUpdate(UUID paymentId) {
@@ -175,7 +181,7 @@ class PaymentFulfillmentService {
 					p.amount payment_amount,p.currency_code payment_currency,p.bank_transfer_content,
 					p.bank_account_number_snapshot,p.provider,p.provider_reference,
 					p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
-					o.status order_status,o.member_account_id,o.offer_id,o.plan_code_snapshot,
+					o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot,o.expires_at
 				from payments p join membership_orders o on o.id=p.order_id where p.id=?
@@ -191,19 +197,25 @@ class PaymentFulfillmentService {
 		Map<String, Object> fulfillment;
 		try {
 			fulfillment = db.queryForMap("""
-				select m.id membership_id,r.id receipt_id from memberships m join receipts r on r.order_id=m.order_id
+				select m.id membership_id,r.id receipt_id,o.fulfillment_mode from memberships m
+				join receipts r on r.order_id=m.order_id join membership_orders o on o.id=m.order_id
 				where m.order_id=?
 				""", orderId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.conflict("Paid Payment has incomplete fulfillment data");
 		}
 		return new PaymentResultResponse(uuid(row, "payment_id"), orderId, "PAID", string(row, "payment_method"),
-			uuid(fulfillment, "membership_id"), uuid(fulfillment, "receipt_id"), instant(row, "paid_at"));
+			uuid(fulfillment, "membership_id"), uuid(fulfillment, "receipt_id"), instant(row, "paid_at"),
+			fulfillmentMode(fulfillment));
 	}
 
 	static UUID uuid(Map<String, Object> row, String key) { return (UUID) row.get(key); }
 	static String string(Map<String, Object> row, String key) { Object value=row.get(key); return value == null ? null : value.toString().trim(); }
 	static Number number(Map<String, Object> row, String key) { return (Number) row.get(key); }
+	static FulfillmentMode fulfillmentMode(Map<String, Object> row) {
+		String value = string(row, "fulfillment_mode");
+		return value == null ? FulfillmentMode.IMMEDIATE : FulfillmentMode.valueOf(value);
+	}
 	static BigInteger amount(Map<String, Object> row, String key) { return new BigDecimal(row.get(key).toString()).toBigIntegerExact(); }
 	static Instant instant(Map<String, Object> row, String key) {
 		Object value=row.get(key); return value instanceof Timestamp timestamp ? timestamp.toInstant() : (Instant) value;

@@ -27,7 +27,7 @@ class MembershipOrderOpenApiTests {
 				"/members/me/membership-orders", "post");
 			Map<String, Object> selfPostConflict = resolveResponse(selfPostResponses, responseComponents, "409");
 			assertThat((String) selfPostConflict.get("description"))
-				.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE", "ACTIVE_MEMBERSHIP_EXISTS",
+				.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE", "MEMBERSHIP_RENEWAL_ALREADY_EXISTS",
 					"PENDING_MEMBERSHIP_ORDER_EXISTS")
 				.doesNotContain("MEMBER_NOT_ACTIVE");
 			assertThat(selfPostResponses).doesNotContainKey("404");
@@ -61,6 +61,9 @@ class MembershipOrderOpenApiTests {
 			assertThat((java.util.List<String>) code.get("enum"))
 				.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE")
 				.doesNotContain("MEMBERSHIP_OFFER_NOT_FOUND");
+			assertThat((Map<String, Object>) orderProperties.get("fulfillmentMode"))
+				.containsEntry("enum", java.util.List.of("IMMEDIATE", "RESERVED"));
+			assertThat((java.util.List<String>) order.get("required")).contains("fulfillmentMode");
 		}
 		catch (java.io.IOException exception) {
 			throw new AssertionError(exception);

@@ -72,6 +72,25 @@ class MembershipLifecycleServiceTests {
 	}
 
 	@Test
+	void activatesReservedMembershipFromLatestExpiredMembershipWhenActiveIsAlreadyGone() {
+		Instant previousEnd = NOW.minusSeconds(3600);
+		Membership reserved = membership(MembershipStatus.RESERVED, null, null, 45);
+		Membership expired = membership(MembershipStatus.EXPIRED, NOW.minusSeconds(86400), previousEnd, 30);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE))
+			.thenReturn(Optional.empty());
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED))
+			.thenReturn(Optional.of(reserved));
+		when(memberships.findLatestExpiredByMemberAccountIdForUpdate(memberId, NOW))
+			.thenReturn(Optional.of(expired));
+
+		service.reconcile(memberId, NOW);
+
+		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(reserved.getStartsAt()).isEqualTo(previousEnd);
+		assertThat(reserved.getEndsAt()).isEqualTo(previousEnd.plusSeconds(45L * 86400));
+	}
+
+	@Test
 	void expiresReservationImmediatelyWhenReconciliationRunsAfterItsFullDuration() {
 		Instant previousEnd = NOW.minusSeconds(60L * 86400);
 		Membership active = membership(MembershipStatus.ACTIVE, previousEnd.minusSeconds(86400), previousEnd, 30);
