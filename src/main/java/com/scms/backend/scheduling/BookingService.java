@@ -34,17 +34,25 @@ public class BookingService {
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 	private final CoachAssignmentRepository coachAssignments;
+	private final WaitlistPromotionService waitlistPromotions;
 
 	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
 			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
 			SessionLifecycleService lifecycle, Clock clock) {
-		this(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle, clock, null);
+		this(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle, clock, null, null);
+	}
+
+	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
+			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
+			SessionLifecycleService lifecycle, Clock clock, CoachAssignmentRepository coachAssignments) {
+		this(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle, clock, coachAssignments, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
 			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
-			SessionLifecycleService lifecycle, Clock clock, CoachAssignmentRepository coachAssignments) {
+			SessionLifecycleService lifecycle, Clock clock, CoachAssignmentRepository coachAssignments,
+			WaitlistPromotionService waitlistPromotions) {
 		this.bookings = bookings;
 		this.sessions = sessions;
 		this.disciplines = disciplines;
@@ -54,6 +62,7 @@ public class BookingService {
 		this.lifecycle = lifecycle;
 		this.clock = clock;
 		this.coachAssignments = coachAssignments;
+		this.waitlistPromotions = waitlistPromotions;
 	}
 
 	@Transactional
@@ -187,6 +196,7 @@ public class BookingService {
 			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", source)));
 		notifications.write("BOOKING_CANCELLED:" + bookingId, memberId, "BOOKING_CANCELLED", "BOOKING", bookingId,
 			Map.of("sessionId", session.getId().toString()));
+		if (waitlistPromotions != null) waitlistPromotions.promoteAvailable(session);
 		return BookingResponse.from(booking);
 	}
 

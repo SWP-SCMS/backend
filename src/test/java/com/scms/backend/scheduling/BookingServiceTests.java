@@ -48,6 +48,7 @@ class BookingServiceTests {
 	@Mock NotificationWriter notifications;
 	@Mock SessionLifecycleService lifecycle;
 	@Mock CoachAssignmentRepository coachAssignments;
+	@Mock WaitlistPromotionService waitlistPromotions;
 	BookingService service;
 
 	private final Instant now = Instant.parse("2026-10-06T03:00:00Z");
@@ -58,7 +59,7 @@ class BookingServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new BookingService(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC), coachAssignments);
+			Clock.fixed(now, ZoneOffset.UTC), coachAssignments, waitlistPromotions);
 		memberId = UUID.randomUUID();
 		receptionistId = UUID.randomUUID();
 		Account member = account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member");
@@ -221,6 +222,7 @@ class BookingServiceTests {
 		verify(audits).save(org.mockito.ArgumentMatchers.any());
 		verify(notifications).write("BOOKING_CANCELLED:" + booking.getId(), memberId, "BOOKING_CANCELLED", "BOOKING",
 			booking.getId(), java.util.Map.of("sessionId", cancellableSession.getId().toString()));
+		verify(waitlistPromotions).promoteAvailable(cancellableSession);
 	}
 
 	@Test
