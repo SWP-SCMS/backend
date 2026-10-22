@@ -135,6 +135,23 @@ class MembershipLifecycleServiceTests {
 		order.verify(memberships).findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE);
 	}
 
+	@Test
+	void immediateTerminationActivatesReservedMembershipFromTerminationTime() {
+		Membership active = membership(MembershipStatus.ACTIVE, NOW.minusSeconds(86400), NOW.plusSeconds(86400), 30);
+		Membership reserved = membership(MembershipStatus.RESERVED, null, null, 45);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE))
+			.thenReturn(Optional.of(active));
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED))
+			.thenReturn(Optional.of(reserved));
+
+		service.terminateActiveAndActivateReserved(memberId, NOW);
+
+		assertThat(active.getStatus()).isEqualTo(MembershipStatus.TERMINATED);
+		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(reserved.getStartsAt()).isEqualTo(NOW);
+		assertThat(reserved.getEndsAt()).isEqualTo(NOW.plusSeconds(45L * 86400));
+	}
+
 	private Membership membership(MembershipStatus status, Instant startsAt, Instant endsAt, int durationDays) {
 		return new Membership(UUID.randomUUID(), memberId, UUID.randomUUID(), UUID.randomUUID(), "PLUS", "Plus",
 			BigInteger.valueOf(1_000_000), "VND", durationDays, status, startsAt, endsAt);
