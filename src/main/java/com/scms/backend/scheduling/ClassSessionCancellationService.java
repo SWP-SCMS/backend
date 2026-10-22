@@ -35,11 +35,21 @@ public class ClassSessionCancellationService {
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
 	private final ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous;
+	private final WaitlistPromotionService waitlistPromotions;
 
 	ClassSessionCancellationService(ClassSessionRepository sessions, AccountRepository accounts,
 			AuditEventRepository audits, JdbcTemplate jdbc, NotificationWriter notifications,
 			SessionLifecycleService lifecycle, Clock clock,
 			ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous) {
+		this(sessions,accounts,audits,jdbc,notifications,lifecycle,clock,explicitBulkLockRendezvous,null);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	ClassSessionCancellationService(ClassSessionRepository sessions, AccountRepository accounts,
+			AuditEventRepository audits, JdbcTemplate jdbc, NotificationWriter notifications,
+			SessionLifecycleService lifecycle, Clock clock,
+			ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous,
+			WaitlistPromotionService waitlistPromotions) {
 		this.sessions = sessions;
 		this.accounts = accounts;
 		this.audits = audits;
@@ -48,6 +58,7 @@ public class ClassSessionCancellationService {
 		this.lifecycle = lifecycle;
 		this.clock = clock;
 		this.explicitBulkLockRendezvous = explicitBulkLockRendezvous;
+		this.waitlistPromotions = waitlistPromotions;
 	}
 
 	@Transactional
@@ -83,6 +94,7 @@ public class ClassSessionCancellationService {
 			Map.of("status", ClassSessionStatus.CANCELLED.name(), "cancelledBookings", cancelledBookings)));
 		memberIds.forEach(memberId -> notifications.write("SESSION_CANCELLED:" + sessionId + ":" + memberId,
 			memberId, "SESSION_CANCELLED", "CLASS_SESSION", sessionId, Map.of("sessionId", sessionId.toString())));
+		if (waitlistPromotions != null) waitlistPromotions.cancelWaiting(session);
 		return ClassSessionDetailResponse.from(session);
 	}
 
