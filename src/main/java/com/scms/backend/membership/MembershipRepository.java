@@ -25,8 +25,25 @@ public interface MembershipRepository extends JpaRepository<Membership, UUID> {
 	Optional<Membership> findLatestExpiredByMemberAccountIdForUpdate(@Param("memberId") UUID memberId,
 		@Param("now") Instant now);
 
-	@Query(value = "select distinct member_account_id from memberships where status='ACTIVE' and ends_at <= :now order by member_account_id limit 100",
+	@Query(value = """
+		select distinct membership.member_account_id
+		from memberships membership
+		where (cast(:afterMemberId as uuid) is null or membership.member_account_id > cast(:afterMemberId as uuid))
+		  and ((membership.status = 'ACTIVE' and membership.ends_at <= :now)
+		   or (membership.status = 'RESERVED' and exists (
+			select 1 from memberships expired
+			where expired.member_account_id = membership.member_account_id
+			  and expired.status = 'EXPIRED'
+			  and expired.ends_at <= :now
+		   ) and not exists (
+			select 1 from memberships active
+			where active.member_account_id = membership.member_account_id
+			  and active.status = 'ACTIVE'
+		   )))
+		order by membership.member_account_id
+		limit 100
+		""",
 		nativeQuery = true)
-	List<UUID> findDueMemberAccountIds(@Param("now") Instant now);
+	List<UUID> findDueMemberAccountIds(@Param("now") Instant now, @Param("afterMemberId") UUID afterMemberId);
 
 }
