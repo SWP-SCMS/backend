@@ -164,6 +164,32 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	List<UUID> findActiveOverlapIdsByCoach(@Param("coachId") UUID coachId,
 		@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
 
+	@Query(value = """
+		select distinct booking.member_account_id
+		from bookings booking
+		where booking.class_session_id = :sessionId and booking.status = 'BOOKED'
+		order by booking.member_account_id
+		""", nativeQuery = true)
+	List<UUID> findBookedMemberIds(@Param("sessionId") UUID sessionId);
+
+	@Query(value = """
+		select distinct target.member_account_id
+		from bookings target
+		where target.class_session_id = :sessionId and target.status = 'BOOKED'
+		  and exists (
+			select 1 from bookings other_booking
+			join class_sessions other_session on other_session.id = other_booking.class_session_id
+			where other_booking.member_account_id = target.member_account_id
+			  and other_booking.status = 'BOOKED'
+			  and other_booking.class_session_id <> :sessionId
+			  and other_session.status in ('SCHEDULED', 'IN_PROGRESS')
+			  and other_session.start_time < :endTime and other_session.end_time > :startTime
+		  )
+		order by target.member_account_id
+		""", nativeQuery = true)
+	List<UUID> findBookedMemberConflictIds(@Param("sessionId") UUID sessionId,
+		@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
+
 	@Query("""
 		select session from ClassSession session
 		where session.room.id = :roomId

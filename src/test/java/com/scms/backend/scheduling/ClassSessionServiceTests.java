@@ -20,11 +20,13 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class ClassSessionServiceTests {
@@ -36,6 +38,7 @@ class ClassSessionServiceTests {
 	@Mock AuditEventRepository audits;
 	@Mock SessionLifecycleService lifecycle;
 	@Mock CoachLeaveRepository coachLeaves;
+	@Mock NotificationWriter notifications;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-05T00:00:00Z");
@@ -43,7 +46,7 @@ class ClassSessionServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves);
+			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves, null, notifications);
 	}
 
 	@Test
@@ -190,6 +193,86 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void managerCreatesRoomlessPtSlotWithCapacityOne() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "PT", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "One to one", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		when(sessions.existsOverlap(coach.getId(), null, now.plusSeconds(3600), now.plusSeconds(7200))).thenReturn(false);
+		when(sessions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ClassSessionResponse response = service.create(managerId, new ClassSessionCreateRequest(sportClass.getId(),
+			coach.getId(), null, now.plusSeconds(3600), now.plusSeconds(7200), 1));
+		assertThat(response.roomId()).isNull();
+		assertThat(response.capacity()).isEqualTo(1);
+	}
+
+	@Test
+	void ptCapacityOtherThanOneIsRejected() {
+		UUID managerId = activeManager();
+		Discipline discipline = new Discipline(UUID.randomUUID(), "PT", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "One to one", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		assertThatThrownBy(() -> service.create(managerId, new ClassSessionCreateRequest(sportClass.getId(),
+			UUID.randomUUID(), null, now.plusSeconds(3600), now.plusSeconds(7200), 2)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("PT_CAPACITY_MUST_BE_ONE");
+	}
+
+	@Test
+	void managerReschedulesAtomicallyAndNotifiesBookedMembers() {
+		UUID managerId = activeManager(); ClassSession session = sessionAt(now.plusSeconds(48 * 3600));
+		ReflectionTestUtils.setField(session, "version", 0L);
+		Instant newStart = now.plusSeconds(72 * 3600); Instant newEnd = newStart.plusSeconds(3600);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(classes.findById(session.getSportClass().getId())).thenReturn(Optional.of(session.getSportClass()));
+		when(accounts.findById(session.getTeachingCoach().getId())).thenReturn(Optional.of(session.getTeachingCoach()));
+		when(rooms.findById(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		when(sessions.findBookedMemberConflictIds(session.getId(), newStart, newEnd)).thenReturn(java.util.List.of());
+		UUID memberId = UUID.randomUUID(); when(sessions.findBookedMemberIds(session.getId())).thenReturn(java.util.List.of(memberId));
+		when(sessions.saveAndFlush(session)).thenReturn(session);
+
+		ClassSessionDetailResponse response = service.reschedule(managerId, session.getId(),
+			new ClassSessionScheduleRequest(newStart, newEnd, null, null, 0L, "Coach requested change"));
+
+		assertThat(response.startTime()).isEqualTo(newStart);
+		verify(audits).save(any());
+		verify(notifications).write(any(), org.mockito.ArgumentMatchers.eq(memberId),
+			org.mockito.ArgumentMatchers.eq("SESSION_RESCHEDULED"), any(), any(), any());
+	}
+
+	@Test
+	void rescheduleInsideTwentyFourHoursIsRejected() {
+		UUID managerId = activeManager(); ClassSession session = sessionAt(now.plusSeconds(23 * 3600));
+		ReflectionTestUtils.setField(session, "version", 0L);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		assertThatThrownBy(() -> service.reschedule(managerId, session.getId(), new ClassSessionScheduleRequest(
+			now.plusSeconds(48 * 3600), now.plusSeconds(49 * 3600), null, null, 0L, "Change")))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("SESSION_RESCHEDULE_WINDOW_CLOSED");
+	}
+
+	@Test
+	void rescheduleRejectsBookedMemberOverlapAtNewTime() {
+		UUID managerId = activeManager(); ClassSession session = sessionAt(now.plusSeconds(48 * 3600));
+		ReflectionTestUtils.setField(session, "version", 0L);
+		Instant newStart = now.plusSeconds(72 * 3600); Instant newEnd = newStart.plusSeconds(3600);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(classes.findById(session.getSportClass().getId())).thenReturn(Optional.of(session.getSportClass()));
+		when(accounts.findById(session.getTeachingCoach().getId())).thenReturn(Optional.of(session.getTeachingCoach()));
+		when(rooms.findById(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		when(sessions.findBookedMemberConflictIds(session.getId(), newStart, newEnd)).thenReturn(java.util.List.of(UUID.randomUUID()));
+		assertThatThrownBy(() -> service.reschedule(managerId, session.getId(),
+			new ClassSessionScheduleRequest(newStart, newEnd, null, null, 0L, "Change")))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("SESSION_MEMBER_TIME_CONFLICT");
+	}
+
+	@Test
 	void roomImpactRescheduleKeepsSessionAndBookingsAndUsesConflictChecks() {
 		UUID managerId = activeManager();
 		Discipline discipline = new Discipline(UUID.randomUUID(), "Impact Discipline", null, DisciplineStatus.ACTIVE);
@@ -225,6 +308,15 @@ class ClassSessionServiceTests {
 		when(rooms.findById(room.getId())).thenReturn(Optional.of(room));
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
 		return new Fixture(managerId, sportClass, room, coach);
+	}
+
+	private ClassSession sessionAt(Instant start) {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP,
+			null, SportClassStatus.ACTIVE);
+		return new ClassSession(UUID.randomUUID(), sportClass, null, account(AccountRole.COACH, AccountStatus.ACTIVE),
+			new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE), start, start.plusSeconds(3600), 10,
+			UUID.randomUUID());
 	}
 
 	private UUID activeManager() {

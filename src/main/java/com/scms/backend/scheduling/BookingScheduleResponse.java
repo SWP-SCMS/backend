@@ -18,7 +18,8 @@ public record BookingScheduleResponse(
 			booking.getBookedByAccountId(), booking.getCreatedAt(), booking.getCancelledByAccountId(),
 			booking.getCancellationSource(), booking.getCancelledAt(), sportClass.getId(), sportClass.getName(),
 			sportClass.getClassType(), discipline.getId(), discipline.getName(), session.getTeachingCoach().getId(),
-			session.getTeachingCoach().getFullName(), session.getRoom().getId(), session.getRoom().getName(),
+			session.getTeachingCoach().getFullName(), session.getRoom() == null ? null : session.getRoom().getId(),
+			session.getRoom() == null ? null : session.getRoom().getName(),
 			session.getStartTime(), session.getEndTime(), session.getCapacity(), session.getStatus());
 	}
 }

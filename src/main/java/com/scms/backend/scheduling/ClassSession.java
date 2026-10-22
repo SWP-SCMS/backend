@@ -35,8 +35,8 @@ public class ClassSession {
 	@JoinColumn(name = "teaching_coach_account_id", nullable = false)
 	private Account teachingCoach;
 
-	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "room_id", nullable = false)
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "room_id")
 	private Room room;
 
 	@Column(name = "start_time", nullable = false)
@@ -100,6 +100,7 @@ public class ClassSession {
 	Instant getCancelledAt() { return cancelledAt; }
 	String getCancellationReason() { return cancellationReason; }
 	UUID getCreatedBy() { return createdBy; }
+	Long getVersion() { return version; }
 
 	void updateAssignment(Account coach, Room room) {
 		this.teachingCoach = coach;

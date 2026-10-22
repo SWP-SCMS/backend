@@ -62,6 +62,11 @@ public class RecurringScheduleException extends RuntimeException {
 			"Session capacity cannot exceed room capacity.");
 	}
 
+	static RecurringScheduleException ptCapacity() {
+		return new RecurringScheduleException(HttpStatus.BAD_REQUEST, "PT_CAPACITY_MUST_BE_ONE", "capacity",
+			"A PT_1_1 Session must have capacity equal to one.");
+	}
+
 	static RecurringScheduleException sessionConflict() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_CONFLICT", null,
 			"The Coach or Room already has an overlapping Session.");
@@ -70,6 +75,21 @@ public class RecurringScheduleException extends RuntimeException {
 	static RecurringScheduleException sessionNotScheduled() {
 		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_NOT_SCHEDULED", null,
 			"Only a scheduled Session can be changed.");
+	}
+
+	static RecurringScheduleException rescheduleWindowClosed() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_RESCHEDULE_WINDOW_CLOSED", null,
+			"A Session must be rescheduled at least 24 hours before its current start time.");
+	}
+
+	static RecurringScheduleException versionConflict() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_VERSION_CONFLICT", null,
+			"The Session changed after it was loaded. Refresh and try again.");
+	}
+
+	static RecurringScheduleException memberTimeConflict() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_MEMBER_TIME_CONFLICT", null,
+			"One or more booked Members have another Booking overlapping the requested time.");
 	}
 
 	static RecurringScheduleException bulkSelectionChanged(List<UUID> eligibleSessionIds,

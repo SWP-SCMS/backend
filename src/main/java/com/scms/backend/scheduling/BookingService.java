@@ -15,6 +15,8 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.training.CoachAssignmentRepository;
+import com.scms.backend.training.CoachAssignmentStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,10 +33,26 @@ public class BookingService {
 	private final NotificationWriter notifications;
 	private final SessionLifecycleService lifecycle;
 	private final Clock clock;
+	private final CoachAssignmentRepository coachAssignments;
+	private final WaitlistPromotionService waitlistPromotions;
 
 	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
 			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
 			SessionLifecycleService lifecycle, Clock clock) {
+		this(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle, clock, null, null);
+	}
+
+	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
+			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
+			SessionLifecycleService lifecycle, Clock clock, CoachAssignmentRepository coachAssignments) {
+		this(bookings, sessions, disciplines, accounts, audits, notifications, lifecycle, clock, coachAssignments, null);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	BookingService(BookingRepository bookings, ClassSessionRepository sessions, DisciplineRepository disciplines,
+			AccountRepository accounts, AuditEventRepository audits, NotificationWriter notifications,
+			SessionLifecycleService lifecycle, Clock clock, CoachAssignmentRepository coachAssignments,
+			WaitlistPromotionService waitlistPromotions) {
 		this.bookings = bookings;
 		this.sessions = sessions;
 		this.disciplines = disciplines;
@@ -43,6 +61,8 @@ public class BookingService {
 		this.notifications = notifications;
 		this.lifecycle = lifecycle;
 		this.clock = clock;
+		this.coachAssignments = coachAssignments;
+		this.waitlistPromotions = waitlistPromotions;
 	}
 
 	@Transactional
@@ -63,6 +83,12 @@ public class BookingService {
 		ClassSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(BookingException::sessionNotFound);
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED || !session.getStartTime().isAfter(now)) {
 			throw BookingException.sessionUnavailable();
+		}
+		if (session.getSportClass().getClassType() == SportClassType.PT_1_1
+				&& (coachAssignments == null || coachAssignments
+					.findByMemberAccountIdAndCoachAccountIdAndStatus(memberId,
+						session.getTeachingCoach().getId(), CoachAssignmentStatus.ACTIVE).isEmpty())) {
+			throw BookingException.ptCoachAssignmentMismatch();
 		}
 		disciplines.findBySessionIdForUpdate(sessionId).orElseThrow(BookingException::sessionNotFound);
 		List<BookingRepository.BookingBenefitEligibilityView> eligibility =
@@ -170,6 +196,7 @@ public class BookingService {
 			Map.of("status", BookingStatus.CANCELLED.name(), "cancellationSource", source)));
 		notifications.write("BOOKING_CANCELLED:" + bookingId, memberId, "BOOKING_CANCELLED", "BOOKING", bookingId,
 			Map.of("sessionId", session.getId().toString()));
+		if (waitlistPromotions != null) waitlistPromotions.promoteAvailable(session);
 		return BookingResponse.from(booking);
 	}
 

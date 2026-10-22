@@ -17,8 +17,10 @@ public record MemberClassSessionResponse(UUID id, UUID classId, String className
 			&& session.getStartTime().isAfter(now) && available > 0;
 		return new MemberClassSessionResponse(session.getId(), sportClass.getId(), sportClass.getName(),
 			sportClass.getClassType(), sportClass.getDiscipline().getId(), sportClass.getDiscipline().getName(),
-			session.getTeachingCoach().getId(), session.getTeachingCoach().getFullName(), session.getRoom().getId(),
-			session.getRoom().getName(), session.getStartTime(), session.getEndTime(), session.getCapacity(),
+			session.getTeachingCoach().getId(), session.getTeachingCoach().getFullName(),
+			session.getRoom() == null ? null : session.getRoom().getId(),
+			session.getRoom() == null ? null : session.getRoom().getName(),
+			session.getStartTime(), session.getEndTime(), session.getCapacity(),
 			bookedCount, available, session.getStatus(), bookable,
 			java.util.stream.Stream.concat(java.util.stream.Stream.of("CLASS_BOOKING"),
 				requiredBenefitCodes.stream()).distinct().sorted().toList());

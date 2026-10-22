@@ -62,6 +62,11 @@ public class BookingException extends RuntimeException {
 		return new BookingException(HttpStatus.CONFLICT, "SESSION_FULL", "The Session has no available capacity.");
 	}
 
+	static BookingException ptCoachAssignmentMismatch() {
+		return new BookingException(HttpStatus.CONFLICT, "PT_COACH_ASSIGNMENT_MISMATCH",
+			"A PT_1_1 Session can only be booked with the Member's active Personal Coach.");
+	}
+
 	static BookingException concurrentConflict() {
 		return new BookingException(HttpStatus.CONFLICT, "BOOKING_CONFLICT",
 			"The Booking could not be confirmed because availability changed.");
