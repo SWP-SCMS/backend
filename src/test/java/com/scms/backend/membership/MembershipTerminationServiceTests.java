@@ -34,9 +34,10 @@ class MembershipTerminationServiceTests {
 	private final MembershipTerminationRequestRepository requests = mock(MembershipTerminationRequestRepository.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final NotificationWriter notifications = mock(NotificationWriter.class);
+	private final MembershipTerminationExecutionService execution = mock(MembershipTerminationExecutionService.class);
 	private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 	private final MembershipTerminationService service = new MembershipTerminationService(accounts, profiles,
-		memberships, requests, audits, notifications, clock);
+		memberships, requests, audits, notifications, execution, clock);
 	private final UUID memberId = UUID.randomUUID();
 	private final UUID membershipId = UUID.randomUUID();
 
@@ -85,5 +86,29 @@ class MembershipTerminationServiceTests {
 		request.approve(UUID.randomUUID(), NOW.plusSeconds(60), NOW);
 		assertThat(request.getStatus()).isEqualTo(MembershipTerminationRequestStatus.APPROVED);
 		assertThatThrownBy(() -> request.withdraw(NOW)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void immediateApprovalDelegatesExecutionToTheLifecycleCoordinator() {
+		UUID managerId = UUID.randomUUID();
+		UUID requestId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		MembershipTerminationRequest request = mock(MembershipTerminationRequest.class);
+		Membership membership = mock(Membership.class);
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(requests.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+		when(request.getVersion()).thenReturn(2L);
+		when(request.getStatus()).thenReturn(MembershipTerminationRequestStatus.PENDING);
+		when(request.getMode()).thenReturn(MembershipTerminationMode.IMMEDIATE);
+		when(request.getMemberAccountId()).thenReturn(memberId);
+		when(request.getId()).thenReturn(requestId);
+		when(request.getMembershipId()).thenReturn(membershipId);
+		when(request.getReason()).thenReturn("reason");
+		when(membership.getStatus()).thenReturn(MembershipStatus.ACTIVE);
+		when(memberships.findByIdForUpdate(membershipId)).thenReturn(Optional.of(membership));
+
+		service.approve(managerId, requestId, new MembershipTerminationDecisionRequest(2L));
+
+		verify(execution).executeImmediate(requestId, managerId, NOW);
 	}
 }

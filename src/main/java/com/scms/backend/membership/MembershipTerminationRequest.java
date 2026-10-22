@@ -88,6 +88,20 @@ public class MembershipTerminationRequest {
 		this.status = MembershipTerminationRequestStatus.WITHDRAWN;
 	}
 
+	void execute() {
+		if (status != MembershipTerminationRequestStatus.APPROVED) {
+			throw new IllegalStateException("Only APPROVED termination requests can execute");
+		}
+		this.status = MembershipTerminationRequestStatus.EXECUTED;
+	}
+
+	void obsolete() {
+		if (status != MembershipTerminationRequestStatus.APPROVED) {
+			throw new IllegalStateException("Only APPROVED termination requests can become obsolete");
+		}
+		this.status = MembershipTerminationRequestStatus.OBSOLETE;
+	}
+
 	private void ensurePending() {
 		if (status != MembershipTerminationRequestStatus.PENDING) {
 			throw new IllegalStateException("Termination request is not pending");

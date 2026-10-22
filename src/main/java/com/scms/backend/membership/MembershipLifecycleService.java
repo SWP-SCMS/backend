@@ -67,6 +67,17 @@ public class MembershipLifecycleService {
 	}
 
 	@Transactional
+	public void terminateActiveAndActivateReserved(UUID memberId, Instant terminatedAt) {
+		lockMember(memberId);
+		Membership active = activeForUpdate(memberId);
+		active.terminate(terminatedAt);
+		memberships.flush();
+		memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED)
+			.ifPresent(reserved -> reserved.activate(terminatedAt));
+		memberships.flush();
+	}
+
+	@Transactional
 	public void extendActive(UUID memberId, Instant newEnd) {
 		lockMember(memberId);
 		activeForUpdate(memberId).extendTo(newEnd);

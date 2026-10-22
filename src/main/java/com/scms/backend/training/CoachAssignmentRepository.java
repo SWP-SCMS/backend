@@ -40,6 +40,19 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+		update coach_assignments
+		set status = 'ENDED',
+			ends_at = greatest(starts_at, :now),
+			end_reason = 'Membership terminated',
+			updated_at = :now,
+			version = version + 1
+		where member_account_id = :memberId and status = 'ACTIVE'
+		""", nativeQuery = true)
+	int endActiveAssignmentsForMembershipTermination(@Param("memberId") UUID memberId,
+		@Param("now") Instant now);
+
 	@Query(value = """
 		select exists (
 			select 1
