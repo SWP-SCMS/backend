@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class MembershipLifecycleIntegrationTests {
 
 	@Autowired JdbcTemplate db;
 	@Autowired MembershipLifecycleScheduler scheduler;
+	@Autowired MembershipRepository memberships;
 	@MockitoSpyBean MembershipLifecycleService lifecycle;
 	@MockitoBean Clock clock;
 
@@ -74,6 +76,43 @@ class MembershipLifecycleIntegrationTests {
 			.isEqualTo("ENDED");
 	}
 
+	@Test
+	void schedulerActivatesReservedMembershipWhenPreviousActiveWasAlreadyExpired() {
+		Instant now = Instant.parse("2026-10-21T03:00:00Z");
+		when(clock.instant()).thenReturn(now);
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID offer = offer(manager);
+		Instant previousEnd = now.minusSeconds(3600);
+		membership(member, manager, offer, now.minusSeconds(7200), previousEnd);
+		db.update("update memberships set status='EXPIRED' where member_account_id=?", member);
+		reservedMembership(member, manager, offer);
+
+		scheduler.reconcile();
+
+		Map<String, Object> row = db.queryForMap(
+			"select status,starts_at,ends_at from memberships where member_account_id=? and status='ACTIVE'", member);
+		assertThat(row.get("status")).isEqualTo("ACTIVE");
+		assertThat(((java.sql.Timestamp) row.get("starts_at")).toInstant()).isEqualTo(previousEnd);
+		assertThat(((java.sql.Timestamp) row.get("ends_at")).toInstant())
+			.isEqualTo(previousEnd.plusSeconds(45L * 86400));
+	}
+
+	@Test
+	void dueQueryDoesNotSelectReservedMembershipWhenCurrentActiveMembershipIsStillValid() {
+		Instant now = Instant.parse("2026-10-21T03:00:00Z");
+		when(clock.instant()).thenReturn(now);
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID offer = offer(manager);
+		membership(member, manager, offer, now.minusSeconds(7200), now.minusSeconds(3600));
+		db.update("update memberships set status='EXPIRED' where member_account_id=?", member);
+		membership(member, manager, offer, now.minusSeconds(60), now.plusSeconds(3600));
+		reservedMembership(member, manager, offer);
+
+		assertThat(memberships.findDueMemberAccountIds(now, null)).doesNotContain(member);
+	}
+
 	private UUID account(String role) {
 		UUID id = UUID.randomUUID();
 		db.update("insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash) values(?,?,'ACTIVE','Lifecycle','09' || substring(?::text,1,8),?,'1990-01-01','hash')",
@@ -97,6 +136,16 @@ class MembershipLifecycleIntegrationTests {
 		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',30,'ACTIVE',?,?)",
 			UUID.randomUUID(), member, order, offer, "PLUS", java.sql.Timestamp.from(startsAt),
 			java.sql.Timestamp.from(endsAt));
+	}
+
+	private void reservedMembership(UUID member, UUID manager, UUID offer) {
+		UUID order = UUID.randomUUID();
+		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at) values(?,?,?,?,?,'Lifecycle','PLUS',100000,'VND',45,'CASH','PAID',now(),now())",
+			order, "ORD-" + order, member, manager, offer);
+		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',now())",
+			UUID.randomUUID(), order);
+		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',45,'RESERVED',null,null)",
+			UUID.randomUUID(), member, order, offer, "PLUS");
 	}
 
 	private String status(UUID member) {
