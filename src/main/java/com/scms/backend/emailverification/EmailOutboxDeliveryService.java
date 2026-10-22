@@ -30,18 +30,20 @@ class EmailOutboxDeliveryService {
 			 ((status in ('PENDING','FAILED') and next_retry_at<=?) or (status='PROCESSING' and locked_at<?))
 			 and deliver_before>? order by created_at for update skip locked limit 1)
 			update email_outbox e set status='PROCESSING',locked_at=?,locked_by=?,retry_count=retry_count+1,updated_at=?
-			from candidate c where e.id=c.id returning e.id,e.account_id,e.recipient_email,e.deliver_before,
+			from candidate c where e.id=c.id returning e.id,e.account_id,e.recipient_email,e.template_key,e.deliver_before,
 			 e.payload_ciphertext,e.payload_nonce,e.encryption_key_version,e.retry_count
 			""",this::map,Timestamp.from(now),Timestamp.from(now.minus(Duration.ofMinutes(5))),Timestamp.from(now),
 			Timestamp.from(now),worker,Timestamp.from(now));
-		return rows.stream().findFirst().map(job -> new EmailJob(job.id(),job.accountId(),job.recipient(),
+		return rows.stream().findFirst().map(job -> new EmailJob(job.id(),job.accountId(),job.recipient(),job.templateKey(),
 			job.deliverBefore(),job.ciphertext(),job.nonce(),job.keyVersion(),job.retryCount(),
 			db.queryForObject("select full_name from accounts where id=?",String.class,job.accountId())));
 	}
 
 	void deliver(EmailJob job,Instant now){String otp=crypto.decryptOtp(job.ciphertext(),job.nonce(),job.keyVersion());
-		provider.sendVerificationOtp(job.recipient(),job.recipientName(),otp,
-			Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes()));}
+		long expiresInMinutes=Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes());
+		if("PASSWORD_RESET_OTP".equals(job.templateKey()))
+			provider.sendPasswordResetOtp(job.recipient(),job.recipientName(),otp,expiresInMinutes);
+		else provider.sendVerificationOtp(job.recipient(),job.recipientName(),otp,expiresInMinutes);}
 
 	@Transactional(propagation=Propagation.REQUIRES_NEW)
 	void sent(UUID id,Instant now){db.update("update email_outbox set status='SENT',sent_at=?,payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,last_error=null,updated_at=? where id=?",Timestamp.from(now),Timestamp.from(now),id);}
@@ -55,7 +57,7 @@ class EmailOutboxDeliveryService {
 	int expire(Instant now){var rows=db.query("update email_outbox set status='TERMINAL_FAILED',payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,last_error='OTP_EXPIRED',updated_at=? where status in ('PENDING','FAILED','PROCESSING') and deliver_before<=? returning id,account_id",(rs,n)->new TerminalJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class)),Timestamp.from(now),Timestamp.from(now));rows.forEach(job->auditTerminal(job.accountId(),job.id(),"OTP_EXPIRED"));return rows.size();}
 	private void auditTerminal(UUID accountId,UUID outboxId,String reason){audits.save(new AuditEvent(UUID.randomUUID(),"EMAIL_DELIVERY_TERMINAL_FAILED","ACCOUNT",accountId,java.util.Map.of("outboxId",outboxId.toString(),"reason",reason)));}
 
-	private EmailJob map(ResultSet rs,int n)throws SQLException{return new EmailJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getTimestamp(4).toInstant(),rs.getBytes(5),rs.getBytes(6),rs.getString(7),rs.getInt(8),null);}
-	record EmailJob(UUID id,UUID accountId,String recipient,Instant deliverBefore,byte[] ciphertext,byte[] nonce,String keyVersion,int retryCount,String recipientName){}
+	private EmailJob map(ResultSet rs,int n)throws SQLException{return new EmailJob(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),rs.getString(4),rs.getTimestamp(5).toInstant(),rs.getBytes(6),rs.getBytes(7),rs.getString(8),rs.getInt(9),null);}
+	record EmailJob(UUID id,UUID accountId,String recipient,String templateKey,Instant deliverBefore,byte[] ciphertext,byte[] nonce,String keyVersion,int retryCount,String recipientName){}
 	private record TerminalJob(UUID id,UUID accountId){}
 }

@@ -52,6 +52,19 @@ class SmtpEmailProviderTests {
 			.isInstanceOf(IllegalArgumentException.class);
 	}
 
+	@Test
+	void sendsDedicatedPasswordResetTemplateWithSecurityWarning() throws Exception {
+		provider.sendPasswordResetOtp("member@example.com", "An", "654321", 10);
+
+		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+		verify(sender).send(captor.capture());
+		MimeMessage message = captor.getValue();
+		message.saveChanges();
+		assertThat(message.getSubject()).isEqualTo("Mã OTP đặt lại mật khẩu SCMS");
+		assertThat(find(message, "text/plain")).contains("654321", "Nếu bạn không yêu cầu đặt lại mật khẩu");
+		assertThat(find(message, "text/html")).contains("654321", "Nếu bạn không yêu cầu đặt lại mật khẩu");
+	}
+
 	private String find(Part part, String mimeType) throws Exception {
 		Object content = part.getContent();
 		if (content instanceof Multipart multipart) {

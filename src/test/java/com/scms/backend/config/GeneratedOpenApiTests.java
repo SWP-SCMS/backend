@@ -54,6 +54,9 @@ class GeneratedOpenApiTests {
 		"POST /auth/email-verification/verify",
 		"POST /auth/email-verification/resend",
 		"POST /auth/email-verification/change-email",
+		"POST /auth/password-reset/request",
+		"POST /auth/password-reset/verify",
+		"POST /auth/password-reset/confirm",
 		"GET /reception/email-verification/pending-accounts",
 		"POST /reception/email-verification/manual-activation-requests",
 		"GET /reception/email-verification/manual-activation-requests",
@@ -206,6 +209,7 @@ class GeneratedOpenApiTests {
 	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(
 		"POST /auth/logout",
 		"POST /auth/change-password",
+		"POST /auth/password-reset/confirm",
 		"DELETE /staff/me/email-change",
 		"POST /manager/staff-accounts/{accountId}/reset-password",
 		"POST /reception/members/{memberId}/reset-password",

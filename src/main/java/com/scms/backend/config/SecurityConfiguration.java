@@ -69,8 +69,10 @@ public class SecurityConfiguration {
 				.accessDeniedHandler(problemHandler))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-				.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
+			.requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh", "/auth/logout", "/auth/register")
 					.permitAll()
+				.requestMatchers(HttpMethod.POST, "/auth/password-reset/request", "/auth/password-reset/verify",
+					"/auth/password-reset/confirm").permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/email-verification/verify",
 					"/auth/email-verification/resend", "/auth/email-verification/change-email").permitAll()
 				.requestMatchers("/docs", "/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
