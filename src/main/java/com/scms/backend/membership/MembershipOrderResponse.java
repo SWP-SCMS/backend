@@ -18,5 +18,6 @@ public record MembershipOrderResponse(
 	int durationDays,
 	PaymentMethod paymentMethod,
 	MembershipOrderStatus status,
-	Instant createdAt) {
+	Instant createdAt,
+	@Schema(required = true, requiredMode = Schema.RequiredMode.REQUIRED) FulfillmentMode fulfillmentMode) {
 }

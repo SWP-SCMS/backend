@@ -449,15 +449,15 @@ class MembershipOrderIntegrationTests {
 	}
 
 	@Test
-	void activeMembershipBlocksNewOrder() throws Exception {
+	void activeMembershipCreatesReservedRenewalOrder() throws Exception {
 		MemberProfile member = createMember(AccountStatus.ACTIVE);
 		UUID offerId = insertOffer(member.getAccount(), "PLUS", "Membership Offer", BigInteger.valueOf(700000),
 			30, "ACTIVE");
 		insertActiveMembership(member.getAccount(), offerId);
 
 		createForMember(accessToken(member.getAccount()), offerId)
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("ACTIVE_MEMBERSHIP_EXISTS"));
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"));
 	}
 
 	@Test

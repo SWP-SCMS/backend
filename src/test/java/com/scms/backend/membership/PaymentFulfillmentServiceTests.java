@@ -3,10 +3,12 @@ package com.scms.backend.membership;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -130,6 +132,49 @@ class PaymentFulfillmentServiceTests {
 		order.verify(db).queryForObject("select member_account_id from membership_orders where id=?", UUID.class, orderId);
 		order.verify(lifecycle).reconcile(eq(memberId), org.mockito.ArgumentMatchers.any());
 		order.verify(db).queryForMap(anyString(), eq(paymentId), eq(orderId));
+	}
+
+	@Test
+	void fulfillCashCreatesReservedMembershipWithoutDates() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		Map<String, Object> row = new java.util.HashMap<>();
+		row.put("order_id", orderId);
+		row.put("payment_id", paymentId);
+		row.put("payment_method", "CASH");
+		row.put("payment_status", "PENDING");
+		row.put("order_status", "PENDING_PAYMENT");
+		row.put("fulfillment_mode", "RESERVED");
+		row.put("member_account_id", memberId);
+		row.put("offer_id", UUID.randomUUID());
+		row.put("plan_code_snapshot", "BASIC");
+		row.put("offer_name_snapshot", "Offer");
+		row.put("price_amount_snapshot", java.math.BigDecimal.valueOf(1000));
+		row.put("currency_code_snapshot", "VND");
+		row.put("payment_amount", java.math.BigDecimal.valueOf(1000));
+		row.put("payment_currency", "VND");
+		row.put("duration_days_snapshot", 30);
+		when(db.queryForObject("select member_account_id from membership_orders where id=?", UUID.class, orderId))
+			.thenReturn(memberId);
+		when(db.queryForMap(anyString(), eq(paymentId), eq(orderId))).thenReturn(row);
+		when(db.queryForObject(anyString(), eq(Integer.class), eq(memberId))).thenReturn(1);
+		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, mock(MembershipLifecycleService.class),
+			mock(AuditEventRepository.class), mock(NotificationWriter.class), Clock.systemUTC());
+
+		PaymentResultResponse response = service.fulfillCash(paymentId, orderId, UUID.randomUUID(), "evidence", "reason");
+
+		assertThat(response.fulfillmentMode()).isEqualTo(FulfillmentMode.RESERVED);
+		ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<Object[]> args = ArgumentCaptor.forClass(Object[].class);
+		verify(db, org.mockito.Mockito.atLeastOnce()).update(sql.capture(), args.capture());
+		int membershipInsert = sql.getAllValues().indexOf(sql.getAllValues().stream()
+			.filter(value -> value.contains("insert into memberships")).findFirst().orElseThrow());
+		String membershipSql = sql.getAllValues().get(membershipInsert);
+		assertThat(membershipSql).contains("values(?,?,?,?,?,?,?,?,?,?,?,?)").doesNotContain("values(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+		assertThat(args.getAllValues().get(membershipInsert)).hasSize(12).contains("RESERVED", null, null);
 	}
 
 	private Account member(UUID id) {

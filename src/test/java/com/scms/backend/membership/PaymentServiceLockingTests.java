@@ -95,6 +95,38 @@ class PaymentServiceLockingTests {
 	}
 
 	@Test
+	void cashRequiresAnIdempotencyKeyForAnActiveMemberRenewal() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		AccountRepository accounts = mock(AccountRepository.class);
+		PaymentFulfillmentService fulfillment = mock(PaymentFulfillmentService.class);
+		PaymentService service = service(db, accounts, fulfillment);
+		UUID actorId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		UUID offerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(db.queryForMap(argThat(sql -> sql != null && sql.contains("join member_profiles")), eq("MB-100001")))
+			.thenReturn(Map.of("account_id", memberId));
+		stubAvailableOffer(db, offerId);
+		when(accounts.findByIdForUpdate(memberId))
+			.thenReturn(Optional.of(account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)));
+		when(db.queryForObject(
+			"select count(*) from memberships where member_account_id=? and status='ACTIVE'", Long.class, memberId))
+			.thenReturn(1L);
+		when(db.queryForObject(
+			"select count(*) from memberships where member_account_id=? and status='RESERVED'", Long.class, memberId))
+			.thenReturn(0L);
+		when(db.queryForObject(
+			"select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'",
+			Long.class, memberId)).thenReturn(0L);
+
+		assertThatThrownBy(() -> service.cash(actorId, "MB-100001", new CashPaymentRequest(offerId)))
+			.isInstanceOf(PaymentException.class)
+			.satisfies(exception -> assertThat(((PaymentException) exception).status()).isEqualTo(HttpStatus.CONFLICT));
+		verify(fulfillment, never()).fulfillCash(any(), any(), any(), any(), any());
+	}
+
+	@Test
 	void cashMapsPendingOrderInsertRaceToConflict() {
 		JdbcTemplate db = mock(JdbcTemplate.class);
 		AccountRepository accounts = mock(AccountRepository.class);

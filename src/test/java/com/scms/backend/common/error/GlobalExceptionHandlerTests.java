@@ -19,6 +19,7 @@ import com.scms.backend.manager.StaffStatusConflictException;
 import com.scms.backend.membership.InvalidPlanCodeException;
 import com.scms.backend.membership.MembershipPlanConflictException;
 import com.scms.backend.membership.MembershipPlanValidationException;
+import com.scms.backend.membership.MembershipRenewalAlreadyExistsException;
 
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
@@ -126,6 +127,13 @@ class GlobalExceptionHandlerTests {
 	}
 
 	@Test
+	void mapsExistingRenewalToStableConflictCode() throws Exception {
+		mockMvc.perform(get("/renewal-conflict"))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("MEMBERSHIP_RENEWAL_ALREADY_EXISTS"));
+	}
+
+	@Test
 	void hidesInternalDetailsForUnexpectedErrors() throws Exception {
 		mockMvc.perform(get("/fail"))
 			.andExpect(status().isInternalServerError())
@@ -204,6 +212,11 @@ class GlobalExceptionHandlerTests {
 		@GetMapping("/plan-conflict")
 		void planConflict(String code) {
 			throw new MembershipPlanConflictException(code);
+		}
+
+		@GetMapping("/renewal-conflict")
+		void renewalConflict() {
+			throw new MembershipRenewalAlreadyExistsException();
 		}
 	}
 

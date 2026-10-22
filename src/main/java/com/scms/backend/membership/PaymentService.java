@@ -46,8 +46,14 @@ class PaymentService {
 
 	@Transactional
 	PaymentResultResponse cash(UUID actor, String memberCode, CashPaymentRequest request) {
+		return cash(actor, memberCode, request, null);
+	}
+
+	@Transactional
+	PaymentResultResponse cash(UUID actor, String memberCode, CashPaymentRequest request, String idempotencyKey) {
 		ensure(actor, AccountRole.RECEPTIONIST);
 		if (request == null || request.offerId() == null) throw PaymentException.validation("offerId is required");
+		String normalizedIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
 		Map<String,Object> member;
 		Map<String,Object> offer;
 		try {
@@ -62,6 +68,22 @@ class PaymentService {
 		accounts.findByIdForUpdate(memberId)
 			.filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE)
 			.orElseThrow(() -> PaymentException.notFound("Active Member or Membership Offer was not found"));
+		if (normalizedIdempotencyKey != null) {
+			try {
+				Map<String, Object> replay = db.queryForMap("""
+					select o.member_account_id,p.id payment_id
+					from membership_orders o join payments p on p.order_id=o.id
+					where o.created_by_account_id=? and o.cash_idempotency_key=?
+					for update
+					""", actor, normalizedIdempotencyKey);
+				if (!memberId.equals(replay.get("member_account_id"))) {
+					throw PaymentException.conflict("Idempotency-Key was already used for another Member");
+				}
+				return fulfillment.result(fulfillment.payment((UUID) replay.get("payment_id")));
+			} catch (EmptyResultDataAccessException ignored) {
+				// This is the first request for the key.
+			}
+		}
 		lifecycle.reconcile(memberId, clock.instant());
 		try {
 			offer = db.queryForMap("""
@@ -73,28 +95,46 @@ class PaymentService {
 		} catch (EmptyResultDataAccessException exception) {
 			throw new MembershipOfferUnavailableException();
 		}
-		if (count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId)>0)
-			throw PaymentException.conflict("Member already has an active membership");
-		if (count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId)>0)
+		boolean active = count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId)>0;
+		if (count("select count(*) from memberships where member_account_id=? and status='RESERVED'", memberId)>0)
+			throw new MembershipRenewalAlreadyExistsException();
+		if (count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId)>0) {
+			if (active) throw new MembershipRenewalAlreadyExistsException();
 			throw PaymentException.conflict("Member already has a pending membership order");
+		}
+		if (active && normalizedIdempotencyKey == null) {
+			throw PaymentException.conflict("Idempotency-Key is required for cash membership renewal");
+		}
+		FulfillmentMode mode = active ? FulfillmentMode.RESERVED : FulfillmentMode.IMMEDIATE;
 		UUID orderId=UUID.randomUUID(); UUID paymentId=UUID.randomUUID();
 		String orderNumber="ORD-"+orderId.toString().replace("-","").toUpperCase();
 		try {
 			db.update("""
 				insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
 					offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
-					duration_days_snapshot,payment_method,status)
-				values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT')
+					duration_days_snapshot,payment_method,status,fulfillment_mode,cash_idempotency_key)
+				values(?,?,?,?,?,?,?,?,?,?,'CASH','PENDING_PAYMENT',?,?)
 				""", orderId,orderNumber,memberId,actor,request.offerId(),offer.get("name"),offer.get("plan_code"),
-				offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"));
+				offer.get("price_amount"),offer.get("currency_code"),offer.get("duration_days"),mode.name(),
+				normalizedIdempotencyKey);
 		} catch (DataIntegrityViolationException exception) {
 			if (MembershipOrderConstraintDetector.isPendingMemberConstraint(exception)) {
+				if (active) throw new MembershipRenewalAlreadyExistsException();
 				throw PaymentException.conflict("Member already has a pending membership order");
 			}
 			throw exception;
 		}
 		return fulfillment.fulfillCash(paymentId, orderId, actor, "Cash received by receptionist",
 			"Cash payment confirmed");
+	}
+
+	private String normalizeIdempotencyKey(String key) {
+		if (key == null) return null;
+		String normalized = key.trim();
+		if (normalized.isEmpty() || normalized.length() > 100) {
+			throw PaymentException.validation("Idempotency-Key must be nonblank and at most 100 characters");
+		}
+		return normalized;
 	}
 
 	@Transactional
@@ -126,7 +166,8 @@ class PaymentService {
 		audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_RECONCILED","PAYMENT",paymentId,
 			request.reason().trim(),Map.of("status","PENDING"),Map.of("status","FAILED","evidence",request.evidence().trim())));
 		return new PaymentResultResponse(paymentId,(UUID)payment.get("order_id"),"FAILED",
-			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null);
+			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null,
+			PaymentFulfillmentService.fulfillmentMode(payment));
 	}
 
 	@Transactional
@@ -289,7 +330,8 @@ class PaymentService {
 		if (account.getRole()==AccountRole.COACH)
 			throw PaymentException.forbidden();
 		if (!"PAID".equals(row.get("payment_status"))) return new PaymentResultResponse(paymentId,(UUID)row.get("order_id"),
-			row.get("payment_status").toString(),row.get("payment_method").toString(),null,null,null);
+			row.get("payment_status").toString(),row.get("payment_method").toString(),null,null,null,
+			PaymentFulfillmentService.fulfillmentMode(row));
 		return fulfillment.result(row);
 	}
 

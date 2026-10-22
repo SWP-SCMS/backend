@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
 
 import java.math.BigInteger;
 import java.util.Optional;
@@ -42,17 +43,18 @@ class MembershipOrderServiceTests {
 	private MembershipPlan plan;
 	private MembershipOffer offer;
 	private MemberProfile member;
+	private Account memberAccount;
 
 	@BeforeEach
 	void prepareValidCreation() {
 		memberAccountId = UUID.randomUUID();
 		offerId = UUID.randomUUID();
-		Account account = mock(Account.class);
-		when(account.getRole()).thenReturn(AccountRole.MEMBER);
-		when(account.getStatus()).thenReturn(AccountStatus.ACTIVE);
+		memberAccount = mock(Account.class);
+		when(memberAccount.getRole()).thenReturn(AccountRole.MEMBER);
+		when(memberAccount.getStatus()).thenReturn(AccountStatus.ACTIVE);
 		member = mock(MemberProfile.class);
 		when(member.getAccountId()).thenReturn(memberAccountId);
-		when(member.getAccount()).thenReturn(account);
+		when(member.getAccount()).thenReturn(memberAccount);
 		when(member.getMemberCode()).thenReturn("MB-100001");
 		when(memberProfileRepository.findById(memberAccountId)).thenReturn(Optional.of(member));
 		when(memberProfileRepository.findVisibleMemberByCode(eq("MB-100001"), eq(AccountRole.MEMBER), any()))
@@ -74,6 +76,23 @@ class MembershipOrderServiceTests {
 			.thenReturn(Optional.of(offer));
 		when(offerRepository.findSellablePlanCodeForUpdate(offerId))
 			.thenReturn(Optional.of(MembershipPlanCode.BASIC.name()));
+		when(accountRepository.findByIdForUpdate(memberAccountId)).thenReturn(Optional.of(memberAccount));
+	}
+
+	@Test
+	void revalidatesMemberStatusAfterLifecycleLock() {
+		Account lockedSuspended = new Account(memberAccountId, AccountRole.MEMBER, AccountStatus.SUSPENDED,
+			"Member", "0900000000", memberAccountId + "@example.test", java.time.LocalDate.of(1990, 1, 1), "hash");
+		doAnswer(invocation -> {
+			when(memberAccount.getStatus()).thenReturn(AccountStatus.SUSPENDED);
+			return null;
+		}).when(lifecycle).reconcile(eq(memberAccountId), any());
+		when(accountRepository.findByIdForUpdate(memberAccountId)).thenReturn(Optional.of(lockedSuspended));
+
+		assertThatThrownBy(() -> service.createForMember(memberAccountId,
+			new MembershipOrderCreateRequest(offerId)))
+			.isInstanceOf(MemberNotActiveException.class);
+		verify(orderRepository, never()).saveAndFlush(any());
 	}
 
 	@Test

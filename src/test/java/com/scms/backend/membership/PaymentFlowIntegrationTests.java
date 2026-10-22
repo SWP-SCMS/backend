@@ -181,6 +181,27 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
+	void cashRenewalReplaysByIdempotencyKeyWithoutCreatingDuplicateArtifacts() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		UUID offer = offer(receptionist, "BASIC", 12000, false);
+		cash(receptionist, member.getMemberCode(), offer).andExpect(status().isCreated());
+
+		String firstRenewal = cash(receptionist, member.getMemberCode(), offer, "cash-renewal-1")
+			.andExpect(status().isCreated()).andExpect(jsonPath("$.fulfillmentMode").value("RESERVED"))
+			.andReturn().getResponse().getContentAsString();
+		String replay = cash(receptionist, member.getMemberCode(), offer, "cash-renewal-1")
+			.andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+
+		assertThat((String) JsonPath.read(replay, "$.paymentId"))
+			.isEqualTo((String) JsonPath.read(firstRenewal, "$.paymentId"));
+		assertThat(count("select count(*) from membership_orders where member_account_id=?", member.getAccountId())).isEqualTo(2);
+		assertThat(count("select count(*) from payments p join membership_orders o on o.id=p.order_id where o.member_account_id=?",
+			member.getAccountId())).isEqualTo(2);
+		assertThat(count("select count(*) from receipts where member_account_id=?", member.getAccountId())).isEqualTo(2);
+	}
+
+	@Test
 	void cashRejectsInactiveOfferAndInactivePlanWithOrderAvailabilityContract() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile inactiveOfferMember = member();
@@ -1034,9 +1055,16 @@ class PaymentFlowIntegrationTests {
 
 	private org.springframework.test.web.servlet.ResultActions cash(Account actor, String memberCode, UUID offer)
 			throws Exception {
-		return mockMvc.perform(post("/api/v1/reception/members/{memberId}/cash-payments", memberCode)
+		return cash(actor, memberCode, offer, null);
+	}
+
+	private org.springframework.test.web.servlet.ResultActions cash(Account actor, String memberCode, UUID offer,
+		String idempotencyKey) throws Exception {
+		var request = post("/api/v1/reception/members/{memberId}/cash-payments", memberCode)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(actor))
-			.contentType(MediaType.APPLICATION_JSON).content("{\"offerId\":\"" + offer + "\"}"));
+			.contentType(MediaType.APPLICATION_JSON).content("{\"offerId\":\"" + offer + "\"}");
+		if (idempotencyKey != null) request.header("Idempotency-Key", idempotencyKey);
+		return mockMvc.perform(request);
 	}
 
 	private org.springframework.test.web.servlet.ResultActions patchOffer(Account actor, UUID offer, String body)

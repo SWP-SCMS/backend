@@ -22,6 +22,7 @@ import com.scms.backend.membership.MemberNotActiveException;
 import com.scms.backend.membership.MembershipOfferNotFoundException;
 import com.scms.backend.membership.MembershipOfferUnavailableException;
 import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
+import com.scms.backend.membership.MembershipRenewalAlreadyExistsException;
 import com.scms.backend.membership.PendingMembershipOrderExistsException;
 import com.scms.backend.membership.PaymentException;
 import com.scms.backend.membership.ReportingValidationException;
@@ -464,6 +465,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 			"The member already has a pending membership order.");
 		problem.setTitle("Pending membership order exists");
 		problem.setProperty("code", "PENDING_MEMBERSHIP_ORDER_EXISTS");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipRenewalAlreadyExistsException.class)
+	ProblemDetail handleMembershipRenewalAlreadyExists() {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT,
+			"The member already has a reserved membership or pending renewal order.");
+		problem.setTitle("Membership renewal already exists");
+		problem.setProperty("code", "MEMBERSHIP_RENEWAL_ALREADY_EXISTS");
 		return problem;
 	}
 
