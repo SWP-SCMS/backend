@@ -31,6 +31,7 @@ import com.scms.backend.membership.MembershipOfferValidationException;
 import com.scms.backend.membership.MembershipPlanConflictException;
 import com.scms.backend.membership.MembershipPlanNotFoundException;
 import com.scms.backend.membership.MembershipPlanValidationException;
+import com.scms.backend.membership.MembershipTerminationException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberNotFoundException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberValidationException;
 import com.scms.backend.centervisit.CenterVisitException;
@@ -517,6 +518,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 			"The requested membership plan was not found.");
 		problem.setTitle("Membership plan not found");
 		problem.setProperty("code", "MEMBERSHIP_PLAN_NOT_FOUND");
+		return problem;
+	}
+
+	@ExceptionHandler(MembershipTerminationException.class)
+	ProblemDetail handleMembershipTermination(MembershipTerminationException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Membership termination request failed");
+		problem.setProperty("code", exception.getCode());
 		return problem;
 	}
 

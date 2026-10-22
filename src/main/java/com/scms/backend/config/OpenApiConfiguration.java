@@ -101,6 +101,10 @@ public class OpenApiConfiguration {
 				|| path.equals("/coach/class-sessions/{sessionId}/members/{memberId}/feedback"))) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No active or linked record found."));
 		}
+		if (method == HttpMethod.DELETE && path.equals("/members/me/membership-termination-requests/{requestId}")) {
+			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
+			operation.getResponses().addApiResponse("204", new ApiResponse().description("Request withdrawn."));
+		}
 		if (method == HttpMethod.POST && path.equals("/reception/membership-orders/{orderId}/cash")) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 		}

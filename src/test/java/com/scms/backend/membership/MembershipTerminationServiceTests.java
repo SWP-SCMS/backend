@@ -1,0 +1,89 @@
+package com.scms.backend.membership;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.math.BigInteger;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.notification.NotificationWriter;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class MembershipTerminationServiceTests {
+	private static final Instant NOW = Instant.parse("2026-10-22T03:00:00Z");
+	private final AccountRepository accounts = mock(AccountRepository.class);
+	private final MemberProfileRepository profiles = mock(MemberProfileRepository.class);
+	private final MembershipRepository memberships = mock(MembershipRepository.class);
+	private final MembershipTerminationRequestRepository requests = mock(MembershipTerminationRequestRepository.class);
+	private final AuditEventRepository audits = mock(AuditEventRepository.class);
+	private final NotificationWriter notifications = mock(NotificationWriter.class);
+	private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+	private final MembershipTerminationService service = new MembershipTerminationService(accounts, profiles,
+		memberships, requests, audits, notifications, clock);
+	private final UUID memberId = UUID.randomUUID();
+	private final UUID membershipId = UUID.randomUUID();
+
+	@BeforeEach
+	void activeMemberIsAuthorized() {
+		when(accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+	}
+
+	@Test
+	void duplicateOpenRequestIsRejectedBeforeCreatingAnotherRequest() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0900000001",
+			"member@example.test", java.time.LocalDate.of(1990, 1, 1), "hash");
+		Membership membership = new Membership(membershipId, memberId, UUID.randomUUID(), UUID.randomUUID(), "PLUS",
+			"Plus", BigInteger.ONE, "VND", 30, MembershipStatus.ACTIVE, NOW.minusSeconds(60), NOW.plusSeconds(60));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE))
+			.thenReturn(Optional.of(membership));
+		when(requests.existsByMembershipIdAndStatusIn(eq(membershipId), any())).thenReturn(true);
+
+		assertThatThrownBy(() -> service.createForMember(memberId,
+			new MembershipTerminationCreateRequest(MembershipTerminationMode.IMMEDIATE, "reason")))
+			.isInstanceOf(MembershipTerminationException.class)
+			.extracting("code").isEqualTo("MEMBERSHIP_TERMINATION_ALREADY_PENDING");
+		verify(requests, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void staleManagerDecisionIsRejectedWithoutTouchingMembership() {
+		UUID managerId = UUID.randomUUID();
+		UUID requestId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		MembershipTerminationRequest request = mock(MembershipTerminationRequest.class);
+		when(request.getVersion()).thenReturn(4L);
+		when(requests.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+
+		assertThatThrownBy(() -> service.approve(managerId, requestId, new MembershipTerminationDecisionRequest(3L)))
+			.isInstanceOf(MembershipTerminationException.class)
+			.extracting("code").isEqualTo("MEMBERSHIP_TERMINATION_CHANGED");
+		verify(memberships, never()).findByIdForUpdate(any());
+	}
+
+	@Test
+	void entityAllowsOnlyPendingToApprovalAndWithdrawal() {
+		MembershipTerminationRequest request = new MembershipTerminationRequest(UUID.randomUUID(), membershipId, memberId,
+			memberId, MembershipTerminationMode.END_OF_CYCLE, "reason");
+		request.approve(UUID.randomUUID(), NOW.plusSeconds(60), NOW);
+		assertThat(request.getStatus()).isEqualTo(MembershipTerminationRequestStatus.APPROVED);
+		assertThatThrownBy(() -> request.withdraw(NOW)).isInstanceOf(IllegalStateException.class);
+	}
+}
