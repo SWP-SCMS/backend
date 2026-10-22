@@ -1,8 +1,7 @@
 package com.scms.backend.identity.memberprofile;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -19,14 +18,11 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.auth.DuplicateAccountException;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 
 @ExtendWith(MockitoExtension.class)
 class MemberProfileServiceTests {
@@ -50,25 +46,17 @@ class MemberProfileServiceTests {
 	}
 
 	@Test
-	void databaseUniqueRaceDuringFlushIsTranslatedToDuplicateConflict() {
+	void directEmailChangeRequiresVerifiedFlow() {
 		UUID accountId = UUID.randomUUID();
 		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Race Member",
 			"0901234567", "old@example.com", LocalDate.of(2000, 1, 15), "bcrypt-hash");
 		MemberProfile profile = new MemberProfile(account);
 		MemberProfilePatchRequest request = new MemberProfilePatchRequest();
 		request.setEmail("new@example.com");
-		DataIntegrityViolationException databaseFailure = new DataIntegrityViolationException(
-			"duplicate key value violates unique constraint uq_accounts_current_email");
-		DuplicateAccountException translated = org.mockito.Mockito.mock(DuplicateAccountException.class);
-
 		when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
 		when(memberProfileRepository.findById(accountId)).thenReturn(Optional.of(profile));
-		doThrow(databaseFailure).when(accountRepository).flush();
-		when(identifierAvailability.fromDatabase(databaseFailure)).thenReturn(translated);
-
-		assertThatThrownBy(() -> memberProfileService.updateProfile(accountId, request)).isSameAs(translated);
-
-		verify(identifierAvailability).ensureAvailableForUpdate(accountId, "old@example.com", "0901234567",
-			"new@example.com", "0901234567");
+		assertThatThrownBy(() -> memberProfileService.updateProfile(accountId, request))
+			.isInstanceOfSatisfying(com.scms.backend.emailverification.EmailVerificationException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
 	}
 }

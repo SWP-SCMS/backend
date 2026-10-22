@@ -65,6 +65,17 @@ class SmtpEmailProviderTests {
 		assertThat(find(message, "text/html")).contains("654321", "Nếu bạn không yêu cầu đặt lại mật khẩu");
 	}
 
+	@Test
+	void sendsDedicatedEmailChangeTemplate() throws Exception {
+		provider.sendEmailChangeOtp("new@example.com", "An", "654321", 10);
+		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+		verify(sender).send(captor.capture());
+		MimeMessage message = captor.getValue();message.saveChanges();
+		assertThat(message.getSubject()).isEqualTo("Xác minh email mới cho tài khoản SCMS");
+		assertThat(find(message,"text/plain")).contains("654321","Nếu bạn không yêu cầu đổi email");
+		assertThat(find(message,"text/html")).contains("654321","Xác minh email mới");
+	}
+
 	private String find(Part part, String mimeType) throws Exception {
 		Object content = part.getContent();
 		if (content instanceof Multipart multipart) {

@@ -147,7 +147,6 @@ class MemberProfileIntegrationTests {
 			{
 			  "fullName": "  New Name  ",
 			  "phone": " 0902000002 ",
-			  "email": " NEW@Example.COM ",
 			  "birthDate": "1995-05-20",
 			  "profileImageUrl": " https://cdn.example/new.png ",
 			  "fitnessGoal": " Build strength ",
@@ -158,7 +157,7 @@ class MemberProfileIntegrationTests {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.fullName").value("New Name"))
 			.andExpect(jsonPath("$.phone").value("0902000002"))
-			.andExpect(jsonPath("$.email").value("new@example.com"))
+			.andExpect(jsonPath("$.email").value("old@example.com"))
 			.andExpect(jsonPath("$.birthDate").value("1995-05-20"))
 			.andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/new.png"))
 			.andExpect(jsonPath("$.fitnessGoal").value("Build strength"))
@@ -236,7 +235,7 @@ class MemberProfileIntegrationTests {
 	}
 
 	@Test
-	void duplicateIdentifiersConflictWhileInactiveIdentifiersCanBeReused() throws Exception {
+	void directEmailChangesRequireVerificationWhilePhoneRulesStayUnchanged() throws Exception {
 		Account member = createMember("Updating Member", "0905000001", "updating@example.com").getAccount();
 		createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "0905000002", "active-owner@example.com");
 		createAccount(AccountRole.RECEPTIONIST, AccountStatus.INACTIVE, "0905000003", "inactive-owner@example.com");
@@ -245,14 +244,17 @@ class MemberProfileIntegrationTests {
 		patchProfile(token, "{\"email\":\" ACTIVE-OWNER@EXAMPLE.COM \"}")
 			.andExpect(status().isConflict())
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-			.andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
+			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
 		patchProfile(token, "{\"phone\":\"0905000002\"}")
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
 
-		patchProfile(token, "{\"email\":\"inactive-owner@example.com\",\"phone\":\"0905000003\"}")
+		patchProfile(token, "{\"email\":\"inactive-owner@example.com\"}")
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		patchProfile(token, "{\"phone\":\"0905000003\"}")
 			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.email").value("inactive-owner@example.com"))
+			.andExpect(jsonPath("$.email").value("updating@example.com"))
 			.andExpect(jsonPath("$.phone").value("0905000003"));
 	}
 
@@ -298,16 +300,19 @@ class MemberProfileIntegrationTests {
 	}
 
 	@Test
-	void updatedEmailAndPhoneBecomeLoginIdentifiersAndOldValuesStopWorking() throws Exception {
+	void phoneCanChangeDirectlyButEmailRemainsUntilVerifiedFlowCompletes() throws Exception {
 		Account account = createMember("Login Member", "0908000001", "old-login@example.com").getAccount();
 		String token = accessToken(account);
 
 		patchProfile(token, "{\"email\":\"new-login@example.com\",\"phone\":\"0908000002\"}")
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		patchProfile(token, "{\"phone\":\"0908000002\"}")
 			.andExpect(status().isOk());
 
-		performLogin("new-login@example.com").andExpect(status().isOk());
+		performLogin("new-login@example.com").andExpect(status().isUnauthorized());
 		performLogin("0908000002").andExpect(status().isOk());
-		performLogin("old-login@example.com").andExpect(status().isUnauthorized());
+		performLogin("old-login@example.com").andExpect(status().isOk());
 		performLogin("0908000001").andExpect(status().isUnauthorized());
 	}
 

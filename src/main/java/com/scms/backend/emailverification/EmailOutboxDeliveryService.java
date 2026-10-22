@@ -40,10 +40,12 @@ class EmailOutboxDeliveryService {
 	}
 
 	void deliver(EmailJob job,Instant now){String otp=crypto.decryptOtp(job.ciphertext(),job.nonce(),job.keyVersion());
-		long expiresInMinutes=Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes());
+		long minutes=Math.max(1,Duration.between(now,job.deliverBefore()).toMinutes());
 		if("PASSWORD_RESET_OTP".equals(job.templateKey()))
-			provider.sendPasswordResetOtp(job.recipient(),job.recipientName(),otp,expiresInMinutes);
-		else provider.sendVerificationOtp(job.recipient(),job.recipientName(),otp,expiresInMinutes);}
+			provider.sendPasswordResetOtp(job.recipient(),job.recipientName(),otp,minutes);
+		else if("ACCOUNT_EMAIL_CHANGE_OTP".equals(job.templateKey())||"STAFF_EMAIL_CHANGE_OTP".equals(job.templateKey()))
+			provider.sendEmailChangeOtp(job.recipient(),job.recipientName(),otp,minutes);
+		else provider.sendVerificationOtp(job.recipient(),job.recipientName(),otp,minutes);}
 
 	@Transactional(propagation=Propagation.REQUIRES_NEW)
 	void sent(UUID id,Instant now){db.update("update email_outbox set status='SENT',sent_at=?,payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,last_error=null,updated_at=? where id=?",Timestamp.from(now),Timestamp.from(now),id);}

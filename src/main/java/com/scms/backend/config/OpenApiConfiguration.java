@@ -64,7 +64,7 @@ public class OpenApiConfiguration {
 				if (method != HttpMethod.GET) {
 					operation.getResponses().addApiResponse("409", reference("Conflict"));
 				}
-				if (path.contains("email-verification") || path.contains("password-reset")
+				if (path.contains("email-verification") || path.contains("password-reset") || path.contains("email-change")
 						|| path.equals("/auth/register")) {
 					operation.getResponses().addApiResponse("429", reference("TooManyRequests"));
 				}

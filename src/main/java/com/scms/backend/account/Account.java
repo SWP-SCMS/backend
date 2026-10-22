@@ -146,13 +146,21 @@ public class Account {
 		email = Objects.requireNonNull(newEmail);
 	}
 
-	public void changeVerifiedStaffEmail(String newEmail, Instant now) {
-		if (role == AccountRole.MEMBER || status != AccountStatus.ACTIVE) {
-			throw new IllegalStateException("Only an active staff account can change its verified email");
+	public void changeVerifiedEmail(String newEmail, Instant now) {
+		if (status != AccountStatus.ACTIVE) {
+			throw new IllegalStateException("Only an active account can change its verified email");
 		}
 		email = Objects.requireNonNull(newEmail);
 		emailVerifiedAt = Objects.requireNonNull(now);
 		authVersion++;
+	}
+
+	@Deprecated(forRemoval = false)
+	public void changeVerifiedStaffEmail(String newEmail, Instant now) {
+		if (role == AccountRole.MEMBER) {
+			throw new IllegalStateException("Only a staff account can use the legacy email-change method");
+		}
+		changeVerifiedEmail(newEmail, now);
 	}
 
 	public void reviveSelfRegistration(String fullName,String phone,String email,LocalDate birthDate,

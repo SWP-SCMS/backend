@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: SCMS Verified Account Email Change API
+  version: 1.0.0
+  description: MF-012 contract shared by every ACTIVE account role.
+servers:
+  - url: /api/v1
+paths:
+  /accounts/me/email-change:
+    get:
+      summary: Get the authenticated account's pending email-change state
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Pending state; the email is masked and no OTP or token is returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccountEmailChangeStatus'}
+    post:
+      summary: Start a verified email change
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountEmailChangeRequest'}
+      responses:
+        '202': {description: OTP queued to the new email; current email remains unchanged}
+    put:
+      summary: Supersede the pending request with a different email
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountEmailChangeRequest'}
+      responses:
+        '202': {description: Old request superseded and a new OTP queued}
+    delete:
+      summary: Cancel the pending request
+      security: [{bearerAuth: []}]
+      responses:
+        '204': {description: Pending request cancelled or already absent}
+  /accounts/me/email-change/verify:
+    post:
+      summary: Verify ownership of the new email
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountEmailChangeVerifyRequest'}
+      responses:
+        '200':
+          description: Email changed atomically, auth version incremented, and all refresh tokens revoked
+          headers:
+            Set-Cookie: {schema: {type: string}}
+  /accounts/me/email-change/resend:
+    post:
+      summary: Replace the pending request's OTP after cooldown
+      security: [{bearerAuth: []}]
+      responses:
+        '202': {description: Previous OTP invalidated and replacement queued}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  schemas:
+    AccountEmailChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [newEmail, currentPassword]
+      properties:
+        newEmail: {type: string, format: email, maxLength: 320}
+        currentPassword: {type: string, format: password}
+    AccountEmailChangeVerifyRequest:
+      type: object
+      additionalProperties: false
+      required: [otp]
+      properties:
+        otp: {type: string, pattern: '^[0-9]{6}$'}
+    AccountEmailChangeStatus:
+      type: object
+      required: [pending]
+      properties:
+        pending: {type: boolean}
+        maskedEmail: {type: [string, 'null']}
+        otpExpiresAt: {type: [string, 'null'], format: date-time}
+        resendAvailableAt: {type: [string, 'null'], format: date-time}

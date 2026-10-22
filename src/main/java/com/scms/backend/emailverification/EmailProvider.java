@@ -6,4 +6,8 @@ public interface EmailProvider {
 	default void sendPasswordResetOtp(String recipient, String recipientName, String otp, long expiresInMinutes) {
 		sendVerificationOtp(recipient, recipientName, otp, expiresInMinutes);
 	}
+
+	default void sendEmailChangeOtp(String recipient, String recipientName, String otp, long expiresInMinutes) {
+		sendVerificationOtp(recipient, recipientName, otp, expiresInMinutes);
+	}
 }
