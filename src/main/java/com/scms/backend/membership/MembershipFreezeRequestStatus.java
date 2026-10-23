@@ -7,5 +7,6 @@ public enum MembershipFreezeRequestStatus {
 	ACTIVE,
 	COMPLETED,
 	OBSOLETE,
-	REJECTED
+	REJECTED,
+	WITHDRAWN
 }

@@ -36,6 +36,24 @@ class MembershipFreezeExecutionIntegrationTests {
 	}
 
 	@Test
+	void databaseAcceptsWithdrawnFreezeRequestsAndRejectsUnknownStatuses() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID membership = membership(member, manager, now);
+		UUID request = UUID.randomUUID();
+		LocalDate start = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).plusDays(1);
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'withdrawal','PENDING')",
+			request, membership, member, member, java.sql.Date.valueOf(start), java.sql.Date.valueOf(start.plusDays(2)));
+
+		jdbc.update("update membership_freeze_requests set status='WITHDRAWN' where id=?", request);
+
+		assertThat(jdbc.queryForObject("select status from membership_freeze_requests where id=?", String.class, request)).isEqualTo("WITHDRAWN");
+		assertThatThrownBy(() -> jdbc.update("update membership_freeze_requests set status='UNKNOWN' where id=?", request))
+			.hasStackTraceContaining("chk_membership_freeze_request_status");
+	}
+
+	@Test
 	void activeFreezeMakesDatabaseRejectDirectBookingInsert() {
 		Instant now = Instant.now();
 		UUID manager = account("MANAGER");

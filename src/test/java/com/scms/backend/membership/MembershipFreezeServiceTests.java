@@ -70,6 +70,43 @@ class MembershipFreezeServiceTests {
 	}
 
 	@Test
+	void memberWithdrawsOwnPendingFreezeAndKeepsItAuditedInHistory() {
+		Fixture fixture = fixture(LocalDate.of(2026, 11, 1));
+		when(fixture.accounts.existsByIdAndRoleAndStatus(fixture.memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(fixture.requests.findById(fixture.requestId)).thenReturn(Optional.of(fixture.request));
+		when(fixture.accounts.findByIdForUpdate(fixture.memberId)).thenReturn(Optional.of(mock(Account.class)));
+		when(fixture.memberships.findByIdForUpdate(fixture.membershipId)).thenReturn(Optional.of(fixture.membership));
+		when(fixture.requests.findByIdForUpdate(fixture.requestId)).thenReturn(Optional.of(fixture.request));
+		ReflectionTestUtils.setField(fixture.request, "status", MembershipFreezeRequestStatus.PENDING);
+
+		fixture.service.withdrawForMember(fixture.memberId, fixture.requestId);
+
+		assertThat(fixture.request.getStatus()).isEqualTo(MembershipFreezeRequestStatus.WITHDRAWN);
+		verify(fixture.requests).saveAndFlush(fixture.request);
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(fixture.audits).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("MEMBERSHIP_FREEZE_WITHDRAWN");
+		verify(fixture.notifications, never()).write(any(), any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void memberCannotWithdrawAnotherMembersOrNonPendingFreeze() {
+		Fixture fixture = fixture(LocalDate.of(2026, 11, 1));
+		UUID anotherMember = UUID.randomUUID();
+		when(fixture.accounts.existsByIdAndRoleAndStatus(anotherMember, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(fixture.requests.findById(fixture.requestId)).thenReturn(Optional.of(fixture.request));
+		assertThatThrownBy(() -> fixture.service.withdrawForMember(anotherMember, fixture.requestId))
+			.isInstanceOfSatisfying(MembershipFreezeException.class, exception -> assertThat(exception.getStatus()).isEqualTo(org.springframework.http.HttpStatus.NOT_FOUND));
+
+		when(fixture.accounts.existsByIdAndRoleAndStatus(fixture.memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(fixture.requests.findById(fixture.requestId)).thenReturn(Optional.of(fixture.request));
+		fixture.lock();
+		assertThatThrownBy(() -> fixture.service.withdrawForMember(fixture.memberId, fixture.requestId))
+			.isInstanceOfSatisfying(MembershipFreezeException.class, exception -> assertThat(exception.getCode()).isEqualTo("MEMBERSHIP_FREEZE_INVALID_TRANSITION"));
+		verify(fixture.requests, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void feeUsesHalfOpenBusinessDaysAndRoundsDownVnd() {
 		Membership membership = membership(new BigInteger("1000000"), 31);
 		assertThat(MembershipFreezeService.fee(membership, LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 4)))

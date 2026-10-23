@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.file.Files;
@@ -55,7 +56,8 @@ class MembershipFreezeContractTests {
 	@Test
 	void openApiIncludesEveryFreezeStatusReturnedAfterExecution() throws Exception {
 		String contract = Files.readString(Path.of("src/main/resources/openapi/membership-freeze.yaml"));
-		assertThat(contract).contains("ACTIVE", "COMPLETED", "OBSOLETE",
+		assertThat(contract).contains("ACTIVE", "COMPLETED", "OBSOLETE", "WITHDRAWN",
+			"/members/me/membership-freeze-requests/{requestId}:",
 			"/members/me/membership-freeze-requests/{requestId}/end-early:",
 			"/reception/membership-freeze-requests/{requestId}/end-early:");
 	}
@@ -76,6 +78,21 @@ class MembershipFreezeContractTests {
 			.andExpect(status().isOk());
 		verify(service).endEarlyForMember(memberId, requestId, decision);
 		verify(service).endEarlyForReceptionist(receptionistId, requestId, decision);
+	}
+
+	@Test
+	void onlyMemberCanWithdrawOwnPendingFreezeRequest() throws Exception {
+		UUID memberId = UUID.randomUUID();
+		UUID requestId = UUID.randomUUID();
+		mockMvc.perform(delete("/api/v1/members/me/membership-freeze-requests/{requestId}", requestId).contextPath("/api/v1")
+				.with(jwt().jwt(token -> token.subject(memberId.toString()).claim("role", "MEMBER")).authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+			.andExpect(status().isNoContent());
+		verify(service).withdrawForMember(memberId, requestId);
+		for (String role : new String[] { "RECEPTIONIST", "COACH", "MANAGER" }) {
+			mockMvc.perform(delete("/api/v1/members/me/membership-freeze-requests/{requestId}", requestId).contextPath("/api/v1")
+					.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", role)).authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+				.andExpect(status().isForbidden());
+		}
 	}
 
 	@Test
