@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
@@ -22,30 +23,39 @@ class MembershipTerminationExecutionServiceTests {
 	private final MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 	private final MembershipTerminationRequestRepository requests = mock(MembershipTerminationRequestRepository.class);
 	private final MembershipRepository memberships = mock(MembershipRepository.class);
+	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final CenterVisitRepository visits = mock(CenterVisitRepository.class);
 	private final BookingRepository bookings = mock(BookingRepository.class);
 	private final CoachAssignmentRepository assignments = mock(CoachAssignmentRepository.class);
+	private final MembershipFreezeExecutionService freezes = mock(MembershipFreezeExecutionService.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final NotificationWriter notifications = mock(NotificationWriter.class);
 	private final MembershipTerminationExecutionService service = new MembershipTerminationExecutionService(
-		lifecycle, requests, memberships, visits, bookings, assignments, audits, notifications);
+		lifecycle, requests, memberships, accounts, visits, bookings, assignments, freezes, audits, notifications);
 
 	@Test
 	void immediateExecutionTerminatesMembershipAndCleansUpFutureActivity() {
 		UUID requestId = UUID.randomUUID();
 		UUID memberId = UUID.randomUUID();
 		UUID actorId = UUID.randomUUID();
+		UUID membershipId = UUID.randomUUID();
 		MembershipTerminationRequest request = mock(MembershipTerminationRequest.class);
+		Membership active = mock(Membership.class);
+		when(requests.findById(requestId)).thenReturn(java.util.Optional.of(request));
 		when(requests.findByIdForUpdate(requestId)).thenReturn(java.util.Optional.of(request));
 		when(request.getStatus()).thenReturn(MembershipTerminationRequestStatus.APPROVED);
 		when(request.getMode()).thenReturn(MembershipTerminationMode.IMMEDIATE);
 		when(request.getMemberAccountId()).thenReturn(memberId);
 		when(request.getId()).thenReturn(requestId);
-		when(request.getMembershipId()).thenReturn(UUID.randomUUID());
+		when(request.getMembershipId()).thenReturn(membershipId);
 		when(request.getReason()).thenReturn("membership termination");
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(java.util.Optional.of(mock(com.scms.backend.account.Account.class)));
+		when(active.getId()).thenReturn(membershipId);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)).thenReturn(java.util.Optional.of(active));
 
 		service.executeImmediate(requestId, actorId, NOW);
 
+		verify(freezes).endActiveForTermination(memberId, NOW);
 		verify(lifecycle).terminateActiveAndActivateReserved(memberId, NOW);
 		verify(visits).checkoutOpenForMembershipTermination(memberId, actorId, NOW);
 		verify(bookings).cancelFutureBookingsForMembershipTermination(memberId, actorId, NOW);

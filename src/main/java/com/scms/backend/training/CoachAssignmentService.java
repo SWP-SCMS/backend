@@ -57,7 +57,8 @@ public class CoachAssignmentService {
 			throw CoachAssignmentException.validationError("reason", "reason must be at most 1000 characters");
 		}
 
-		Account member = accounts.findById(memberId).orElseThrow(CoachAssignmentException::memberNotFound);
+		Account member = accounts.findByIdForUpdate(memberId).or(() -> accounts.findById(memberId))
+			.orElseThrow(CoachAssignmentException::memberNotFound);
 		if (member.getRole() != AccountRole.MEMBER) {
 			throw CoachAssignmentException.memberNotFound();
 		}
@@ -77,6 +78,7 @@ public class CoachAssignmentService {
 
 		Instant now = clock.instant();
 		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+		if (assignments.hasActiveMembershipFreeze(memberId)) throw CoachAssignmentException.membershipFrozen();
 		if (!assignments.hasActiveMembershipBenefit(memberId, "PERSONAL_COACHING", now)) {
 			throw CoachAssignmentException.plusMembershipRequired();
 		}

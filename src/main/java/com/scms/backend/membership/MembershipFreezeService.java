@@ -34,7 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
 class MembershipFreezeService {
 	private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 	private static final Set<MembershipFreezeRequestStatus> OPEN = Set.of(MembershipFreezeRequestStatus.PENDING,
-		MembershipFreezeRequestStatus.APPROVED_PENDING_PAYMENT, MembershipFreezeRequestStatus.SCHEDULED);
+		MembershipFreezeRequestStatus.APPROVED_PENDING_PAYMENT, MembershipFreezeRequestStatus.SCHEDULED,
+		MembershipFreezeRequestStatus.ACTIVE);
 	private static final Set<AccountStatus> VISIBLE = Set.of(AccountStatus.ACTIVE, AccountStatus.SUSPENDED);
 	private final AccountRepository accounts;
 	private final MemberProfileRepository profiles;
@@ -127,6 +128,18 @@ class MembershipFreezeService {
 		return new MembershipFreezeCashPaymentResponse(requestId, paymentId, request.getFeeAmount(), "VND", request.getStatus(), now);
 	}
 
+	@Transactional
+	MembershipFreezeRequestResponse endEarlyForMember(UUID memberId, UUID requestId, MembershipFreezeDecisionRequest input) {
+		ensure(memberId, AccountRole.MEMBER);
+		return endEarly(memberId, requestId, input, memberId);
+	}
+
+	@Transactional
+	MembershipFreezeRequestResponse endEarlyForReceptionist(UUID receptionistId, UUID requestId, MembershipFreezeDecisionRequest input) {
+		ensure(receptionistId, AccountRole.RECEPTIONIST);
+		return endEarly(receptionistId, requestId, input, null);
+	}
+
 	static BigInteger fee(Membership membership, LocalDate startDate, LocalDate endDate) {
 		long days = ChronoUnit.DAYS.between(startDate, endDate);
 		return membership.getPriceAmountSnapshot().multiply(BigInteger.valueOf(days)).multiply(BigInteger.valueOf(20))
@@ -150,13 +163,43 @@ class MembershipFreezeService {
 		return new MembershipFreezeCashPaymentResponse(request.getId(), (UUID) payment.get("id"), ((BigDecimal) payment.get("amount")).toBigIntegerExact(),
 			"VND", request.getStatus(), ((Timestamp) payment.get("paid_at")).toInstant());
 	}
+	private MembershipFreezeRequestResponse endEarly(UUID actorId, UUID requestId, MembershipFreezeDecisionRequest input,
+			UUID ownerId) {
+		LockedFreeze locked = lockForDecision(requestId, ownerId);
+		MembershipFreezeRequest request = locked.request();
+		checkVersion(request, input);
+		if (request.getStatus() != MembershipFreezeRequestStatus.ACTIVE) throw MembershipFreezeException.invalidTransition();
+		Membership membership = locked.membership();
+		if (membership.getStatus() != MembershipStatus.ACTIVE) throw MembershipFreezeException.notActive();
+		LocalDate today = businessDate();
+		LocalDate actualStart;
+		try {
+			actualStart = db.queryForObject("select actual_start_date from membership_freeze_periods where request_id=? and status='ACTIVE' for update",
+				LocalDate.class, requestId);
+		}
+		catch (org.springframework.dao.EmptyResultDataAccessException exception) {
+			throw MembershipFreezeException.invalidTransition();
+		}
+		if (actualStart == null || actualStart.isAfter(today)) throw MembershipFreezeException.invalidTransition();
+		int creditedDays = Math.toIntExact(ChronoUnit.DAYS.between(actualStart, today));
+		int ended = db.update("update membership_freeze_periods set status='ENDED_EARLY', actual_end_date=?, credited_days=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='ACTIVE'",
+			Date.valueOf(today), creditedDays, requestId);
+		if (ended != 1) throw MembershipFreezeException.changed();
+		if (creditedDays > 0) membership.extendTo(membership.getEndsAt().plus(creditedDays, ChronoUnit.DAYS));
+		request.complete(); requests.saveAndFlush(request);
+		audit(actorId, "ENDED_EARLY", request, Map.of("creditedDays", creditedDays));
+		notify(request, "ENDED_EARLY", Map.of("creditedDays", creditedDays));
+		return MembershipFreezeRequestResponse.from(request);
+	}
 	private void validate(MembershipFreezeCreateRequest input) {
 		if (input == null || input.startDate() == null || input.endDate() == null || !input.endDate().isAfter(input.startDate()) || input.startDate().isBefore(businessDate())) throw MembershipFreezeException.invalidPeriod();
 		if (input.reason() == null || input.reason().isBlank() || input.reason().trim().length() > 1000) throw MembershipFreezeException.validation();
 	}
 	private MembershipFreezeRequest lock(UUID id) { return requests.findByIdForUpdate(id).orElseThrow(MembershipFreezeException::notFound); }
-	private LockedFreeze lockForDecision(UUID requestId) {
+	private LockedFreeze lockForDecision(UUID requestId) { return lockForDecision(requestId, null); }
+	private LockedFreeze lockForDecision(UUID requestId, UUID ownerId) {
 		MembershipFreezeRequest visible = requests.findById(requestId).orElseThrow(MembershipFreezeException::notFound);
+		if (ownerId != null && !visible.getMemberAccountId().equals(ownerId)) throw MembershipFreezeException.notFound();
 		accounts.findByIdForUpdate(visible.getMemberAccountId()).orElseThrow(MembershipFreezeException::notFound);
 		Membership membership = memberships.findByIdForUpdate(visible.getMembershipId()).orElseThrow(MembershipFreezeException::notFound);
 		return new LockedFreeze(lock(requestId), membership);

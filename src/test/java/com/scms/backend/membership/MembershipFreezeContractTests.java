@@ -46,6 +46,39 @@ class MembershipFreezeContractTests {
 	}
 
 	@Test
+	void executionMigrationActivatesFreezeAndMakesTheBookingDatabaseAuthorityRejectFrozenMembers() throws Exception {
+		String migration = Files.readString(Path.of("src/main/resources/db/migration/V37__membership_freeze_execution.sql"));
+		assertThat(migration).contains("'ACTIVE'", "'COMPLETED'", "trg_bookings_active_membership_freeze", "MEMBERSHIP_FROZEN",
+			"MEMBERSHIP_FREEZE", "chk_center_visits_checkout_source");
+	}
+
+	@Test
+	void openApiIncludesEveryFreezeStatusReturnedAfterExecution() throws Exception {
+		String contract = Files.readString(Path.of("src/main/resources/openapi/membership-freeze.yaml"));
+		assertThat(contract).contains("ACTIVE", "COMPLETED", "OBSOLETE",
+			"/members/me/membership-freeze-requests/{requestId}/end-early:",
+			"/reception/membership-freeze-requests/{requestId}/end-early:");
+	}
+
+	@Test
+	void memberAndReceptionistCanReachEarlyEndEndpointsWithExpectedVersion() throws Exception {
+		UUID requestId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		UUID receptionistId = UUID.randomUUID();
+		MembershipFreezeDecisionRequest decision = new MembershipFreezeDecisionRequest(7L);
+		mockMvc.perform(post("/api/v1/members/me/membership-freeze-requests/{requestId}/end-early", requestId).contextPath("/api/v1")
+				.contentType("application/json").content("{\"expectedVersion\":7}")
+				.with(jwt().jwt(token -> token.subject(memberId.toString()).claim("role", "MEMBER")).authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+			.andExpect(status().isOk());
+		mockMvc.perform(post("/api/v1/reception/membership-freeze-requests/{requestId}/end-early", requestId).contextPath("/api/v1")
+				.contentType("application/json").content("{\"expectedVersion\":7}")
+				.with(jwt().jwt(token -> token.subject(receptionistId.toString()).claim("role", "RECEPTIONIST")).authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"))))
+			.andExpect(status().isOk());
+		verify(service).endEarlyForMember(memberId, requestId, decision);
+		verify(service).endEarlyForReceptionist(receptionistId, requestId, decision);
+	}
+
+	@Test
 	void onlyMemberCanCreateOwnRequestAndOnlyManagerCanApprove() throws Exception {
 		for (String role : new String[] { "RECEPTIONIST", "COACH", "MANAGER" }) {
 			mockMvc.perform(post("/api/v1/members/me/membership-freeze-requests").contextPath("/api/v1")

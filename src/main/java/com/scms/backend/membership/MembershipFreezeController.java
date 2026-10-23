@@ -29,6 +29,11 @@ class MembershipFreezeController {
 			@Valid @RequestBody MembershipFreezeCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(service.createForMember(id(jwt), request));
 	}
+	@PostMapping("/members/me/membership-freeze-requests/{requestId}/end-early")
+	ResponseEntity<MembershipFreezeRequestResponse> memberEndEarly(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId,
+			@RequestBody MembershipFreezeDecisionRequest request) {
+		return ResponseEntity.ok(service.endEarlyForMember(id(jwt), requestId, request));
+	}
 	@GetMapping("/reception/members/{memberCode}/membership-freeze-requests")
 	ResponseEntity<MembershipFreezeRequestPageResponse> receptionList(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
@@ -53,6 +58,11 @@ class MembershipFreezeController {
 	@PostMapping("/reception/membership-freeze-requests/{requestId}/cash-payment")
 	ResponseEntity<MembershipFreezeCashPaymentResponse> cash(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId,
 			@RequestBody MembershipFreezeDecisionRequest request) { return ResponseEntity.ok(service.collectCash(id(jwt), requestId, request)); }
+	@PostMapping("/reception/membership-freeze-requests/{requestId}/end-early")
+	ResponseEntity<MembershipFreezeRequestResponse> receptionEndEarly(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId,
+			@RequestBody MembershipFreezeDecisionRequest request) {
+		return ResponseEntity.ok(service.endEarlyForReceptionist(id(jwt), requestId, request));
+	}
 
 	private UUID id(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
 	private int size(int page, int size) { if (page < 0 || size < 1 || size > 100) throw new MembershipFreezeException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "page and size are invalid"); return size; }

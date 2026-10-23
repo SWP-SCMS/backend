@@ -16,24 +16,32 @@ class MembershipLifecycleScheduler {
 	private final MembershipRepository memberships;
 	private final MembershipLifecycleService lifecycle;
 	private final MembershipTerminationExecutionService terminationExecution;
+	private final MembershipFreezeExecutionService freezeExecution;
 	private final Clock clock;
 
 	@Autowired
 	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
-		MembershipTerminationExecutionService terminationExecution, Clock clock) {
+		MembershipTerminationExecutionService terminationExecution, MembershipFreezeExecutionService freezeExecution, Clock clock) {
 		this.memberships = memberships;
 		this.lifecycle = lifecycle;
 		this.terminationExecution = terminationExecution;
+		this.freezeExecution = freezeExecution;
 		this.clock = clock;
 	}
 
+	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
+		MembershipTerminationExecutionService terminationExecution, Clock clock) {
+		this(memberships, lifecycle, terminationExecution, null, clock);
+	}
+
 	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, Clock clock) {
-		this(memberships, lifecycle, null, clock);
+		this(memberships, lifecycle, null, null, clock);
 	}
 
 	@Scheduled(fixedDelayString = "${scms.membership-lifecycle-delay-ms:30000}", initialDelayString = "${scms.membership-lifecycle-initial-delay-ms:1000}")
 	void reconcile() {
 		var now = clock.instant();
+		if (freezeExecution != null) freezeExecution.reconcileDue(now);
 		UUID afterMemberId = null;
 		while (true) {
 			var dueMembers = memberships.findDueMemberAccountIds(now, afterMemberId);

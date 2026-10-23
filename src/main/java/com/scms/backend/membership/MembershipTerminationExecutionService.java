@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
+import com.scms.backend.account.AccountRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
@@ -18,34 +19,44 @@ class MembershipTerminationExecutionService {
 	private final MembershipLifecycleService lifecycle;
 	private final MembershipTerminationRequestRepository requests;
 	private final MembershipRepository memberships;
+	private final AccountRepository accounts;
 	private final CenterVisitRepository visits;
 	private final BookingRepository bookings;
 	private final CoachAssignmentRepository assignments;
+	private final MembershipFreezeExecutionService freezes;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 
 	MembershipTerminationExecutionService(MembershipLifecycleService lifecycle,
 		MembershipTerminationRequestRepository requests, MembershipRepository memberships,
-		CenterVisitRepository visits, BookingRepository bookings, CoachAssignmentRepository assignments,
-		AuditEventRepository audits, NotificationWriter notifications) {
+		AccountRepository accounts, CenterVisitRepository visits, BookingRepository bookings, CoachAssignmentRepository assignments,
+		MembershipFreezeExecutionService freezes, AuditEventRepository audits, NotificationWriter notifications) {
 		this.lifecycle = lifecycle;
 		this.requests = requests;
 		this.memberships = memberships;
+		this.accounts = accounts;
 		this.visits = visits;
 		this.bookings = bookings;
 		this.assignments = assignments;
+		this.freezes = freezes;
 		this.audits = audits;
 		this.notifications = notifications;
 	}
 
 	@Transactional
 	void executeImmediate(UUID requestId, UUID actorId, Instant now) {
+		MembershipTerminationRequest visible = requests.findById(requestId)
+			.orElseThrow(MembershipTerminationException::notFound);
+		accounts.findByIdForUpdate(visible.getMemberAccountId()).orElseThrow(MembershipTerminationException::notFound);
+		Membership active = memberships.findByMemberAccountIdAndStatusForUpdate(visible.getMemberAccountId(), MembershipStatus.ACTIVE)
+			.orElseThrow(MembershipTerminationException::notActive);
 		MembershipTerminationRequest request = requests.findByIdForUpdate(requestId)
 			.orElseThrow(MembershipTerminationException::notFound);
 		if (request.getStatus() != MembershipTerminationRequestStatus.APPROVED
-			|| request.getMode() != MembershipTerminationMode.IMMEDIATE) {
+			|| request.getMode() != MembershipTerminationMode.IMMEDIATE || !request.getMembershipId().equals(active.getId())) {
 			throw MembershipTerminationException.invalidTransition();
 		}
+		freezes.endActiveForTermination(request.getMemberAccountId(), now);
 		lifecycle.terminateActiveAndActivateReserved(request.getMemberAccountId(), now);
 		visits.checkoutOpenForMembershipTermination(request.getMemberAccountId(), actorId, now);
 		bookings.cancelFutureBookingsForMembershipTermination(request.getMemberAccountId(), actorId, now);

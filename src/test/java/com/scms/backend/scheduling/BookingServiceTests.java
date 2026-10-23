@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -116,6 +117,16 @@ class BookingServiceTests {
 		verify(audits).save(org.mockito.ArgumentMatchers.any());
 		verify(notifications).write("BOOKING_CREATED:" + response.id(), memberId, "BOOKING_CREATED", "BOOKING",
 			response.id(), java.util.Map.of("sessionId", session.getId().toString()));
+	}
+
+	@Test
+	void activeFreezeRejectsBookingBeforeEligibilityOrMutation() {
+		when(bookings.hasActiveMembershipFreeze(memberId)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.book(memberId, session.getId()))
+			.isInstanceOf(BookingException.class).extracting("code").isEqualTo("MEMBERSHIP_FROZEN");
+		verify(bookings, never()).findBookingBenefitEligibility(memberId, session.getId(), session.getStartTime());
+		verify(bookings, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
 	}
 
 	@Test
