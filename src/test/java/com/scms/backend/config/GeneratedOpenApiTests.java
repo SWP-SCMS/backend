@@ -608,6 +608,16 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedMembershipRequestContractsIncludeManagerMemberIdentity() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String schemaName : List.of("MembershipTerminationRequestResponse", "MembershipFreezeRequestResponse")) {
+			JsonNode properties = document.at("/components/schemas/" + schemaName + "/properties");
+			assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.contains("memberId", "memberFullName");
+		}
+	}
+
+	@Test
 	void staticContractDocumentsAuditActorIdentity() throws Exception {
 		var resource = getClass().getResource("/openapi/us52-manager-audit-history.yaml");
 		assertThat(resource).isNotNull();
