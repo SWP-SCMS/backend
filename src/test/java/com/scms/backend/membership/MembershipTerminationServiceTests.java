@@ -70,6 +70,27 @@ class MembershipTerminationServiceTests {
 	}
 
 	@Test
+	void memberTerminationNotifiesActiveManagersButNotTheMemberActor() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0900000001",
+			"member@example.test", java.time.LocalDate.of(1990, 1, 1), "hash");
+		Membership membership = new Membership(membershipId, memberId, UUID.randomUUID(), UUID.randomUUID(), "PLUS",
+			"Plus", BigInteger.ONE, "VND", 30, MembershipStatus.ACTIVE, NOW.minusSeconds(60), NOW.plusSeconds(60));
+		UUID managerId = UUID.randomUUID();
+		Account manager = mock(Account.class);
+		when(manager.getId()).thenReturn(managerId);
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)).thenReturn(Optional.of(membership));
+		when(requests.existsByMembershipIdAndStatusIn(eq(membershipId), any())).thenReturn(false);
+		when(accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(List.of(manager));
+
+		service.createForMember(memberId, new MembershipTerminationCreateRequest(MembershipTerminationMode.END_OF_CYCLE, "reason"));
+
+		verify(notifications, never()).write(any(), eq(memberId), eq("MEMBERSHIP_TERMINATION_REQUESTED"), any(), any(), any());
+		verify(notifications).write(any(), eq(managerId), eq("MEMBERSHIP_TERMINATION_REVIEW_REQUIRED"),
+			eq("MEMBERSHIP_TERMINATION_REQUEST"), any(), any());
+	}
+
+	@Test
 	void staleManagerDecisionIsRejectedWithoutTouchingMembership() {
 		UUID managerId = UUID.randomUUID();
 		UUID requestId = UUID.randomUUID();
