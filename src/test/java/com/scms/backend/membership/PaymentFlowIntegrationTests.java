@@ -663,7 +663,10 @@ class PaymentFlowIntegrationTests {
 			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
 		getAuthorized(manager, "/api/v1/payments/reconciliation-queue?query=" + futurePayment)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
-			.andExpect(jsonPath("$.content[0].paymentId").value(futurePayment.toString()));
+			.andExpect(jsonPath("$.content[0].paymentId").value(futurePayment.toString()))
+			.andExpect(jsonPath("$.content[0].orderNumber").value("ORD-" + futureOrder.toString().replace("-", "").toUpperCase()))
+			.andExpect(jsonPath("$.content[0].memberCode").value(futureMember.getMemberCode()))
+			.andExpect(jsonPath("$.content[0].paymentReference").value(marker + "-FUTURE"));
 		getAuthorized(coach, "/api/v1/payments/reconciliation-queue").andExpect(status().isForbidden());
 		getAuthorized(futureMember.getAccount(), "/api/v1/payments/reconciliation-queue")
 			.andExpect(status().isForbidden());
@@ -716,18 +719,28 @@ class PaymentFlowIntegrationTests {
 		String paid = cash(receptionist, owner.getMemberCode(), offer).andReturn().getResponse().getContentAsString();
 		UUID payment = UUID.fromString(JsonPath.read(paid, "$.paymentId"));
 		UUID receipt = UUID.fromString(JsonPath.read(paid, "$.receiptId"));
+		String orderNumber = JsonPath.read(paid, "$.orderNumber");
+		assertThat((String) JsonPath.read(paid, "$.memberCode")).isEqualTo(owner.getMemberCode());
+		assertThat((String) JsonPath.read(paid, "$.memberName")).isEqualTo(owner.getAccount().getFullName());
+		assertThat((Object) JsonPath.read(paid, "$.paymentReference")).isNull();
 
 		mockMvc.perform(get("/api/v1/members/me/receipts").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, bearer(owner.getAccount())))
 			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receiptId").value(receipt.toString()))
-			.andExpect(jsonPath("$[0].planCode").value("BASIC"));
-		getAuthorized(owner.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isOk());
-		getAuthorized(owner.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isOk());
+			.andExpect(jsonPath("$[0].planCode").value("BASIC"))
+			.andExpect(jsonPath("$[0].orderNumber").value(orderNumber))
+			.andExpect(jsonPath("$[0].paymentReference").value(org.hamcrest.Matchers.nullValue()));
+		getAuthorized(owner.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isOk())
+			.andExpect(jsonPath("$.orderNumber").value(orderNumber));
+		getAuthorized(owner.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isOk())
+			.andExpect(jsonPath("$.orderNumber").value(orderNumber))
+			.andExpect(jsonPath("$.memberCode").value(owner.getMemberCode()));
 		getAuthorized(stranger.getAccount(), "/api/v1/receipts/" + receipt).andExpect(status().isForbidden());
 		getAuthorized(stranger.getAccount(), "/api/v1/payments/" + payment + "/result").andExpect(status().isForbidden());
 		getAuthorized(receptionist, "/api/v1/receipts/" + receipt).andExpect(status().isOk())
 			.andExpect(jsonPath("$.memberName").value(owner.getAccount().getFullName()))
-			.andExpect(jsonPath("$.memberCode").value(owner.getMemberCode()));
+			.andExpect(jsonPath("$.memberCode").value(owner.getMemberCode()))
+			.andExpect(jsonPath("$.orderNumber").value(orderNumber));
 	}
 
 	@Test
@@ -748,9 +761,15 @@ class PaymentFlowIntegrationTests {
 
 		getAuthorized(receptionist, "/api/v1/receipts/" + receipt).andExpect(status().isForbidden());
 		getAuthorized(manager, "/api/v1/receipts/" + receipt)
-			.andExpect(status().isOk()).andExpect(jsonPath("$.paymentMethod").value("BANK_TRANSFER"));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.paymentMethod").value("BANK_TRANSFER"))
+			.andExpect(jsonPath("$.orderNumber").value("ORD-" + order.toString().replace("-", "").toUpperCase()))
+			.andExpect(jsonPath("$.paymentReference").value(reference));
 		getAuthorized(receptionist, "/api/v1/payments/" + payment + "/result")
-			.andExpect(status().isOk()).andExpect(jsonPath("$.method").value("BANK_TRANSFER"));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.method").value("BANK_TRANSFER"))
+			.andExpect(jsonPath("$.orderNumber").value("ORD-" + order.toString().replace("-", "").toUpperCase()))
+			.andExpect(jsonPath("$.memberCode").value(member.getMemberCode()))
+			.andExpect(jsonPath("$.memberName").value(member.getAccount().getFullName()))
+			.andExpect(jsonPath("$.paymentReference").value(reference));
 	}
 
 	@Test
