@@ -25,6 +25,14 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		""", nativeQuery = true)
 	Optional<UUID> findCurrentMembership(@Param("memberId") UUID memberId, @Param("at") Instant at);
 
+	@Query(value = """
+		select exists (select 1 from membership_freeze_periods freeze_period join memberships membership on membership.id = freeze_period.membership_id
+		where membership.member_account_id = :memberId and freeze_period.status = 'ACTIVE'
+		and freeze_period.scheduled_start_date <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
+		and freeze_period.scheduled_end_date > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date)
+		""", nativeQuery = true)
+	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
+
 	Optional<CenterVisit> findByCheckedInByAccountIdAndIdempotencyKey(UUID checkedInByAccountId,
 		String idempotencyKey);
 
@@ -46,6 +54,15 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		""", nativeQuery = true)
 	int checkoutOpenForMembershipTermination(@Param("memberId") UUID memberId,
 		@Param("actorId") UUID actorId, @Param("at") Instant at);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+		update center_visits set checked_out_at = :at, checked_out_by_account_id = coalesce(:actorId, checked_in_by_account_id),
+			checkout_source = 'MEMBERSHIP_FREEZE'
+		where member_account_id = :memberId and checked_out_at is null
+		""", nativeQuery = true)
+	int checkoutOpenForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId,
+		@Param("at") Instant at);
 
 	@Query(value = """
 		select id from center_visits

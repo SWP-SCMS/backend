@@ -78,6 +78,7 @@ public class BookingService {
 
 	private BookingResponse book(UUID actorId, UUID memberId, UUID sessionId) {
 		ensureActiveMember(memberId);
+		if (bookings.hasActiveMembershipFreeze(memberId)) throw BookingException.membershipFrozen();
 		Instant now = clock.instant();
 		lifecycle.catchUp(now);
 		ClassSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(BookingException::sessionNotFound);

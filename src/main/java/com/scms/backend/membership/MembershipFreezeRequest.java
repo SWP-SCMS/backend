@@ -56,6 +56,18 @@ public class MembershipFreezeRequest {
 		if (status != MembershipFreezeRequestStatus.APPROVED_PENDING_PAYMENT) throw new IllegalStateException("Freeze request is not approved for payment");
 		status = MembershipFreezeRequestStatus.SCHEDULED;
 	}
+	void activate() {
+		if (status != MembershipFreezeRequestStatus.SCHEDULED) throw new IllegalStateException("Freeze request is not scheduled");
+		status = MembershipFreezeRequestStatus.ACTIVE;
+	}
+	void complete() {
+		if (status != MembershipFreezeRequestStatus.ACTIVE) throw new IllegalStateException("Freeze request is not active");
+		status = MembershipFreezeRequestStatus.COMPLETED;
+	}
+	void obsolete() {
+		if (status != MembershipFreezeRequestStatus.SCHEDULED && status != MembershipFreezeRequestStatus.APPROVED_PENDING_PAYMENT) throw new IllegalStateException("Freeze request cannot become obsolete");
+		status = MembershipFreezeRequestStatus.OBSOLETE;
+	}
 	public UUID getId() { return id; } public UUID getMembershipId() { return membershipId; }
 	public UUID getMemberAccountId() { return memberAccountId; } public UUID getRequesterAccountId() { return requesterAccountId; }
 	public UUID getApproverAccountId() { return approverAccountId; } public LocalDate getStartDate() { return startDate; }

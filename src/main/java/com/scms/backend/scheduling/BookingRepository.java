@@ -87,6 +87,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 	boolean existsBookedOverlap(@Param("memberId") UUID memberId, @Param("startTime") Instant startTime,
 		@Param("endTime") Instant endTime);
 
+	@Query(value = """
+		select exists (
+			select 1 from membership_freeze_periods freeze_period
+			join memberships membership on membership.id = freeze_period.membership_id
+			where membership.member_account_id = :memberId and freeze_period.status = 'ACTIVE'
+			  and freeze_period.scheduled_start_date <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
+			  and freeze_period.scheduled_end_date > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
+		)
+		""", nativeQuery = true)
+	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
+
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """
 		update bookings booking
@@ -105,6 +116,18 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	int cancelFutureBookingsForMembershipTermination(@Param("memberId") UUID memberId,
 		@Param("actorId") UUID actorId, @Param("now") Instant now);
+
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+		update bookings booking set status = 'CANCELLED', cancelled_by_account_id = :actorId,
+			cancellation_source = 'MEMBERSHIP_FREEZE', cancelled_at = :now, updated_at = :now,
+			version = version + 1
+		where booking.member_account_id = :memberId and booking.status = 'BOOKED'
+		and exists (select 1 from class_sessions session where session.id = booking.class_session_id
+			and session.start_time >= :startAt and session.start_time < :endAt and session.start_time > :now)
+		""", nativeQuery = true)
+	int cancelFutureBookingsForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId,
+		@Param("startAt") Instant startAt, @Param("endAt") Instant endAt, @Param("now") Instant now);
 
 	interface BookedMemberView {
 		UUID getMemberId();
