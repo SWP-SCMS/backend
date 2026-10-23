@@ -28,7 +28,7 @@ class RecurringScheduleErrorContractTests {
 	void conflictDoesNotExposeFieldErrors() throws Exception {
 		mockMvc.perform(get("/schedule-conflict"))
 			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("SESSION_CAPACITY_EXCEEDS_ROOM"))
+			.andExpect(jsonPath("$.code").value("ROOM_CAPACITY_BELOW_SESSION_CAPACITY"))
 			.andExpect(jsonPath("$.errors").doesNotExist());
 	}
 

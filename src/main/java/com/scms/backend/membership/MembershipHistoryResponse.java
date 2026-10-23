@@ -15,7 +15,7 @@ public record MembershipHistoryResponse(
 	BigInteger priceAmount,
 	String currencyCode,
 	int durationDays,
-	@Schema(allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED" }) String status,
+	@Schema(allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED", "CANCELLED" }) String status,
 	@Schema(nullable = true) Instant startsAt,
 	@Schema(nullable = true) Instant endsAt,
 	List<String> benefitCodes,

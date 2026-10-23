@@ -48,6 +48,10 @@ class PaymentOpenApiDocumentationTests {
 		assertParameter(report, "from", "2026-10-07T17:00:00Z");
 		assertParameter(report, "to", "2026-10-08T17:00:00Z");
 		assertThat(report.path("security").isMissingNode()).isTrue();
+		JsonNode revenueProperties = document.at("/components/schemas/RevenueReportResponse/properties");
+		assertThat(revenueProperties.has("paidRevenue")).isTrue();
+		assertThat(revenueProperties.has("completedRefundAmount")).isTrue();
+		assertThat(revenueProperties.has("netRevenue")).isTrue();
 		assertThat(document.at("/paths/~1payments~1sepay~1webhook/post/security")).isEmpty();
 		assertThat(document.at("/paths/~1manager~1reports~1membership-revenue/get/responses/200/content")
 			.isEmpty()).isFalse();
@@ -85,6 +89,8 @@ class PaymentOpenApiDocumentationTests {
 			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
 				.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt",
 					"benefitCodes", "benefits");
+			assertThat(schema.at("/properties/status/enum").toString())
+				.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\",\"CANCELLED\"]");
 		}
 	}
 

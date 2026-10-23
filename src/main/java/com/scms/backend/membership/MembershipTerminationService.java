@@ -34,17 +34,20 @@ class MembershipTerminationService {
 	private final MembershipTerminationRequestRepository requests;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
+	private final MembershipTerminationExecutionService execution;
 	private final Clock clock;
 
 	MembershipTerminationService(AccountRepository accounts, MemberProfileRepository profiles,
 			MembershipRepository memberships, MembershipTerminationRequestRepository requests,
-			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
+			AuditEventRepository audits, NotificationWriter notifications,
+			MembershipTerminationExecutionService execution, Clock clock) {
 		this.accounts = accounts;
 		this.profiles = profiles;
 		this.memberships = memberships;
 		this.requests = requests;
 		this.audits = audits;
 		this.notifications = notifications;
+		this.execution = execution;
 		this.clock = clock;
 	}
 
@@ -82,15 +85,14 @@ class MembershipTerminationService {
 		request.withdraw(Instant.now(clock));
 		requests.saveAndFlush(request);
 		audit(memberId, "WITHDRAWN", request);
-		notifications.write("MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId, memberId,
-			"MEMBERSHIP_TERMINATION_WITHDRAWN", "MEMBERSHIP_TERMINATION_REQUEST", requestId, Map.of());
-		notifyManagers(request, "MEMBERSHIP_TERMINATION_WITHDRAWN");
+		notifyRole(AccountRole.MANAGER, memberId, "MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId,
+			"MEMBERSHIP_TERMINATION_WITHDRAWN", requestId, Map.of());
 	}
 
 	@Transactional(readOnly = true)
 	MembershipTerminationRequestPageResponse listForManager(UUID managerId, int page, int size) {
 		ensureRole(managerId, AccountRole.MANAGER);
-		return page(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
+		return managerPage(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
 	}
 
 	@Transactional
@@ -107,7 +109,10 @@ class MembershipTerminationService {
 		audit(managerId, "APPROVED", request);
 		notifications.write("MEMBERSHIP_TERMINATION_APPROVED:" + requestId, request.getMemberAccountId(),
 			"MEMBERSHIP_TERMINATION_APPROVED", "MEMBERSHIP_TERMINATION_REQUEST", requestId, Map.of("mode", request.getMode().name()));
-		return response(request);
+		if (request.getMode() == MembershipTerminationMode.IMMEDIATE) {
+			execution.executeImmediate(requestId, managerId, now);
+		}
+		return MembershipTerminationRequestResponse.from(request);
 	}
 
 	@Transactional
@@ -121,7 +126,7 @@ class MembershipTerminationService {
 		audit(managerId, "REJECTED", request);
 		notifications.write("MEMBERSHIP_TERMINATION_REJECTED:" + requestId, request.getMemberAccountId(),
 			"MEMBERSHIP_TERMINATION_REJECTED", "MEMBERSHIP_TERMINATION_REQUEST", requestId, Map.of());
-		return response(request);
+		return MembershipTerminationRequestResponse.from(request);
 	}
 
 	@Transactional
@@ -132,8 +137,8 @@ class MembershipTerminationService {
 		return approve(managerId, response.id(), new MembershipTerminationDecisionRequest(response.version()));
 	}
 
-	private MembershipTerminationRequestResponse create(UUID requesterId, UUID memberId,
-			MembershipTerminationCreateRequest input, boolean notifyPendingQueue) {
+	private MembershipTerminationRequestResponse create(UUID requesterId, UUID memberId, MembershipTerminationCreateRequest input,
+			boolean requiresManagerReview) {
 		validate(input);
 		accounts.findByIdForUpdate(memberId).filter(account -> account.getRole() == AccountRole.MEMBER
 			&& account.getStatus() == AccountStatus.ACTIVE).orElseThrow(MembershipTerminationException::notActive);
@@ -144,10 +149,20 @@ class MembershipTerminationService {
 			memberId, requesterId, input.mode(), input.reason().trim());
 		requests.saveAndFlush(request);
 		audit(requesterId, "REQUESTED", request);
-		notifications.write("MEMBERSHIP_TERMINATION_REQUESTED:" + request.getId(), memberId,
+		if (!requesterId.equals(memberId)) notifications.write("MEMBERSHIP_TERMINATION_REQUESTED:" + request.getId(), memberId,
 			"MEMBERSHIP_TERMINATION_REQUESTED", "MEMBERSHIP_TERMINATION_REQUEST", request.getId(), Map.of("mode", input.mode().name()));
-		if (notifyPendingQueue) notifyManagers(request, "MEMBERSHIP_TERMINATION_REQUESTED");
-		return response(request);
+		if (requiresManagerReview) notifyRole(AccountRole.MANAGER, requesterId,
+			"MEMBERSHIP_TERMINATION_REVIEW_REQUIRED:" + request.getId(), "MEMBERSHIP_TERMINATION_REVIEW_REQUIRED",
+			request.getId(), Map.of("mode", input.mode().name()));
+		return MembershipTerminationRequestResponse.from(request);
+	}
+
+	private void notifyRole(AccountRole role, UUID actorId, String eventKeyPrefix, String type, UUID requestId,
+			Map<String, Object> payload) {
+		for (Account recipient : accounts.findAllByRoleAndStatusOrderByIdAsc(role, AccountStatus.ACTIVE)) {
+			if (!recipient.getId().equals(actorId)) notifications.write(eventKeyPrefix + ":" + recipient.getId(), recipient.getId(),
+				type, "MEMBERSHIP_TERMINATION_REQUEST", requestId, payload);
+		}
 	}
 
 	private MembershipTerminationRequest lockRequest(UUID id) { return requests.findByIdForUpdate(id).orElseThrow(MembershipTerminationException::notFound); }
@@ -170,27 +185,18 @@ class MembershipTerminationService {
 			Map.of("membershipId", request.getMembershipId().toString(), "memberAccountId", request.getMemberAccountId().toString(), "status", request.getStatus().name())));
 	}
 	private PageRequest pageable(int page, int size) { return PageRequest.of(page, size, Sort.by("createdAt").descending().and(Sort.by("id").descending())); }
-	private MembershipTerminationRequestResponse response(MembershipTerminationRequest request) {
-		return MembershipTerminationRequestResponse.from(request,
-			accounts.findMemberIdentity(request.getMemberAccountId()).orElse(null));
-	}
-	private void notifyManagers(MembershipTerminationRequest request, String event) {
-		var member = accounts.findMemberIdentity(request.getMemberAccountId()).orElse(null);
-		Map<String, Object> payload = new java.util.LinkedHashMap<>();
-		payload.put("requestId", request.getId().toString());
-		payload.put("memberAccountId", request.getMemberAccountId().toString());
-		if (member != null) {
-			payload.put("memberId", member.getMemberCode());
-			payload.put("memberFullName", member.getFullName());
-		}
-		payload.put("requestType", "TERMINATION");
-		payload.put("status", request.getStatus().name());
-		for (Account manager : accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE)) {
-			notifications.write(event + ":" + request.getId() + ":" + manager.getId(), manager.getId(),
-				event, "MEMBERSHIP_TERMINATION_REQUEST", request.getId(), payload);
-		}
-	}
-	private MembershipTerminationRequestPageResponse page(org.springframework.data.domain.Page<MembershipTerminationRequest> page) {
-		return MembershipTerminationRequestPageResponse.from(page, this::response);
+	private MembershipTerminationRequestPageResponse page(org.springframework.data.domain.Page<MembershipTerminationRequest> page) { return MembershipTerminationRequestPageResponse.from(page); }
+	private MembershipTerminationRequestPageResponse managerPage(org.springframework.data.domain.Page<MembershipTerminationRequest> page) {
+		List<UUID> memberIds = page.getContent().stream().map(MembershipTerminationRequest::getMemberAccountId).distinct().toList();
+		Map<UUID, Account> memberAccounts = accounts.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(Account::getId, account -> account));
+		Map<UUID, MemberProfile> memberProfiles = profiles.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(MemberProfile::getAccountId, profile -> profile));
+		return MembershipTerminationRequestPageResponse.fromResponses(page.map(request -> {
+			Account account = memberAccounts.get(request.getMemberAccountId());
+			MemberProfile profile = memberProfiles.get(request.getMemberAccountId());
+			return MembershipTerminationRequestResponse.from(request, profile == null ? null : profile.getMemberCode(),
+				account == null ? null : account.getFullName());
+		}));
 	}
 }

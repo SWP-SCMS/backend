@@ -80,11 +80,13 @@ class PaymentFulfillmentService {
 		try {
 			row = db.queryForMap("""
 				select ?::uuid payment_id,o.id order_id,'CASH' payment_method,'PENDING' payment_status,
+					o.order_number,a.full_name member_name,m.member_code,null::text provider_reference,
 					o.price_amount_snapshot payment_amount,o.currency_code_snapshot payment_currency,
 					o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot
-				from membership_orders o where o.id=? for update
+				from membership_orders o join accounts a on a.id=o.member_account_id
+				join member_profiles m on m.account_id=a.id where o.id=? for update of o
 				""", paymentId, orderId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Membership Order was not found");
@@ -160,7 +162,9 @@ class PaymentFulfillmentService {
 		notifications.write("PAYMENT_PAID:" + paymentId, memberId, "PAYMENT_PAID", "PAYMENT", paymentId,
 			Map.of("orderId", uuid(row, "order_id").toString(), "status", "PAID"));
 		return new PaymentResultResponse(paymentId, uuid(row, "order_id"), "PAID",
-			string(row, "payment_method"), membershipId, receiptId, now, mode);
+			string(row, "payment_method"), membershipId, receiptId, now, mode,
+			string(row, "order_number"), string(row, "member_code"), string(row, "member_name"),
+			string(row, "provider_reference"));
 	}
 
 	Map<String, Object> paymentForUpdate(UUID paymentId) {
@@ -181,10 +185,13 @@ class PaymentFulfillmentService {
 					p.amount payment_amount,p.currency_code payment_currency,p.bank_transfer_content,
 					p.bank_account_number_snapshot,p.provider,p.provider_reference,
 					p.provider_transaction_id,p.processed_by_account_id,p.paid_at,
-					o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
+					o.status order_status,o.fulfillment_mode,o.order_number,o.member_account_id,
+					a.full_name member_name,m.member_code,o.offer_id,o.plan_code_snapshot,
 					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
 					o.duration_days_snapshot,o.expires_at
-				from payments p join membership_orders o on o.id=p.order_id where p.id=?
+				from payments p join membership_orders o on o.id=p.order_id
+				join accounts a on a.id=o.member_account_id
+				left join member_profiles m on m.account_id=a.id where p.id=?
 				""";
 			return db.queryForMap(sql, paymentId);
 		} catch (EmptyResultDataAccessException exception) {
@@ -206,7 +213,8 @@ class PaymentFulfillmentService {
 		}
 		return new PaymentResultResponse(uuid(row, "payment_id"), orderId, "PAID", string(row, "payment_method"),
 			uuid(fulfillment, "membership_id"), uuid(fulfillment, "receipt_id"), instant(row, "paid_at"),
-			fulfillmentMode(fulfillment));
+			fulfillmentMode(fulfillment), string(row, "order_number"), string(row, "member_code"),
+			string(row, "member_name"), string(row, "provider_reference"));
 	}
 
 	static UUID uuid(Map<String, Object> row, String key) { return (UUID) row.get(key); }

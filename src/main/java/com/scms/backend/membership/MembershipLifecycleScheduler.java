@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,17 +15,33 @@ class MembershipLifecycleScheduler {
 
 	private final MembershipRepository memberships;
 	private final MembershipLifecycleService lifecycle;
+	private final MembershipTerminationExecutionService terminationExecution;
+	private final MembershipFreezeExecutionService freezeExecution;
 	private final Clock clock;
 
-	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, Clock clock) {
+	@Autowired
+	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
+		MembershipTerminationExecutionService terminationExecution, MembershipFreezeExecutionService freezeExecution, Clock clock) {
 		this.memberships = memberships;
 		this.lifecycle = lifecycle;
+		this.terminationExecution = terminationExecution;
+		this.freezeExecution = freezeExecution;
 		this.clock = clock;
+	}
+
+	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
+		MembershipTerminationExecutionService terminationExecution, Clock clock) {
+		this(memberships, lifecycle, terminationExecution, null, clock);
+	}
+
+	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, Clock clock) {
+		this(memberships, lifecycle, null, null, clock);
 	}
 
 	@Scheduled(fixedDelayString = "${scms.membership-lifecycle-delay-ms:30000}", initialDelayString = "${scms.membership-lifecycle-initial-delay-ms:1000}")
 	void reconcile() {
 		var now = clock.instant();
+		if (freezeExecution != null) freezeExecution.reconcileDue(now);
 		UUID afterMemberId = null;
 		while (true) {
 			var dueMembers = memberships.findDueMemberAccountIds(now, afterMemberId);
@@ -41,6 +58,7 @@ class MembershipLifecycleScheduler {
 			afterMemberId = nextAfterMemberId;
 			if (dueMembers.size() < 100) break;
 		}
+		if (terminationExecution != null) terminationExecution.reconcileDue(now);
 		lifecycle.reconcileExpiredAssignments(now);
 	}
 }

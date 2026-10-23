@@ -37,6 +37,10 @@ public class CenterVisitException extends RuntimeException {
 			"An active membership with the CENTER_ACCESS benefit is required for center check-in.");
 	}
 
+	static CenterVisitException membershipFrozen() {
+		return new CenterVisitException("MEMBERSHIP_FROZEN", "Center check-in is unavailable while the Membership is frozen.");
+	}
+
 	static CenterVisitException invalidIdempotencyKey() {
 		return new CenterVisitException(HttpStatus.BAD_REQUEST, "INVALID_IDEMPOTENCY_KEY",
 			"Idempotency-Key must be nonblank and at most 100 characters.");

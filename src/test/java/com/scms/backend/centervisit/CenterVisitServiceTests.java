@@ -334,6 +334,16 @@ class CenterVisitServiceTests {
 		verify(visits, never()).saveAndFlush(any());
 	}
 
+	@Test
+	void activeFreezeBlocksCheckInBeforeMembershipLookup() {
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
+		when(visits.hasActiveMembershipFreeze(memberId)).thenReturn(true);
+
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), null), "MEMBERSHIP_FROZEN");
+		verify(visits, never()).findCurrentMembership(any(), any());
+	}
+
 	private void stubEligibleMember(UUID membershipId) {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));

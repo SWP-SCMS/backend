@@ -19,4 +19,9 @@ public interface MembershipTerminationRequestRepository extends JpaRepository<Me
 	Page<MembershipTerminationRequest> findAllByOrderByCreatedAtDesc(Pageable pageable);
 	boolean existsByMembershipIdAndStatusIn(UUID membershipId,
 		java.util.Collection<MembershipTerminationRequestStatus> statuses);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select request from MembershipTerminationRequest request where request.status = com.scms.backend.membership.MembershipTerminationRequestStatus.APPROVED "
+		+ "and request.effectiveAt <= :now order by request.effectiveAt, request.id")
+	java.util.List<MembershipTerminationRequest> findApprovedDueForUpdate(@Param("now") java.time.Instant now);
 }

@@ -64,4 +64,32 @@ class MembershipLifecycleSchedulerTests {
 
 		org.mockito.Mockito.verify(lifecycle).reconcile(nextPageMember, now);
 	}
+
+	@Test
+	void reconcilesApprovedTerminationRequestsAfterMembershipLifecycle() {
+		Instant now = Instant.parse("2026-10-21T03:00:00Z");
+		MembershipRepository memberships = mock(MembershipRepository.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		MembershipTerminationExecutionService termination = mock(MembershipTerminationExecutionService.class);
+		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of());
+
+		new MembershipLifecycleScheduler(memberships, lifecycle, termination, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
+
+		InOrder order = inOrder(termination, lifecycle);
+		order.verify(termination).reconcileDue(now);
+		order.verify(lifecycle).reconcileExpiredAssignments(now);
+	}
+
+	@Test
+	void activatesDueMembershipFreezesAfterMembershipLifecycle() {
+		Instant now = Instant.parse("2026-10-21T17:00:00Z");
+		MembershipRepository memberships = mock(MembershipRepository.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		MembershipFreezeExecutionService freeze = mock(MembershipFreezeExecutionService.class);
+		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of());
+
+		new MembershipLifecycleScheduler(memberships, lifecycle, null, freeze, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
+
+		org.mockito.Mockito.verify(freeze).reconcileDue(now);
+	}
 }

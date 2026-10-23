@@ -40,6 +40,19 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query(value = """
+		update coach_assignments
+		set status = 'ENDED',
+			ends_at = greatest(starts_at, :now),
+			end_reason = 'Membership terminated',
+			updated_at = :now,
+			version = version + 1
+		where member_account_id = :memberId and status = 'ACTIVE'
+		""", nativeQuery = true)
+	int endActiveAssignmentsForMembershipTermination(@Param("memberId") UUID memberId,
+		@Param("now") Instant now);
+
 	@Query(value = """
 		select exists (
 			select 1
@@ -51,10 +64,24 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 			  and benefit.benefit_code = :benefitCode
 			  and membership.starts_at <= :at
 			  and membership.ends_at > :at
+			  and not exists (
+				select 1 from membership_freeze_periods freeze_period
+				where freeze_period.membership_id = membership.id and freeze_period.status = 'ACTIVE'
+				  and freeze_period.scheduled_start_date <= (:at at time zone 'Asia/Ho_Chi_Minh')::date
+				  and freeze_period.scheduled_end_date > (:at at time zone 'Asia/Ho_Chi_Minh')::date
+			  )
 		)
 		""", nativeQuery = true)
 	boolean hasActiveMembershipBenefit(@Param("memberId") UUID memberId,
 			@Param("benefitCode") String benefitCode, @Param("at") Instant at);
+
+	@Query(value = """
+		select exists (select 1 from membership_freeze_periods freeze_period join memberships membership on membership.id = freeze_period.membership_id
+		where membership.member_account_id = :memberId and freeze_period.status = 'ACTIVE'
+		and freeze_period.scheduled_start_date <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
+		and freeze_period.scheduled_end_date > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date)
+		""", nativeQuery = true)
+	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
 
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """

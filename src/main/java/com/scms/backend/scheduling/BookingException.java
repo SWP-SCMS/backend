@@ -32,6 +32,10 @@ public class BookingException extends RuntimeException {
 		return new BookingException(HttpStatus.CONFLICT, "MEMBER_NOT_ACTIVE", "Booking requires an active Member.");
 	}
 
+	static BookingException membershipFrozen() {
+		return new BookingException(HttpStatus.CONFLICT, "MEMBERSHIP_FROZEN", "Booking is unavailable while the Membership is frozen.");
+	}
+
 	static BookingException actorNotActiveReceptionist() {
 		return new BookingException(HttpStatus.FORBIDDEN, "BOOKING_ACTOR_NOT_ACTIVE_RECEPTIONIST",
 			"This action requires an active Receptionist account.");

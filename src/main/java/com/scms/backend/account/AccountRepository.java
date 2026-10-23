@@ -70,6 +70,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 	@Query("select a from Account a where a.role = com.scms.backend.account.AccountRole.MANAGER and a.status = com.scms.backend.account.AccountStatus.ACTIVE order by a.id")
 	List<Account> findActiveManagersForUpdate();
 
+	List<Account> findAllByRoleAndStatusOrderByIdAsc(AccountRole role, AccountStatus status);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from Account a where a.id = :id")
 	Optional<Account> findByIdForUpdate(UUID id);

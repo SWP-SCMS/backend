@@ -40,6 +40,10 @@ public class CoachAssignmentException extends RuntimeException {
 				"Coach assignment requires an active Membership with the PERSONAL_COACHING Benefit.");
 	}
 
+	public static CoachAssignmentException membershipFrozen() {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "MEMBERSHIP_FROZEN", "Coach assignment is unavailable while the Membership is frozen.");
+	}
+
 	public static CoachAssignmentException alreadyAssignedToThisCoach() {
 		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ALREADY_ASSIGNED", "The Member is already actively assigned to this Coach.");
 	}

@@ -94,6 +94,7 @@ class WaitlistService {
 
 	UUID validateEligibility(UUID memberId,ClassSession session){
 		ensureActiveMember(memberId);
+		if(bookings.hasActiveMembershipFreeze(memberId)) throw BookingException.membershipFrozen();
 		if(bookings.existsByMemberAccountIdAndClassSessionIdAndStatus(memberId,session.getId(),BookingStatus.BOOKED)) throw BookingException.duplicate();
 		if(bookings.existsBookedOverlap(memberId,session.getStartTime(),session.getEndTime())) throw BookingException.timeConflict();
 		if(session.getSportClass().getClassType()==SportClassType.PT_1_1 && coachAssignments
@@ -110,7 +111,7 @@ class WaitlistService {
 		}
 		return membershipId;
 	}
-	private Account ensureActiveMember(UUID id){ Account account=accounts.findById(id).orElseThrow(BookingException::memberNotActive); if(account.getRole()!=AccountRole.MEMBER||account.getStatus()!=AccountStatus.ACTIVE) throw BookingException.memberNotActive(); return account; }
+	private Account ensureActiveMember(UUID id){ Account account=accounts.findByIdForUpdate(id).or(()->accounts.findById(id)).orElseThrow(BookingException::memberNotActive); if(account.getRole()!=AccountRole.MEMBER||account.getStatus()!=AccountStatus.ACTIVE) throw BookingException.memberNotActive(); return account; }
 	private void ensureRole(UUID id,AccountRole role){ if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
 	private WaitlistResponse response(SessionWaitlist entry){
 		long ahead=entry.getStatus()==WaitlistStatus.WAITING?waitlists.countAhead(entry.getSessionId(),entry.getCreatedAt(),entry.getId()):0;

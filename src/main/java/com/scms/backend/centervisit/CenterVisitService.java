@@ -61,6 +61,7 @@ class CenterVisitService {
 		if (lockedMember.getStatus() != AccountStatus.ACTIVE) {
 			throw CenterVisitException.memberNotActive();
 		}
+		if (visits.hasActiveMembershipFreeze(member.accountId())) throw CenterVisitException.membershipFrozen();
 
 		Instant now = clock.instant();
 		UUID membershipId = visits.findCurrentMembership(member.accountId(), now)

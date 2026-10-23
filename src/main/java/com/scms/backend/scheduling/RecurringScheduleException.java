@@ -85,7 +85,6 @@ public class RecurringScheduleException extends RuntimeException {
 			"The shared Room does not have enough capacity for this Session.", List.of(), List.of(),
 			roomCapacity, occupiedCapacity, requestedCapacity);
 	}
-
 	static RecurringScheduleException ptCapacity() {
 		return new RecurringScheduleException(HttpStatus.BAD_REQUEST, "PT_CAPACITY_MUST_BE_ONE", "capacity",
 			"A PT_1_1 Session must have capacity equal to one.");

@@ -111,6 +111,11 @@ public class Membership {
 		status = MembershipStatus.TERMINATED;
 	}
 
+	void cancelReserved() {
+		if (status != MembershipStatus.RESERVED) throw new IllegalStateException("Only RESERVED Membership can be cancelled");
+		status = MembershipStatus.CANCELLED;
+	}
+
 	void extendTo(Instant newEnd) {
 		if (status != MembershipStatus.ACTIVE || !Objects.requireNonNull(newEnd).isAfter(endsAt)) {
 			throw new IllegalStateException("ACTIVE Membership end must be extended");
@@ -120,6 +125,9 @@ public class Membership {
 
 	public MembershipStatus getStatus() { return status; }
 	public UUID getId() { return id; }
+	public UUID getMemberAccountId() { return memberAccountId; }
 	public Instant getStartsAt() { return startsAt; }
 	public Instant getEndsAt() { return endsAt; }
+	public BigInteger getPriceAmountSnapshot() { return priceAmountSnapshot; }
+	public int getDurationDaysSnapshot() { return durationDaysSnapshot; }
 }

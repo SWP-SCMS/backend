@@ -111,6 +111,24 @@ class GeneratedOpenApiTests {
 		"POST /manager/membership-termination-requests/{requestId}/approve",
 		"POST /manager/membership-termination-requests/{requestId}/reject",
 		"POST /manager/members/{memberAccountId}/membership-termination-requests",
+		"GET /members/me/membership-freeze-requests",
+		"POST /members/me/membership-freeze-requests",
+		"DELETE /members/me/membership-freeze-requests/{requestId}",
+		"POST /members/me/membership-freeze-requests/{requestId}/end-early",
+		"GET /reception/members/{memberCode}/membership-freeze-requests",
+		"POST /reception/members/{memberCode}/membership-freeze-requests",
+		"POST /reception/membership-freeze-requests/{requestId}/end-early",
+		"GET /manager/membership-freeze-requests",
+		"POST /manager/membership-freeze-requests/{requestId}/approve",
+		"POST /manager/membership-freeze-requests/{requestId}/reject",
+		"POST /reception/membership-freeze-requests/{requestId}/cash-payment",
+		"GET /reception/refund-requests",
+		"POST /reception/members/{memberCode}/refund-requests",
+		"POST /reception/refund-requests/{requestId}/cash-disbursement",
+		"GET /manager/refund-requests",
+		"POST /manager/refund-requests/{requestId}/first-approval",
+		"POST /manager/refund-requests/{requestId}/final-approval",
+		"POST /manager/refund-requests/{requestId}/reject",
 		"POST /members/me/membership-orders",
 		"GET /members/me/membership-orders/pending",
 		"POST /reception/members/{memberId}/membership-orders",
@@ -246,6 +264,7 @@ class GeneratedOpenApiTests {
 		"DELETE /staff/me/email-change",
 		"DELETE /accounts/me/email-change",
 		"DELETE /members/me/membership-termination-requests/{requestId}",
+		"DELETE /members/me/membership-freeze-requests/{requestId}",
 		"POST /manager/staff-accounts/{accountId}/reset-password",
 		"POST /reception/members/{memberId}/reset-password",
 		"GET /members/me/membership-orders/pending",
@@ -464,13 +483,14 @@ class GeneratedOpenApiTests {
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/status/enum").toString())
-			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\"]");
+			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\",\"CANCELLED\"]");
 		assertThat(schema.at("/properties/benefitCodes/type").asText()).isEqualTo("array");
 		assertThat(schema.at("/properties/benefits/items/$ref").asText())
 			.isEqualTo("#/components/schemas/MembershipBenefitResponse");
 		JsonNode memberHistory = document.at("/components/schemas/MembershipHistoryResponse/properties");
 		assertThat(memberHistory.properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.contains("benefitCodes", "benefits");
+		assertThat(memberHistory.at("/status/enum").toString()).contains("CANCELLED");
 	}
 
 	@Test
@@ -549,6 +569,21 @@ class GeneratedOpenApiTests {
 			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
 		assertThat(document.at("/components/schemas/PaymentResultResponse/required").toString())
 			.contains("fulfillmentMode");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("orderNumber", "memberCode", "memberName", "paymentReference");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("orderNumber", "paymentReference");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("memberCode", "paymentReference");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
@@ -587,6 +622,16 @@ class GeneratedOpenApiTests {
 			.at("/requestBody/required").asBoolean()).isTrue();
 		assertThat(document.path("paths").path("/manager/membership-plans/{planCode}").has("delete"))
 			.isFalse();
+	}
+
+	@Test
+	void generatedMembershipRequestContractsIncludeManagerMemberIdentity() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String schemaName : List.of("MembershipTerminationRequestResponse", "MembershipFreezeRequestResponse")) {
+			JsonNode properties = document.at("/components/schemas/" + schemaName + "/properties");
+			assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.contains("memberId", "memberFullName");
+		}
 	}
 
 	@Test

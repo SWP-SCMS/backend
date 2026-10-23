@@ -167,7 +167,11 @@ class PaymentService {
 			request.reason().trim(),Map.of("status","PENDING"),Map.of("status","FAILED","evidence",request.evidence().trim())));
 		return new PaymentResultResponse(paymentId,(UUID)payment.get("order_id"),"FAILED",
 			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null,
-			PaymentFulfillmentService.fulfillmentMode(payment));
+			PaymentFulfillmentService.fulfillmentMode(payment),
+			PaymentFulfillmentService.string(payment,"order_number"),
+			PaymentFulfillmentService.string(payment,"member_code"),
+			PaymentFulfillmentService.string(payment,"member_name"),
+			PaymentFulfillmentService.string(payment,"provider_reference"));
 	}
 
 	@Transactional
@@ -241,10 +245,12 @@ class PaymentService {
 		contentArgs.add(Math.multiplyFull(page, size));
 		String sql = """
 			select p.id payment_id,p.order_id,o.order_number,o.member_account_id,a.full_name member_name,
-				p.amount,p.currency_code,p.bank_transfer_content transfer_content,p.created_at,o.expires_at
+				m.member_code member_code,p.provider_reference payment_reference,p.amount,p.currency_code,
+				p.bank_transfer_content transfer_content,p.created_at,o.expires_at
 			from payments p
 			join membership_orders o on o.id=p.order_id
 			join accounts a on a.id=o.member_account_id
+			left join member_profiles m on m.account_id=a.id
 			""" + where + " order by p.created_at desc, p.id desc limit ? offset ?";
 		List<ReconciliationQueueItem> content = db.query(sql, (rs, rowNum) -> {
 			Timestamp expiresAt = rs.getTimestamp("expires_at");
@@ -253,7 +259,8 @@ class PaymentService {
 				rs.getObject("member_account_id", UUID.class), rs.getString("member_name"),
 				rs.getBigDecimal("amount").toBigIntegerExact(), rs.getString("currency_code").trim(),
 				rs.getString("transfer_content"), rs.getTimestamp("created_at").toInstant(),
-				expiresAt == null ? null : expiresAt.toInstant());
+				expiresAt == null ? null : expiresAt.toInstant(), rs.getString("member_code"),
+				rs.getString("payment_reference"));
 		}, contentArgs.toArray());
 		int totalPages = totalElements == 0 ? 0 : (int)Math.min(Integer.MAX_VALUE,
 			Math.ceilDiv(totalElements, (long)size));
@@ -264,10 +271,12 @@ class PaymentService {
 	List<ReceiptResponse> receipts(UUID actor) {
 		ensure(actor,AccountRole.MEMBER);
 		return db.query("""
-			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,a.full_name member_name,m.member_code from receipts r
+			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,o.order_number,a.full_name member_name,
+				m.member_code,p.provider_reference payment_reference from receipts r
 			join membership_orders o on o.id=r.order_id
 			join accounts a on a.id=r.member_account_id
 			join member_profiles m on m.account_id=a.id
+			join payments p on p.id=r.payment_id
 			where r.member_account_id=? order by r.issued_at desc,r.id desc
 			""",
 			(rs,row)->receipt(rs),actor);
@@ -294,7 +303,8 @@ class PaymentService {
 		Object[] args = account.getRole() == AccountRole.RECEPTIONIST
 			? new Object[] { memberId, actor } : new Object[] { memberId };
 		return db.query("""
-			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,a.full_name member_name,m.member_code from receipts r
+			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,o.order_number,a.full_name member_name,
+				m.member_code,p.provider_reference payment_reference from receipts r
 			join membership_orders o on o.id=r.order_id
 			join accounts a on a.id=r.member_account_id
 			join member_profiles m on m.account_id=a.id
@@ -308,7 +318,8 @@ class PaymentService {
 		Account account=active(actor);
 		try {
 			Map<String,Object> row=db.queryForMap("""
-				select r.*,o.plan_code_snapshot,o.offer_name_snapshot,a.full_name member_name,m.member_code,p.processed_by_account_id from receipts r
+				select r.*,o.plan_code_snapshot,o.offer_name_snapshot,o.order_number,a.full_name member_name,
+				m.member_code,p.provider_reference payment_reference,p.processed_by_account_id from receipts r
 				join membership_orders o on o.id=r.order_id
 				join accounts a on a.id=r.member_account_id
 				join member_profiles m on m.account_id=a.id
@@ -331,7 +342,9 @@ class PaymentService {
 			throw PaymentException.forbidden();
 		if (!"PAID".equals(row.get("payment_status"))) return new PaymentResultResponse(paymentId,(UUID)row.get("order_id"),
 			row.get("payment_status").toString(),row.get("payment_method").toString(),null,null,null,
-			PaymentFulfillmentService.fulfillmentMode(row));
+			PaymentFulfillmentService.fulfillmentMode(row), PaymentFulfillmentService.string(row,"order_number"),
+			PaymentFulfillmentService.string(row,"member_code"), PaymentFulfillmentService.string(row,"member_name"),
+			PaymentFulfillmentService.string(row,"provider_reference"));
 		return fulfillment.result(row);
 	}
 
@@ -450,8 +463,16 @@ class PaymentService {
 			"count(*) filter(where "+pending+") pending_payments,count(*) filter(where "+failed+") failed_payments from payments p join membership_orders o on o.id=p.order_id where true"+test;
 		List<Object> args=new ArrayList<>(); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to);
 		Map<String,Object> row=db.queryForMap(sql,args.toArray());
+		String completedRefunds=range("r.status='COMPLETED'","r.completed_at",from,to);
+		String refundSql="select coalesce(sum(cn.amount),0) completed_refund_amount from credit_notes cn "+
+			"join refund_requests r on r.id=cn.refund_request_id join membership_orders o on o.id=r.order_id where "+completedRefunds+test;
+		List<Object> refundArgs=new ArrayList<>(); addRangeArgs(refundArgs,from,to);
+		Map<String,Object> refundRow=db.queryForMap(refundSql,refundArgs.toArray());
 		Map<String,Object> memberships=db.queryForMap("select count(*) filter(where m.status='ACTIVE' and m.starts_at<=current_timestamp and m.ends_at>current_timestamp) active,count(*) filter(where m.status='EXPIRED' or (m.status='ACTIVE' and m.ends_at<=current_timestamp)) expired from memberships m join membership_orders o on o.id=m.order_id where true"+test);
-		return new RevenueReportResponse(from,to,number(row,"paid_payments"),big(row,"paid_revenue"),number(row,"pending_payments"),
+		BigInteger paidRevenue=big(row,"paid_revenue");
+		BigInteger completedRefundAmount=big(refundRow,"completed_refund_amount");
+		return new RevenueReportResponse(from,to,number(row,"paid_payments"),paidRevenue,completedRefundAmount,
+			paidRevenue.subtract(completedRefundAmount),number(row,"pending_payments"),
 			number(row,"failed_payments"),number(memberships,"active"),number(memberships,"expired"),includeTestData);
 	}
 
@@ -464,6 +485,6 @@ class PaymentService {
 	private Account active(UUID id){return accounts.findById(id).filter(a->a.getStatus()==AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);}
 	private void ensure(UUID id,AccountRole role){if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
 	private void ensureAny(UUID id){if(!accounts.existsByIdAndRoleAndStatus(id,AccountRole.MANAGER,AccountStatus.ACTIVE)&&!accounts.existsByIdAndRoleAndStatus(id,AccountRole.RECEPTIONIST,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
-	private ReceiptResponse receipt(java.sql.ResultSet rs)throws java.sql.SQLException{return new ReceiptResponse(rs.getObject("id",UUID.class),rs.getString("receipt_number"),rs.getObject("payment_id",UUID.class),rs.getObject("order_id",UUID.class),rs.getString("plan_code_snapshot"),rs.getString("offer_name_snapshot"),rs.getObject("member_account_id",UUID.class),rs.getString("member_name"),rs.getString("member_code"),rs.getBigDecimal("amount_snapshot").toBigIntegerExact(),rs.getString("currency_code_snapshot").trim(),rs.getString("payment_method_snapshot"),rs.getTimestamp("issued_at").toInstant());}
-	private ReceiptResponse receipt(Map<String,Object> r){return new ReceiptResponse((UUID)r.get("id"),r.get("receipt_number").toString(),(UUID)r.get("payment_id"),(UUID)r.get("order_id"),r.get("plan_code_snapshot").toString(),r.get("offer_name_snapshot").toString(),(UUID)r.get("member_account_id"),r.get("member_name").toString(),r.get("member_code").toString(),new BigDecimal(r.get("amount_snapshot").toString()).toBigIntegerExact(),r.get("currency_code_snapshot").toString().trim(),r.get("payment_method_snapshot").toString(),((Timestamp)r.get("issued_at")).toInstant());}
+	private ReceiptResponse receipt(java.sql.ResultSet rs)throws java.sql.SQLException{return new ReceiptResponse(rs.getObject("id",UUID.class),rs.getString("receipt_number"),rs.getObject("payment_id",UUID.class),rs.getObject("order_id",UUID.class),rs.getString("plan_code_snapshot"),rs.getString("offer_name_snapshot"),rs.getObject("member_account_id",UUID.class),rs.getString("member_name"),rs.getString("member_code"),rs.getBigDecimal("amount_snapshot").toBigIntegerExact(),rs.getString("currency_code_snapshot").trim(),rs.getString("payment_method_snapshot"),rs.getTimestamp("issued_at").toInstant(),rs.getString("order_number"),rs.getString("payment_reference"));}
+	private ReceiptResponse receipt(Map<String,Object> r){return new ReceiptResponse((UUID)r.get("id"),r.get("receipt_number").toString(),(UUID)r.get("payment_id"),(UUID)r.get("order_id"),r.get("plan_code_snapshot").toString(),r.get("offer_name_snapshot").toString(),(UUID)r.get("member_account_id"),r.get("member_name").toString(),r.get("member_code").toString(),new BigDecimal(r.get("amount_snapshot").toString()).toBigIntegerExact(),r.get("currency_code_snapshot").toString().trim(),r.get("payment_method_snapshot").toString(),((Timestamp)r.get("issued_at")).toInstant(),(String)r.get("order_number"),(String)r.get("payment_reference"));}
 }

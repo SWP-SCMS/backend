@@ -11,7 +11,7 @@ public record StaffMembershipResponse(
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String planCode,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String offerName,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED,
-		allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED" }) String status,
+		allowableValues = { "RESERVED", "ACTIVE", "EXPIRED", "TERMINATED", "CANCELLED" }) String status,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) Instant startsAt,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, nullable = true) Instant endsAt,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<String> benefitCodes,

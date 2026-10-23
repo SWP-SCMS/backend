@@ -167,6 +167,18 @@ class CoachAssignmentServiceTests {
 	}
 
 	@Test
+	void assign_whenMembershipFrozen_rejectsWithoutChangingExistingAssignments() {
+		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
+		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
+		when(accounts.findById(coachId)).thenReturn(Optional.of(activeCoach));
+		when(assignments.hasActiveMembershipFreeze(memberId)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.assign(managerId, memberId, new CoachAssignmentAssignRequest(coachId, "new assignment")))
+			.isInstanceOf(CoachAssignmentException.class).extracting("code").isEqualTo("MEMBERSHIP_FROZEN");
+		verify(assignments, never()).findByMemberAccountIdAndStatusForUpdate(memberId, CoachAssignmentStatus.ACTIVE);
+	}
+
+	@Test
 	void assign_whenNoExistingAssignment_createsActiveAssignmentAndAuditsAndNotifies() {
 		when(accounts.findById(managerId)).thenReturn(Optional.of(activeManager));
 		when(accounts.findById(memberId)).thenReturn(Optional.of(activeMember));
