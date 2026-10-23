@@ -21,11 +21,14 @@ components:
   schemas:
     WaitlistResponse:
       type: object
-      required: [id, sessionId, memberId, status, source, createdAt]
+      required: [id, sessionId, memberId, memberCode, memberFullName, memberPhone, status, source, createdAt]
       properties:
         id: {type: string, format: uuid}
         sessionId: {type: string, format: uuid}
         memberId: {type: string, format: uuid}
+        memberCode: {type: string}
+        memberFullName: {type: string}
+        memberPhone: {type: string}
         status: {type: string, enum: [WAITING, PROMOTED, CANCELLED, SKIPPED, EXPIRED]}
         position: {type: [integer, 'null'], minimum: 1}
         source: {type: string, enum: [MEMBER, RECEPTIONIST]}

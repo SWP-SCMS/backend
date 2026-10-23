@@ -70,7 +70,7 @@ public class ClassSessionService {
 		validateTimes(request.startTime(), request.endTime());
 		Resources resources = validateResources(request.classId(), request.coachId(), request.roomId(),
 			request.capacity());
-		ensureAvailable(resources, request.startTime(), request.endTime());
+		ensureAvailable(resources, request.startTime(), request.endTime(), request.capacity(), null);
 		ClassSession session = newScheduled(resources, null, request.startTime(), request.endTime(),
 			request.capacity(), managerId);
 		try {
@@ -236,14 +236,7 @@ public class ClassSessionService {
 		}
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
 			session.getCapacity());
-		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, session.getStartTime(),
-				session.getEndTime())) {
-			throw RecurringScheduleException.sessionConflict();
-		}
-		ensureCoachAvailable(coachId, session.getStartTime(), session.getEndTime());
-		if (rooms.existsSuspensionOverlap(roomId, session.getStartTime(), session.getEndTime())) {
-			throw RecurringScheduleException.sessionConflict();
-		}
+		ensureAvailable(resources, session.getStartTime(), session.getEndTime(), session.getCapacity(), sessionId);
 		session.updateAssignment(resources.coach(), resources.room());
 		try {
 			sessions.saveAndFlush(session);
@@ -331,13 +324,34 @@ public class ClassSessionService {
 		}
 	}
 
-	void ensureAvailable(Resources resources, Instant startTime, Instant endTime) {
+	void ensureAvailable(Resources resources, Instant startTime, Instant endTime, int requestedCapacity,
+			UUID excludeSessionId) {
 		UUID roomId = resources.room() == null ? null : resources.room().getId();
-		if (sessions.existsOverlap(resources.coach().getId(), roomId, startTime, endTime)
-				|| (roomId != null && rooms.existsSuspensionOverlap(roomId, startTime, endTime))) {
+		boolean coachConflict = excludeSessionId == null
+			? sessions.existsCoachOverlap(resources.coach().getId(), startTime, endTime)
+			: sessions.existsCoachOverlapExcluding(excludeSessionId, resources.coach().getId(), startTime, endTime);
+		if (coachConflict) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		ensureCoachAvailable(resources.coach().getId(), startTime, endTime);
+		if (roomId == null) return;
+		if (rooms.existsSuspensionOverlap(roomId, startTime, endTime)) {
+			throw RecurringScheduleException.sessionConflict();
+		}
+		boolean roomConflict = excludeSessionId == null
+			? sessions.existsRoomOverlap(roomId, startTime, endTime)
+			: sessions.existsRoomOverlapExcluding(excludeSessionId, roomId, startTime, endTime);
+		if (resources.room().getUsageMode() == RoomUsageMode.EXCLUSIVE) {
+			if (roomConflict) throw RecurringScheduleException.roomTimeConflict();
+			return;
+		}
+		long occupiedCapacity = excludeSessionId == null
+			? sessions.sumOverlappingCapacity(roomId, startTime, endTime)
+			: sessions.sumOverlappingCapacityExcluding(excludeSessionId, roomId, startTime, endTime);
+		if (occupiedCapacity + requestedCapacity > resources.room().getCapacity()) {
+			throw RecurringScheduleException.sharedRoomCapacityExceeded(resources.room().getCapacity(),
+				occupiedCapacity, requestedCapacity);
+		}
 	}
 
 	@Transactional
@@ -361,11 +375,7 @@ public class ClassSessionService {
 		UUID currentRoomId = session.getRoom() == null ? null : session.getRoom().getId();
 		UUID roomId = request.roomId() == null ? currentRoomId : request.roomId();
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId, session.getCapacity());
-		if (sessions.existsOverlapExcluding(sessionId, coachId, roomId, request.startTime(), request.endTime())
-				|| (roomId != null && rooms.existsSuspensionOverlap(roomId, request.startTime(), request.endTime()))) {
-			throw RecurringScheduleException.sessionConflict();
-		}
-		ensureCoachAvailable(coachId, request.startTime(), request.endTime());
+		ensureAvailable(resources, request.startTime(), request.endTime(), session.getCapacity(), sessionId);
 		if (!sessions.findBookedMemberConflictIds(sessionId, request.startTime(), request.endTime()).isEmpty()) {
 			throw RecurringScheduleException.memberTimeConflict();
 		}
@@ -408,11 +418,8 @@ public class ClassSessionService {
 		}
 		if (targetRoom.getStatus() != RoomStatus.ACTIVE) throw RecurringScheduleException.inactive("room");
 		if (session.getCapacity() > targetRoom.getCapacity()) throw RecurringScheduleException.capacityConflict();
-		if (sessions.existsOverlapExcluding(session.getId(), session.getTeachingCoach().getId(), targetRoom.getId(),
-				session.getStartTime(), session.getEndTime())
-				|| rooms.existsSuspensionOverlap(targetRoom.getId(), session.getStartTime(), session.getEndTime())) {
-			throw RecurringScheduleException.sessionConflict();
-		}
+		ensureAvailable(new Resources(session.getSportClass(), session.getTeachingCoach(), targetRoom),
+			session.getStartTime(), session.getEndTime(), session.getCapacity(), session.getId());
 		UUID oldRoomId = session.getRoom().getId();
 		session.updateAssignment(session.getTeachingCoach(), targetRoom);
 		try {
@@ -433,12 +440,8 @@ public class ClassSessionService {
 			throw RecurringScheduleException.sessionNotScheduled();
 		}
 		validateTimes(startTime, endTime);
-		if (sessions.existsOverlapExcluding(session.getId(), session.getTeachingCoach().getId(),
-			session.getRoom().getId(), startTime, endTime)
-				|| rooms.existsSuspensionOverlap(session.getRoom().getId(), startTime, endTime)) {
-			throw RecurringScheduleException.sessionConflict();
-		}
-		ensureCoachAvailable(session.getTeachingCoach().getId(), startTime, endTime);
+		ensureAvailable(new Resources(session.getSportClass(), session.getTeachingCoach(), session.getRoom()),
+			startTime, endTime, session.getCapacity(), session.getId());
 		Instant oldStart = session.getStartTime();
 		Instant oldEnd = session.getEndTime();
 		session.updateSchedule(startTime, endTime);

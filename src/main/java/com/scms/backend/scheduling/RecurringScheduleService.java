@@ -45,7 +45,7 @@ public class RecurringScheduleService {
 			throw RecurringScheduleException.validation("startTime", "the first Session must be in the future");
 		}
 		for (Occurrence occurrence : occurrences) {
-			classSessionService.ensureAvailable(resources, occurrence.start(), occurrence.end());
+			classSessionService.ensureAvailable(resources, occurrence.start(), occurrence.end(), request.capacity(), null);
 		}
 
 		UUID scheduleId = UUID.randomUUID();

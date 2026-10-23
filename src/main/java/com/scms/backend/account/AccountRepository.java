@@ -33,6 +33,21 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 
 	boolean existsByRole(AccountRole role);
 
+	List<Account> findByRoleAndStatusOrderById(AccountRole role, AccountStatus status);
+
+	@Query(value = """
+		select profile.member_code as "memberCode", account.full_name as "fullName", account.phone as "phone"
+		from accounts account join member_profiles profile on profile.account_id = account.id
+		where account.id = :accountId
+		""", nativeQuery = true)
+	Optional<MemberIdentityView> findMemberIdentity(@Param("accountId") UUID accountId);
+
+	interface MemberIdentityView {
+		String getMemberCode();
+		String getFullName();
+		String getPhone();
+	}
+
 	@Query("select count(a) > 0 from Account a where lower(a.email) = lower(:email) and "
 		+ "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
 	boolean existsByOccupiedEmail(@Param("email") String email);

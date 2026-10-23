@@ -12,19 +12,31 @@ public class RecurringScheduleException extends RuntimeException {
 	private final String field;
 	private final List<UUID> eligibleSessionIds;
 	private final List<UUID> ineligibleSessionIds;
+	private final Integer roomCapacity;
+	private final Long occupiedCapacity;
+	private final Integer requestedCapacity;
 
 	private RecurringScheduleException(HttpStatus status, String code, String field, String message) {
-		this(status, code, field, message, List.of(), List.of());
+		this(status, code, field, message, List.of(), List.of(), null, null, null);
 	}
 
 	private RecurringScheduleException(HttpStatus status, String code, String field, String message,
 			List<UUID> eligibleSessionIds, List<UUID> ineligibleSessionIds) {
+		this(status, code, field, message, eligibleSessionIds, ineligibleSessionIds, null, null, null);
+	}
+
+	private RecurringScheduleException(HttpStatus status, String code, String field, String message,
+			List<UUID> eligibleSessionIds, List<UUID> ineligibleSessionIds, Integer roomCapacity,
+			Long occupiedCapacity, Integer requestedCapacity) {
 		super(message);
 		this.status = status;
 		this.code = code;
 		this.field = field;
 		this.eligibleSessionIds = List.copyOf(eligibleSessionIds);
 		this.ineligibleSessionIds = List.copyOf(ineligibleSessionIds);
+		this.roomCapacity = roomCapacity;
+		this.occupiedCapacity = occupiedCapacity;
+		this.requestedCapacity = requestedCapacity;
 	}
 
 	static RecurringScheduleException validation(String field, String message) {
@@ -58,8 +70,20 @@ public class RecurringScheduleException extends RuntimeException {
 	}
 
 	static RecurringScheduleException capacityConflict() {
-		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_CAPACITY_EXCEEDS_ROOM", "capacity",
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "ROOM_CAPACITY_BELOW_SESSION_CAPACITY", "capacity",
 			"Session capacity cannot exceed room capacity.");
+	}
+
+	static RecurringScheduleException roomTimeConflict() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "ROOM_TIME_CONFLICT", null,
+			"The exclusive Room already has an overlapping Session.");
+	}
+
+	static RecurringScheduleException sharedRoomCapacityExceeded(int roomCapacity, long occupiedCapacity,
+			int requestedCapacity) {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SHARED_ROOM_CAPACITY_EXCEEDED", null,
+			"The shared Room does not have enough capacity for this Session.", List.of(), List.of(),
+			roomCapacity, occupiedCapacity, requestedCapacity);
 	}
 
 	static RecurringScheduleException ptCapacity() {
@@ -109,4 +133,7 @@ public class RecurringScheduleException extends RuntimeException {
 	public String getField() { return field; }
 	public List<UUID> getEligibleSessionIds() { return eligibleSessionIds; }
 	public List<UUID> getIneligibleSessionIds() { return ineligibleSessionIds; }
+	public Integer getRoomCapacity() { return roomCapacity; }
+	public Long getOccupiedCapacity() { return occupiedCapacity; }
+	public Integer getRequestedCapacity() { return requestedCapacity; }
 }

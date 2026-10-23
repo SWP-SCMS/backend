@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -85,5 +86,33 @@ class MembershipTerminationServiceTests {
 		request.approve(UUID.randomUUID(), NOW.plusSeconds(60), NOW);
 		assertThat(request.getStatus()).isEqualTo(MembershipTerminationRequestStatus.APPROVED);
 		assertThatThrownBy(() -> request.withdraw(NOW)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void newTerminationRequestNotifiesEveryActiveManager() {
+		Account member = new Account(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member One", "0900000001",
+			"member@example.test", java.time.LocalDate.of(1990, 1, 1), "hash");
+		Account manager = new Account(UUID.randomUUID(), AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager",
+			"0900000002", "manager@example.test", java.time.LocalDate.of(1990, 1, 1), "hash");
+		Membership membership = new Membership(membershipId, memberId, UUID.randomUUID(), UUID.randomUUID(), "PLUS",
+			"Plus", BigInteger.ONE, "VND", 30, MembershipStatus.ACTIVE, NOW.minusSeconds(60), NOW.plusSeconds(60));
+		AccountRepository.MemberIdentityView identity = new AccountRepository.MemberIdentityView() {
+			public String getMemberCode() { return "MB-100001"; }
+			public String getFullName() { return "Member One"; }
+			public String getPhone() { return "0900000001"; }
+		};
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(member));
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE))
+			.thenReturn(Optional.of(membership));
+		when(requests.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		when(accounts.findMemberIdentity(memberId)).thenReturn(Optional.of(identity));
+		when(accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(List.of(manager));
+
+		MembershipTerminationRequestResponse response = service.createForMember(memberId,
+			new MembershipTerminationCreateRequest(MembershipTerminationMode.IMMEDIATE, "reason"));
+
+		verify(notifications).write(any(), eq(manager.getId()), eq("MEMBERSHIP_TERMINATION_REQUESTED"),
+			eq("MEMBERSHIP_TERMINATION_REQUEST"), eq(response.id()), any());
 	}
 }

@@ -381,6 +381,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 			problem.setProperty("eligibleSessionIds", exception.getEligibleSessionIds());
 			problem.setProperty("ineligibleSessionIds", exception.getIneligibleSessionIds());
 		}
+		if (exception.getRoomCapacity() != null) {
+			problem.setProperty("roomCapacity", exception.getRoomCapacity());
+			problem.setProperty("occupiedCapacity", exception.getOccupiedCapacity());
+			problem.setProperty("requestedCapacity", exception.getRequestedCapacity());
+		}
 		return problem;
 	}
 
@@ -403,6 +408,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		problem.setProperty("code", exception.getCode());
 		if (exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
+		}
+		if (!exception.getAffectedSessionIds().isEmpty()) {
+			problem.setProperty("affectedSessionIds", exception.getAffectedSessionIds());
 		}
 		return problem;
 	}

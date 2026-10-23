@@ -192,6 +192,8 @@ components:
         id: { type: string, format: uuid }
         membershipId: { type: string, format: uuid }
         memberAccountId: { type: string, format: uuid }
+        memberId: { type: string, nullable: true }
+        memberFullName: { type: string, nullable: true }
         mode: { $ref: '#/components/schemas/MembershipTerminationMode' }
         status: { $ref: '#/components/schemas/MembershipTerminationRequestStatus' }
         reason: { type: string }
