@@ -15,16 +15,21 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.account.MemberProfile;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 class MembershipTerminationServiceTests {
 	private static final Instant NOW = Instant.parse("2026-10-22T03:00:00Z");
@@ -110,5 +115,34 @@ class MembershipTerminationServiceTests {
 		service.approve(managerId, requestId, new MembershipTerminationDecisionRequest(2L));
 
 		verify(execution).executeImmediate(requestId, managerId, NOW);
+	}
+
+	@Test
+	void managerTerminationListIncludesCurrentMemberIdentityUsingBatchLookups() {
+		UUID managerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		MembershipTerminationRequest request = new MembershipTerminationRequest(UUID.randomUUID(), membershipId,
+			memberId, memberId, MembershipTerminationMode.IMMEDIATE, "reason");
+		MembershipTerminationRequest anotherRequest = new MembershipTerminationRequest(UUID.randomUUID(), membershipId,
+			memberId, memberId, MembershipTerminationMode.END_OF_CYCLE, "another reason");
+		when(requests.findAllByOrderByCreatedAtDesc(any(Pageable.class)))
+			.thenReturn(new PageImpl<>(List.of(request, anotherRequest), PageRequest.of(0, 20), 2));
+		Account member = mock(Account.class);
+		when(member.getId()).thenReturn(memberId);
+		when(member.getFullName()).thenReturn("Member One");
+		when(accounts.findAllById(List.of(memberId))).thenReturn(List.of(member));
+		MemberProfile profile = mock(MemberProfile.class);
+		when(profile.getAccountId()).thenReturn(memberId);
+		when(profile.getMemberCode()).thenReturn("MB-100001");
+		when(profiles.findAllById(List.of(memberId))).thenReturn(List.of(profile));
+
+		List<MembershipTerminationRequestResponse> items = service.listForManager(managerId, 0, 20).content();
+
+		assertThat(items).hasSize(2).allSatisfy(item -> {
+			assertThat(item.memberId()).isEqualTo("MB-100001");
+			assertThat(item.memberFullName()).isEqualTo("Member One");
+		});
+		verify(accounts).findAllById(List.of(memberId));
+		verify(profiles).findAllById(List.of(memberId));
 	}
 }

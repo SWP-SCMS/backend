@@ -20,12 +20,14 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.account.MemberProfile;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
@@ -34,8 +36,39 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 class MembershipFreezeServiceTests {
+	@Test
+	void managerFreezeListIncludesCurrentMemberIdentityUsingBatchLookups() {
+		Fixture fixture = fixture(LocalDate.of(2026, 11, 1));
+		UUID managerId = UUID.randomUUID();
+		when(fixture.accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		MembershipFreezeRequest anotherRequest = new MembershipFreezeRequest(UUID.randomUUID(), fixture.membershipId,
+			fixture.memberId, fixture.memberId, LocalDate.of(2026, 12, 1), LocalDate.of(2026, 12, 3), "another reason");
+		when(fixture.requests.findAllByOrderByCreatedAtDesc(any(Pageable.class)))
+			.thenReturn(new PageImpl<>(List.of(fixture.request, anotherRequest), PageRequest.of(0, 20), 2));
+		Account member = mock(Account.class);
+		when(member.getId()).thenReturn(fixture.memberId);
+		when(member.getFullName()).thenReturn("Member One");
+		when(fixture.accounts.findAllById(List.of(fixture.memberId))).thenReturn(List.of(member));
+		MemberProfile profile = mock(MemberProfile.class);
+		when(profile.getAccountId()).thenReturn(fixture.memberId);
+		when(profile.getMemberCode()).thenReturn("MB-100001");
+		when(fixture.profiles.findAllById(List.of(fixture.memberId))).thenReturn(List.of(profile));
+
+		List<MembershipFreezeRequestResponse> items = fixture.service.listForManager(managerId, 0, 20).content();
+
+		assertThat(items).hasSize(2).allSatisfy(item -> {
+			assertThat(item.memberId()).isEqualTo("MB-100001");
+			assertThat(item.memberFullName()).isEqualTo("Member One");
+		});
+		verify(fixture.accounts).findAllById(List.of(fixture.memberId));
+		verify(fixture.profiles).findAllById(List.of(fixture.memberId));
+	}
+
 	@Test
 	void feeUsesHalfOpenBusinessDaysAndRoundsDownVnd() {
 		Membership membership = membership(new BigInteger("1000000"), 31);

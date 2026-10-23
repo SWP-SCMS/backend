@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
@@ -77,7 +78,7 @@ class MembershipFreezeService {
 
 	@Transactional(readOnly = true)
 	MembershipFreezeRequestPageResponse listForManager(UUID managerId, int page, int size) {
-		ensure(managerId, AccountRole.MANAGER); return page(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
+		ensure(managerId, AccountRole.MANAGER); return managerPage(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
 	}
 
 	@Transactional
@@ -217,5 +218,18 @@ class MembershipFreezeService {
 	private void notify(MembershipFreezeRequest request, String event, Map<String, Object> payload) { notifications.write("MEMBERSHIP_FREEZE_" + event + ":" + request.getId(), request.getMemberAccountId(), "MEMBERSHIP_FREEZE_" + event, "MEMBERSHIP_FREEZE_REQUEST", request.getId(), payload); }
 	private PageRequest pageable(int page, int size) { return PageRequest.of(page, size, Sort.by("createdAt").descending().and(Sort.by("id").descending())); }
 	private MembershipFreezeRequestPageResponse page(org.springframework.data.domain.Page<MembershipFreezeRequest> page) { return MembershipFreezeRequestPageResponse.from(page); }
+	private MembershipFreezeRequestPageResponse managerPage(org.springframework.data.domain.Page<MembershipFreezeRequest> page) {
+		List<UUID> memberIds = page.getContent().stream().map(MembershipFreezeRequest::getMemberAccountId).distinct().toList();
+		Map<UUID, Account> memberAccounts = accounts.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(Account::getId, account -> account));
+		Map<UUID, MemberProfile> memberProfiles = profiles.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(MemberProfile::getAccountId, profile -> profile));
+		return MembershipFreezeRequestPageResponse.fromResponses(page.map(request -> {
+			Account account = memberAccounts.get(request.getMemberAccountId());
+			MemberProfile profile = memberProfiles.get(request.getMemberAccountId());
+			return MembershipFreezeRequestResponse.from(request, profile == null ? null : profile.getMemberCode(),
+				account == null ? null : account.getFullName());
+		}));
+	}
 	private record LockedFreeze(MembershipFreezeRequest request, Membership membership) { }
 }

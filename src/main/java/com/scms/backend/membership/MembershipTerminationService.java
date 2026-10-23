@@ -92,7 +92,7 @@ class MembershipTerminationService {
 	@Transactional(readOnly = true)
 	MembershipTerminationRequestPageResponse listForManager(UUID managerId, int page, int size) {
 		ensureRole(managerId, AccountRole.MANAGER);
-		return page(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
+		return managerPage(requests.findAllByOrderByCreatedAtDesc(pageable(page, size)));
 	}
 
 	@Transactional
@@ -174,4 +174,17 @@ class MembershipTerminationService {
 	}
 	private PageRequest pageable(int page, int size) { return PageRequest.of(page, size, Sort.by("createdAt").descending().and(Sort.by("id").descending())); }
 	private MembershipTerminationRequestPageResponse page(org.springframework.data.domain.Page<MembershipTerminationRequest> page) { return MembershipTerminationRequestPageResponse.from(page); }
+	private MembershipTerminationRequestPageResponse managerPage(org.springframework.data.domain.Page<MembershipTerminationRequest> page) {
+		List<UUID> memberIds = page.getContent().stream().map(MembershipTerminationRequest::getMemberAccountId).distinct().toList();
+		Map<UUID, Account> memberAccounts = accounts.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(Account::getId, account -> account));
+		Map<UUID, MemberProfile> memberProfiles = profiles.findAllById(memberIds).stream()
+			.collect(java.util.stream.Collectors.toMap(MemberProfile::getAccountId, profile -> profile));
+		return MembershipTerminationRequestPageResponse.fromResponses(page.map(request -> {
+			Account account = memberAccounts.get(request.getMemberAccountId());
+			MemberProfile profile = memberProfiles.get(request.getMemberAccountId());
+			return MembershipTerminationRequestResponse.from(request, profile == null ? null : profile.getMemberCode(),
+				account == null ? null : account.getFullName());
+		}));
+	}
 }
