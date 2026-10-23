@@ -11,6 +11,11 @@ paths:
       summary: Create a membership freeze request
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeCreateRequest' } } } }
       responses: { '201': { description: Request created, content: { application/json: { schema: { $ref: '#/components/schemas/FreezeRequest' } } } }, '400': { $ref: '#/components/responses/BadRequest' }, '409': { $ref: '#/components/responses/Conflict' } }
+  /members/me/membership-freeze-requests/{requestId}:
+    delete:
+      summary: Withdraw the authenticated member's pending freeze request
+      parameters: [{ $ref: '#/components/parameters/RequestId' }]
+      responses: { '204': { description: Request withdrawn }, '404': { description: Request not found or not owned by the member }, '409': { $ref: '#/components/responses/Conflict' } }
   /members/me/membership-freeze-requests/{requestId}/end-early:
     post:
       summary: End the authenticated member's active freeze early
@@ -61,7 +66,7 @@ components:
     RequestId: { name: requestId, in: path, required: true, schema: { type: string, format: uuid } }
     MemberCode: { name: memberCode, in: path, required: true, schema: { type: string } }
   schemas:
-    FreezeStatus: { type: string, enum: [PENDING, APPROVED_PENDING_PAYMENT, SCHEDULED, ACTIVE, COMPLETED, OBSOLETE, REJECTED] }
+    FreezeStatus: { type: string, enum: [PENDING, APPROVED_PENDING_PAYMENT, SCHEDULED, ACTIVE, COMPLETED, OBSOLETE, REJECTED, WITHDRAWN] }
     FreezeCreateRequest:
       type: object
       required: [startDate, endDate, reason]

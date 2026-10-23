@@ -106,6 +106,10 @@ public class OpenApiConfiguration {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("Request withdrawn."));
 		}
+		if (method == HttpMethod.DELETE && path.equals("/members/me/membership-freeze-requests/{requestId}")) {
+			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
+			operation.getResponses().addApiResponse("204", new ApiResponse().description("Request withdrawn."));
+		}
 		if (method == HttpMethod.POST && path.equals("/reception/membership-orders/{orderId}/cash")) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 		}

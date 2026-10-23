@@ -106,6 +106,7 @@ public class SecurityConfiguration {
 					.hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/members/me/membership-freeze-requests").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-freeze-requests").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.DELETE, "/members/me/membership-freeze-requests/*").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/membership-freeze-requests").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/reception/members/*/membership-freeze-requests").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/reception/membership-freeze-requests/*/cash-payment").hasRole("RECEPTIONIST")

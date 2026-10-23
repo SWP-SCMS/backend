@@ -52,6 +52,10 @@ public class MembershipFreezeRequest {
 		if (status != MembershipFreezeRequestStatus.PENDING) throw new IllegalStateException("Freeze request is not pending");
 		approverAccountId = Objects.requireNonNull(approver); rejectedAt = Objects.requireNonNull(now); status = MembershipFreezeRequestStatus.REJECTED;
 	}
+	void withdraw() {
+		if (status != MembershipFreezeRequestStatus.PENDING) throw new IllegalStateException("Freeze request is not pending");
+		status = MembershipFreezeRequestStatus.WITHDRAWN;
+	}
 	void schedule() {
 		if (status != MembershipFreezeRequestStatus.APPROVED_PENDING_PAYMENT) throw new IllegalStateException("Freeze request is not approved for payment");
 		status = MembershipFreezeRequestStatus.SCHEDULED;
