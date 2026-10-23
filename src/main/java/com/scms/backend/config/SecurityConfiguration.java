@@ -94,6 +94,16 @@ public class SecurityConfiguration {
 					.hasRole("MANAGER")
 				.requestMatchers(HttpMethod.POST, "/manager/members/*/membership-termination-requests")
 					.hasRole("MANAGER")
+				.requestMatchers(HttpMethod.GET, "/reception/refund-requests")
+					.hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.POST, "/reception/members/*/refund-requests",
+					"/reception/refund-requests/*/cash-disbursement")
+					.hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/manager/refund-requests")
+					.hasRole("MANAGER")
+				.requestMatchers(HttpMethod.POST, "/manager/refund-requests/*/first-approval",
+					"/manager/refund-requests/*/final-approval", "/manager/refund-requests/*/reject")
+					.hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/members/me/membership-freeze-requests").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-freeze-requests").hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/membership-freeze-requests").hasRole("RECEPTIONIST")

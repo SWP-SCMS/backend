@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: SCMS Membership Refund API
+  version: v1
+paths:
+  /reception/refund-requests:
+    get:
+      summary: List refund requests for Receptionist
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200': { description: Paginated refund requests }
+  /reception/members/{memberCode}/refund-requests:
+    post:
+      summary: Request a cash refund for an eligible terminated Membership
+      parameters:
+        - in: path
+          name: memberCode
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentId, membershipId, requestedAmount, reason, idempotencyKey]
+              properties:
+                paymentId: { type: string, format: uuid }
+                membershipId: { type: string, format: uuid }
+                requestedAmount: { type: integer, format: int64, minimum: 1 }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+                idempotencyKey: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '201': { description: Refund request created }
+  /reception/refund-requests/{requestId}/cash-disbursement:
+    post:
+      summary: Record Receptionist cash disbursement and evidence
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, evidence]
+              properties:
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+                evidence: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200': { description: Cash disbursement recorded }
+  /manager/refund-requests:
+    get:
+      summary: List refund requests for Manager approval
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200': { description: Paginated refund requests }
+  /manager/refund-requests/{requestId}/first-approval:
+    post:
+      summary: Approve amount at the first Manager checkpoint
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, approvedAmount]
+              properties:
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+                approvedAmount: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '200': { description: Refund amount approved }
+  /manager/refund-requests/{requestId}/final-approval:
+    post:
+      summary: Complete a cash refund after disbursement and issue an immutable credit note
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion]
+              properties:
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '200': { description: Refund completed }
+  /manager/refund-requests/{requestId}/reject:
+    post:
+      summary: Reject a refund request before cash is disbursed
+      parameters:
+        - in: path
+          name: requestId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, reason]
+              properties:
+                expectedVersion: { type: integer, format: int64, minimum: 0 }
+                reason: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200': { description: Refund rejected }
