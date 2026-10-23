@@ -29,6 +29,33 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 	boolean existsActiveSessionOverCapacity(@Param("roomId") UUID roomId, @Param("capacity") int capacity);
 
 	@Query(value = """
+		select exists (
+			select 1 from class_sessions anchor
+			where anchor.room_id = :roomId
+			  and anchor.status in ('SCHEDULED', 'IN_PROGRESS')
+			  and (select coalesce(sum(other.capacity), 0) from class_sessions other
+			       where other.room_id = anchor.room_id
+			         and other.status in ('SCHEDULED', 'IN_PROGRESS')
+			         and other.start_time < anchor.end_time and other.end_time > anchor.start_time) > :capacity
+		)
+		""", nativeQuery = true)
+	boolean existsActiveLoadOverCapacity(@Param("roomId") UUID roomId, @Param("capacity") int capacity);
+
+	@Query(value = """
+		select exists (
+			select 1 from class_sessions first_session
+			join class_sessions second_session on second_session.room_id = first_session.room_id
+			 and second_session.id > first_session.id
+			 and second_session.status in ('SCHEDULED', 'IN_PROGRESS')
+			 and second_session.start_time < first_session.end_time
+			 and second_session.end_time > first_session.start_time
+			where first_session.room_id = :roomId
+			  and first_session.status in ('SCHEDULED', 'IN_PROGRESS')
+		)
+		""", nativeQuery = true)
+	boolean existsActiveSessionOverlapPair(@Param("roomId") UUID roomId);
+
+	@Query(value = """
 		select cs.id from class_sessions cs
 		where cs.room_id = :roomId
 		  and (cs.status = 'IN_PROGRESS'

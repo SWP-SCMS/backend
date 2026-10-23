@@ -107,7 +107,7 @@ class RecurringScheduleServiceTests {
 		Room room = room(RoomStatus.ACTIVE, 20);
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
 		stubActiveResources(sportClass, room, coach);
-		when(sessions.existsOverlap(any(), any(), any(), any())).thenReturn(false, false, false, true);
+		when(sessions.existsCoachOverlap(any(), any(), any())).thenReturn(false, false, false, true);
 
 		assertThatThrownBy(() -> service.create(managerId, request(sportClass, room, coach,
 			LocalDate.of(2026, 10, 6), List.of(1))))
@@ -129,7 +129,7 @@ class RecurringScheduleServiceTests {
 			sportClass.getId(), coach.getId(), room.getId(), LocalDate.of(2026, 10, 6), List.of(1),
 			LocalTime.of(10, 0), LocalTime.of(11, 0), 11)))
 			.isInstanceOf(RecurringScheduleException.class)
-			.extracting("code").isEqualTo("SESSION_CAPACITY_EXCEEDS_ROOM");
+			.extracting("code").isEqualTo("ROOM_CAPACITY_BELOW_SESSION_CAPACITY");
 
 		assertThatThrownBy(() -> service.create(managerId, new RecurringScheduleCreateRequest(
 			sportClass.getId(), coach.getId(), room.getId(), LocalDate.of(2026, 10, 6), List.of(1),

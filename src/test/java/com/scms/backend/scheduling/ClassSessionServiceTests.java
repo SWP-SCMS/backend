@@ -52,8 +52,6 @@ class ClassSessionServiceTests {
 	@Test
 	void activeManagerCreatesScheduledSingleSession() {
 		Fixture fixture = activeFixture(20);
-		when(sessions.existsOverlap(fixture.coach().getId(), fixture.room().getId(),
-			now.plusSeconds(3600), now.plusSeconds(7200))).thenReturn(false);
 		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		ClassSessionResponse result = service.create(fixture.managerId(), new ClassSessionCreateRequest(
@@ -108,7 +106,6 @@ class ClassSessionServiceTests {
 	@Test
 	void sessionDurationMustBeBetweenThirtyAndNinetyMinutes() {
 		Fixture fixture = activeFixture(20);
-		when(sessions.existsOverlap(any(), any(), any(), any())).thenReturn(false);
 		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		assertThat(service.create(fixture.managerId(), request(fixture.sportClass().getId(), fixture.coach().getId(),
@@ -160,15 +157,15 @@ class ClassSessionServiceTests {
 		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
 			fixture.coach().getId(), fixture.room().getId(), now.plusSeconds(3600), now.plusSeconds(7200), 11)))
 			.isInstanceOf(RecurringScheduleException.class)
-			.extracting("code").isEqualTo("SESSION_CAPACITY_EXCEEDS_ROOM");
+			.extracting("code").isEqualTo("ROOM_CAPACITY_BELOW_SESSION_CAPACITY");
 		verify(sessions, never()).saveAndFlush(any());
 	}
 
 	@Test
 	void overlapRejectsSingleSessionBeforeWrite() {
 		Fixture fixture = activeFixture(20);
-		when(sessions.existsOverlap(fixture.coach().getId(), fixture.room().getId(),
-			now.plusSeconds(3600), now.plusSeconds(7200))).thenReturn(true);
+		when(sessions.existsCoachOverlap(fixture.coach().getId(), now.plusSeconds(3600),
+			now.plusSeconds(7200))).thenReturn(true);
 
 		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
 			fixture.coach().getId(), fixture.room().getId(), now.plusSeconds(3600), now.plusSeconds(7200), 10)))
@@ -178,11 +175,57 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void sharedRoomAllowsOverlapWhenAggregateCapacityFits() {
+		Fixture fixture = activeFixture(10);
+		fixture.room().update(fixture.room().getName(), 10, RoomStatus.ACTIVE, RoomUsageMode.SHARED);
+		Instant start = now.plusSeconds(3600);
+		Instant end = now.plusSeconds(7200);
+		when(sessions.sumOverlappingCapacity(fixture.room().getId(), start, end)).thenReturn(6L);
+		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		ClassSessionResponse response = service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), start, end, 4));
+
+		assertThat(response.capacity()).isEqualTo(4);
+	}
+
+	@Test
+	void sharedRoomRejectsOverlapWhenAggregateCapacityWouldBeExceeded() {
+		Fixture fixture = activeFixture(10);
+		fixture.room().update(fixture.room().getName(), 10, RoomStatus.ACTIVE, RoomUsageMode.SHARED);
+		Instant start = now.plusSeconds(3600);
+		Instant end = now.plusSeconds(7200);
+		when(sessions.sumOverlappingCapacity(fixture.room().getId(), start, end)).thenReturn(6L);
+
+		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), start, end, 5)))
+			.isInstanceOfSatisfying(RecurringScheduleException.class, error -> {
+				assertThat(error.getCode()).isEqualTo("SHARED_ROOM_CAPACITY_EXCEEDED");
+				assertThat(error.getRoomCapacity()).isEqualTo(10);
+				assertThat(error.getOccupiedCapacity()).isEqualTo(6);
+				assertThat(error.getRequestedCapacity()).isEqualTo(5);
+			});
+		verify(sessions, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void exclusiveRoomRejectsOverlappingSessionWithSpecificCode() {
+		Fixture fixture = activeFixture(20);
+		Instant start = now.plusSeconds(3600);
+		Instant end = now.plusSeconds(7200);
+		when(sessions.existsRoomOverlap(fixture.room().getId(), start, end)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
+			fixture.coach().getId(), fixture.room().getId(), start, end, 10)))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("ROOM_TIME_CONFLICT");
+	}
+
+	@Test
 	void approvedCoachLeaveRejectsNewSession() {
 		Fixture fixture = activeFixture(20);
 		Instant start = now.plusSeconds(3600);
 		Instant end = now.plusSeconds(7200);
-		when(sessions.existsOverlap(fixture.coach().getId(), fixture.room().getId(), start, end)).thenReturn(false);
 		when(coachLeaves.existsApprovedOverlap(fixture.coach().getId(), start, end)).thenReturn(true);
 
 		assertThatThrownBy(() -> service.create(fixture.managerId(), request(fixture.sportClass().getId(),
@@ -201,7 +244,6 @@ class ClassSessionServiceTests {
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
 		when(classes.findById(sportClass.getId())).thenReturn(Optional.of(sportClass));
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
-		when(sessions.existsOverlap(coach.getId(), null, now.plusSeconds(3600), now.plusSeconds(7200))).thenReturn(false);
 		when(sessions.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		ClassSessionResponse response = service.create(managerId, new ClassSessionCreateRequest(sportClass.getId(),
@@ -284,8 +326,6 @@ class ClassSessionServiceTests {
 			room, now.plusSeconds(3600), now.plusSeconds(5400), 10, managerId);
 		Instant newStart = now.plusSeconds(7200);
 		Instant newEnd = now.plusSeconds(9000);
-		when(sessions.existsOverlapExcluding(session.getId(), coach.getId(), room.getId(),
-			newStart, newEnd)).thenReturn(false);
 		when(rooms.existsSuspensionOverlap(room.getId(), newStart, newEnd)).thenReturn(false);
 		when(sessions.saveAndFlush(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -293,8 +333,8 @@ class ClassSessionServiceTests {
 
 		assertThat(session.getStartTime()).isEqualTo(newStart);
 		assertThat(session.getEndTime()).isEqualTo(newEnd);
-		verify(sessions).existsOverlapExcluding(session.getId(), coach.getId(), room.getId(),
-			newStart, newEnd);
+		verify(sessions).existsCoachOverlapExcluding(session.getId(), coach.getId(), newStart, newEnd);
+		verify(sessions).existsRoomOverlapExcluding(session.getId(), room.getId(), newStart, newEnd);
 	}
 
 	private Fixture activeFixture(int roomCapacity) {

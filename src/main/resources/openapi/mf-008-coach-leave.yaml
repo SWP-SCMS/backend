@@ -27,11 +27,11 @@ paths:
       responses: {'200': {description: Requests, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}}
   /manager/coach-leave-requests/{requestId}/approve:
     patch:
-      summary: Approve leave and expose sessions requiring reassignment or reschedule
+      summary: Approve leave after all affected sessions have been resolved
       security: [{bearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/RequestId'}]
       requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveReviewRequest'}}}}
-      responses: {'200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}
+      responses: {'200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}, '409': {description: Affected sessions remain; problem response includes affectedSessionIds}}
   /manager/coach-leave-requests/{requestId}/reject:
     patch:
       summary: Reject a pending leave request

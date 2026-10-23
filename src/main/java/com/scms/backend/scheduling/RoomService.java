@@ -49,7 +49,8 @@ public class RoomService {
 		String name = normalizeName(request.name());
 		int capacity = validateCapacity(request.capacity());
 		if (rooms.existsByName(name)) throw RoomException.duplicateName();
-		Room room = new Room(UUID.randomUUID(), name, capacity, RoomStatus.ACTIVE);
+		RoomUsageMode usageMode = request.usageMode() == null ? RoomUsageMode.EXCLUSIVE : request.usageMode();
+		Room room = new Room(UUID.randomUUID(), name, capacity, RoomStatus.ACTIVE, usageMode);
 		flush(room);
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_CREATED", "ROOM", room.getId(),
 			snapshot(room)));
@@ -59,7 +60,8 @@ public class RoomService {
 	@Transactional
 	RoomResponse update(UUID managerId, UUID roomId, RoomPatchRequest request) {
 		ensureActiveManager(managerId);
-		if (request == null || (request.name() == null && request.capacity() == null && request.status() == null)) {
+		if (request == null || (request.name() == null && request.capacity() == null && request.status() == null
+				&& request.usageMode() == null)) {
 			throw RoomException.validation("request", "at least one field is required");
 		}
 		Room room = findRoomForUpdate(roomId);
@@ -69,7 +71,13 @@ public class RoomService {
 			throw RoomException.duplicateName();
 		}
 		int capacity = request.capacity() == null ? room.getCapacity() : validateCapacity(request.capacity());
-		if (request.capacity() != null && rooms.existsActiveSessionOverCapacity(roomId, capacity)) {
+		RoomUsageMode usageMode = request.usageMode() == null ? room.getUsageMode() : request.usageMode();
+		if (request.capacity() != null && (rooms.existsActiveSessionOverCapacity(roomId, capacity)
+				|| (usageMode == RoomUsageMode.SHARED && rooms.existsActiveLoadOverCapacity(roomId, capacity)))) {
+			throw RoomException.capacityConflict();
+		}
+		if (usageMode == RoomUsageMode.EXCLUSIVE && room.getUsageMode() != RoomUsageMode.EXCLUSIVE
+				&& rooms.existsActiveSessionOverlapPair(roomId)) {
 			throw RoomException.capacityConflict();
 		}
 		RoomStatus status = request.status() == null ? room.getStatus() : request.status();
@@ -77,7 +85,7 @@ public class RoomService {
 			List<UUID> blockingSessionIds = rooms.findBlockingSessionIds(roomId);
 			if (!blockingSessionIds.isEmpty()) throw RoomException.activeSessionsConflict(blockingSessionIds);
 		}
-		room.update(name, capacity, status);
+		room.update(name, capacity, status, usageMode);
 		Map<String, Object> after = snapshot(room);
 		if (before.equals(after)) return RoomResponse.from(room);
 		flush(room);
@@ -97,7 +105,8 @@ public class RoomService {
 	}
 
 	private Map<String, Object> snapshot(Room room) {
-		return Map.of("name", room.getName(), "capacity", room.getCapacity(), "status", room.getStatus().name());
+		return Map.of("name", room.getName(), "capacity", room.getCapacity(), "status", room.getStatus().name(),
+			"usageMode", room.getUsageMode().name());
 	}
 
 	private Room findRoom(UUID roomId) {

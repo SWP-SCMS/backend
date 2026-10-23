@@ -53,7 +53,18 @@ class RoomServiceTests {
 		assertThat(audit.getValue().getTargetId()).isEqualTo(result.id());
 		assertThat(audit.getValue().getBeforeData()).isNull();
 		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Studio A", "capacity", 20, "status", "ACTIVE"));
+			"name", "Studio A", "capacity", 20, "status", "ACTIVE", "usageMode", "EXCLUSIVE"));
+	}
+
+	@Test
+	void managerCanCreateSharedRoom() {
+		UUID managerId = activeManager();
+		when(rooms.saveAndFlush(any(Room.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		RoomResponse result = service.create(managerId,
+			new RoomCreateRequest("PT Zone", 10, RoomUsageMode.SHARED));
+
+		assertThat(result.usageMode()).isEqualTo(RoomUsageMode.SHARED);
 	}
 
 	@Test
@@ -158,9 +169,9 @@ class RoomServiceTests {
 		assertThat(audit.getValue().getTargetType()).isEqualTo("ROOM");
 		assertThat(audit.getValue().getTargetId()).isEqualTo(room.getId());
 		assertThat(audit.getValue().getBeforeData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Studio A", "capacity", 20, "status", "ACTIVE"));
+			"name", "Studio A", "capacity", 20, "status", "ACTIVE", "usageMode", "EXCLUSIVE"));
 		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of(
-			"name", "Studio B", "capacity", 25, "status", "INACTIVE"));
+			"name", "Studio B", "capacity", 25, "status", "INACTIVE", "usageMode", "EXCLUSIVE"));
 	}
 
 	@Test

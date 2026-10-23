@@ -46,8 +46,13 @@ class WaitlistServiceTests {
 		when(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)).thenReturn(1L);
 		UUID membershipId=UUID.randomUUID(); when(bookings.findBookingBenefitEligibility(memberId,session.getId(),session.getStartTime())).thenReturn(List.of(eligibility(membershipId)));
 		when(waitlists.saveAndFlush(any())).thenAnswer(invocation->invocation.getArgument(0));
+		AccountRepository.MemberIdentityView identity=new AccountRepository.MemberIdentityView(){
+			public String getMemberCode(){return "MB-100001";} public String getFullName(){return "Member One";}
+			public String getPhone(){return "0900000000";}};
+		when(accounts.findMemberIdentity(memberId)).thenReturn(Optional.of(identity));
 		WaitlistResponse response=service.join(memberId,session.getId());
 		assertThat(response.status()).isEqualTo(WaitlistStatus.WAITING); assertThat(response.position()).isEqualTo(1);
+		assertThat(response.memberCode()).isEqualTo("MB-100001");
 		verify(audits).save(any());
 	}
 

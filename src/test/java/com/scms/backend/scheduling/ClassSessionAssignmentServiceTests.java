@@ -56,8 +56,6 @@ class ClassSessionAssignmentServiceTests {
 		Account newCoach = coach("New Coach");
 		Room newRoom = new Room(UUID.randomUUID(), "Studio B", 30, RoomStatus.ACTIVE);
 		stubAssignment(session, newCoach, newRoom);
-		when(sessions.existsOverlapExcluding(session.getId(), newCoach.getId(), newRoom.getId(),
-			session.getStartTime(), session.getEndTime())).thenReturn(false);
 		when(sessions.saveAndFlush(session)).thenReturn(session);
 
 		Instant originalStart = session.getStartTime();
@@ -156,7 +154,7 @@ class ClassSessionAssignmentServiceTests {
 		Account newCoach = coach("New Coach");
 		Room newRoom = new Room(UUID.randomUUID(), "Studio B", 30, RoomStatus.ACTIVE);
 		stubAssignment(session, newCoach, newRoom);
-		when(sessions.existsOverlapExcluding(session.getId(), newCoach.getId(), newRoom.getId(),
+		when(sessions.existsCoachOverlapExcluding(session.getId(), newCoach.getId(),
 			session.getStartTime(), session.getEndTime())).thenReturn(true);
 
 		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(),

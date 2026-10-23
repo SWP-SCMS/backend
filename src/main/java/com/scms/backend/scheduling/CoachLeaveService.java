@@ -52,6 +52,7 @@ class CoachLeaveService {
 		}
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_REQUESTED", "COACH_LEAVE_REQUEST",
 			leave.getId(), reason, null, snapshot(leave)));
+		notifyManagers(leave, "COACH_LEAVE_REQUESTED");
 		return response(leave);
 	}
 
@@ -71,6 +72,7 @@ class CoachLeaveService {
 		Map<String, Object> before = snapshot(leave); leave.withdraw();
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_WITHDRAWN", "COACH_LEAVE_REQUEST",
 			leave.getId(), "Coach withdrew leave request", before, snapshot(leave)));
+		notifyManagers(leave, "COACH_LEAVE_WITHDRAWN");
 		return response(leave);
 	}
 
@@ -98,7 +100,15 @@ class CoachLeaveService {
 			throw CoachLeaveException.conflict("COACH_LEAVE_NOT_PENDING", "Only a pending leave request can be reviewed.");
 		String note = normalize(request == null ? null : request.note(), false, "note");
 		Map<String, Object> before = snapshot(leave); Instant now = clock.instant();
-		if (approve) leave.approve(managerId, note, now); else leave.reject(managerId, note, now);
+		if (approve) {
+			accounts.findByIdForUpdate(leave.getCoach().getId())
+				.orElseThrow(InvalidAuthenticatedAccountException::new);
+			List<UUID> affected = sessions.findActiveOverlapIdsByCoach(leave.getCoach().getId(),
+				leave.getStartTime(), leave.getEndTime());
+			if (!affected.isEmpty()) throw CoachLeaveException.affectedSessions(affected);
+			leave.approve(managerId, note, now);
+		}
+		else leave.reject(managerId, note, now);
 		String event = approve ? "COACH_LEAVE_APPROVED" : "COACH_LEAVE_REJECTED";
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, event, "COACH_LEAVE_REQUEST", leave.getId(), note,
 			before, snapshot(leave)));
@@ -106,6 +116,18 @@ class CoachLeaveService {
 			"COACH_LEAVE_REQUEST", leave.getId(), Map.of("startTime", leave.getStartTime().toString(),
 				"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name()));
 		return response(leave);
+	}
+
+	private void notifyManagers(CoachLeaveRequest leave, String event) {
+		Map<String, Object> payload = Map.of("leaveRequestId", leave.getId().toString(),
+			"coachId", leave.getCoach().getId().toString(), "coachFullName", leave.getCoach().getFullName(),
+			"startTime", leave.getStartTime().toString(), "endTime", leave.getEndTime().toString(),
+			"status", leave.getStatus().name());
+		for (Account manager : accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE)) {
+			UUID recipient = manager.getId();
+			notifications.write("coach-leave:" + leave.getId() + ":" + event + ":" + recipient,
+				recipient, event, "COACH_LEAVE_REQUEST", leave.getId(), payload);
+		}
 	}
 
 	private Account activeAccount(UUID id, AccountRole role) {
