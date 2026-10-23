@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import java.util.Optional;
+import java.util.Collection;
 import java.util.UUID;
 
 import jakarta.persistence.LockModeType;
@@ -16,5 +17,7 @@ interface RefundRequestRepository extends JpaRepository<RefundRequest, UUID> {
 	@Query("select request from RefundRequest request where request.id = :id")
 	Optional<RefundRequest> findByIdForUpdate(@Param("id") UUID id);
 	Optional<RefundRequest> findByRequesterAccountIdAndIdempotencyKey(UUID requesterAccountId, String idempotencyKey);
+	boolean existsByMembershipIdAndTypeAndStatusIn(UUID membershipId, RefundType type,
+		Collection<RefundRequestStatus> statuses);
 	Page<RefundRequest> findAllByOrderByRequestedAtDescIdDesc(Pageable pageable);
 }

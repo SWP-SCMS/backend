@@ -11,6 +11,7 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -25,7 +26,8 @@ class MembershipLifecycleServiceTests {
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final MembershipRepository memberships = mock(MembershipRepository.class);
 	private final CoachAssignmentRepository assignments = mock(CoachAssignmentRepository.class);
-	private final MembershipLifecycleService service = new MembershipLifecycleService(accounts, memberships, assignments);
+	private final RefundRequestRepository refunds = mock(RefundRequestRepository.class);
+	private final MembershipLifecycleService service = new MembershipLifecycleService(accounts, memberships, assignments, refunds);
 	private final UUID memberId = UUID.randomUUID();
 
 	@BeforeEach
@@ -147,6 +149,48 @@ class MembershipLifecycleServiceTests {
 		service.terminateActiveAndActivateReserved(memberId, NOW);
 
 		assertThat(active.getStatus()).isEqualTo(MembershipStatus.TERMINATED);
+		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
+		assertThat(reserved.getStartsAt()).isEqualTo(NOW);
+		assertThat(reserved.getEndsAt()).isEqualTo(NOW.plusSeconds(45L * 86400));
+	}
+
+	@Test
+	void dueReservedMembershipStaysReservedWhileRefundHasBeenApprovedForDisbursement() {
+		Membership reserved = membership(MembershipStatus.RESERVED, null, null, 45);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)).thenReturn(Optional.empty());
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED)).thenReturn(Optional.of(reserved));
+		when(refunds.existsByMembershipIdAndTypeAndStatusIn(reserved.getId(), RefundType.RESERVED_CANCELLATION,
+			Set.of(RefundRequestStatus.REQUESTED, RefundRequestStatus.FIRST_APPROVED, RefundRequestStatus.CASH_DISBURSED))).thenReturn(true);
+
+		service.reconcile(memberId, NOW);
+
+		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.RESERVED);
+		verify(memberships, never()).findLatestExpiredByMemberAccountIdForUpdate(memberId, NOW);
+	}
+
+	@Test
+	void immediateTerminationDoesNotActivateReservedMembershipWithOpenRefundRequest() {
+		Membership active = membership(MembershipStatus.ACTIVE, NOW.minusSeconds(86400), NOW.plusSeconds(86400), 30);
+		Membership reserved = membership(MembershipStatus.RESERVED, null, null, 45);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)).thenReturn(Optional.of(active));
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED)).thenReturn(Optional.of(reserved));
+		when(refunds.existsByMembershipIdAndTypeAndStatusIn(reserved.getId(), RefundType.RESERVED_CANCELLATION,
+			Set.of(RefundRequestStatus.REQUESTED, RefundRequestStatus.FIRST_APPROVED, RefundRequestStatus.CASH_DISBURSED))).thenReturn(true);
+
+		service.terminateActiveAndActivateReserved(memberId, NOW);
+
+		assertThat(active.getStatus()).isEqualTo(MembershipStatus.TERMINATED);
+		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.RESERVED);
+	}
+
+	@Test
+	void rejectedReservedRefundActivatesReservationFromRejectionTimeWhenPreviousMembershipWasTerminated() {
+		Membership reserved = membership(MembershipStatus.RESERVED, null, null, 45);
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.ACTIVE)).thenReturn(Optional.empty());
+		when(memberships.findByMemberAccountIdAndStatusForUpdate(memberId, MembershipStatus.RESERVED)).thenReturn(Optional.of(reserved));
+
+		service.activateReservedAfterRefundRejected(memberId, NOW);
+
 		assertThat(reserved.getStatus()).isEqualTo(MembershipStatus.ACTIVE);
 		assertThat(reserved.getStartsAt()).isEqualTo(NOW);
 		assertThat(reserved.getEndsAt()).isEqualTo(NOW.plusSeconds(45L * 86400));

@@ -34,15 +34,19 @@ class MembershipRefundService {
 	private final AccountRepository accounts;
 	private final MemberProfileRepository profiles;
 	private final RefundRequestRepository refunds;
+	private final MembershipRepository memberships;
+	private final MembershipLifecycleService lifecycle;
 	private final JdbcTemplate db;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
 
 	MembershipRefundService(AccountRepository accounts, MemberProfileRepository profiles,
-			RefundRequestRepository refunds, JdbcTemplate db, AuditEventRepository audits,
+			RefundRequestRepository refunds, MembershipRepository memberships, MembershipLifecycleService lifecycle,
+			JdbcTemplate db, AuditEventRepository audits,
 			NotificationWriter notifications, Clock clock) {
-		this.accounts = accounts; this.profiles = profiles; this.refunds = refunds; this.db = db;
+		this.accounts = accounts; this.profiles = profiles; this.refunds = refunds; this.memberships = memberships;
+		this.lifecycle = lifecycle; this.db = db;
 		this.audits = audits; this.notifications = notifications; this.clock = clock;
 	}
 
@@ -86,7 +90,7 @@ class MembershipRefundService {
 		try {
 			source = db.queryForMap("""
 				select p.id payment_id, p.order_id, p.method, p.status payment_status,
-					m.id membership_id, m.member_account_id, m.status membership_status, r.id receipt_id
+					m.id membership_id, m.member_account_id, m.status membership_status, m.price_amount_snapshot, r.id receipt_id
 				from payments p join membership_orders o on o.id=p.order_id
 				join memberships m on m.order_id=o.id join receipts r on r.payment_id=p.id
 				where p.id=? and m.id=? and m.member_account_id=?
@@ -97,16 +101,29 @@ class MembershipRefundService {
 			throw RefundException.notEligible();
 		}
 		if (!"CASH".equals(source.get("method"))) throw RefundException.unsupportedPayment();
-		if (!"PAID".equals(source.get("payment_status")) || !"TERMINATED".equals(source.get("membership_status"))) {
+		if (!"PAID".equals(source.get("payment_status"))) {
 			throw RefundException.notEligible();
 		}
-		RefundCalculation quote = calculation(input.membershipId(), LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE));
-		if (quote.remainingDays() * 100L < quote.durationDays() * 30L) throw RefundException.threshold();
-		BigInteger suggested = suggested(quote);
+		LocalDate calculationDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
+		RefundType type;
+		Integer remainingDays = null;
+		BigInteger suggested;
+		if ("RESERVED".equals(source.get("membership_status"))) {
+			type = RefundType.RESERVED_CANCELLATION;
+			suggested = reservedSuggested(new BigInteger(source.get("price_amount_snapshot").toString()));
+		} else if ("TERMINATED".equals(source.get("membership_status"))) {
+			type = RefundType.TERMINATED_MEMBERSHIP;
+			RefundCalculation quote = calculation(input.membershipId(), calculationDate);
+			if (quote.remainingDays() * 100L < quote.durationDays() * 30L) throw RefundException.threshold();
+			suggested = suggested(quote);
+			remainingDays = quote.remainingDays();
+		} else {
+			throw RefundException.notEligible();
+		}
 		if (input.requestedAmount().compareTo(suggested) > 0) throw RefundException.amountLimit();
 		RefundRequest refund = new RefundRequest(UUID.randomUUID(), input.paymentId(), (UUID) source.get("order_id"),
-			input.membershipId(), (UUID) source.get("receipt_id"), memberId, actor, RefundType.TERMINATED_MEMBERSHIP,
-			input.requestedAmount(), suggested, quote.remainingDays(), quote.date(), input.reason().trim(), input.idempotencyKey().trim());
+			input.membershipId(), (UUID) source.get("receipt_id"), memberId, actor, type,
+			input.requestedAmount(), suggested, remainingDays, calculationDate, input.reason().trim(), input.idempotencyKey().trim());
 		try {
 			refunds.saveAndFlush(refund);
 		} catch (DataIntegrityViolationException exception) {
@@ -120,16 +137,28 @@ class MembershipRefundService {
 	RefundRequestResponse firstApproval(UUID actor, UUID refundId, RefundFirstApprovalRequest input) {
 		ensureRole(actor, AccountRole.MANAGER);
 		if (input == null || input.expectedVersion() == null || input.approvedAmount() == null) throw RefundException.validation();
+		RefundRequest visible = refunds.findById(refundId).orElseThrow(RefundException::notFound);
+		Membership reserved = visible.getType() == RefundType.RESERVED_CANCELLATION
+			? lockReservedMembership(visible) : null;
 		RefundRequest request = lock(refundId);
 		checkVersion(request, input.expectedVersion());
 		if (request.getStatus() != RefundRequestStatus.REQUESTED) throw RefundException.transition();
-		RefundCalculation calculation = calculation(request.getMembershipId(), LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE));
-		if (calculation.remainingDays() * 100L < calculation.durationDays() * 30L) throw RefundException.threshold();
-		BigInteger suggested = suggested(calculation);
+		LocalDate calculationDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
+		Integer remainingDays = null;
+		BigInteger suggested;
+		if (request.getType() == RefundType.RESERVED_CANCELLATION) {
+			if (reserved == null || reserved.getStatus() != MembershipStatus.RESERVED) throw RefundException.notEligible();
+			suggested = reservedSuggested(reserved.getPriceAmountSnapshot());
+		} else {
+			RefundCalculation calculation = calculation(request.getMembershipId(), calculationDate);
+			if (calculation.remainingDays() * 100L < calculation.durationDays() * 30L) throw RefundException.threshold();
+			suggested = suggested(calculation);
+			remainingDays = calculation.remainingDays();
+		}
 		if (input.approvedAmount().signum() <= 0 || input.approvedAmount().compareTo(request.getRequestedAmount()) > 0
 				|| input.approvedAmount().compareTo(suggested) > 0) throw RefundException.amountLimit();
 		Instant now = clock.instant();
-		request.firstApprove(actor, input.approvedAmount(), suggested, calculation.remainingDays(), calculation.date(), now);
+		request.firstApprove(actor, input.approvedAmount(), suggested, remainingDays, calculationDate, now);
 		refunds.saveAndFlush(request);
 		write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(), "suggestedAmount", suggested.toString()));
 		return RefundRequestResponse.from(request);
@@ -151,8 +180,16 @@ class MembershipRefundService {
 	RefundRequestResponse finalApproval(UUID actor, UUID refundId, RefundActionRequest input) {
 		ensureRole(actor, AccountRole.MANAGER);
 		if (input == null || input.expectedVersion() == null) throw RefundException.validation();
+		RefundRequest visible = refunds.findById(refundId).orElseThrow(RefundException::notFound);
+		Membership reserved = visible.getType() == RefundType.RESERVED_CANCELLATION
+			? lockReservedMembership(visible) : null;
 		RefundRequest request = lock(refundId); checkVersion(request, input.expectedVersion());
 		if (request.getStatus() != RefundRequestStatus.CASH_DISBURSED) throw RefundException.transition();
+		if (request.getType() == RefundType.RESERVED_CANCELLATION) {
+			if (reserved == null || reserved.getStatus() != MembershipStatus.RESERVED) throw RefundException.notEligible();
+			reserved.cancelReserved();
+			memberships.saveAndFlush(reserved);
+		}
 		Instant now = clock.instant(); request.complete(actor, now); refunds.saveAndFlush(request);
 		db.update("insert into credit_notes(id,refund_request_id,receipt_id,payment_id,member_account_id,amount,issued_by_account_id,issued_at) values(?,?,?,?,?,?,?,?)",
 			UUID.randomUUID(), request.getId(), request.getReceiptId(), request.getPaymentId(), request.getMemberAccountId(),
@@ -166,11 +203,15 @@ class MembershipRefundService {
 		ensureRole(actor, AccountRole.MANAGER);
 		if (input == null || input.expectedVersion() == null || input.reason() == null || input.reason().isBlank()
 				|| input.reason().trim().length() > 1000) throw RefundException.validation();
+		RefundRequest visible = refunds.findById(refundId).orElseThrow(RefundException::notFound);
+		boolean reservedCancellation = visible.getType() == RefundType.RESERVED_CANCELLATION;
+		if (reservedCancellation) lockReservedMembership(visible);
 		RefundRequest request = lock(refundId); checkVersion(request, input.expectedVersion());
 		try { request.reject(input.reason(), clock.instant()); }
 		catch (IllegalStateException exception) { throw RefundException.transition(); }
 		refunds.saveAndFlush(request);
 		write(actor, request, "REJECTED", Map.of("reason", input.reason().trim()));
+		if (reservedCancellation) lifecycle.activateReservedAfterRefundRejected(request.getMemberAccountId(), clock.instant());
 		return RefundRequestResponse.from(request);
 	}
 
@@ -192,6 +233,15 @@ class MembershipRefundService {
 	private BigInteger suggested(RefundCalculation calculation) {
 		return calculation.price().multiply(BigInteger.valueOf(calculation.remainingDays())).multiply(BigInteger.valueOf(50))
 			.divide(BigInteger.valueOf((long) calculation.durationDays() * 100));
+	}
+	private BigInteger reservedSuggested(BigInteger price) {
+		return price.multiply(BigInteger.valueOf(80)).divide(BigInteger.valueOf(100));
+	}
+	private Membership lockReservedMembership(RefundRequest request) {
+		accounts.findByIdForUpdate(request.getMemberAccountId())
+			.filter(account -> account.getRole() == AccountRole.MEMBER && VISIBLE.contains(account.getStatus()))
+			.orElseThrow(RefundException::notEligible);
+		return memberships.findByIdForUpdate(request.getMembershipId()).orElseThrow(RefundException::notEligible);
 	}
 
 	private UUID member(String code) {

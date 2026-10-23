@@ -111,6 +111,11 @@ public class Membership {
 		status = MembershipStatus.TERMINATED;
 	}
 
+	void cancelReserved() {
+		if (status != MembershipStatus.RESERVED) throw new IllegalStateException("Only RESERVED Membership can be cancelled");
+		status = MembershipStatus.CANCELLED;
+	}
+
 	void extendTo(Instant newEnd) {
 		if (status != MembershipStatus.ACTIVE || !Objects.requireNonNull(newEnd).isAfter(endsAt)) {
 			throw new IllegalStateException("ACTIVE Membership end must be extended");

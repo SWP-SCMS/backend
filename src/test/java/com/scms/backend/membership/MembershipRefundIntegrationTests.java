@@ -26,6 +26,8 @@ class MembershipRefundIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 	@Autowired JdbcTemplate jdbc;
 	@Autowired MembershipRefundService refunds;
+	@Autowired PaymentService payments;
+	@Autowired MembershipLifecycleService lifecycle;
 
 	@Test
 	void refundLedgerMigrationInstallsExpectedTablesIndexesAndImmutableCreditNoteGuard() {
@@ -33,7 +35,7 @@ class MembershipRefundIntegrationTests {
 		assertThat(jdbc.queryForObject("select pg_get_expr(i.indpred, i.indrelid) from pg_index i join pg_class c on c.oid=i.indexrelid where c.relname='uq_refund_requests_nonrejected_payment'", String.class))
 			.contains("REJECTED", "CANCELLED").doesNotContain("COMPLETED");
 		assertThat(jdbc.queryForObject("select exists(select 1 from pg_trigger where tgname='trg_credit_notes_immutable' and not tgisinternal)", Boolean.class)).isTrue();
-		assertThat(jdbc.queryForObject("select version from flyway_schema_history where version='38' and success", String.class)).isEqualTo("38");
+		assertThat(jdbc.queryForObject("select version from flyway_schema_history where version='39' and success", String.class)).isEqualTo("39");
 	}
 
 	@Test
@@ -75,6 +77,89 @@ class MembershipRefundIntegrationTests {
 		assertThatThrownBy(() -> jdbc.update("insert into refund_requests(id,payment_id,order_id,membership_id,receipt_id,member_account_id,requester_account_id,refund_type,status,requested_amount,reason,idempotency_key) values(?,?,?,?,?,?,?,'TERMINATED_MEMBERSHIP','REQUESTED',1,'duplicate','second-key')",
 			UUID.randomUUID(), payment, order, membership, receipt, member, receptionist))
 			.isInstanceOf(DataIntegrityViolationException.class);
+		RevenueReportResponse report = payments.report(manager, now.minusSeconds(5), now.plusSeconds(5), false);
+		assertThat(report.paidRevenue()).isEqualTo(java.math.BigInteger.valueOf(100_000));
+		assertThat(report.completedRefundAmount()).isEqualTo(java.math.BigInteger.valueOf(1_000));
+		assertThat(report.netRevenue()).isEqualTo(java.math.BigInteger.valueOf(99_000));
+	}
+
+	@Test
+	void finalApprovalCancelsReservedMembershipOnlyAfterCashIsRecorded() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		UUID offer = UUID.randomUUID();
+		UUID order = UUID.randomUUID();
+		UUID payment = UUID.randomUUID();
+		UUID membership = UUID.randomUUID();
+		UUID receipt = UUID.randomUUID();
+		Instant now = Instant.now();
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'BASIC','Reserved refund','Reserved refund',100000,'VND',30,'ACTIVE',?)", offer, manager);
+		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?, ?,?,'Reserved refund','BASIC',100000,'VND',30,'CASH','PAID',?,'RESERVED')",
+			order, "RFR-" + order, member, manager, offer, Timestamp.from(now));
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',?)", payment, order, Timestamp.from(now));
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,'BASIC','Reserved refund',100000,'VND',30,'RESERVED',null,null)", membership, member, order, offer);
+		jdbc.update("insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot) values(?,?,?,?,?,100000,'VND','CASH')", receipt, "RC-" + receipt, payment, order, member);
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?", String.class, member);
+		RefundRequestResponse created = refunds.create(receptionist, memberCode,
+			new RefundRequestCreateRequest(payment, membership, java.math.BigInteger.valueOf(80_000), "Cancel reserved membership", "reserved-refund-key"));
+		assertThat(created.type()).isEqualTo(RefundType.RESERVED_CANCELLATION);
+		assertThat(created.suggestedAmount()).isEqualTo(java.math.BigInteger.valueOf(80_000));
+		assertThat(jdbc.queryForObject("select status from memberships where id=?", String.class, membership)).isEqualTo("RESERVED");
+		RefundRequestResponse approved = refunds.firstApproval(manager, created.id(),
+			new RefundFirstApprovalRequest(created.version(), java.math.BigInteger.valueOf(80_000)));
+		RefundRequestResponse disbursed = refunds.cashDisbursement(receptionist, created.id(),
+			new RefundCashDisbursementRequest(approved.version(), "cash voucher"));
+
+		RefundRequestResponse completed = refunds.finalApproval(manager, created.id(), new RefundActionRequest(disbursed.version(), null));
+
+		assertThat(completed.status()).isEqualTo(RefundRequestStatus.COMPLETED);
+		assertThat(jdbc.queryForObject("select status from memberships where id=?", String.class, membership)).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select amount from credit_notes where refund_request_id=?", java.math.BigDecimal.class, created.id()))
+			.isEqualByComparingTo("80000");
+	}
+
+	@Test
+	void rejectingReservedRefundAfterImmediateTerminationActivatesMembershipAtRejectionTime() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		UUID offer = UUID.randomUUID();
+		UUID reservedOrder = UUID.randomUUID();
+		UUID activeOrder = UUID.randomUUID();
+		UUID payment = UUID.randomUUID();
+		UUID reservedId = UUID.randomUUID();
+		UUID activeId = UUID.randomUUID();
+		UUID receipt = UUID.randomUUID();
+		Instant now = Instant.now();
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'BASIC','Deferred activation','Deferred activation',100000,'VND',30,'ACTIVE',?)", offer, manager);
+		insertPaidOrder(reservedOrder, member, manager, offer, payment, now, "RESERVED");
+		insertPaidOrder(activeOrder, member, manager, offer, UUID.randomUUID(), now, "IMMEDIATE");
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,'BASIC','Deferred activation',100000,'VND',30,'RESERVED',null,null)", reservedId, member, reservedOrder, offer);
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,'BASIC','Deferred activation',100000,'VND',30,'ACTIVE',?,?)", activeId, member, activeOrder, offer, Timestamp.from(now.minusSeconds(86400)), Timestamp.from(now.plusSeconds(86400)));
+		jdbc.update("insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot) values(?,?,?,?,?,100000,'VND','CASH')", receipt, "RC-" + receipt, payment, reservedOrder, member);
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?", String.class, member);
+		RefundRequestResponse created = refunds.create(receptionist, memberCode,
+			new RefundRequestCreateRequest(payment, reservedId, java.math.BigInteger.valueOf(80_000), "Cancel reserved", "deferred-refund-key"));
+		lifecycle.terminateActiveAndActivateReserved(member, now);
+		assertThat(jdbc.queryForObject("select status from memberships where id=?", String.class, reservedId)).isEqualTo("RESERVED");
+
+		refunds.reject(manager, created.id(), new RefundActionRequest(created.version(), "not eligible"));
+
+		assertThat(jdbc.queryForObject("select status from refund_requests where id=?", String.class, created.id())).isEqualTo("REJECTED");
+		assertThat(jdbc.queryForObject("select status from memberships where id=?", String.class, reservedId)).isEqualTo("ACTIVE");
+		Instant startsAt = jdbc.queryForObject("select starts_at from memberships where id=?", Timestamp.class, reservedId).toInstant();
+		assertThat(startsAt).isAfterOrEqualTo(now);
+		assertThat(startsAt).isBeforeOrEqualTo(Instant.now());
+	}
+
+	private void insertPaidOrder(UUID order, UUID member, UUID manager, UUID offer, UUID payment, Instant now, String fulfillment) {
+		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Deferred activation','BASIC',100000,'VND',30,'CASH','PAID',?,?)",
+			order, "RFD-" + order, member, manager, offer, Timestamp.from(now), fulfillment);
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',?)",
+			payment, order, Timestamp.from(now));
 	}
 
 	private UUID account(String role) {

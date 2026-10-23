@@ -17,7 +17,8 @@ paths:
         '200': { description: Paginated refund requests }
   /reception/members/{memberCode}/refund-requests:
     post:
-      summary: Request a cash refund for an eligible terminated Membership
+      summary: Request a cash refund for an eligible terminated or reserved Membership
+      description: A TERMINATED Membership uses the 50% unused-term calculation; a RESERVED Membership uses 80% of its snapshot price and remains RESERVED until final approval.
       parameters:
         - in: path
           name: memberCode

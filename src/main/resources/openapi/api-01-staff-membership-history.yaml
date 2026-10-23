@@ -100,7 +100,7 @@ components:
           description: Stored membership snapshot, never the current offer
         status:
           type: string
-          enum: [RESERVED, ACTIVE, EXPIRED, TERMINATED]
+          enum: [RESERVED, ACTIVE, EXPIRED, TERMINATED, CANCELLED]
         startsAt:
           type: [string, "null"]
           format: date-time
