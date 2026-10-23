@@ -481,13 +481,14 @@ class GeneratedOpenApiTests {
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/status/enum").toString())
-			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\"]");
+			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\",\"CANCELLED\"]");
 		assertThat(schema.at("/properties/benefitCodes/type").asText()).isEqualTo("array");
 		assertThat(schema.at("/properties/benefits/items/$ref").asText())
 			.isEqualTo("#/components/schemas/MembershipBenefitResponse");
 		JsonNode memberHistory = document.at("/components/schemas/MembershipHistoryResponse/properties");
 		assertThat(memberHistory.properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.contains("benefitCodes", "benefits");
+		assertThat(memberHistory.at("/status/enum").toString()).contains("CANCELLED");
 	}
 
 	@Test

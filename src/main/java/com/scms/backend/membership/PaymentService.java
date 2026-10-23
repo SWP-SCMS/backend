@@ -450,8 +450,16 @@ class PaymentService {
 			"count(*) filter(where "+pending+") pending_payments,count(*) filter(where "+failed+") failed_payments from payments p join membership_orders o on o.id=p.order_id where true"+test;
 		List<Object> args=new ArrayList<>(); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to); addRangeArgs(args,from,to);
 		Map<String,Object> row=db.queryForMap(sql,args.toArray());
+		String completedRefunds=range("r.status='COMPLETED'","r.completed_at",from,to);
+		String refundSql="select coalesce(sum(cn.amount),0) completed_refund_amount from credit_notes cn "+
+			"join refund_requests r on r.id=cn.refund_request_id join membership_orders o on o.id=r.order_id where "+completedRefunds+test;
+		List<Object> refundArgs=new ArrayList<>(); addRangeArgs(refundArgs,from,to);
+		Map<String,Object> refundRow=db.queryForMap(refundSql,refundArgs.toArray());
 		Map<String,Object> memberships=db.queryForMap("select count(*) filter(where m.status='ACTIVE' and m.starts_at<=current_timestamp and m.ends_at>current_timestamp) active,count(*) filter(where m.status='EXPIRED' or (m.status='ACTIVE' and m.ends_at<=current_timestamp)) expired from memberships m join membership_orders o on o.id=m.order_id where true"+test);
-		return new RevenueReportResponse(from,to,number(row,"paid_payments"),big(row,"paid_revenue"),number(row,"pending_payments"),
+		BigInteger paidRevenue=big(row,"paid_revenue");
+		BigInteger completedRefundAmount=big(refundRow,"completed_refund_amount");
+		return new RevenueReportResponse(from,to,number(row,"paid_payments"),paidRevenue,completedRefundAmount,
+			paidRevenue.subtract(completedRefundAmount),number(row,"pending_payments"),
 			number(row,"failed_payments"),number(memberships,"active"),number(memberships,"expired"),includeTestData);
 	}
 

@@ -54,7 +54,7 @@ class RefundRequest {
 
 	RefundRequest(UUID id, UUID paymentId, UUID orderId, UUID membershipId, UUID receiptId, UUID memberAccountId,
 			UUID requesterAccountId, RefundType type, BigInteger requestedAmount, BigInteger suggestedAmount,
-			int remainingDays, LocalDate calculationDate, String reason, String idempotencyKey) {
+			Integer remainingDays, LocalDate calculationDate, String reason, String idempotencyKey) {
 		this.id = Objects.requireNonNull(id); this.paymentId = Objects.requireNonNull(paymentId);
 		this.orderId = Objects.requireNonNull(orderId); this.membershipId = Objects.requireNonNull(membershipId);
 		this.receiptId = Objects.requireNonNull(receiptId); this.memberAccountId = Objects.requireNonNull(memberAccountId);
@@ -67,7 +67,7 @@ class RefundRequest {
 		this.reason = Objects.requireNonNull(reason); this.idempotencyKey = Objects.requireNonNull(idempotencyKey);
 	}
 
-	void firstApprove(UUID actor, BigInteger amount, BigInteger suggested, int remainingDays, LocalDate date, Instant now) {
+	void firstApprove(UUID actor, BigInteger amount, BigInteger suggested, Integer remainingDays, LocalDate date, Instant now) {
 		if (status != RefundRequestStatus.REQUESTED) throw new IllegalStateException("Refund request is not awaiting first approval");
 		if (amount == null || amount.signum() <= 0 || amount.compareTo(requestedAmount) > 0
 				|| suggested == null || amount.compareTo(suggested) > 0) throw new IllegalArgumentException("approved amount exceeds refund limit");
