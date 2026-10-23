@@ -74,7 +74,9 @@ class MembershipFreezeServiceTests {
 		Fixture fixture = fixture(LocalDate.of(2026, 11, 1));
 		when(fixture.accounts.existsByIdAndRoleAndStatus(fixture.memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(fixture.requests.findById(fixture.requestId)).thenReturn(Optional.of(fixture.request));
-		when(fixture.accounts.findByIdForUpdate(fixture.memberId)).thenReturn(Optional.of(mock(Account.class)));
+		when(fixture.accounts.findByIdForUpdate(fixture.memberId)).thenReturn(Optional.of(new Account(fixture.memberId,
+			AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0900000001", "member@example.test",
+			LocalDate.of(1990, 1, 1), "hash")));
 		when(fixture.memberships.findByIdForUpdate(fixture.membershipId)).thenReturn(Optional.of(fixture.membership));
 		when(fixture.requests.findByIdForUpdate(fixture.requestId)).thenReturn(Optional.of(fixture.request));
 		ReflectionTestUtils.setField(fixture.request, "status", MembershipFreezeRequestStatus.PENDING);
@@ -87,6 +89,50 @@ class MembershipFreezeServiceTests {
 		verify(fixture.audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("MEMBERSHIP_FREEZE_WITHDRAWN");
 		verify(fixture.notifications, never()).write(any(), any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void memberFreezeRequestAlertsActiveManagersWithoutSelfConfirmation() {
+		Fixture fixture = fixture(LocalDate.of(2026, 11, 4));
+		when(fixture.accounts.existsByIdAndRoleAndStatus(fixture.memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(fixture.accounts.findByIdForUpdate(fixture.memberId)).thenReturn(Optional.of(new Account(fixture.memberId,
+			AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0900000001", "member@example.test",
+			LocalDate.of(1990, 1, 1), "hash")));
+		Membership activeMembership = new Membership(fixture.membershipId, fixture.memberId, UUID.randomUUID(), UUID.randomUUID(),
+			"PLUS", "Offer", BigInteger.valueOf(100_000), "VND", 30, MembershipStatus.ACTIVE,
+			Instant.parse("2026-11-01T00:00:00Z"), fixture.originalMembershipEnd);
+		when(fixture.memberships.findByMemberAccountIdAndStatusForUpdate(fixture.memberId, MembershipStatus.ACTIVE)).thenReturn(Optional.of(activeMembership));
+		when(fixture.requests.existsByMembershipIdAndStatusIn(eq(fixture.membershipId), any())).thenReturn(false);
+		UUID managerId = UUID.randomUUID();
+		Account manager = mock(Account.class);
+		when(manager.getId()).thenReturn(managerId);
+		when(fixture.accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(List.of(manager));
+
+		fixture.service.createForMember(fixture.memberId,
+			new MembershipFreezeCreateRequest(LocalDate.of(2026, 11, 4), LocalDate.of(2026, 11, 7), "travel"));
+
+		verify(fixture.notifications, never()).write(any(), eq(fixture.memberId), eq("MEMBERSHIP_FREEZE_PENDING"), any(), any(), any());
+		verify(fixture.notifications).write(any(), eq(managerId), eq("MEMBERSHIP_FREEZE_REVIEW_REQUIRED"),
+			eq("MEMBERSHIP_FREEZE_REQUEST"), any(), any());
+		verify(fixture.accounts).findAllByRoleAndStatusOrderByIdAsc(AccountRole.MANAGER, AccountStatus.ACTIVE);
+	}
+
+	@Test
+	void freezeApprovalAlertsActiveReceptionistsToCollectCash() {
+		Fixture fixture = fixture(LocalDate.of(2026, 11, 4));
+		UUID managerId = UUID.randomUUID();
+		UUID receptionistId = UUID.randomUUID();
+		when(fixture.accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		Account receptionist = account(receptionistId);
+		when(fixture.accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(List.of(receptionist));
+		ReflectionTestUtils.setField(fixture.request, "status", MembershipFreezeRequestStatus.PENDING);
+		fixture.lock();
+
+		fixture.service.approve(managerId, fixture.requestId, new MembershipFreezeDecisionRequest(7L));
+
+		verify(fixture.notifications).write(eq("MEMBERSHIP_FREEZE_APPROVED_PENDING_PAYMENT:" + fixture.requestId + ":" + receptionistId),
+			eq(receptionistId), eq("MEMBERSHIP_FREEZE_PAYMENT_REQUIRED"), eq("MEMBERSHIP_FREEZE_REQUEST"), eq(fixture.requestId), any());
 	}
 
 	@Test
@@ -166,9 +212,7 @@ class MembershipFreezeServiceTests {
 		verify(fixture.audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("MEMBERSHIP_FREEZE_ENDED_EARLY");
 		assertThat(audit.getValue().getAfterData()).containsEntry("creditedDays", 2);
-		verify(fixture.notifications).write(eq("MEMBERSHIP_FREEZE_ENDED_EARLY:" + fixture.requestId), eq(fixture.memberId),
-			eq("MEMBERSHIP_FREEZE_ENDED_EARLY"), eq("MEMBERSHIP_FREEZE_REQUEST"), eq(fixture.requestId),
-			eq(Map.of("creditedDays", 2)));
+		verify(fixture.notifications, never()).write(any(), any(), any(), any(), any(), any());
 	}
 
 	@Test
@@ -187,6 +231,9 @@ class MembershipFreezeServiceTests {
 		assertThat(fixture.request.getStatus()).isEqualTo(MembershipFreezeRequestStatus.COMPLETED);
 		assertThat(fixture.membership.getEndsAt()).isEqualTo(fixture.originalMembershipEnd);
 		verify(fixture.jdbc).update(contains("status='ENDED_EARLY'"), eq(Date.valueOf("2026-11-03")), eq(0), eq(fixture.requestId));
+		verify(fixture.notifications).write(eq("MEMBERSHIP_FREEZE_ENDED_EARLY:" + fixture.requestId), eq(fixture.memberId),
+			eq("MEMBERSHIP_FREEZE_ENDED_EARLY"), eq("MEMBERSHIP_FREEZE_REQUEST"), eq(fixture.requestId),
+			eq(Map.of("creditedDays", 0)));
 	}
 
 	@Test
@@ -236,6 +283,12 @@ class MembershipFreezeServiceTests {
 
 	private Membership membership(BigInteger price, int duration) {
 		return new Membership(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "PLUS", "Offer", price, "VND", duration, MembershipStatus.ACTIVE, Instant.parse("2026-10-01T00:00:00Z"), Instant.parse("2026-11-01T00:00:00Z"));
+	}
+
+	private Account account(UUID id) {
+		Account account = mock(Account.class);
+		when(account.getId()).thenReturn(id);
+		return account;
 	}
 
 	private Fixture fixture(LocalDate actualStart) {

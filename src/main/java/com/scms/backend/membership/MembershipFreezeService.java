@@ -74,6 +74,8 @@ class MembershipFreezeService {
 		request.withdraw();
 		requests.saveAndFlush(request);
 		audit(memberId, "WITHDRAWN", request, Map.of());
+		notifyRole(AccountRole.MANAGER, memberId, "MEMBERSHIP_FREEZE_WITHDRAWN:" + requestId,
+			"MEMBERSHIP_FREEZE_WITHDRAWN", requestId, Map.of());
 	}
 
 	@Transactional(readOnly = true)
@@ -106,6 +108,8 @@ class MembershipFreezeService {
 		request.approve(managerId, fee, clock.instant()); requests.saveAndFlush(request);
 		audit(managerId, "APPROVED", request, Map.of("feeAmount", fee.toString()));
 		notify(request, "APPROVED_PENDING_PAYMENT", Map.of("feeAmount", fee.toString()));
+		notifyRole(AccountRole.RECEPTIONIST, managerId, "MEMBERSHIP_FREEZE_APPROVED_PENDING_PAYMENT:" + requestId,
+			"MEMBERSHIP_FREEZE_PAYMENT_REQUIRED", requestId, Map.of("feeAmount", fee.toString()));
 		return MembershipFreezeRequestResponse.from(request);
 	}
 
@@ -166,7 +170,10 @@ class MembershipFreezeService {
 		if (requests.existsByMembershipIdAndStatusIn(membership.getId(), OPEN)) throw MembershipFreezeException.alreadyPending();
 		MembershipFreezeRequest request = new MembershipFreezeRequest(UUID.randomUUID(), membership.getId(), memberId, requesterId,
 			input.startDate(), input.endDate(), input.reason().trim());
-		requests.saveAndFlush(request); audit(requesterId, "REQUESTED", request, Map.of()); notify(request, "PENDING", Map.of());
+		requests.saveAndFlush(request); audit(requesterId, "REQUESTED", request, Map.of());
+		if (!requesterId.equals(memberId)) notify(request, "PENDING", Map.of());
+		notifyRole(AccountRole.MANAGER, requesterId, "MEMBERSHIP_FREEZE_REVIEW_REQUIRED:" + request.getId(),
+			"MEMBERSHIP_FREEZE_REVIEW_REQUIRED", request.getId(), Map.of());
 		return MembershipFreezeRequestResponse.from(request);
 	}
 
@@ -200,7 +207,7 @@ class MembershipFreezeService {
 		if (creditedDays > 0) membership.extendTo(membership.getEndsAt().plus(creditedDays, ChronoUnit.DAYS));
 		request.complete(); requests.saveAndFlush(request);
 		audit(actorId, "ENDED_EARLY", request, Map.of("creditedDays", creditedDays));
-		notify(request, "ENDED_EARLY", Map.of("creditedDays", creditedDays));
+		if (!actorId.equals(request.getMemberAccountId())) notify(request, "ENDED_EARLY", Map.of("creditedDays", creditedDays));
 		return MembershipFreezeRequestResponse.from(request);
 	}
 	private void validate(MembershipFreezeCreateRequest input) {
@@ -227,6 +234,13 @@ class MembershipFreezeService {
 		audits.save(new AuditEvent(UUID.randomUUID(), actor, "MEMBERSHIP_FREEZE_" + action, "MEMBERSHIP_FREEZE_REQUEST", request.getId(), request.getReason(), Map.of(), data));
 	}
 	private void notify(MembershipFreezeRequest request, String event, Map<String, Object> payload) { notifications.write("MEMBERSHIP_FREEZE_" + event + ":" + request.getId(), request.getMemberAccountId(), "MEMBERSHIP_FREEZE_" + event, "MEMBERSHIP_FREEZE_REQUEST", request.getId(), payload); }
+	private void notifyRole(AccountRole role, UUID actorId, String eventKeyPrefix, String type, UUID requestId,
+			Map<String, Object> payload) {
+		for (Account recipient : accounts.findAllByRoleAndStatusOrderByIdAsc(role, AccountStatus.ACTIVE)) {
+			if (!recipient.getId().equals(actorId)) notifications.write(eventKeyPrefix + ":" + recipient.getId(), recipient.getId(),
+				type, "MEMBERSHIP_FREEZE_REQUEST", requestId, payload);
+		}
+	}
 	private PageRequest pageable(int page, int size) { return PageRequest.of(page, size, Sort.by("createdAt").descending().and(Sort.by("id").descending())); }
 	private MembershipFreezeRequestPageResponse page(org.springframework.data.domain.Page<MembershipFreezeRequest> page) { return MembershipFreezeRequestPageResponse.from(page); }
 	private MembershipFreezeRequestPageResponse managerPage(org.springframework.data.domain.Page<MembershipFreezeRequest> page) {

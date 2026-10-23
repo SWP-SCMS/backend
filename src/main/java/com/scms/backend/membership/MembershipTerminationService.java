@@ -60,7 +60,7 @@ class MembershipTerminationService {
 	@Transactional
 	MembershipTerminationRequestResponse createForMember(UUID memberId, MembershipTerminationCreateRequest input) {
 		ensureRole(memberId, AccountRole.MEMBER);
-		return create(memberId, memberId, input);
+		return create(memberId, memberId, input, true);
 	}
 
 	@Transactional
@@ -73,7 +73,7 @@ class MembershipTerminationService {
 	MembershipTerminationRequestResponse createForReceptionist(UUID receptionistId, String memberCode,
 			MembershipTerminationCreateRequest input) {
 		ensureRole(receptionistId, AccountRole.RECEPTIONIST);
-		return create(receptionistId, findMember(memberCode).getAccountId(), input);
+		return create(receptionistId, findMember(memberCode).getAccountId(), input, true);
 	}
 
 	@Transactional
@@ -85,8 +85,8 @@ class MembershipTerminationService {
 		request.withdraw(Instant.now(clock));
 		requests.saveAndFlush(request);
 		audit(memberId, "WITHDRAWN", request);
-		notifications.write("MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId, memberId,
-			"MEMBERSHIP_TERMINATION_WITHDRAWN", "MEMBERSHIP_TERMINATION_REQUEST", requestId, Map.of());
+		notifyRole(AccountRole.MANAGER, memberId, "MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId,
+			"MEMBERSHIP_TERMINATION_WITHDRAWN", requestId, Map.of());
 	}
 
 	@Transactional(readOnly = true)
@@ -133,11 +133,12 @@ class MembershipTerminationService {
 	MembershipTerminationRequestResponse createDirect(UUID managerId, UUID memberAccountId,
 			MembershipTerminationCreateRequest input) {
 		ensureRole(managerId, AccountRole.MANAGER);
-		MembershipTerminationRequestResponse response = create(managerId, memberAccountId, input);
+		MembershipTerminationRequestResponse response = create(managerId, memberAccountId, input, false);
 		return approve(managerId, response.id(), new MembershipTerminationDecisionRequest(response.version()));
 	}
 
-	private MembershipTerminationRequestResponse create(UUID requesterId, UUID memberId, MembershipTerminationCreateRequest input) {
+	private MembershipTerminationRequestResponse create(UUID requesterId, UUID memberId, MembershipTerminationCreateRequest input,
+			boolean requiresManagerReview) {
 		validate(input);
 		accounts.findByIdForUpdate(memberId).filter(account -> account.getRole() == AccountRole.MEMBER
 			&& account.getStatus() == AccountStatus.ACTIVE).orElseThrow(MembershipTerminationException::notActive);
@@ -148,9 +149,20 @@ class MembershipTerminationService {
 			memberId, requesterId, input.mode(), input.reason().trim());
 		requests.saveAndFlush(request);
 		audit(requesterId, "REQUESTED", request);
-		notifications.write("MEMBERSHIP_TERMINATION_REQUESTED:" + request.getId(), memberId,
+		if (!requesterId.equals(memberId)) notifications.write("MEMBERSHIP_TERMINATION_REQUESTED:" + request.getId(), memberId,
 			"MEMBERSHIP_TERMINATION_REQUESTED", "MEMBERSHIP_TERMINATION_REQUEST", request.getId(), Map.of("mode", input.mode().name()));
+		if (requiresManagerReview) notifyRole(AccountRole.MANAGER, requesterId,
+			"MEMBERSHIP_TERMINATION_REVIEW_REQUIRED:" + request.getId(), "MEMBERSHIP_TERMINATION_REVIEW_REQUIRED",
+			request.getId(), Map.of("mode", input.mode().name()));
 		return MembershipTerminationRequestResponse.from(request);
+	}
+
+	private void notifyRole(AccountRole role, UUID actorId, String eventKeyPrefix, String type, UUID requestId,
+			Map<String, Object> payload) {
+		for (Account recipient : accounts.findAllByRoleAndStatusOrderByIdAsc(role, AccountStatus.ACTIVE)) {
+			if (!recipient.getId().equals(actorId)) notifications.write(eventKeyPrefix + ":" + recipient.getId(), recipient.getId(),
+				type, "MEMBERSHIP_TERMINATION_REQUEST", requestId, payload);
+		}
 	}
 
 	private MembershipTerminationRequest lockRequest(UUID id) { return requests.findByIdForUpdate(id).orElseThrow(MembershipTerminationException::notFound); }
