@@ -569,6 +569,21 @@ class GeneratedOpenApiTests {
 			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
 		assertThat(document.at("/components/schemas/PaymentResultResponse/required").toString())
 			.contains("fulfillmentMode");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("orderNumber", "memberCode", "memberName", "paymentReference");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("orderNumber", "paymentReference");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties").properties()
+			.stream().map(java.util.Map.Entry::getKey).toList())
+			.contains("memberCode", "paymentReference");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties/paymentReference/type").toString())
+			.isEqualTo("[\"string\",\"null\"]");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
 
 		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())

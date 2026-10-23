@@ -66,6 +66,7 @@ class PaymentServiceReceiptAccessTests {
 			Map.entry("receipt_number", "RC-001"),
 			Map.entry("payment_id", paymentId),
 			Map.entry("order_id", orderId),
+			Map.entry("order_number", "ORD-100001"),
 			Map.entry("plan_code_snapshot", "BASIC"),
 			Map.entry("offer_name_snapshot", "Monthly Basic"),
 			Map.entry("member_account_id", memberId),
@@ -74,6 +75,7 @@ class PaymentServiceReceiptAccessTests {
 			Map.entry("amount_snapshot", BigDecimal.valueOf(12000)),
 			Map.entry("currency_code_snapshot", "VND"),
 			Map.entry("payment_method_snapshot", "BANK_TRANSFER"),
+			Map.entry("payment_reference", "SEPAY-100001"),
 			Map.entry("processed_by_account_id", receptionistId),
 			Map.entry("issued_at", Timestamp.from(issuedAt))
 		));
@@ -86,6 +88,8 @@ class PaymentServiceReceiptAccessTests {
 		assertThat(response.offerName()).isEqualTo("Monthly Basic");
 		assertThat(response.memberName()).isEqualTo("Member One");
 		assertThat(response.memberCode()).isEqualTo("MB-100001");
+		assertThat(response.orderNumber()).isEqualTo("ORD-100001");
+		assertThat(response.paymentReference()).isEqualTo("SEPAY-100001");
 	}
 
 	@Test
@@ -95,6 +99,10 @@ class PaymentServiceReceiptAccessTests {
 			"order_id", orderId,
 			"member_account_id", memberId,
 			"payment_method", "BANK_TRANSFER",
+			"order_number", "ORD-100001",
+			"member_name", "Member One",
+			"member_code", "MB-100001",
+			"provider_reference", "SEPAY-100001",
 			"payment_status", "PENDING"
 		));
 
@@ -102,6 +110,10 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response.paymentId()).isEqualTo(paymentId);
 		assertThat(response.method()).isEqualTo("BANK_TRANSFER");
+		assertThat(response.orderNumber()).isEqualTo("ORD-100001");
+		assertThat(response.memberCode()).isEqualTo("MB-100001");
+		assertThat(response.memberName()).isEqualTo("Member One");
+		assertThat(response.paymentReference()).isEqualTo("SEPAY-100001");
 	}
 
 	@Test
@@ -120,6 +132,7 @@ class PaymentServiceReceiptAccessTests {
 
 		assertThat(response).extracting(ReceiptResponse::paymentMethod)
 			.containsExactly("CASH", "BANK_TRANSFER");
+		assertThat(cash.paymentReference()).isNull();
 	}
 
 	@Test

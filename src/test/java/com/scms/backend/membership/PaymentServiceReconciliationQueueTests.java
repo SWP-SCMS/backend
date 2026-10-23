@@ -59,8 +59,10 @@ class PaymentServiceReconciliationQueueTests {
 			when(rs.getObject("payment_id", UUID.class)).thenReturn(paymentId);
 			when(rs.getObject("order_id", UUID.class)).thenReturn(orderId);
 			when(rs.getString("order_number")).thenReturn("ORD-001");
+			when(rs.getString("payment_reference")).thenReturn(null);
 			when(rs.getObject("member_account_id", UUID.class)).thenReturn(memberId);
 			when(rs.getString("member_name")).thenReturn("Nguyen Van A");
+			when(rs.getString("member_code")).thenReturn("MB-100001");
 			when(rs.getBigDecimal("amount")).thenReturn(new java.math.BigDecimal("12000"));
 			when(rs.getString("currency_code")).thenReturn("VND");
 			when(rs.getString("transfer_content")).thenReturn("SCMS ABC123");
@@ -76,7 +78,7 @@ class PaymentServiceReconciliationQueueTests {
 		assertThat(response.totalPages()).isEqualTo(1);
 		assertThat(response.content()).containsExactly(new ReconciliationQueueItem(paymentId, orderId,
 			"ORD-001", memberId, "Nguyen Van A", BigInteger.valueOf(12000), "VND",
-			"SCMS ABC123", createdAt, expiresAt));
+			"SCMS ABC123", createdAt, expiresAt, "MB-100001", null));
 		ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
 		verify(db).query(sql.capture(), any(RowMapper.class), any(Object[].class));
 		assertThat(sql.getValue())
@@ -84,5 +86,6 @@ class PaymentServiceReconciliationQueueTests {
 			.contains("o.expires_at is null or o.expires_at > ?")
 			.contains("order by p.created_at desc, p.id desc")
 			.contains("limit ? offset ?");
+		assertThat(sql.getValue()).contains("p.provider_reference payment_reference", "m.member_code member_code");
 	}
 }
