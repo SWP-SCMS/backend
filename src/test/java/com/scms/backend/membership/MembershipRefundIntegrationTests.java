@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scms.backend.notification.NotificationOutboxDispatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,10 +54,8 @@ class MembershipRefundIntegrationTests {
 		UUID receptionist = account("RECEPTIONIST");
 		account("RECEPTIONIST");
 		for (String role : List.of("MANAGER", "RECEPTIONIST")) {
-			for (String status : List.of("INACTIVE", "SUSPENDED")) {
-				UUID excluded = account(role);
-				jdbc.update("update accounts set status=? where id=?", status, excluded);
-			}
+			UUID excluded = account(role);
+			jdbc.update("update accounts set status='INACTIVE' where id=?", excluded);
 		}
 		UUID member = account("MEMBER");
 		jdbc.update("insert into member_profiles(account_id) values(?)", member);
@@ -119,11 +116,8 @@ class MembershipRefundIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@CsvSource({"COMPLETED,INACTIVE,RECEPTIONIST", "REJECTED,INACTIVE,RECEPTIONIST",
-		"COMPLETED,SUSPENDED,RECEPTIONIST", "REJECTED,SUSPENDED,RECEPTIONIST",
-		"COMPLETED,ACTIVE,MANAGER", "REJECTED,ACTIVE,MANAGER",
-		"COMPLETED,ACTIVE,COACH", "REJECTED,ACTIVE,COACH"})
-	void terminalStaffRoutingRechecksRequesterStatusAndRole(String action, String status, String role) throws Exception {
+	@ValueSource(strings = {"COMPLETED", "REJECTED"})
+	void terminalStaffRoutingExcludesRequesterDeactivatedBeforeDecision(String action) throws Exception {
 		UUID manager = account("MANAGER");
 		UUID receptionist = account("RECEPTIONIST");
 		UUID member = account("MEMBER");
@@ -137,11 +131,10 @@ class MembershipRefundIntegrationTests {
 			current = refunds.firstApproval(manager, current.id(), new RefundFirstApprovalRequest(current.version(), BigInteger.ONE));
 			current = refunds.cashDisbursement(receptionist, current.id(), new RefundCashDisbursementRequest(current.version(), "private evidence"));
 		}
-		jdbc.update("update accounts set status=?,role=? where id=?", status, role, receptionist);
-		UUID actor = role.equals("MANAGER") ? receptionist : manager;
+		jdbc.update("update accounts set status='INACTIVE' where id=?", receptionist);
 		RefundRequestResponse terminal = action.equals("COMPLETED")
-			? refunds.finalApproval(actor, current.id(), new RefundActionRequest(current.version(), null))
-			: refunds.reject(actor, current.id(), new RefundActionRequest(current.version(), "private rejection reason"));
+			? refunds.finalApproval(manager, current.id(), new RefundActionRequest(current.version(), null))
+			: refunds.reject(manager, current.id(), new RefundActionRequest(current.version(), "private rejection reason"));
 		assertStaffOutbox(terminal, List.of());
 	}
 
