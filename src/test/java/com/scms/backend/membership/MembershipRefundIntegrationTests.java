@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -31,10 +32,101 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class MembershipRefundIntegrationTests {
 	@Container @ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
-	@Autowired JdbcTemplate jdbc;
+	@MockitoSpyBean JdbcTemplate jdbc;
 	@Autowired MembershipRefundService refunds;
 	@Autowired PaymentService payments;
 	@Autowired MembershipLifecycleService lifecycle;
+
+	@Test
+	void refundDisplayJoinsCurrentSourcesAcrossWorkflowReplayAndInactiveHistory() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		String code = jdbc.queryForObject("select member_code from member_profiles where account_id=?", String.class, member);
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		String plan = "REFUND_" + UUID.randomUUID().toString().replace("-", "");
+		jdbc.update("insert into membership_plans(plan_code,display_name,supports_booking,supports_personal_coaching) values(?,'Refund history plan',false,false)", plan);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(), today.minusDays(50),
+			"actual-refund-cash-reference", plan);
+		jdbc.update("update membership_plans set status='INACTIVE' where plan_code=?", plan);
+		jdbc.update("update membership_offers set status='INACTIVE' where id=(select offer_id from membership_orders where id=?)", source.orderId());
+		RefundRequestCreateRequest input = new RefundRequestCreateRequest(source.paymentId(), source.membershipId(),
+			BigInteger.valueOf(10_000), "display workflow", UUID.randomUUID().toString());
+		RefundRequestResponse created = refunds.create(receptionist, code, input);
+		assertDisplay(created, source, code, "Refund MEMBER", "actual-refund-cash-reference");
+		assertThat(created.version()).isZero();
+		jdbc.update("update accounts set full_name='Renamed Refund Member' where id=?", member);
+		RefundRequestResponse replay = refunds.create(receptionist, code, input);
+		assertDisplay(replay, source, code, "Renamed Refund Member", "actual-refund-cash-reference");
+		assertThat(replay.id()).isEqualTo(created.id());
+		assertThat(replay.version()).isEqualTo(created.version());
+		RefundRequestResponse approved = refunds.firstApproval(manager, created.id(), new RefundFirstApprovalRequest(created.version(), BigInteger.valueOf(10_000)));
+		assertDisplay(approved, source, code, "Renamed Refund Member", "actual-refund-cash-reference");
+		assertThat(approved.version()).isEqualTo(1);
+		RefundRequestResponse disbursed = refunds.cashDisbursement(receptionist, created.id(), new RefundCashDisbursementRequest(approved.version(), "voucher"));
+		assertDisplay(disbursed, source, code, "Renamed Refund Member", "actual-refund-cash-reference");
+		assertThat(disbursed.version()).isEqualTo(2);
+		RefundRequestResponse completed = refunds.finalApproval(manager, created.id(), new RefundActionRequest(disbursed.version(), null));
+		assertDisplay(completed, source, code, "Renamed Refund Member", "actual-refund-cash-reference");
+		assertThat(completed.version()).isEqualTo(3);
+
+		SourceFixture rejectedSource = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(), today.minusDays(50));
+		RefundRequestResponse pending = refunds.create(receptionist, code, new RefundRequestCreateRequest(rejectedSource.paymentId(),
+			rejectedSource.membershipId(), BigInteger.ONE, "reject display", UUID.randomUUID().toString()));
+		RefundRequestResponse rejected = refunds.reject(manager, pending.id(), new RefundActionRequest(pending.version(), "declined"));
+		assertDisplay(rejected, rejectedSource, code, "Renamed Refund Member", null);
+		assertThat(rejected.version()).isEqualTo(1);
+		jdbc.update("update accounts set status='INACTIVE' where id=?", member);
+		for (boolean managerPage : List.of(true, false)) {
+			org.mockito.Mockito.clearInvocations(jdbc);
+			RefundRequestPageResponse page = managerPage ? refunds.listForManager(manager, 0, 100)
+				: refunds.listForReceptionist(receptionist, 0, 100);
+			org.mockito.Mockito.verify(jdbc).queryForList(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
+			assertThat(page.content()).filteredOn(row -> row.id().equals(created.id())).singleElement()
+				.satisfies(row -> assertDisplay(row, source, code, "Renamed Refund Member", "actual-refund-cash-reference"));
+			assertThat(page.content()).filteredOn(row -> row.id().equals(rejected.id())).singleElement()
+				.satisfies(row -> assertDisplay(row, rejectedSource, code, "Renamed Refund Member", null));
+		}
+	}
+
+	@Test
+	void refundDisplayKeepsLegacyMissingProfileAndStablePaginationWithOneJdbcBatchPerPage() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		// Legacy accounts can lack a profile; the refund must still be returned.
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(),
+			LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(50));
+		refund(source, receptionist, "REQUESTED");
+		UUID id = jdbc.queryForObject("select id from refund_requests where payment_id=?", UUID.class, source.paymentId());
+		jdbc.update("update refund_requests set requested_at=timestamp with time zone '2099-01-01 00:00:00+00' where id=?", id);
+		org.mockito.Mockito.clearInvocations(jdbc);
+		RefundRequestPageResponse first = refunds.listForManager(manager, 0, 1);
+		org.mockito.Mockito.verify(jdbc).queryForList(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
+		assertThat(first.content()).singleElement().satisfies(row -> {
+			assertThat(row.id()).isEqualTo(id);
+			assertDisplay(row, source, null, "Refund MEMBER", null);
+		});
+		RefundRequestResponse rejected = refunds.reject(manager, id, new RefundActionRequest(0L, "legacy"));
+		assertDisplay(rejected, source, null, "Refund MEMBER", null);
+		org.mockito.Mockito.clearInvocations(jdbc);
+		RefundRequestPageResponse reception = refunds.listForReceptionist(receptionist, 0, 1);
+		org.mockito.Mockito.verify(jdbc).queryForList(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
+		assertThat(reception.content()).isEqualTo(List.of(rejected));
+		assertThat(reception.totalElements()).isEqualTo(first.totalElements());
+		assertThat(reception.totalPages()).isEqualTo(first.totalPages());
+		assertThat(refunds.listForManager(manager, 1, 1).content()).noneMatch(row -> row.id().equals(id));
+	}
+
+	private void assertDisplay(RefundRequestResponse response, SourceFixture source, String code, String name, String reference) {
+		assertThat(response).extracting("memberCode", "memberFullName", "orderNumber", "paymentReference", "receiptNumber")
+			.containsExactly(code, name, "RFS-" + source.orderId(), reference, "RCS-" + source.receiptId());
+		assertThat(response.paymentId()).isEqualTo(source.paymentId());
+		assertThat(response.orderId()).isEqualTo(source.orderId());
+		assertThat(response.membershipId()).isEqualTo(source.membershipId());
+		assertThat(response.receiptId()).isEqualTo(source.receiptId());
+	}
 
 	@Test
 	void discoveryFiltersIneligibleSourcesAndOrdersByPaidAtThenPaymentId() {
@@ -332,22 +424,27 @@ class MembershipRefundIntegrationTests {
 
 	private SourceFixture source(UUID payment, UUID member, UUID manager, String membershipStatus,
 			String paymentMethod, Instant paidAt, LocalDate startDate) {
+		return source(payment, member, manager, membershipStatus, paymentMethod, paidAt, startDate, null, "BASIC");
+	}
+
+	private SourceFixture source(UUID payment, UUID member, UUID manager, String membershipStatus,
+			String paymentMethod, Instant paidAt, LocalDate startDate, String paymentReference, String planCode) {
 		UUID offer = UUID.randomUUID();
 		UUID order = UUID.randomUUID();
 		UUID membership = UUID.randomUUID();
 		UUID receipt = UUID.randomUUID();
-		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'BASIC','Discovery refund','Discovery refund',100000,'VND',100,'ACTIVE',?)",
-			offer, manager);
-		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Discovery refund','BASIC',100000,'VND',100,?,'PAID',?,'IMMEDIATE')",
-			order, "RFS-" + order, member, manager, offer, paymentMethod, Timestamp.from(paidAt));
-		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,paid_at) values(?,?,?,'PAID',100000,'VND',?,?)",
+		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,?,'Discovery refund','Discovery refund',100000,'VND',100,'ACTIVE',?)",
+			offer, planCode, manager);
+		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Discovery refund',?,100000,'VND',100,?,'PAID',?,'IMMEDIATE')",
+			order, "RFS-" + order, member, manager, offer, planCode, paymentMethod, Timestamp.from(paidAt));
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,paid_at,provider_reference) values(?,?,?,'PAID',100000,'VND',?,?,?)",
 			payment, order, paymentMethod,
-			"BANK_TRANSFER".equals(paymentMethod) ? "transfer-" + payment : null, Timestamp.from(paidAt));
+			"BANK_TRANSFER".equals(paymentMethod) ? "transfer-" + payment : null, Timestamp.from(paidAt), paymentReference);
 		Timestamp startsAt = startDate == null ? null : Timestamp.from(startDate.atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
 		Timestamp endsAt = startsAt == null ? null : Timestamp.from(startsAt.toInstant().plusSeconds(
 			"ACTIVE".equals(membershipStatus) ? 100L * 86400 : 86400));
-		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,'BASIC','Discovery refund',100000,'VND',100,?,?,?)",
-			membership, member, order, offer, membershipStatus, startsAt, endsAt);
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Discovery refund',100000,'VND',100,?,?,?)",
+			membership, member, order, offer, planCode, membershipStatus, startsAt, endsAt);
 		jdbc.update("insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot) values(?,?,?,?,?,100000,'VND',?)",
 			receipt, "RCS-" + receipt, payment, order, member, paymentMethod);
 		return new SourceFixture(payment, order, membership, receipt);

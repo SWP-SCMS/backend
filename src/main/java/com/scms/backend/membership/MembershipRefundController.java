@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -32,6 +33,7 @@ class MembershipRefundController {
 		return ResponseEntity.ok(service.refundEligibleSources(id(jwt), memberCode));
 	}
 	@PostMapping("/reception/members/{memberCode}/refund-requests")
+	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<RefundRequestResponse> create(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode,
 			@RequestBody RefundRequestCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(service.create(id(jwt), memberCode, request));

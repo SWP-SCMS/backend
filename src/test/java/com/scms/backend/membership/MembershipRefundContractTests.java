@@ -37,6 +37,41 @@ class MembershipRefundContractTests {
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
 
 	@Test
+	void allRefundHttpResponsesSerializeNullableDisplayFields() throws Exception {
+		RefundRequestResponse response = org.mockito.Mockito.mock(RefundRequestResponse.class);
+		when(service.create(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+		when(service.firstApproval(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+		when(service.cashDisbursement(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+		when(service.finalApproval(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+		when(service.reject(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(response);
+		RefundRequestPageResponse page = new RefundRequestPageResponse(List.of(response), 0, 20, 1, 1);
+		when(service.listForManager(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(0), org.mockito.ArgumentMatchers.eq(20))).thenReturn(page);
+		when(service.listForReceptionist(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(0), org.mockito.ArgumentMatchers.eq(20))).thenReturn(page);
+		String display = "\"memberCode\":null,\"memberFullName\":null,\"orderNumber\":null,\"paymentReference\":null,\"receiptNumber\":null";
+		for (String role : List.of("MANAGER", "RECEPTIONIST")) {
+			mockMvc.perform(get("/api/v1/" + (role.equals("MANAGER") ? "manager" : "reception") + "/refund-requests")
+					.contextPath("/api/v1").with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", role))
+						.authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+				.andExpect(status().isOk()).andExpect(content().json("{\"content\":[{" + display + "}]}"));
+		}
+		UUID id = UUID.randomUUID();
+		for (String path : List.of("reception/members/MB-123456/refund-requests",
+			"reception/refund-requests/" + id + "/cash-disbursement",
+			"manager/refund-requests/" + id + "/first-approval", "manager/refund-requests/" + id + "/final-approval",
+			"manager/refund-requests/" + id + "/reject")) {
+			String role = path.startsWith("manager") ? "MANAGER" : "RECEPTIONIST";
+			mockMvc.perform(post("/api/v1/" + path).contextPath("/api/v1").contentType("application/json")
+					.content("{\"paymentId\":\"" + id + "\",\"membershipId\":\"" + id
+						+ "\",\"requestedAmount\":100,\"reason\":\"reason\",\"idempotencyKey\":\"key\","
+						+ "\"expectedVersion\":0,\"approvedAmount\":100,\"evidence\":\"voucher\"}")
+					.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", role))
+						.authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+				.andExpect(status().is(path.contains("members/") ? 201 : 200))
+				.andExpect(content().json("{" + display + "}"));
+		}
+	}
+
+	@Test
 	void eligibleSourceDiscoveryReturnsAnEmptyArrayAndRejectsOtherRoles() throws Exception {
 		UUID receptionist = UUID.randomUUID();
 		when(service.refundEligibleSources(receptionist, "MB-123456")).thenReturn(List.of());
