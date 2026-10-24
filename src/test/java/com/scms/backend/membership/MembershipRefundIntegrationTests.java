@@ -4,8 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
+import java.math.BigInteger;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import com.scms.backend.ScmsBackendApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +35,167 @@ class MembershipRefundIntegrationTests {
 	@Autowired MembershipRefundService refunds;
 	@Autowired PaymentService payments;
 	@Autowired MembershipLifecycleService lifecycle;
+
+	@Test
+	void discoveryFiltersIneligibleSourcesAndOrdersByPaidAtThenPaymentId() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		Instant newest = Instant.now().minusSeconds(60);
+		LocalDate exactThreshold = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(70);
+		SourceFixture newestEligible = source(UUID.fromString("00000000-0000-0000-0000-000000000003"),
+			member, manager, "TERMINATED", "CASH", newest, exactThreshold);
+		SourceFixture rejectedEligible = source(UUID.fromString("00000000-0000-0000-0000-000000000002"),
+			member, manager, "TERMINATED", "CASH", newest.minusSeconds(60), exactThreshold);
+		SourceFixture cancelledEligible = source(UUID.fromString("00000000-0000-0000-0000-000000000001"),
+			member, manager, "TERMINATED", "CASH", newest.minusSeconds(60), exactThreshold);
+		SourceFixture reservedEligible = source(UUID.randomUUID(), member, manager, "RESERVED", "CASH",
+			newest.minusSeconds(120), null);
+		refund(rejectedEligible, receptionist, "REJECTED");
+		refund(cancelledEligible, receptionist, "CANCELLED");
+		for (String status : List.of("REQUESTED", "FIRST_APPROVED", "CASH_DISBURSED", "COMPLETED")) {
+			SourceFixture blocked = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH",
+				newest.minusSeconds(180), exactThreshold);
+			refund(blocked, receptionist, status);
+		}
+		source(UUID.randomUUID(), member, manager, "TERMINATED", "BANK_TRANSFER",
+			newest.minusSeconds(180), exactThreshold);
+		source(UUID.randomUUID(), member, manager, "ACTIVE", "CASH",
+			newest.minusSeconds(180), exactThreshold);
+		source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH",
+			newest.minusSeconds(180), exactThreshold.minusDays(1));
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?",
+			String.class, member);
+
+		List<RefundEligibleSourceResponse> response = refunds.refundEligibleSources(receptionist, memberCode);
+
+		assertThat(response).extracting(RefundEligibleSourceResponse::paymentId).containsExactly(
+			newestEligible.paymentId(), rejectedEligible.paymentId(), cancelledEligible.paymentId(),
+			reservedEligible.paymentId());
+		assertThat(response).extracting(RefundEligibleSourceResponse::type).containsExactly(
+			RefundType.TERMINATED_MEMBERSHIP, RefundType.TERMINATED_MEMBERSHIP,
+			RefundType.TERMINATED_MEMBERSHIP, RefundType.RESERVED_CANCELLATION);
+	}
+
+	@Test
+	void freezeCreditsUseExactThresholdAndStayConsistentThroughApproval() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH",
+			Instant.now(), today.minusDays(71));
+		freezePeriod(source, member, "COMPLETED", "COMPLETED", 1, today.minusDays(30));
+		freezePeriod(source, member, "ACTIVE", "ACTIVE", 40, today.minusDays(20));
+		freezePeriod(source, member, "OBSOLETE", "OBSOLETE", 40, today.minusDays(10));
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?",
+			String.class, member);
+
+		RefundEligibleSourceResponse exactThreshold = refunds.refundEligibleSources(receptionist, memberCode)
+			.getFirst();
+
+		assertThat(exactThreshold.paymentId()).isEqualTo(source.paymentId());
+		assertThat(exactThreshold.suggestedAmount()).isEqualTo(BigInteger.valueOf(15_000));
+
+		freezePeriod(source, member, "COMPLETED", "ENDED_EARLY", 1, today.minusDays(5));
+		RefundEligibleSourceResponse bothAcceptedStatuses = refunds.refundEligibleSources(receptionist, memberCode)
+			.getFirst();
+		assertThat(bothAcceptedStatuses.suggestedAmount()).isEqualTo(BigInteger.valueOf(15_500));
+
+		RefundRequestResponse created = refunds.create(receptionist, memberCode,
+			new RefundRequestCreateRequest(source.paymentId(), source.membershipId(), BigInteger.valueOf(15_500),
+				"freeze credit quote", "freeze-credit-quote"));
+		assertThat(created.suggestedAmount()).isEqualTo(bothAcceptedStatuses.suggestedAmount());
+		assertThat(created.remainingDaysSnapshot()).isEqualTo(31);
+
+		RefundRequestResponse approved = refunds.firstApproval(manager, created.id(),
+			new RefundFirstApprovalRequest(created.version(), BigInteger.valueOf(15_500)));
+		assertThat(approved.suggestedAmount()).isEqualTo(bothAcceptedStatuses.suggestedAmount());
+		assertThat(approved.remainingDaysSnapshot()).isEqualTo(31);
+	}
+
+	@Test
+	void mutationAfterDiscoveryIsRecheckedByCreate() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "RESERVED", "CASH",
+			Instant.now(), null);
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?",
+			String.class, member);
+		assertThat(refunds.refundEligibleSources(receptionist, memberCode))
+			.extracting(RefundEligibleSourceResponse::paymentId).containsExactly(source.paymentId());
+		jdbc.update("update memberships set status='CANCELLED' where id=?", source.membershipId());
+
+		assertThatThrownBy(() -> refunds.create(receptionist, memberCode,
+			new RefundRequestCreateRequest(source.paymentId(), source.membershipId(), BigInteger.ONE,
+				"membership changed", "race-key")))
+			.isInstanceOf(RefundException.class).extracting("code").isEqualTo("REFUND_NOT_ELIGIBLE");
+		assertThat(jdbc.queryForObject("select count(*) from refund_requests where payment_id=?", Long.class,
+			source.paymentId())).isZero();
+	}
+
+	@Test
+	void duplicateRefundAfterDiscoveryIsRejectedByTheDatabaseConstraint() {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "RESERVED", "CASH",
+			Instant.now(), null);
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?",
+			String.class, member);
+		assertThat(refunds.refundEligibleSources(receptionist, memberCode))
+			.extracting(RefundEligibleSourceResponse::paymentId).containsExactly(source.paymentId());
+		refunds.create(receptionist, memberCode, new RefundRequestCreateRequest(source.paymentId(),
+			source.membershipId(), BigInteger.valueOf(80_000), "first", "duplicate-key-1"));
+
+		assertThatThrownBy(() -> refunds.create(receptionist, memberCode,
+			new RefundRequestCreateRequest(source.paymentId(), source.membershipId(), BigInteger.valueOf(80_000),
+				"second", "duplicate-key-2")))
+			.isInstanceOf(RefundException.class).extracting("code").isEqualTo("REFUND_ALREADY_EXISTS");
+		assertThat(jdbc.queryForObject("select count(*) from refund_requests where payment_id=?", Long.class,
+			source.paymentId())).isOne();
+	}
+
+	@Test
+	void concurrentRefundAttemptsForOneDiscoveredSourcePersistExactlyOneRequest() throws Exception {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "RESERVED", "CASH",
+			Instant.now(), null);
+		String memberCode = jdbc.queryForObject("select member_code from member_profiles where account_id=?",
+			String.class, member);
+		assertThat(refunds.refundEligibleSources(receptionist, memberCode))
+			.extracting(RefundEligibleSourceResponse::paymentId).containsExactly(source.paymentId());
+		CountDownLatch ready = new CountDownLatch(2);
+		CountDownLatch start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var first = executor.submit(() -> concurrentCreate(ready, start, receptionist, memberCode, source,
+				"concurrent-key-1"));
+			var second = executor.submit(() -> concurrentCreate(ready, start, receptionist, memberCode, source,
+				"concurrent-key-2"));
+			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+			List<Object> results = List.of(first.get(20, TimeUnit.SECONDS), second.get(20, TimeUnit.SECONDS));
+
+			assertThat(results).filteredOn(RefundRequestResponse.class::isInstance).hasSize(1);
+			assertThat(results).filteredOn(RefundException.class::isInstance).singleElement().satisfies(result ->
+				assertThat(((RefundException) result).getCode()).isEqualTo("REFUND_ALREADY_EXISTS"));
+			assertThat(jdbc.queryForObject("select count(*) from refund_requests where payment_id=?", Long.class,
+				source.paymentId())).isOne();
+		}
+		finally {
+			start.countDown();
+			executor.shutdownNow();
+		}
+	}
 
 	@Test
 	void refundLedgerMigrationInstallsExpectedTablesIndexesAndImmutableCreditNoteGuard() {
@@ -162,10 +330,72 @@ class MembershipRefundIntegrationTests {
 			payment, order, Timestamp.from(now));
 	}
 
+	private SourceFixture source(UUID payment, UUID member, UUID manager, String membershipStatus,
+			String paymentMethod, Instant paidAt, LocalDate startDate) {
+		UUID offer = UUID.randomUUID();
+		UUID order = UUID.randomUUID();
+		UUID membership = UUID.randomUUID();
+		UUID receipt = UUID.randomUUID();
+		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'BASIC','Discovery refund','Discovery refund',100000,'VND',100,'ACTIVE',?)",
+			offer, manager);
+		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Discovery refund','BASIC',100000,'VND',100,?,'PAID',?,'IMMEDIATE')",
+			order, "RFS-" + order, member, manager, offer, paymentMethod, Timestamp.from(paidAt));
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,paid_at) values(?,?,?,'PAID',100000,'VND',?,?)",
+			payment, order, paymentMethod,
+			"BANK_TRANSFER".equals(paymentMethod) ? "transfer-" + payment : null, Timestamp.from(paidAt));
+		Timestamp startsAt = startDate == null ? null : Timestamp.from(startDate.atStartOfDay(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant());
+		Timestamp endsAt = startsAt == null ? null : Timestamp.from(startsAt.toInstant().plusSeconds(
+			"ACTIVE".equals(membershipStatus) ? 100L * 86400 : 86400));
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,'BASIC','Discovery refund',100000,'VND',100,?,?,?)",
+			membership, member, order, offer, membershipStatus, startsAt, endsAt);
+		jdbc.update("insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,currency_code_snapshot,payment_method_snapshot) values(?,?,?,?,?,100000,'VND',?)",
+			receipt, "RCS-" + receipt, payment, order, member, paymentMethod);
+		return new SourceFixture(payment, order, membership, receipt);
+	}
+
+	private void freezePeriod(SourceFixture source, UUID member, String requestStatus, String periodStatus,
+			int creditedDays, LocalDate scheduledStart) {
+		UUID request = UUID.randomUUID();
+		LocalDate scheduledEnd = scheduledStart.plusDays(2);
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,?,?)",
+			request, source.membershipId(), member, member, scheduledStart, scheduledEnd,
+			"refund quote aggregation", requestStatus);
+		LocalDate actualStart = "OBSOLETE".equals(periodStatus) ? null : scheduledStart;
+		LocalDate actualEnd = switch (periodStatus) {
+			case "COMPLETED" -> scheduledEnd;
+			case "ENDED_EARLY" -> scheduledStart.plusDays(1);
+			default -> null;
+		};
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,actual_start_date,actual_end_date,credited_days,status) values(?,?,?,?,?,?,?,?,?)",
+			UUID.randomUUID(), request, source.membershipId(), scheduledStart, scheduledEnd, actualStart, actualEnd,
+			creditedDays, periodStatus);
+	}
+
+	private void refund(SourceFixture source, UUID receptionist, String status) {
+		jdbc.update("insert into refund_requests(id,payment_id,order_id,membership_id,receipt_id,member_account_id,requester_account_id,refund_type,status,requested_amount,suggested_amount,reason,idempotency_key) select ?,?,?,?, ?,m.member_account_id,?,'TERMINATED_MEMBERSHIP',?,1,1,'existing refund',? from memberships m where m.id=?",
+			UUID.randomUUID(), source.paymentId(), source.orderId(), source.membershipId(), source.receiptId(),
+			receptionist, status, UUID.randomUUID().toString(), source.membershipId());
+	}
+
+	private Object concurrentCreate(CountDownLatch ready, CountDownLatch start, UUID receptionist,
+			String memberCode, SourceFixture source, String idempotencyKey) throws InterruptedException {
+		ready.countDown();
+		start.await();
+		try {
+			return refunds.create(receptionist, memberCode, new RefundRequestCreateRequest(source.paymentId(),
+				source.membershipId(), BigInteger.valueOf(80_000), "concurrent refund", idempotencyKey));
+		}
+		catch (RefundException exception) {
+			return exception;
+		}
+	}
+
 	private UUID account(String role) {
 		UUID id = UUID.randomUUID();
 		jdbc.update("insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash) values(?,?,'ACTIVE',?,?,?,date '1990-01-01','test')",
 			id, role, "Refund " + role, "09" + id.toString().replace("-", "").substring(0, 9), id + "@refund.test");
 		return id;
 	}
+
+	private record SourceFixture(UUID paymentId, UUID orderId, UUID membershipId, UUID receiptId) { }
 }

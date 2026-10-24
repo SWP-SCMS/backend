@@ -1,8 +1,10 @@
 package com.scms.backend.membership;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -22,6 +24,12 @@ class MembershipRefundController {
 	ResponseEntity<RefundRequestPageResponse> receptionList(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.listForReceptionist(id(jwt), page, size));
+	}
+	@GetMapping(value = "/reception/members/{memberCode}/refund-eligible-sources",
+		produces = MediaType.APPLICATION_JSON_VALUE)
+	ResponseEntity<List<RefundEligibleSourceResponse>> refundEligibleSources(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable String memberCode) {
+		return ResponseEntity.ok(service.refundEligibleSources(id(jwt), memberCode));
 	}
 	@PostMapping("/reception/members/{memberCode}/refund-requests")
 	ResponseEntity<RefundRequestResponse> create(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode,

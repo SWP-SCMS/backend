@@ -3,6 +3,23 @@ info:
   title: SCMS Membership Refund API
   version: v1
 paths:
+  /reception/members/{memberCode}/refund-eligible-sources:
+    get:
+      summary: Discover refund-eligible payment and Membership sources
+      description: Returns CASH/PAID TERMINATED or RESERVED sources without an active refund, ordered by payment time descending. Quotes use Asia/Ho_Chi_Minh dates, completed freeze credits, the exact 30% threshold, and VND integer flooring.
+      parameters:
+        - in: path
+          name: memberCode
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Eligible refund sources, or an empty array
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RefundEligibleSourceResponse' }
   /reception/refund-requests:
     get:
       summary: List refund requests for Receptionist
@@ -130,3 +147,23 @@ paths:
                 reason: { type: string, minLength: 1, maxLength: 1000 }
       responses:
         '200': { description: Refund rejected }
+components:
+  schemas:
+    RefundEligibleSourceResponse:
+      type: object
+      required: [paymentId, membershipId, receiptId, receiptNumber, orderNumber, offerName, memberCode, memberFullName, paymentReference, type, paidAmount, suggestedAmount, currency, calculationDate]
+      properties:
+        paymentId: { type: string, format: uuid }
+        membershipId: { type: string, format: uuid }
+        receiptId: { type: string, format: uuid }
+        receiptNumber: { type: string }
+        orderNumber: { type: string }
+        offerName: { type: string }
+        memberCode: { type: string }
+        memberFullName: { type: string }
+        paymentReference: { type: string, nullable: true }
+        type: { type: string, enum: [TERMINATED_MEMBERSHIP, RESERVED_CANCELLATION] }
+        paidAmount: { type: integer, format: int64 }
+        suggestedAmount: { type: integer, format: int64 }
+        currency: { type: string, example: VND }
+        calculationDate: { type: string, format: date }

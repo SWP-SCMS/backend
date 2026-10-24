@@ -5,6 +5,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
@@ -34,6 +35,26 @@ class MembershipRefundContractTests {
 	@Autowired MockMvc mockMvc;
 	@MockitoBean MembershipRefundService service;
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
+
+	@Test
+	void eligibleSourceDiscoveryReturnsAnEmptyArrayAndRejectsOtherRoles() throws Exception {
+		UUID receptionist = UUID.randomUUID();
+		when(service.refundEligibleSources(receptionist, "MB-123456")).thenReturn(List.of());
+		mockMvc.perform(get("/api/v1/reception/members/{memberCode}/refund-eligible-sources", "MB-123456")
+				.contextPath("/api/v1")
+				.with(jwt().jwt(token -> token.subject(receptionist.toString()).claim("role", "RECEPTIONIST"))
+					.authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"))))
+			.andExpect(status().isOk())
+			.andExpect(content().json("[]"));
+		verify(service).refundEligibleSources(receptionist, "MB-123456");
+		for (String role : new String[] { "MEMBER", "COACH", "MANAGER" }) {
+			mockMvc.perform(get("/api/v1/reception/members/{memberCode}/refund-eligible-sources", "MB-123456")
+					.contextPath("/api/v1")
+					.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", role))
+						.authorities(new SimpleGrantedAuthority("ROLE_" + role))))
+				.andExpect(status().isForbidden());
+		}
+	}
 
 	@Test
 	void refundListsAreRestrictedToTheirStaffRoles() throws Exception {
