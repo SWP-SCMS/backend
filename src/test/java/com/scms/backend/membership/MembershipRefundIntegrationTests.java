@@ -2,12 +2,14 @@ package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import java.sql.Timestamp;
 import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -113,7 +115,11 @@ class MembershipRefundIntegrationTests {
 		org.mockito.Mockito.clearInvocations(jdbc);
 		RefundRequestPageResponse reception = refunds.listForReceptionist(receptionist, 0, 1);
 		org.mockito.Mockito.verify(jdbc).queryForList(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
-		assertThat(reception.content()).isEqualTo(List.of(rejected));
+		assertThat(reception.content()).singleElement().satisfies(row -> {
+			assertThat(row).usingRecursiveComparison().ignoringFields("rejectedAt").isEqualTo(rejected);
+			// PostgreSQL stores microseconds; the mutation response can still contain nanoseconds.
+			assertThat(row.rejectedAt()).isCloseTo(rejected.rejectedAt(), within(1, ChronoUnit.MICROS));
+		});
 		assertThat(reception.totalElements()).isEqualTo(first.totalElements());
 		assertThat(reception.totalPages()).isEqualTo(first.totalPages());
 		assertThat(refunds.listForManager(manager, 1, 1).content()).noneMatch(row -> row.id().equals(id));
