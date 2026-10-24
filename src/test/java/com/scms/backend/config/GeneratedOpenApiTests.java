@@ -867,6 +867,14 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedCoachLeaveResponseIncludesCoachIdentity() throws Exception {
+		JsonNode response = generatedDocument().at("/components/schemas/CoachLeaveResponse");
+		assertThat(response.path("properties").has("coachId")).isTrue();
+		assertThat(response.path("properties").has("coachFullName")).isTrue();
+		assertThat(response.path("properties").has("coachPhone")).isTrue();
+	}
+
+	@Test
 	void receptionSearchRequiresExplicitNullableMembershipInGeneratedAndStaticContracts() throws Exception {
 		JsonNode generated = generatedDocument().at("/components/schemas/ReceptionMemberSearchResponse");
 		JsonNode membership = generated.at("/properties/activeMembership");
