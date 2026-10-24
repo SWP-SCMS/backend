@@ -17,7 +17,9 @@ paths:
       description: >-
         Exactly one query criterion must be supplied. Values are trimmed before an exact lookup.
         This endpoint does not search by email or full name and is not paginated because both
-        accepted identifiers are unique.
+        accepted identifiers are unique. activeMembership is the current ACTIVE Membership with
+        startsAt <= now < endsAt, including a frozen ACTIVE Membership. Dates use Asia/Ho_Chi_Minh.
+        This read does not reconcile or mutate lifecycle state; no current Membership yields null.
       security:
         - BearerAuth: []
       parameters:
@@ -53,6 +55,7 @@ paths:
                 birthDate: '2000-01-01'
                 profileImageUrl: null
                 status: ACTIVE
+                activeMembership: null
         '400':
           $ref: '#/components/responses/SearchValidationError'
         '401':
@@ -320,6 +323,7 @@ components:
         - birthDate
         - profileImageUrl
         - status
+        - activeMembership
       properties:
         accountId:
           type: string
@@ -346,6 +350,45 @@ components:
           type: string
           enum: [ACTIVE, SUSPENDED]
           readOnly: true
+        activeMembership:
+          oneOf:
+            - $ref: '#/components/schemas/ReceptionActiveMembershipResponse'
+            - type: 'null'
+          readOnly: true
+    ReceptionActiveMembershipResponse:
+      type: object
+      additionalProperties: false
+      required: [membershipId, offerName, planName, effectiveStartDate, effectiveEndDate, status, benefitCodes, frozen]
+      properties:
+        membershipId:
+          type: string
+          format: uuid
+        offerName:
+          type: string
+          description: Purchased offer name snapshot.
+        planName:
+          type: string
+          description: Current Plan display name, including inactive Plans; falls back to planCodeSnapshot if unresolved.
+        effectiveStartDate:
+          type: string
+          format: date
+          description: Membership start date in Asia/Ho_Chi_Minh.
+        effectiveEndDate:
+          type: string
+          format: date
+          description: Exclusive Membership end date in Asia/Ho_Chi_Minh.
+        status:
+          type: string
+          enum: [ACTIVE]
+        benefitCodes:
+          type: array
+          uniqueItems: true
+          description: Distinct current Plan benefit codes sorted ascending.
+          items:
+            type: string
+        frozen:
+          type: boolean
+          description: True only within an effective ACTIVE freeze period; scheduled, completed and ended-early periods are false.
     MemberProfilePatchRequest:
       type: object
       additionalProperties: false

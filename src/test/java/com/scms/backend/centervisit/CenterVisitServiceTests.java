@@ -28,6 +28,8 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 import com.scms.backend.identity.receptionmember.ReceptionMemberSearchResponse;
+import com.scms.backend.identity.receptionmember.ReceptionActiveMembershipResponse;
+import com.scms.backend.membership.MembershipStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,9 +69,14 @@ class CenterVisitServiceTests {
 	}
 
 	@Test
-	void createsVisitAndMarksResponseCreated() {
+	void createsVisitUsingRevalidatedMembershipAndPreservesResponse() {
 		UUID membershipId = UUID.randomUUID();
 		stubEligibleMember(membershipId);
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(new ReceptionMemberSearchResponse(
+			memberId, "MB-100001", "Member", "0901000001", "member@example.test", LocalDate.of(1990, 1, 1),
+			"photo", AccountStatus.ACTIVE, new ReceptionActiveMembershipResponse(UUID.randomUUID(), "Old offer",
+				"Old plan", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 1), MembershipStatus.ACTIVE,
+				List.of("CENTER_ACCESS"), true)));
 		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
 		CenterVisitResponse response = service.checkIn(receptionistId,
@@ -358,7 +365,7 @@ class CenterVisitServiceTests {
 
 	private ReceptionMemberSearchResponse member(AccountStatus status, String image) {
 		return new ReceptionMemberSearchResponse(memberId, "MB-100001", "Member", "0901000001",
-			"member@example.test", LocalDate.of(1990, 1, 1), image, status);
+			"member@example.test", LocalDate.of(1990, 1, 1), image, status, null);
 	}
 
 	private Account memberAccount() {

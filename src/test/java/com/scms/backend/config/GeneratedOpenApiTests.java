@@ -855,6 +855,48 @@ class GeneratedOpenApiTests {
 		}
 	}
 
+	@Test
+	void receptionSearchDocumentsNullableActiveMembershipInGeneratedAndStaticContracts() throws Exception {
+		JsonNode generated = generatedDocument();
+		assertReceptionMembershipSummary(generated.at("/components/schemas/ReceptionMemberSearchResponse/properties/activeMembership"));
+		try (var input = getClass().getResourceAsStream("/openapi/us11-receptionist-member-profile.yaml")) {
+			JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(input);
+			assertReceptionMembershipSummary(contract.at("/components/schemas/ReceptionActiveMembershipResponse"));
+		}
+	}
+
+	@Test
+	void receptionSearchRequiresExplicitNullableMembershipInGeneratedAndStaticContracts() throws Exception {
+		JsonNode generated = generatedDocument().at("/components/schemas/ReceptionMemberSearchResponse");
+		JsonNode membership = generated.at("/properties/activeMembership");
+		assertThat(membership.path("type")).as(membership.toString()).containsExactlyInAnyOrder(
+			objectMapper.getNodeFactory().textNode("object"), objectMapper.getNodeFactory().textNode("null"));
+		assertThat(membership.has("$ref")).as("An object-only reference would reject null despite the nullable type union").isFalse();
+		assertThat(membership.has("allOf") || membership.has("oneOf") || membership.has("anyOf")).isFalse();
+		assertReceptionMembershipSummary(membership);
+		assertThat(generated.path("required")).contains(objectMapper.getNodeFactory().textNode("activeMembership"));
+		try (var input = getClass().getResourceAsStream("/openapi/us11-receptionist-member-profile.yaml")) {
+			JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(input)
+				.at("/components/schemas/MemberSearchResponse");
+			assertThat(contract.path("required")).contains(objectMapper.getNodeFactory().textNode("activeMembership"));
+			assertThat(contract.at("/properties/activeMembership/oneOf")).isEqualTo(objectMapper.readTree("""
+				[{"$ref":"#/components/schemas/ReceptionActiveMembershipResponse"},{"type":"null"}]
+				"""));
+		}
+	}
+
+	private void assertReceptionMembershipSummary(JsonNode schema) {
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("membershipId", "offerName", "planName", "effectiveStartDate",
+				"effectiveEndDate", "status", "benefitCodes", "frozen");
+		assertThat(schema.at("/properties/membershipId/format").asText()).isEqualTo("uuid");
+		assertThat(schema.at("/properties/effectiveStartDate/format").asText()).isEqualTo("date");
+		assertThat(schema.at("/properties/effectiveEndDate/format").asText()).isEqualTo("date");
+		assertThat(schema.at("/properties/benefitCodes/uniqueItems").asBoolean()).isTrue();
+		assertThat(schema.at("/properties/frozen/type").asText()).isEqualTo("boolean");
+		assertThat(schema.at("/properties/status/enum")).containsExactly(objectMapper.getNodeFactory().textNode("ACTIVE"));
+	}
+
 	private JsonNode generatedDocument() throws Exception {
 		return objectMapper.readTree(mockMvc.perform(get("/v3/api-docs"))
 			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());

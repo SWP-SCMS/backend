@@ -1,7 +1,13 @@
 package com.scms.backend.identity.receptionmember;
 
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -15,8 +21,10 @@ import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
+import com.scms.backend.membership.MembershipStatus;
 
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,20 +33,25 @@ public class ReceptionMemberProfileService {
 
 	private static final Set<AccountStatus> VISIBLE_MEMBER_STATUSES =
 		Set.of(AccountStatus.ACTIVE, AccountStatus.SUSPENDED);
+	private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
 
 	private final AccountRepository accountRepository;
 	private final MemberProfileRepository memberProfileRepository;
 	private final AccountIdentifierAvailability identifierAvailability;
 	private final MemberProfileDetailsValidator validator;
+	private final JdbcTemplate db;
+	private final Clock clock;
 
 	ReceptionMemberProfileService(AccountRepository accountRepository,
 			MemberProfileRepository memberProfileRepository,
 			AccountIdentifierAvailability identifierAvailability,
-			MemberProfileDetailsValidator validator) {
+			MemberProfileDetailsValidator validator, JdbcTemplate db, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.identifierAvailability = identifierAvailability;
 		this.validator = validator;
+		this.db = db;
+		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
@@ -149,7 +162,44 @@ public class ReceptionMemberProfileService {
 		Account account = profile.getAccount();
 		return new ReceptionMemberSearchResponse(account.getId(), profile.getMemberCode(), account.getFullName(),
 			account.getPhone(), account.getEmail(), account.getBirthDate(), profile.getProfileImageUrl(),
-			account.getStatus());
+			account.getStatus(), activeMembership(account.getId()));
+	}
+
+	private ReceptionActiveMembershipResponse activeMembership(UUID memberAccountId) {
+		var now = clock.instant();
+		Date today = Date.valueOf(now.atZone(VIETNAM).toLocalDate());
+		return db.query("""
+			with current_membership as (
+			    select * from memberships
+			    where member_account_id=? and status='ACTIVE' and starts_at <= ? and ends_at > ?
+			    order by ends_at desc, id limit 1
+			)
+			select membership.*, plan.display_name as plan_name, benefit.benefit_code,
+			       exists (select 1 from membership_freeze_periods period
+			               where period.membership_id=membership.id and period.status='ACTIVE'
+			                 and coalesce(period.actual_start_date, period.scheduled_start_date) <= ?
+			                 and coalesce(period.actual_end_date, period.scheduled_end_date) > ?) as frozen
+			from current_membership membership
+			left join membership_plans plan on plan.plan_code=membership.plan_code_snapshot
+			left join membership_plan_benefits benefit on benefit.plan_code=plan.plan_code
+			""", rows -> {
+			if (!rows.next()) return null;
+			UUID membershipId = rows.getObject("id", UUID.class);
+			String offerName = rows.getString("offer_name_snapshot");
+			String planName = rows.getString("plan_name");
+			if (planName == null) planName = rows.getString("plan_code_snapshot");
+			LocalDate start = rows.getTimestamp("starts_at").toInstant().atZone(VIETNAM).toLocalDate();
+			LocalDate end = rows.getTimestamp("ends_at").toInstant().atZone(VIETNAM).toLocalDate();
+			MembershipStatus status = MembershipStatus.valueOf(rows.getString("status"));
+			boolean frozen = rows.getBoolean("frozen");
+			Set<String> benefits = new TreeSet<>();
+			do {
+				String code = rows.getString("benefit_code");
+				if (code != null) benefits.add(code);
+			} while (rows.next());
+			return new ReceptionActiveMembershipResponse(membershipId, offerName, planName, start, end,
+				status, List.copyOf(benefits), frozen);
+		}, memberAccountId, Timestamp.from(now), Timestamp.from(now), today, today);
 	}
 
 	private MemberProfileResponse toProfileResponse(MemberProfile profile) {
