@@ -75,7 +75,7 @@ class MembershipRefundService {
 				account.full_name member_full_name, p.provider_reference payment_reference,
 				m.status membership_status, p.amount paid_amount, p.currency_code currency,
 				m.starts_at, m.duration_days_snapshot, m.price_amount_snapshot,
-				coalesce(freeze.credited_days, 0) credited_days
+				coalesce(freeze_totals.credited_days, 0) credited_days
 			from payments p
 			join membership_orders o on o.id=p.order_id
 			join memberships m on m.order_id=o.id and m.member_account_id=o.member_account_id
@@ -87,7 +87,7 @@ class MembershipRefundService {
 				from membership_freeze_periods
 				where status in ('COMPLETED','ENDED_EARLY')
 				group by membership_id
-			) freeze on freeze.membership_id=m.id
+			) freeze_totals on freeze_totals.membership_id=m.id
 			where o.member_account_id=? and p.method='CASH' and p.status='PAID'
 				and m.status in ('TERMINATED','RESERVED')
 				and not exists (
