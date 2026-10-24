@@ -31,7 +31,7 @@ paths:
       security: [{bearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/RequestId'}]
       requestBody: {content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveReviewRequest'}}}}
-      responses: {'200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}, '409': {description: Affected sessions remain; problem response includes affectedSessionIds}}
+      responses: {'200': {description: Approved, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}, '409': {description: Affected sessions remain or the leave has already started}}
   /manager/coach-leave-requests/{requestId}/reject:
     patch:
       summary: Reject a pending leave request
@@ -43,7 +43,7 @@ components:
   parameters:
     RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
-    CoachLeaveStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, WITHDRAWN]}
+    CoachLeaveStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED]}
     CoachLeaveCreateRequest:
       type: object
       required: [startTime, endTime, reason]

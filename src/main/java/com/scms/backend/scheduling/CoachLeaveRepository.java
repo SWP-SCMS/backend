@@ -25,6 +25,15 @@ interface CoachLeaveRepository extends JpaRepository<CoachLeaveRequest, UUID> {
 	@Query("select request from CoachLeaveRequest request where request.id = :id")
 	java.util.Optional<CoachLeaveRequest> findByIdForUpdate(@Param("id") UUID id);
 
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select request from CoachLeaveRequest request
+		where request.status = com.scms.backend.scheduling.CoachLeaveStatus.PENDING
+		  and request.startTime <= :now
+		order by request.id
+		""")
+	List<CoachLeaveRequest> findPendingStartedForUpdate(@Param("now") Instant now);
+
 	@Query("""
 		select (count(request) > 0) from CoachLeaveRequest request
 		where request.coach.id = :coachId

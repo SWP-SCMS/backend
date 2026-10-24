@@ -50,6 +50,12 @@ class CoachLeaveRequest {
 	void approve(UUID managerId, String note, Instant now) { review(CoachLeaveStatus.APPROVED, managerId, note, now); }
 	void reject(UUID managerId, String note, Instant now) { review(CoachLeaveStatus.REJECTED, managerId, note, now); }
 	void withdraw() { status = CoachLeaveStatus.WITHDRAWN; }
+	void expire(Instant now) {
+		if (status != CoachLeaveStatus.PENDING || startTime.isAfter(now)) {
+			throw new IllegalStateException("Only a started pending leave request can expire");
+		}
+		status = CoachLeaveStatus.EXPIRED;
+	}
 	private void review(CoachLeaveStatus target, UUID managerId, String note, Instant now) {
 		status = target; reviewedBy = managerId; reviewNote = note; reviewedAt = now;
 	}

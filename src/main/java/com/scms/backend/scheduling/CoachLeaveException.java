@@ -30,6 +30,10 @@ public class CoachLeaveException extends RuntimeException {
 		return new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_HAS_AFFECTED_SESSIONS", null,
 			"Resolve all affected sessions before approving this leave request.", sessionIds);
 	}
+	static CoachLeaveException alreadyStarted() {
+		return conflict("COACH_LEAVE_ALREADY_STARTED",
+			"A leave request cannot be approved after its start time.");
+	}
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 	public String getField() { return field; }
