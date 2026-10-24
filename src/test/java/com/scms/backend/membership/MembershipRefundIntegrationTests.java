@@ -11,12 +11,19 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import com.scms.backend.ScmsBackendApplication;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,7 +36,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-@SpringBootTest(classes = ScmsBackendApplication.class)
+@SpringBootTest(classes = ScmsBackendApplication.class,
+	properties = "scms.notification-outbox-initial-delay-ms=86400000")
 @ActiveProfiles("test")
 class MembershipRefundIntegrationTests {
 	@Container @ServiceConnection
@@ -38,6 +46,194 @@ class MembershipRefundIntegrationTests {
 	@Autowired MembershipRefundService refunds;
 	@Autowired PaymentService payments;
 	@Autowired MembershipLifecycleService lifecycle;
+	@Autowired NotificationOutboxDispatcher dispatcher;
+
+	@Test
+	void refundStaffMatrixSurvivesOutboxDeliveryFailureReplayAndRetry() throws Exception {
+		UUID manager = account("MANAGER");
+		account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		account("RECEPTIONIST");
+		for (String role : List.of("MANAGER", "RECEPTIONIST")) {
+			for (String status : List.of("INACTIVE", "SUSPENDED")) {
+				UUID excluded = account(role);
+				jdbc.update("update accounts set status=? where id=?", status, excluded);
+			}
+		}
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		String code = jdbc.queryForObject("select member_code from member_profiles where account_id=?", String.class, member);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(),
+			LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(50));
+		RefundRequestCreateRequest input = new RefundRequestCreateRequest(source.paymentId(), source.membershipId(),
+			BigInteger.valueOf(100), "private request reason", UUID.randomUUID().toString());
+		RefundRequestResponse created = refunds.create(receptionist, code, input);
+		assertStaffOutbox(created, activeStaff("MANAGER"));
+		long initialCount = refundOutboxCount(created.id());
+		assertThat(refunds.create(receptionist, code, input).id()).isEqualTo(created.id());
+		assertThat(refundOutboxCount(created.id())).isEqualTo(initialCount);
+		jdbc.update("update accounts set full_name='Renamed Refund Member' where id=?", member);
+		RefundRequestResponse approved = refunds.firstApproval(manager, created.id(),
+			new RefundFirstApprovalRequest(created.version(), BigInteger.valueOf(100)));
+		assertStaffOutbox(approved, activeStaff("RECEPTIONIST"));
+		RefundRequestResponse disbursed = refunds.cashDisbursement(receptionist, created.id(),
+			new RefundCashDisbursementRequest(approved.version(), "private cash evidence"));
+		assertStaffOutbox(disbursed, activeStaff("MANAGER"));
+		RefundRequestResponse completed = refunds.finalApproval(manager, created.id(), new RefundActionRequest(disbursed.version(), null));
+		assertStaffOutbox(completed, List.of(receptionist));
+		long completedCount = refundOutboxCount(created.id());
+		assertThatThrownBy(() -> refunds.finalApproval(manager, created.id(), new RefundActionRequest(disbursed.version(), null)))
+			.isInstanceOf(RefundException.class).extracting("code").isEqualTo("REFUND_REQUEST_CHANGED");
+		assertThat(refundOutboxCount(created.id())).isEqualTo(completedCount);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where target_id=?", Long.class, created.id())).isZero();
+
+		String staffKey = "MEMBERSHIP_REFUND_COMPLETED:" + created.id() + ":" + receptionist;
+		jdbc.execute("create function fail_refund_staff_delivery() returns trigger language plpgsql as $$ "
+			+ "begin raise exception 'forced refund staff delivery failure'; end $$");
+		jdbc.execute("create trigger fail_refund_staff_delivery before insert on notifications for each row "
+			+ "when (new.event_key='" + staffKey + "') execute function fail_refund_staff_delivery()");
+		try {
+			dispatchRefundEvents(created.id());
+			assertThat(jdbc.queryForObject("select status from notification_outbox where event_key=?", String.class, staffKey)).isEqualTo("FAILED");
+			assertThat(jdbc.queryForObject("select count(*) from notifications where event_key=?", Long.class, staffKey)).isZero();
+		} finally {
+			jdbc.execute("drop trigger fail_refund_staff_delivery on notifications");
+			jdbc.execute("drop function fail_refund_staff_delivery()");
+		}
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?", staffKey);
+		dispatchRefundEvents(created.id());
+		assertDeliveredRefundEvents(created.id(), completedCount);
+		// A delivery replay must also be harmless after the inbox insert already committed.
+		jdbc.update("update notification_outbox set status='FAILED',next_attempt_at=current_timestamp where event_key=?", staffKey);
+		dispatchRefundEvents(created.id());
+		assertDeliveredRefundEvents(created.id(), completedCount);
+
+		SourceFixture rejectedSource = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(),
+			LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(50));
+		RefundRequestResponse pending = refunds.create(receptionist, code, new RefundRequestCreateRequest(rejectedSource.paymentId(),
+			rejectedSource.membershipId(), BigInteger.ONE, "private request reason", UUID.randomUUID().toString()));
+		RefundRequestResponse rejected = refunds.reject(manager, pending.id(), new RefundActionRequest(pending.version(), "private rejection reason"));
+		assertStaffOutbox(rejected, List.of(receptionist));
+		dispatchRefundEvents(rejected.id());
+		assertDeliveredRefundEvents(rejected.id(), refundOutboxCount(rejected.id()));
+	}
+
+	@ParameterizedTest
+	@CsvSource({"COMPLETED,INACTIVE,RECEPTIONIST", "REJECTED,INACTIVE,RECEPTIONIST",
+		"COMPLETED,SUSPENDED,RECEPTIONIST", "REJECTED,SUSPENDED,RECEPTIONIST",
+		"COMPLETED,ACTIVE,MANAGER", "REJECTED,ACTIVE,MANAGER",
+		"COMPLETED,ACTIVE,COACH", "REJECTED,ACTIVE,COACH"})
+	void terminalStaffRoutingRechecksRequesterStatusAndRole(String action, String status, String role) throws Exception {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		jdbc.update("insert into member_profiles(account_id) values(?)", member);
+		String code = jdbc.queryForObject("select member_code from member_profiles where account_id=?", String.class, member);
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(),
+			LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(50));
+		RefundRequestResponse current = refunds.create(receptionist, code, new RefundRequestCreateRequest(source.paymentId(),
+			source.membershipId(), BigInteger.ONE, "private reason", UUID.randomUUID().toString()));
+		if (action.equals("COMPLETED")) {
+			current = refunds.firstApproval(manager, current.id(), new RefundFirstApprovalRequest(current.version(), BigInteger.ONE));
+			current = refunds.cashDisbursement(receptionist, current.id(), new RefundCashDisbursementRequest(current.version(), "private evidence"));
+		}
+		jdbc.update("update accounts set status=?,role=? where id=?", status, role, receptionist);
+		UUID actor = role.equals("MANAGER") ? receptionist : manager;
+		RefundRequestResponse terminal = action.equals("COMPLETED")
+			? refunds.finalApproval(actor, current.id(), new RefundActionRequest(current.version(), null))
+			: refunds.reject(actor, current.id(), new RefundActionRequest(current.version(), "private rejection reason"));
+		assertStaffOutbox(terminal, List.of());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"FIRST_APPROVED", "COMPLETED"})
+	void staffEnqueueFailureRollsBackTransitionAuditMemberEventAndCreditNote(String action) {
+		UUID manager = account("MANAGER");
+		UUID receptionist = account("RECEPTIONIST");
+		UUID member = account("MEMBER");
+		SourceFixture source = source(UUID.randomUUID(), member, manager, "TERMINATED", "CASH", Instant.now(),
+			LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(50));
+		refund(source, receptionist, "REQUESTED");
+		UUID id = jdbc.queryForObject("select id from refund_requests where payment_id=?", UUID.class, source.paymentId());
+		long version = 0;
+		if (action.equals("COMPLETED")) {
+			RefundRequestResponse approved = refunds.firstApproval(manager, id, new RefundFirstApprovalRequest(0L, BigInteger.ONE));
+			version = refunds.cashDisbursement(receptionist, id, new RefundCashDisbursementRequest(approved.version(), "private evidence")).version();
+		}
+		long expectedVersion = version;
+		String type = "MEMBERSHIP_REFUND_" + action;
+		jdbc.execute("create function fail_refund_staff_enqueue() returns trigger language plpgsql as $$ "
+			+ "begin raise exception 'forced refund staff enqueue failure'; end $$");
+		jdbc.execute("create trigger fail_refund_staff_enqueue before insert on notification_outbox for each row "
+			+ "when (new.target_id='" + id + "'::uuid and new.notification_type='" + type
+			+ "' and new.recipient_account_id='" + receptionist + "'::uuid) execute function fail_refund_staff_enqueue()");
+		try {
+			assertThatThrownBy(() -> {
+				if (action.equals("COMPLETED")) refunds.finalApproval(manager, id, new RefundActionRequest(expectedVersion, null));
+				else refunds.firstApproval(manager, id, new RefundFirstApprovalRequest(expectedVersion, BigInteger.ONE));
+			}).isInstanceOf(RuntimeException.class).hasStackTraceContaining("forced refund staff enqueue failure");
+		} finally {
+			jdbc.execute("drop trigger fail_refund_staff_enqueue on notification_outbox");
+			jdbc.execute("drop function fail_refund_staff_enqueue()");
+		}
+		assertThat(jdbc.queryForObject("select status from refund_requests where id=?", String.class, id))
+			.isEqualTo(action.equals("COMPLETED") ? "CASH_DISBURSED" : "REQUESTED");
+		assertThat(jdbc.queryForObject("select version from refund_requests where id=?", Long.class, id)).isEqualTo(expectedVersion);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where target_id=? and action=?", Long.class, id, type)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type=?", Long.class, id, type)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notifications where target_id=? and notification_type=?", Long.class, id, type)).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from credit_notes where refund_request_id=?", Long.class, id)).isZero();
+		if (action.equals("COMPLETED")) refunds.finalApproval(manager, id, new RefundActionRequest(expectedVersion, null));
+		else refunds.firstApproval(manager, id, new RefundFirstApprovalRequest(expectedVersion, BigInteger.ONE));
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key=?", Long.class,
+			type + ":" + id + ":" + receptionist)).isOne();
+	}
+
+	private List<UUID> activeStaff(String role) {
+		return jdbc.queryForList("select id from accounts where role=? and status='ACTIVE'", UUID.class, role);
+	}
+
+	private long refundOutboxCount(UUID id) {
+		return jdbc.queryForObject("select count(*) from notification_outbox where target_id=?", Long.class, id);
+	}
+
+	private void assertStaffOutbox(RefundRequestResponse response, List<UUID> staff) throws Exception {
+		String type = "MEMBERSHIP_REFUND_" + response.status();
+		List<Map<String, Object>> events = jdbc.queryForList("select event_key,recipient_account_id,target_type,payload::text from notification_outbox where target_id=? and notification_type=?",
+			response.id(), type);
+		assertThat(events).extracting(row -> row.get("recipient_account_id"))
+			.containsExactlyInAnyOrderElementsOf(java.util.stream.Stream.concat(java.util.stream.Stream.of(response.memberAccountId()), staff.stream()).toList());
+		for (Map<String, Object> event : events) {
+			UUID recipient = (UUID) event.get("recipient_account_id");
+			assertThat(event.get("target_type")).isEqualTo("REFUND_REQUEST");
+			boolean isMember = recipient.equals(response.memberAccountId());
+			assertThat(event.get("event_key")).isEqualTo(type + ":" + response.id() + (isMember ? "" : ":" + recipient));
+			if (isMember) continue;
+			Map<String, Object> expected = new HashMap<>();
+			expected.put("refundRequestId", response.id().toString());
+			expected.put("memberCode", response.memberCode());
+			expected.put("memberFullName", response.memberFullName());
+			expected.put("status", response.status().name());
+			if (response.approvedAmount() != null) expected.put("approvedAmount", response.approvedAmount().toString());
+			ObjectMapper json = new ObjectMapper();
+			assertThat(json.readTree((String) event.get("payload"))).isEqualTo(json.valueToTree(expected));
+		}
+	}
+
+	private void dispatchRefundEvents(UUID id) {
+		for (int attempt = 0; attempt < 20 && dueRefundEvents(id) > 0; attempt++) dispatcher.dispatchAvailable();
+		assertThat(dueRefundEvents(id)).isZero();
+	}
+
+	private long dueRefundEvents(UUID id) {
+		return jdbc.queryForObject("select count(*) from notification_outbox where target_id=? and status in ('PENDING','FAILED','PROCESSING') and next_attempt_at<=current_timestamp", Long.class, id);
+	}
+
+	private void assertDeliveredRefundEvents(UUID id, long expectedCount) {
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where target_id=? and status='SENT'", Long.class, id)).isEqualTo(expectedCount);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where target_id=?", Long.class, id)).isEqualTo(expectedCount);
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox o join notifications n on n.event_key=o.event_key where o.target_id=? and n.recipient_account_id=o.recipient_account_id and n.notification_type=o.notification_type and n.target_type=o.target_type and n.target_id=o.target_id and n.payload=o.payload", Long.class, id)).isEqualTo(expectedCount);
+	}
 
 	@Test
 	void refundDisplayJoinsCurrentSourcesAcrossWorkflowReplayAndInactiveHistory() {

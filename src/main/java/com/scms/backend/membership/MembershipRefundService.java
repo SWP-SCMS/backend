@@ -157,8 +157,7 @@ class MembershipRefundService {
 		} catch (DataIntegrityViolationException exception) {
 			throw RefundException.exists();
 		}
-		write(actor, refund, "REQUESTED", Map.of("requestedAmount", input.requestedAmount().toString()));
-		return response(refund);
+		return write(actor, refund, "REQUESTED", Map.of("requestedAmount", input.requestedAmount().toString()));
 	}
 
 	@Transactional
@@ -184,9 +183,8 @@ class MembershipRefundService {
 		Instant now = clock.instant();
 		request.firstApprove(actor, input.approvedAmount(), quote.suggestedAmount(), quote.remainingDays(), calculationDate, now);
 		refunds.saveAndFlush(request);
-		write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(),
+		return write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(),
 			"suggestedAmount", quote.suggestedAmount().toString()));
-		return response(request);
 	}
 
 	@Transactional
@@ -197,8 +195,7 @@ class MembershipRefundService {
 		RefundRequest request = lock(refundId); checkVersion(request, input.expectedVersion());
 		if (request.getStatus() != RefundRequestStatus.FIRST_APPROVED) throw RefundException.transition();
 		Instant now = clock.instant(); request.cashDisburse(actor, input.evidence(), now); refunds.saveAndFlush(request);
-		write(actor, request, "CASH_DISBURSED", Map.of("approvedAmount", request.getApprovedAmount().toString()));
-		return response(request);
+		return write(actor, request, "CASH_DISBURSED", Map.of("approvedAmount", request.getApprovedAmount().toString()));
 	}
 
 	@Transactional
@@ -219,8 +216,7 @@ class MembershipRefundService {
 		db.update("insert into credit_notes(id,refund_request_id,receipt_id,payment_id,member_account_id,amount,issued_by_account_id,issued_at) values(?,?,?,?,?,?,?,?)",
 			UUID.randomUUID(), request.getId(), request.getReceiptId(), request.getPaymentId(), request.getMemberAccountId(),
 			request.getApprovedAmount(), actor, Timestamp.from(now));
-		write(actor, request, "COMPLETED", Map.of("amount", request.getApprovedAmount().toString()));
-		return response(request);
+		return write(actor, request, "COMPLETED", Map.of("amount", request.getApprovedAmount().toString()));
 	}
 
 	@Transactional
@@ -235,9 +231,9 @@ class MembershipRefundService {
 		try { request.reject(input.reason(), clock.instant()); }
 		catch (IllegalStateException exception) { throw RefundException.transition(); }
 		refunds.saveAndFlush(request);
-		write(actor, request, "REJECTED", Map.of("reason", input.reason().trim()));
+		RefundRequestResponse response = write(actor, request, "REJECTED", Map.of("reason", input.reason().trim()));
 		if (reservedCancellation) lifecycle.activateReservedAfterRefundRejected(request.getMemberAccountId(), clock.instant());
-		return response(request);
+		return response;
 	}
 
 	private Map<String, Object> refundSource(UUID membershipId) {
@@ -344,11 +340,32 @@ class MembershipRefundService {
 			""" + placeholders + ")", requests.stream().map(RefundRequest::getId).toArray())
 			.stream().collect(java.util.stream.Collectors.toMap(row -> (UUID) row.get("id"), row -> row));
 	}
-	private void write(UUID actor, RefundRequest request, String action, Map<String, Object> metadata) {
+	private RefundRequestResponse write(UUID actor, RefundRequest request, String action, Map<String, Object> metadata) {
 		audits.save(new AuditEvent(UUID.randomUUID(), actor, "MEMBERSHIP_REFUND_" + action, "REFUND_REQUEST",
 			request.getId(), null, Map.of(), metadata));
 		notifications.write("MEMBERSHIP_REFUND_" + action + ":" + request.getId(), request.getMemberAccountId(),
 			"MEMBERSHIP_REFUND_" + action, "REFUND_REQUEST", request.getId(), metadata);
+		RefundRequestResponse response = response(request);
+		Map<String, Object> payload = new java.util.LinkedHashMap<>();
+		payload.put("refundRequestId", request.getId().toString());
+		payload.put("memberCode", response.memberCode());
+		payload.put("memberFullName", response.memberFullName());
+		payload.put("status", request.getStatus().name());
+		if (request.getApprovedAmount() != null) payload.put("approvedAmount", request.getApprovedAmount().toString());
+		List<UUID> recipients = switch (action) {
+			case "REQUESTED", "CASH_DISBURSED" -> accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.MANAGER, AccountStatus.ACTIVE)
+				.stream().map(account -> account.getId()).toList();
+			case "FIRST_APPROVED" -> accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)
+				.stream().map(account -> account.getId()).toList();
+			case "COMPLETED", "REJECTED" -> accounts.existsByIdAndRoleAndStatus(request.getRequesterAccountId(),
+				AccountRole.RECEPTIONIST, AccountStatus.ACTIVE) ? List.of(request.getRequesterAccountId()) : List.of();
+			default -> List.of();
+		};
+		for (UUID recipient : recipients) {
+			if (!recipient.equals(actor)) notifications.write("MEMBERSHIP_REFUND_" + action + ":" + request.getId() + ":" + recipient,
+				recipient, "MEMBERSHIP_REFUND_" + action, "REFUND_REQUEST", request.getId(), payload);
+		}
+		return response;
 	}
 	private record RefundQuote(RefundType type, BigInteger suggestedAmount, Integer remainingDays, boolean eligible) { }
 }
