@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -233,6 +234,25 @@ class ClassSessionServiceTests {
 			.isInstanceOf(RecurringScheduleException.class)
 			.extracting("code").isEqualTo("COACH_ON_APPROVED_LEAVE");
 		verify(sessions, never()).saveAndFlush(any());
+	}
+
+	@Test
+	void availableCoachesUsesTheSessionIntervalAndExcludesTheSessionItself() {
+		UUID managerId = activeManager();
+		ClassSession session = sessionAt(now.plusSeconds(3600));
+		UUID coachId = UUID.randomUUID();
+		ClassSessionRepository.AvailableCoachView view = org.mockito.Mockito.mock(
+			ClassSessionRepository.AvailableCoachView.class);
+		when(view.getCoachAccountId()).thenReturn(coachId);
+		when(view.getFullName()).thenReturn("Available Coach");
+		when(view.getPhone()).thenReturn("0901234567");
+		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findAvailableCoaches(session.getId(), session.getStartTime(), session.getEndTime()))
+			.thenReturn(List.of(view));
+
+		List<AvailableCoachResponse> result = service.availableCoaches(managerId, session.getId());
+
+		assertThat(result).containsExactly(new AvailableCoachResponse(coachId, "Available Coach", "0901234567"));
 	}
 
 	@Test

@@ -146,6 +146,23 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /manager/class-sessions/{id}/available-coaches:
+    get:
+      summary: List active Coaches available for the Session interval
+      operationId: listAvailableCoachesForSession
+      description: Excludes active overlapping Sessions other than the target Session and approved Coach leave intervals. The assignment mutation still revalidates availability.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Available Coaches ordered by full name and account ID.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AvailableCoachResponse'}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /manager/class-sessions/cancellation-preview:
     post:
       summary: Preview future scheduled sessions eligible for cancellation
@@ -186,6 +203,13 @@ components:
       required: true
       schema: {type: string, format: uuid}
   schemas:
+    AvailableCoachResponse:
+      type: object
+      required: [coachAccountId, fullName, phone]
+      properties:
+        coachAccountId: {type: string, format: uuid}
+        fullName: {type: string}
+        phone: {type: string}
     ClassSessionScheduleRequest:
       type: object
       required: [startTime, endTime, expectedVersion, reason]

@@ -1,5 +1,6 @@
 package com.scms.backend.scheduling;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
@@ -59,6 +60,12 @@ public class ClassSessionController {
 	@GetMapping("/{id}")
 	ResponseEntity<ClassSessionDetailResponse> get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
 		return ResponseEntity.ok(service.get(UUID.fromString(jwt.getSubject()), id));
+	}
+
+	@GetMapping("/{id}/available-coaches")
+	ResponseEntity<List<AvailableCoachResponse>> availableCoaches(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID id) {
+		return ResponseEntity.ok(service.availableCoaches(UUID.fromString(jwt.getSubject()), id));
 	}
 
 	@PatchMapping("/{id}/assignment")

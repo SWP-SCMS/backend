@@ -37,7 +37,46 @@ class ClassSessionAssignmentIntegrationTests {
 	@Autowired DisciplineRepository disciplines;
 	@Autowired SportClassRepository classes;
 	@Autowired RoomRepository rooms;
+	@Autowired CoachLeaveRepository coachLeaves;
 	@Autowired JdbcTemplate jdbc;
+
+	@Test
+	void discoversOnlyActiveCoachesWithoutOverlappingSessionsOrApprovedLeave() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Availability Manager");
+		Account assigned = saveAccount(AccountRole.COACH, "A Assigned Coach");
+		Account available = saveAccount(AccountRole.COACH, "B Available Coach");
+		Account busy = saveAccount(AccountRole.COACH, "C Busy Coach");
+		Account onLeave = saveAccount(AccountRole.COACH, "D Leave Coach");
+		Account inactive = accounts.saveAndFlush(new Account(UUID.randomUUID(), AccountRole.COACH,
+			AccountStatus.INACTIVE, "E Inactive Coach", "0987654321", UUID.randomUUID() + "@example.test",
+			LocalDate.of(1990, 1, 1), "{noop}password"));
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Availability Pilates",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Availability Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room targetRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Availability Studio A", 20,
+			RoomStatus.ACTIVE));
+		Room busyRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Availability Studio B", 20,
+			RoomStatus.ACTIVE));
+		Instant start = Instant.parse("2032-01-01T02:00:00Z");
+		Instant end = Instant.parse("2032-01-01T03:00:00Z");
+		ClassSession target = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, assigned,
+			targetRoom, start, end, 12, manager.getId()));
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, busy, busyRoom, start, end, 12,
+			manager.getId()));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), onLeave, start.minusSeconds(60),
+			end.plusSeconds(60), "Approved leave");
+		leave.approve(manager.getId(), "Approved", Instant.parse("2031-12-01T00:00:00Z"));
+		coachLeaves.saveAndFlush(leave);
+
+		var result = service.availableCoaches(manager.getId(), target.getId());
+
+		assertThat(result).extracting(AvailableCoachResponse::coachAccountId)
+			.contains(assigned.getId(), available.getId())
+			.doesNotContain(busy.getId(), onLeave.getId(), inactive.getId());
+		assertThat(result).extracting(AvailableCoachResponse::fullName)
+			.containsSubsequence("A Assigned Coach", "B Available Coach");
+	}
 
 	@Test
 	void updatesOnlyAssignmentAndRejectsConflictingResources() {
