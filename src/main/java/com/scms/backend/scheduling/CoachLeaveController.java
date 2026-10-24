@@ -33,6 +33,10 @@ class CoachLeaveController {
 	ResponseEntity<CoachLeaveResponse> withdraw(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
 		return ResponseEntity.ok(service.withdraw(subject(jwt), requestId));
 	}
+	@PatchMapping("/coach/leave-requests/{requestId}/cancel")
+	ResponseEntity<CoachLeaveResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
+		return ResponseEntity.ok(service.cancel(subject(jwt), requestId));
+	}
 	@GetMapping("/manager/coach-leave-requests")
 	ResponseEntity<List<CoachLeaveResponse>> list(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(required = false) CoachLeaveStatus status) {

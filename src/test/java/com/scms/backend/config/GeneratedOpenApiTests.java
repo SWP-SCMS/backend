@@ -211,6 +211,7 @@ class GeneratedOpenApiTests {
 		"POST /coach/leave-requests",
 		"GET /coach/me/leave-requests",
 		"DELETE /coach/leave-requests/{requestId}",
+		"PATCH /coach/leave-requests/{requestId}/cancel",
 		"GET /manager/coach-leave-requests",
 		"PATCH /manager/coach-leave-requests/{requestId}/approve",
 		"PATCH /manager/coach-leave-requests/{requestId}/reject",

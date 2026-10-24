@@ -73,6 +73,65 @@ class CoachLeaveServiceTests {
 			eq("COACH_LEAVE_REQUEST"), eq(leave.getId()), any());
 	}
 
+	@Test void coachCancelsFutureApprovedLeaveAndNotifiesApprovingManager() {
+		Account coach = account(AccountRole.COACH); Account manager = account(AccountRole.MANAGER);
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.plusSeconds(3600),
+			now.plusSeconds(7200), "Leave");
+		leave.approve(manager.getId(), "Approved", now.minusSeconds(60));
+		when(leaves.findByIdForUpdate(leave.getId())).thenReturn(Optional.of(leave));
+		when(sessions.findActiveOverlapIdsByCoach(coach.getId(), leave.getStartTime(), leave.getEndTime()))
+			.thenReturn(List.of());
+
+		CoachLeaveResponse response = service.cancel(coach.getId(), leave.getId());
+
+		assertThat(response.status()).isEqualTo(CoachLeaveStatus.CANCELLED);
+		assertThat(response.reviewedBy()).isEqualTo(manager.getId());
+		verify(audits).save(any());
+		verify(notifications).write(any(), eq(manager.getId()), eq("COACH_LEAVE_CANCELLED"),
+			eq("COACH_LEAVE_REQUEST"), eq(leave.getId()), any());
+	}
+
+	@Test void coachCannotCancelApprovedLeaveAfterItStarts() {
+		Account coach = account(AccountRole.COACH); Account manager = account(AccountRole.MANAGER);
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.minusSeconds(60),
+			now.plusSeconds(3600), "Leave");
+		leave.approve(manager.getId(), "Approved", now.minusSeconds(120));
+		when(leaves.findByIdForUpdate(leave.getId())).thenReturn(Optional.of(leave));
+
+		assertThatThrownBy(() -> service.cancel(coach.getId(), leave.getId()))
+			.isInstanceOfSatisfying(CoachLeaveException.class, error ->
+				assertThat(error.getCode()).isEqualTo("COACH_LEAVE_ALREADY_STARTED"));
+		assertThat(leave.getStatus()).isEqualTo(CoachLeaveStatus.APPROVED);
+	}
+
+	@Test void coachCannotCancelLeaveThatIsNotApproved() {
+		Account coach = account(AccountRole.COACH);
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.plusSeconds(3600),
+			now.plusSeconds(7200), "Leave");
+		when(leaves.findByIdForUpdate(leave.getId())).thenReturn(Optional.of(leave));
+
+		assertThatThrownBy(() -> service.cancel(coach.getId(), leave.getId()))
+			.isInstanceOfSatisfying(CoachLeaveException.class, error ->
+				assertThat(error.getCode()).isEqualTo("COACH_LEAVE_NOT_APPROVED"));
+	}
+
+	@Test void coachCannotCancelAnotherCoachsApprovedLeave() {
+		Account coach = account(AccountRole.COACH); Account owner = account(AccountRole.COACH);
+		Account manager = account(AccountRole.MANAGER);
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), owner, now.plusSeconds(3600),
+			now.plusSeconds(7200), "Leave");
+		leave.approve(manager.getId(), "Approved", now.minusSeconds(60));
+		when(leaves.findByIdForUpdate(leave.getId())).thenReturn(Optional.of(leave));
+
+		assertThatThrownBy(() -> service.cancel(coach.getId(), leave.getId()))
+			.isInstanceOfSatisfying(CoachLeaveException.class, error ->
+				assertThat(error.getCode()).isEqualTo("COACH_LEAVE_NOT_FOUND"));
+	}
+
 	@Test void overlappingOpenLeaveIsRejected() {
 		Account coach = account(AccountRole.COACH); when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
 		when(leaves.existsOpenOverlap(any(), any(), any())).thenReturn(true);

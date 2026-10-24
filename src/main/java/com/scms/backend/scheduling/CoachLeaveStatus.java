@@ -5,6 +5,7 @@ public enum CoachLeaveStatus {
 	APPROVED,
 	REJECTED,
 	WITHDRAWN,
-	EXPIRED
+	EXPIRED,
+	CANCELLED
 }
 

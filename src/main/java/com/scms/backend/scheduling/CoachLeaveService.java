@@ -87,6 +87,28 @@ class CoachLeaveService {
 	}
 
 	@Transactional
+	CoachLeaveResponse cancel(UUID coachId, UUID requestId) {
+		activeAccount(coachId, AccountRole.COACH);
+		CoachLeaveRequest leave = leaves.findByIdForUpdate(requestId)
+			.filter(item -> item.getCoach().getId().equals(coachId))
+			.orElseThrow(CoachLeaveException::notFound);
+		if (leave.getStatus() != CoachLeaveStatus.APPROVED) throw CoachLeaveException.notApproved();
+		Instant now = clock.instant();
+		if (!now.isBefore(leave.getStartTime())) throw CoachLeaveException.cancellationAlreadyStarted();
+		Map<String, Object> before = snapshot(leave);
+		UUID approvingManagerId = leave.getReviewedBy();
+		leave.cancel(now);
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_CANCELLED",
+			"COACH_LEAVE_REQUEST", leave.getId(), "Coach cancelled approved leave", before, snapshot(leave)));
+		notifications.write("coach-leave:" + leave.getId() + ":CANCELLED", approvingManagerId,
+			"COACH_LEAVE_CANCELLED", "COACH_LEAVE_REQUEST", leave.getId(),
+			Map.of("leaveRequestId", leave.getId().toString(), "coachId", coachId.toString(),
+				"coachFullName", leave.getCoach().getFullName(), "startTime", leave.getStartTime().toString(),
+				"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name()));
+		return response(leave);
+	}
+
+	@Transactional
 	List<CoachLeaveResponse> managerList(UUID managerId, CoachLeaveStatus status) {
 		activeAccount(managerId, AccountRole.MANAGER);
 		catchUp();
