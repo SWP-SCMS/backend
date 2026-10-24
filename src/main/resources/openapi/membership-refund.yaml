@@ -2,6 +2,23 @@ openapi: 3.0.3
 info:
   title: SCMS Membership Refund API
   version: v1
+  description: |
+    Refund transitions enqueue notifications in the same transaction as the transition and audit.
+    Existing Member notifications and event keys MEMBERSHIP_REFUND_{event}:{requestId} are preserved.
+    Staff recipients (excluding the actor) are selected at transition time:
+    MEMBERSHIP_REFUND_REQUESTED and MEMBERSHIP_REFUND_CASH_DISBURSED notify all ACTIVE MANAGER accounts;
+    MEMBERSHIP_REFUND_FIRST_APPROVED notifies all ACTIVE RECEPTIONIST accounts;
+    MEMBERSHIP_REFUND_COMPLETED and MEMBERSHIP_REFUND_REJECTED notify only the requester,
+    provided that account is still an ACTIVE RECEPTIONIST.
+    Staff event keys are MEMBERSHIP_REFUND_{event}:{requestId}:{recipientId}, with targetType
+    REFUND_REQUEST and targetId equal to the refund request ID. The staff payload contains
+    refundRequestId (UUID string), memberCode and memberFullName (current display strings, nullable
+    for legacy missing data), status (the new refund status), and approvedAmount (VND integer string)
+    when an approved amount exists. Staff payloads exclude reasons, cash disbursement evidence,
+    passwords and tokens. Display data is shared with the mutation response lookup.
+    Create replay and rejected decision retries do not enqueue new events. Outbox and inbox event
+    key uniqueness prevent duplicate delivery during retries. Existing frontend destinations are
+    /manager/refunds and /reception/refunds; no frontend change is required.
 paths:
   /reception/members/{memberCode}/refund-eligible-sources:
     get:
