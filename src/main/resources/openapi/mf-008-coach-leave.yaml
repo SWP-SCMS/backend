@@ -51,10 +51,12 @@ components:
     CoachLeaveReviewRequest: {type: object, properties: {note: {type: [string, 'null'], maxLength: 1000}}}
     CoachLeaveResponse:
       type: object
-      required: [id, coachId, startTime, endTime, reason, status, affectedSessionIds]
+      required: [id, coachId, coachFullName, coachPhone, startTime, endTime, reason, status, affectedSessionIds]
       properties:
         id: {type: string, format: uuid}
         coachId: {type: string, format: uuid}
+        coachFullName: {type: string}
+        coachPhone: {type: string}
         startTime: {type: string, format: date-time}
         endTime: {type: string, format: date-time}
         reason: {type: string}
