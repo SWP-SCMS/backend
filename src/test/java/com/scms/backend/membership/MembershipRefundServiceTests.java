@@ -18,6 +18,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -29,6 +31,8 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.identity.receptionmember.ReceptionMemberNotFoundException;
 import com.scms.backend.notification.NotificationWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -55,6 +59,56 @@ class MembershipRefundServiceTests {
 	private final UUID memberId = UUID.randomUUID();
 
 	@Test
+	void refundSourceDiscoveryRequiresAnActiveReceptionist() {
+		assertThatThrownBy(() -> service.refundEligibleSources(receptionist, "MB-123456"))
+			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+		verify(profiles, never()).findVisibleMemberByCode(anyString(), any(), any());
+		verify(db, never()).queryForList(anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
+	@Test
+	void refundSourceDiscoveryUsesVisibleMemberNotFoundSemantics() {
+		when(accounts.existsByIdAndRoleAndStatus(receptionist, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.refundEligibleSources(receptionist, "MB-MISSING"))
+			.isInstanceOf(ReceptionMemberNotFoundException.class);
+		verify(db, never()).queryForList(anyString(), org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
+	@Test
+	void refundSourceDiscoverySharesExactThresholdFloorAndFreezeCreditQuoteInOneQuery() {
+		MemberProfile profile = mock(MemberProfile.class);
+		when(accounts.existsByIdAndRoleAndStatus(receptionist, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(profiles.findVisibleMemberByCode(eq("MB-123456"), eq(AccountRole.MEMBER), any()))
+			.thenReturn(Optional.of(profile));
+		when(profile.getAccountId()).thenReturn(memberId);
+		Map<String, Object> exactThreshold = sourceRow("00000000-0000-0000-0000-000000000002", 30);
+		Map<String, Object> belowThreshold = sourceRow("00000000-0000-0000-0000-000000000001", 29);
+		Map<String, Object> zeroAfterFloor = sourceRow("00000000-0000-0000-0000-000000000000", 30);
+		zeroAfterFloor.put("paid_amount", BigDecimal.ONE);
+		zeroAfterFloor.put("price_amount_snapshot", BigDecimal.ONE);
+		when(db.queryForList(anyString(), eq(memberId)))
+			.thenReturn(List.of(exactThreshold, belowThreshold, zeroAfterFloor));
+
+		List<RefundEligibleSourceResponse> response = service.refundEligibleSources(receptionist, " MB-123456 ");
+
+		assertThat(response).singleElement().satisfies(source -> {
+			assertThat(source.paymentId()).isEqualTo(exactThreshold.get("payment_id"));
+			assertThat(source.type()).isEqualTo(RefundType.TERMINATED_MEMBERSHIP);
+			assertThat(source.paidAmount()).isEqualTo(BigInteger.valueOf(1_000_001));
+			assertThat(source.suggestedAmount()).isEqualTo(BigInteger.valueOf(150_000));
+			assertThat(source.currency()).isEqualTo("VND");
+			assertThat(source.calculationDate()).isEqualTo(LocalDate.of(2026, 10, 23));
+			assertThat(source.paymentReference()).isNull();
+		});
+		org.mockito.ArgumentCaptor<String> sql = org.mockito.ArgumentCaptor.forClass(String.class);
+		verify(db).queryForList(sql.capture(), eq(memberId));
+		assertThat(sql.getValue()).contains("order by p.paid_at desc, p.id desc");
+	}
+
+	@Test
 	void receptionistCanCreateRefundOnlyForPaidCashAndTerminatedMembershipAndReplayIdempotently() {
 		Account receptionistAccount = new Account(receptionist, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE,
 			"Reception", "0900000001", "reception@example.test", LocalDate.of(1990, 1, 1), "hash");
@@ -74,7 +128,8 @@ class MembershipRefundServiceTests {
 				"membership_status", "TERMINATED", "receipt_id", UUID.randomUUID()));
 		when(db.queryForMap(contains("select m.starts_at"), eq(membershipId))).thenReturn(Map.of(
 			"starts_at", Timestamp.from(Instant.parse("2026-07-14T17:00:00Z")),
-			"duration_days_snapshot", 100, "price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 30));
+			"membership_status", "TERMINATED", "duration_days_snapshot", 100,
+			"price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 30));
 		when(refunds.saveAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
 		service.create(receptionist, "MB-123456", input);
@@ -96,7 +151,8 @@ class MembershipRefundServiceTests {
 		when(refunds.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
 		when(db.queryForMap(anyString(), eq(membershipId))).thenReturn(Map.of(
 			"starts_at", Timestamp.from(Instant.parse("2026-07-14T17:00:00Z")),
-			"duration_days_snapshot", 100, "price_amount_snapshot", BigDecimal.valueOf(1_000_001), "credited_days", 30));
+			"membership_status", "TERMINATED", "duration_days_snapshot", 100,
+			"price_amount_snapshot", BigDecimal.valueOf(1_000_001), "credited_days", 30));
 
 		service.firstApproval(manager, requestId, new RefundFirstApprovalRequest(0L, BigInteger.valueOf(150_000)));
 
@@ -113,7 +169,8 @@ class MembershipRefundServiceTests {
 		when(refunds.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
 		when(db.queryForMap(anyString(), eq(membershipId))).thenReturn(Map.of(
 			"starts_at", Timestamp.from(Instant.parse("2026-07-14T17:00:00Z")),
-			"duration_days_snapshot", 100, "price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 29));
+			"membership_status", "TERMINATED", "duration_days_snapshot", 100,
+			"price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 29));
 
 		assertThatThrownBy(() -> service.firstApproval(manager, requestId,
 			new RefundFirstApprovalRequest(0L, BigInteger.ONE)))
@@ -153,7 +210,8 @@ class MembershipRefundServiceTests {
 				"membership_status", "TERMINATED", "receipt_id", UUID.randomUUID()));
 		when(db.queryForMap(contains("select m.starts_at"), eq(membershipId))).thenReturn(Map.of(
 			"starts_at", Timestamp.from(Instant.parse("2026-07-14T17:00:00Z")),
-			"duration_days_snapshot", 100, "price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 30));
+			"membership_status", "TERMINATED", "duration_days_snapshot", 100,
+			"price_amount_snapshot", BigDecimal.valueOf(1_000_000), "credited_days", 30));
 		when(refunds.saveAndFlush(any())).thenThrow(new DataIntegrityViolationException("unique refund per payment"));
 
 		assertThatThrownBy(() -> service.create(receptionist, "MB-123456", input))
@@ -233,5 +291,26 @@ class MembershipRefundServiceTests {
 		when(request.getType()).thenReturn(RefundType.TERMINATED_MEMBERSHIP);
 		when(request.getReason()).thenReturn("Termination refund");
 		return request;
+	}
+
+	private Map<String, Object> sourceRow(String paymentId, int creditedDays) {
+		Map<String, Object> row = new HashMap<>();
+		row.put("payment_id", UUID.fromString(paymentId));
+		row.put("membership_id", membershipId);
+		row.put("receipt_id", UUID.randomUUID());
+		row.put("receipt_number", "RC-100001");
+		row.put("order_number", "ORD-100001");
+		row.put("offer_name", "Exact threshold");
+		row.put("member_code", "MB-123456");
+		row.put("member_full_name", "Refund Member");
+		row.put("payment_reference", null);
+		row.put("membership_status", "TERMINATED");
+		row.put("paid_amount", BigDecimal.valueOf(1_000_001));
+		row.put("currency", "VND");
+		row.put("starts_at", Timestamp.from(Instant.parse("2026-07-14T17:00:00Z")));
+		row.put("duration_days_snapshot", 100);
+		row.put("price_amount_snapshot", BigDecimal.valueOf(1_000_001));
+		row.put("credited_days", creditedDays);
+		return row;
 	}
 }

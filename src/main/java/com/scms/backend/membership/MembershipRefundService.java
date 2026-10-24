@@ -7,7 +7,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -62,6 +64,43 @@ class MembershipRefundService {
 		return page(refunds.findAllByOrderByRequestedAtDescIdDesc(PageRequest.of(page, size)));
 	}
 
+	@Transactional(readOnly = true)
+	List<RefundEligibleSourceResponse> refundEligibleSources(UUID actor, String memberCode) {
+		ensureRole(actor, AccountRole.RECEPTIONIST);
+		UUID memberId = member(memberCode);
+		LocalDate calculationDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
+		return db.queryForList("""
+			select p.id payment_id, m.id membership_id, r.id receipt_id, r.receipt_number,
+				o.order_number, m.offer_name_snapshot offer_name, profile.member_code,
+				account.full_name member_full_name, p.provider_reference payment_reference,
+				m.status membership_status, p.amount paid_amount, p.currency_code currency,
+				m.starts_at, m.duration_days_snapshot, m.price_amount_snapshot,
+				coalesce(freeze.credited_days, 0) credited_days
+			from payments p
+			join membership_orders o on o.id=p.order_id
+			join memberships m on m.order_id=o.id and m.member_account_id=o.member_account_id
+			join receipts r on r.payment_id=p.id and r.order_id=o.id and r.member_account_id=o.member_account_id
+			join accounts account on account.id=o.member_account_id
+			join member_profiles profile on profile.account_id=account.id
+			left join (
+				select membership_id, sum(credited_days) credited_days
+				from membership_freeze_periods
+				where status in ('COMPLETED','ENDED_EARLY')
+				group by membership_id
+			) freeze on freeze.membership_id=m.id
+			where o.member_account_id=? and p.method='CASH' and p.status='PAID'
+				and m.status in ('TERMINATED','RESERVED')
+				and not exists (
+					select 1 from refund_requests refund
+					where refund.payment_id=p.id and refund.status not in ('REJECTED','CANCELLED')
+				)
+			order by p.paid_at desc, p.id desc
+			""", memberId).stream()
+			.map(row -> eligibleSource(row, calculationDate))
+			.flatMap(Optional::stream)
+			.toList();
+	}
+
 	@Transactional
 	RefundRequestResponse create(UUID actor, String memberCode, RefundRequestCreateRequest input) {
 		if (input == null || input.paymentId() == null || input.membershipId() == null
@@ -105,25 +144,14 @@ class MembershipRefundService {
 			throw RefundException.notEligible();
 		}
 		LocalDate calculationDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
-		RefundType type;
-		Integer remainingDays = null;
-		BigInteger suggested;
-		if ("RESERVED".equals(source.get("membership_status"))) {
-			type = RefundType.RESERVED_CANCELLATION;
-			suggested = reservedSuggested(new BigInteger(source.get("price_amount_snapshot").toString()));
-		} else if ("TERMINATED".equals(source.get("membership_status"))) {
-			type = RefundType.TERMINATED_MEMBERSHIP;
-			RefundCalculation quote = calculation(input.membershipId(), calculationDate);
-			if (quote.remainingDays() * 100L < quote.durationDays() * 30L) throw RefundException.threshold();
-			suggested = suggested(quote);
-			remainingDays = quote.remainingDays();
-		} else {
-			throw RefundException.notEligible();
-		}
-		if (input.requestedAmount().compareTo(suggested) > 0) throw RefundException.amountLimit();
+		Map<String, Object> quoteSource = "TERMINATED".equals(source.get("membership_status"))
+			? refundSource(input.membershipId()) : source;
+		RefundQuote quote = eligibleQuote(quoteSource, calculationDate);
+		if (input.requestedAmount().compareTo(quote.suggestedAmount()) > 0) throw RefundException.amountLimit();
 		RefundRequest refund = new RefundRequest(UUID.randomUUID(), input.paymentId(), (UUID) source.get("order_id"),
-			input.membershipId(), (UUID) source.get("receipt_id"), memberId, actor, type,
-			input.requestedAmount(), suggested, remainingDays, calculationDate, input.reason().trim(), input.idempotencyKey().trim());
+			input.membershipId(), (UUID) source.get("receipt_id"), memberId, actor, quote.type(),
+			input.requestedAmount(), quote.suggestedAmount(), quote.remainingDays(), calculationDate,
+			input.reason().trim(), input.idempotencyKey().trim());
 		try {
 			refunds.saveAndFlush(refund);
 		} catch (DataIntegrityViolationException exception) {
@@ -144,23 +172,20 @@ class MembershipRefundService {
 		checkVersion(request, input.expectedVersion());
 		if (request.getStatus() != RefundRequestStatus.REQUESTED) throw RefundException.transition();
 		LocalDate calculationDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
-		Integer remainingDays = null;
-		BigInteger suggested;
+		RefundQuote quote;
 		if (request.getType() == RefundType.RESERVED_CANCELLATION) {
 			if (reserved == null || reserved.getStatus() != MembershipStatus.RESERVED) throw RefundException.notEligible();
-			suggested = reservedSuggested(reserved.getPriceAmountSnapshot());
+			quote = eligibleQuote("RESERVED", reserved.getPriceAmountSnapshot(), null, 0, 0, calculationDate);
 		} else {
-			RefundCalculation calculation = calculation(request.getMembershipId(), calculationDate);
-			if (calculation.remainingDays() * 100L < calculation.durationDays() * 30L) throw RefundException.threshold();
-			suggested = suggested(calculation);
-			remainingDays = calculation.remainingDays();
+			quote = eligibleQuote(refundSource(request.getMembershipId()), calculationDate);
 		}
 		if (input.approvedAmount().signum() <= 0 || input.approvedAmount().compareTo(request.getRequestedAmount()) > 0
-				|| input.approvedAmount().compareTo(suggested) > 0) throw RefundException.amountLimit();
+				|| input.approvedAmount().compareTo(quote.suggestedAmount()) > 0) throw RefundException.amountLimit();
 		Instant now = clock.instant();
-		request.firstApprove(actor, input.approvedAmount(), suggested, remainingDays, calculationDate, now);
+		request.firstApprove(actor, input.approvedAmount(), quote.suggestedAmount(), quote.remainingDays(), calculationDate, now);
 		refunds.saveAndFlush(request);
-		write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(), "suggestedAmount", suggested.toString()));
+		write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(),
+			"suggestedAmount", quote.suggestedAmount().toString()));
 		return RefundRequestResponse.from(request);
 	}
 
@@ -215,27 +240,62 @@ class MembershipRefundService {
 		return RefundRequestResponse.from(request);
 	}
 
-	private RefundCalculation calculation(UUID membershipId, LocalDate today) {
-		Map<String, Object> row = db.queryForMap("""
-			select m.starts_at, m.duration_days_snapshot, m.price_amount_snapshot,
+	private Map<String, Object> refundSource(UUID membershipId) {
+		return db.queryForMap("""
+			select m.starts_at, m.status membership_status, m.duration_days_snapshot, m.price_amount_snapshot,
 				coalesce(sum(period.credited_days), 0) credited_days
 			from memberships m left join membership_freeze_periods period
 				on period.membership_id=m.id and period.status in ('COMPLETED','ENDED_EARLY')
 			where m.id=? group by m.id
 			""", membershipId);
-		LocalDate start = ((Timestamp) row.get("starts_at")).toInstant().atZone(BUSINESS_ZONE).toLocalDate();
-		int duration = ((Number) row.get("duration_days_snapshot")).intValue();
-		int credited = ((Number) row.get("credited_days")).intValue();
-		LocalDate originalEnd = start.plusDays((long) duration + credited);
-		int remaining = (int) Math.max(0, ChronoUnit.DAYS.between(today, originalEnd));
-		return new RefundCalculation(today, remaining, duration, new BigInteger(row.get("price_amount_snapshot").toString()));
 	}
-	private BigInteger suggested(RefundCalculation calculation) {
-		return calculation.price().multiply(BigInteger.valueOf(calculation.remainingDays())).multiply(BigInteger.valueOf(50))
-			.divide(BigInteger.valueOf((long) calculation.durationDays() * 100));
+	private Optional<RefundEligibleSourceResponse> eligibleSource(Map<String, Object> row, LocalDate date) {
+		RefundQuote quote = quote(row, date);
+		if (!quote.eligible() || quote.suggestedAmount().signum() <= 0) return Optional.empty();
+		return Optional.of(new RefundEligibleSourceResponse((UUID) row.get("payment_id"),
+			(UUID) row.get("membership_id"), (UUID) row.get("receipt_id"), row.get("receipt_number").toString(),
+			row.get("order_number").toString(), row.get("offer_name").toString(), row.get("member_code").toString(),
+			row.get("member_full_name").toString(), (String) row.get("payment_reference"), quote.type(),
+			big(row, "paid_amount"), quote.suggestedAmount(), row.get("currency").toString().trim(), date));
 	}
-	private BigInteger reservedSuggested(BigInteger price) {
-		return price.multiply(BigInteger.valueOf(80)).divide(BigInteger.valueOf(100));
+	private RefundQuote eligibleQuote(Map<String, Object> row, LocalDate date) {
+		RefundQuote quote = quote(row, date);
+		if (!quote.eligible()) throw RefundException.threshold();
+		return quote;
+	}
+	private RefundQuote quote(Map<String, Object> row, LocalDate date) {
+		String status = row.get("membership_status").toString();
+		if ("RESERVED".equals(status)) {
+			return eligibleQuoteValues(status, big(row, "price_amount_snapshot"), null, 0, 0, date);
+		}
+		if (!"TERMINATED".equals(status)) throw RefundException.notEligible();
+		return eligibleQuoteValues(status, big(row, "price_amount_snapshot"), (Timestamp) row.get("starts_at"),
+			((Number) row.get("duration_days_snapshot")).intValue(),
+			((Number) row.get("credited_days")).intValue(), date);
+	}
+	private RefundQuote eligibleQuote(String status, BigInteger price, Timestamp startsAt, int duration,
+			int creditedDays, LocalDate date) {
+		RefundQuote quote = eligibleQuoteValues(status, price, startsAt, duration, creditedDays, date);
+		if (!quote.eligible()) throw RefundException.threshold();
+		return quote;
+	}
+	private RefundQuote eligibleQuoteValues(String status, BigInteger price, Timestamp startsAt, int duration,
+			int creditedDays, LocalDate date) {
+		if ("RESERVED".equals(status)) {
+			return new RefundQuote(RefundType.RESERVED_CANCELLATION,
+				price.multiply(BigInteger.valueOf(80)).divide(BigInteger.valueOf(100)), null, true);
+		}
+		if (!"TERMINATED".equals(status)) throw RefundException.notEligible();
+		LocalDate start = startsAt.toInstant().atZone(BUSINESS_ZONE).toLocalDate();
+		int remaining = (int) Math.max(0, ChronoUnit.DAYS.between(date,
+			start.plusDays((long) duration + creditedDays)));
+		BigInteger suggested = price.multiply(BigInteger.valueOf(remaining)).multiply(BigInteger.valueOf(50))
+			.divide(BigInteger.valueOf((long) duration * 100));
+		return new RefundQuote(RefundType.TERMINATED_MEMBERSHIP, suggested, remaining,
+			remaining * 100L >= duration * 30L);
+	}
+	private BigInteger big(Map<String, Object> row, String key) {
+		return new BigInteger(row.get(key).toString());
 	}
 	private Membership lockReservedMembership(RefundRequest request) {
 		accounts.findByIdForUpdate(request.getMemberAccountId())
@@ -269,5 +329,5 @@ class MembershipRefundService {
 		notifications.write("MEMBERSHIP_REFUND_" + action + ":" + request.getId(), request.getMemberAccountId(),
 			"MEMBERSHIP_REFUND_" + action, "REFUND_REQUEST", request.getId(), metadata);
 	}
-	private record RefundCalculation(LocalDate date, int remainingDays, int durationDays, BigInteger price) { }
+	private record RefundQuote(RefundType type, BigInteger suggestedAmount, Integer remainingDays, boolean eligible) { }
 }

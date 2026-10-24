@@ -123,6 +123,7 @@ class GeneratedOpenApiTests {
 		"POST /manager/membership-freeze-requests/{requestId}/reject",
 		"POST /reception/membership-freeze-requests/{requestId}/cash-payment",
 		"GET /reception/refund-requests",
+		"GET /reception/members/{memberCode}/refund-eligible-sources",
 		"POST /reception/members/{memberCode}/refund-requests",
 		"POST /reception/refund-requests/{requestId}/cash-disbursement",
 		"GET /manager/refund-requests",
@@ -494,6 +495,31 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedAndStaticContractsDescribeRefundEligibleSources() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode generatedItems = response(generated,
+			"/reception/members/{memberCode}/refund-eligible-sources", "get", "200")
+			.path("content").path("application/json").path("schema").path("items");
+		assertThat(generatedItems.path("$ref").asText())
+			.isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
+		JsonNode generatedSchema = generated.at("/components/schemas/RefundEligibleSourceResponse");
+		assertRefundEligibleSourceSchema(generatedSchema);
+		assertThat(generatedSchema.at("/properties/paymentReference/type").toString()).contains("null");
+
+		try (var stream = getClass().getResourceAsStream("/openapi/membership-refund.yaml")) {
+			JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(stream);
+			JsonNode documentedItems = response(documented,
+				"/reception/members/{memberCode}/refund-eligible-sources", "get", "200")
+				.path("content").path("application/json").path("schema").path("items");
+			assertThat(documentedItems.path("$ref").asText())
+				.isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
+			JsonNode documentedSchema = documented.at("/components/schemas/RefundEligibleSourceResponse");
+			assertRefundEligibleSourceSchema(documentedSchema);
+			assertThat(documentedSchema.at("/properties/paymentReference/nullable").asBoolean()).isTrue();
+		}
+	}
+
+	@Test
 	void generatedContractDocumentsEmailVerificationAndManualActivation() throws Exception {
 		JsonNode document = generatedDocument();
 		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream()
@@ -828,6 +854,19 @@ class GeneratedOpenApiTests {
 			.map(mediaType -> mediaType.path("schema"))
 			.anyMatch(schema -> !schema.isMissingNode() && !schema.isEmpty());
 		assertThat(hasSchema).as(label).isTrue();
+	}
+
+	private void assertRefundEligibleSourceSchema(JsonNode schema) {
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("paymentId", "membershipId", "receiptId", "receiptNumber", "orderNumber",
+				"offerName", "memberCode", "memberFullName", "paymentReference", "type", "paidAmount",
+				"suggestedAmount", "currency", "calculationDate");
+		assertThat(schema.path("required").toString()).contains("paymentId", "membershipId", "receiptId",
+			"receiptNumber", "orderNumber", "offerName", "memberCode", "memberFullName", "type", "paidAmount",
+			"paymentReference", "suggestedAmount", "currency", "calculationDate");
+		assertThat(schema.at("/properties/calculationDate/format").asText()).isEqualTo("date");
+		assertThat(schema.at("/properties/type/enum").toString())
+			.isEqualTo("[\"TERMINATED_MEMBERSHIP\",\"RESERVED_CANCELLATION\"]");
 	}
 
 	private static ClassPathScanningCandidateComponentProvider controllerScanner() {
