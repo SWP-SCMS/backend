@@ -4,8 +4,8 @@ import java.util.List;
 
 public record RefundRequestPageResponse(List<RefundRequestResponse> content, int page, int size,
 		long totalElements, int totalPages) {
-	static RefundRequestPageResponse from(org.springframework.data.domain.Page<RefundRequest> page) {
-		return new RefundRequestPageResponse(page.getContent().stream().map(RefundRequestResponse::from).toList(),
+	static RefundRequestPageResponse from(org.springframework.data.domain.Page<RefundRequestResponse> page) {
+		return new RefundRequestPageResponse(page.getContent(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 }

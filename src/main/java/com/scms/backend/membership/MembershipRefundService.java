@@ -123,7 +123,7 @@ class MembershipRefundService {
 					|| !replay.getReason().equals(input.reason().trim())) {
 				throw RefundException.changed();
 			}
-			return RefundRequestResponse.from(replay);
+			return response(replay);
 		}
 		Map<String, Object> source;
 		try {
@@ -158,7 +158,7 @@ class MembershipRefundService {
 			throw RefundException.exists();
 		}
 		write(actor, refund, "REQUESTED", Map.of("requestedAmount", input.requestedAmount().toString()));
-		return RefundRequestResponse.from(refund);
+		return response(refund);
 	}
 
 	@Transactional
@@ -186,7 +186,7 @@ class MembershipRefundService {
 		refunds.saveAndFlush(request);
 		write(actor, request, "FIRST_APPROVED", Map.of("approvedAmount", input.approvedAmount().toString(),
 			"suggestedAmount", quote.suggestedAmount().toString()));
-		return RefundRequestResponse.from(request);
+		return response(request);
 	}
 
 	@Transactional
@@ -198,7 +198,7 @@ class MembershipRefundService {
 		if (request.getStatus() != RefundRequestStatus.FIRST_APPROVED) throw RefundException.transition();
 		Instant now = clock.instant(); request.cashDisburse(actor, input.evidence(), now); refunds.saveAndFlush(request);
 		write(actor, request, "CASH_DISBURSED", Map.of("approvedAmount", request.getApprovedAmount().toString()));
-		return RefundRequestResponse.from(request);
+		return response(request);
 	}
 
 	@Transactional
@@ -220,7 +220,7 @@ class MembershipRefundService {
 			UUID.randomUUID(), request.getId(), request.getReceiptId(), request.getPaymentId(), request.getMemberAccountId(),
 			request.getApprovedAmount(), actor, Timestamp.from(now));
 		write(actor, request, "COMPLETED", Map.of("amount", request.getApprovedAmount().toString()));
-		return RefundRequestResponse.from(request);
+		return response(request);
 	}
 
 	@Transactional
@@ -237,7 +237,7 @@ class MembershipRefundService {
 		refunds.saveAndFlush(request);
 		write(actor, request, "REJECTED", Map.of("reason", input.reason().trim()));
 		if (reservedCancellation) lifecycle.activateReservedAfterRefundRejected(request.getMemberAccountId(), clock.instant());
-		return RefundRequestResponse.from(request);
+		return response(request);
 	}
 
 	private Map<String, Object> refundSource(UUID membershipId) {
@@ -321,7 +321,28 @@ class MembershipRefundService {
 		if (page < 0 || size < 1 || size > 100) throw RefundException.validation();
 	}
 	private RefundRequestPageResponse page(org.springframework.data.domain.Page<RefundRequest> page) {
-		return RefundRequestPageResponse.from(page);
+		Map<UUID, Map<String, Object>> display = display(page.getContent());
+		return RefundRequestPageResponse.from(page.map(request ->
+			RefundRequestResponse.from(request, display.getOrDefault(request.getId(), Map.of()))));
+	}
+	private RefundRequestResponse response(RefundRequest request) {
+		return RefundRequestResponse.from(request, display(List.of(request)).getOrDefault(request.getId(), Map.of()));
+	}
+	private Map<UUID, Map<String, Object>> display(List<RefundRequest> requests) {
+		if (requests.isEmpty()) return Map.of();
+		String placeholders = String.join(",", java.util.Collections.nCopies(requests.size(), "?"));
+		return db.queryForList("""
+			select refund.id, profile.member_code, account.full_name member_full_name,
+				o.order_number, p.provider_reference payment_reference, r.receipt_number
+			from refund_requests refund
+			left join accounts account on account.id=refund.member_account_id
+			left join member_profiles profile on profile.account_id=refund.member_account_id
+			left join membership_orders o on o.id=refund.order_id
+			left join payments p on p.id=refund.payment_id
+			left join receipts r on r.id=refund.receipt_id
+			where refund.id in (
+			""" + placeholders + ")", requests.stream().map(RefundRequest::getId).toArray())
+			.stream().collect(java.util.stream.Collectors.toMap(row -> (UUID) row.get("id"), row -> row));
 	}
 	private void write(UUID actor, RefundRequest request, String action, Map<String, Object> metadata) {
 		audits.save(new AuditEvent(UUID.randomUUID(), actor, "MEMBERSHIP_REFUND_" + action, "REFUND_REQUEST",

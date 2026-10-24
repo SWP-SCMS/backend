@@ -520,6 +520,43 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedAndStaticRefundContractsIncludeNullableDisplayOnEveryResponse() throws Exception {
+		JsonNode generated = generatedDocument();
+		try (var stream = getClass().getResourceAsStream("/openapi/membership-refund.yaml")) {
+			JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(stream);
+			for (JsonNode document : List.of(generated, documented)) {
+				JsonNode schema = document.at("/components/schemas/RefundRequestResponse");
+				for (String field : List.of("memberCode", "memberFullName", "orderNumber", "paymentReference", "receiptNumber")) {
+					JsonNode property = schema.path("properties").path(field);
+					assertThat(property.isMissingNode()).as(field).isFalse();
+					assertThat(property.path("type").toString()).contains("string");
+					assertThat(property.path("nullable").asBoolean() || property.path("type").toString().contains("null"))
+						.as(field + " is nullable").isTrue();
+				}
+				for (String field : List.of("id", "paymentId", "orderId", "membershipId", "receiptId", "memberAccountId")) {
+					assertThat(schema.path("properties").path(field).path("format").asText()).as(field).isEqualTo("uuid");
+				}
+				assertThat(schema.at("/properties/version/type").asText()).isEqualTo("integer");
+				for (String role : List.of("reception", "manager")) {
+					assertThat(response(document, "/" + role + "/refund-requests", "get", "200")
+						.path("content").elements().next().at("/schema/$ref").asText())
+						.isEqualTo("#/components/schemas/RefundRequestPageResponse");
+				}
+				assertThat(document.at("/components/schemas/RefundRequestPageResponse/properties/content/items/$ref").asText())
+					.isEqualTo("#/components/schemas/RefundRequestResponse");
+				for (String path : List.of("/reception/members/{memberCode}/refund-requests",
+					"/reception/refund-requests/{requestId}/cash-disbursement",
+					"/manager/refund-requests/{requestId}/first-approval",
+					"/manager/refund-requests/{requestId}/final-approval", "/manager/refund-requests/{requestId}/reject")) {
+					assertThat(response(document, path, "post", path.contains("{memberCode}") ? "201" : "200")
+						.path("content").elements().next().at("/schema/$ref").asText())
+						.isEqualTo("#/components/schemas/RefundRequestResponse");
+				}
+			}
+		}
+	}
+
+	@Test
 	void generatedContractDocumentsEmailVerificationAndManualActivation() throws Exception {
 		JsonNode document = generatedDocument();
 		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream()
