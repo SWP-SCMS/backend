@@ -207,6 +207,16 @@ public class ClassSessionService {
 		return ClassSessionDetailResponse.from(session);
 	}
 
+	@Transactional(readOnly = true)
+	List<AvailableCoachResponse> availableCoaches(UUID managerId, UUID sessionId) {
+		ensureActiveManager(managerId);
+		ClassSession session = sessions.findById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		return sessions.findAvailableCoaches(sessionId, session.getStartTime(), session.getEndTime()).stream()
+			.map(AvailableCoachResponse::from)
+			.toList();
+	}
+
 	@Transactional
 	ClassSessionDetailResponse updateAssignment(UUID managerId, UUID sessionId,
 			ClassSessionAssignmentRequest request) {

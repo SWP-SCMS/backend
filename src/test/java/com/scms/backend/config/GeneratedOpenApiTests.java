@@ -202,6 +202,7 @@ class GeneratedOpenApiTests {
 		"POST /manager/class-sessions",
 		"GET /manager/class-sessions",
 		"GET /manager/class-sessions/{id}",
+		"GET /manager/class-sessions/{id}/available-coaches",
 		"PATCH /manager/class-sessions/{id}/assignment",
 		"PATCH /manager/class-sessions/{id}/schedule",
 		"PATCH /manager/class-sessions/{id}/cancel",
