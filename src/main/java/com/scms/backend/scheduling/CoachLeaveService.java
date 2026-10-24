@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -96,15 +97,10 @@ class CoachLeaveService {
 		Instant now = clock.instant();
 		if (!now.isBefore(leave.getStartTime())) throw CoachLeaveException.cancellationAlreadyStarted();
 		Map<String, Object> before = snapshot(leave);
-		UUID approvingManagerId = leave.getReviewedBy();
 		leave.cancel(now);
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COACH_LEAVE_CANCELLED",
 			"COACH_LEAVE_REQUEST", leave.getId(), "Coach cancelled approved leave", before, snapshot(leave)));
-		notifications.write("coach-leave:" + leave.getId() + ":CANCELLED", approvingManagerId,
-			"COACH_LEAVE_CANCELLED", "COACH_LEAVE_REQUEST", leave.getId(),
-			Map.of("leaveRequestId", leave.getId().toString(), "coachId", coachId.toString(),
-				"coachFullName", leave.getCoach().getFullName(), "startTime", leave.getStartTime().toString(),
-				"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name()));
+		notifyCancellationManagers(leave);
 		return response(leave);
 	}
 
@@ -162,15 +158,26 @@ class CoachLeaveService {
 	}
 
 	private void notifyManagers(CoachLeaveRequest leave, String event) {
+		for (Account manager : accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE)) {
+			notifyManager(leave, event, manager.getId());
+		}
+	}
+
+	private void notifyCancellationManagers(CoachLeaveRequest leave) {
+		LinkedHashSet<UUID> recipients = new LinkedHashSet<>();
+		recipients.add(leave.getReviewedBy());
+		accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE).stream()
+			.map(Account::getId).forEach(recipients::add);
+		recipients.forEach(recipient -> notifyManager(leave, "COACH_LEAVE_CANCELLED", recipient));
+	}
+
+	private void notifyManager(CoachLeaveRequest leave, String event, UUID recipient) {
 		Map<String, Object> payload = Map.of("leaveRequestId", leave.getId().toString(),
 			"coachId", leave.getCoach().getId().toString(), "coachFullName", leave.getCoach().getFullName(),
 			"startTime", leave.getStartTime().toString(), "endTime", leave.getEndTime().toString(),
 			"status", leave.getStatus().name());
-		for (Account manager : accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE)) {
-			UUID recipient = manager.getId();
-			notifications.write("coach-leave:" + leave.getId() + ":" + event + ":" + recipient,
-				recipient, event, "COACH_LEAVE_REQUEST", leave.getId(), payload);
-		}
+		notifications.write("coach-leave:" + leave.getId() + ":" + event + ":" + recipient,
+			recipient, event, "COACH_LEAVE_REQUEST", leave.getId(), payload);
 	}
 
 	private Account activeAccount(UUID id, AccountRole role) {

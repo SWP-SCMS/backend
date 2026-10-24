@@ -75,7 +75,10 @@ class CoachLeaveServiceTests {
 
 	@Test void coachCancelsFutureApprovedLeaveAndNotifiesApprovingManager() {
 		Account coach = account(AccountRole.COACH); Account manager = account(AccountRole.MANAGER);
+		Account operationsManager = account(AccountRole.MANAGER);
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+		when(accounts.findByRoleAndStatusOrderById(AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(List.of(manager, operationsManager));
 		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.plusSeconds(3600),
 			now.plusSeconds(7200), "Leave");
 		leave.approve(manager.getId(), "Approved", now.minusSeconds(60));
@@ -89,6 +92,8 @@ class CoachLeaveServiceTests {
 		assertThat(response.reviewedBy()).isEqualTo(manager.getId());
 		verify(audits).save(any());
 		verify(notifications).write(any(), eq(manager.getId()), eq("COACH_LEAVE_CANCELLED"),
+			eq("COACH_LEAVE_REQUEST"), eq(leave.getId()), any());
+		verify(notifications).write(any(), eq(operationsManager.getId()), eq("COACH_LEAVE_CANCELLED"),
 			eq("COACH_LEAVE_REQUEST"), eq(leave.getId()), any());
 	}
 
