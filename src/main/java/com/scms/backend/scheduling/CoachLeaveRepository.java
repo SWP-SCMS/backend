@@ -5,12 +5,20 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 interface CoachLeaveRepository extends JpaRepository<CoachLeaveRequest, UUID> {
+	@Override
+	@EntityGraph(attributePaths = "coach")
+	List<CoachLeaveRequest> findAll();
+
+	@EntityGraph(attributePaths = "coach")
 	List<CoachLeaveRequest> findByCoach_IdOrderByCreatedAtDesc(UUID coachId);
+
+	@EntityGraph(attributePaths = "coach")
 	List<CoachLeaveRequest> findByStatusOrderByCreatedAtAsc(CoachLeaveStatus status);
 
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)

@@ -145,6 +145,25 @@ class CoachLeaveServiceTests {
 		verify(lifecycle).catchUp(now);
 	}
 
+	@Test void managerListIncludesCoachIdentity() {
+		Account manager = account(AccountRole.MANAGER);
+		Account coach = account(AccountRole.COACH);
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.plusSeconds(3600),
+			now.plusSeconds(7200), "Leave");
+		when(accounts.findById(manager.getId())).thenReturn(Optional.of(manager));
+		when(leaves.findAll()).thenReturn(List.of(leave));
+		when(sessions.findActiveOverlapIdsByCoach(coach.getId(), leave.getStartTime(), leave.getEndTime()))
+			.thenReturn(List.of());
+
+		List<CoachLeaveResponse> result = service.managerList(manager.getId(), null);
+
+		assertThat(result).singleElement().satisfies(response -> {
+			assertThat(response.coachId()).isEqualTo(coach.getId());
+			assertThat(response.coachFullName()).isEqualTo(coach.getFullName());
+			assertThat(response.coachPhone()).isEqualTo(coach.getPhone());
+		});
+	}
+
 	private Account account(AccountRole role) {
 		UUID id = UUID.randomUUID();
 		return new Account(id, role, AccountStatus.ACTIVE, role.name(), "090" + id.toString().substring(0, 8),
