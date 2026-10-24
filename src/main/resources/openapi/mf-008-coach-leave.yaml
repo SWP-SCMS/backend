@@ -19,6 +19,12 @@ paths:
       security: [{bearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/RequestId'}]
       responses: {'200': {description: Withdrawn request, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}}
+  /coach/leave-requests/{requestId}/cancel:
+    patch:
+      summary: Cancel a future approved leave request
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses: {'200': {description: Cancelled request, content: {application/json: {schema: {$ref: '#/components/schemas/CoachLeaveResponse'}}}}, '404': {description: Request not found or not owned by the authenticated Coach}, '409': {description: Request is not approved or its leave interval has already started}}
   /manager/coach-leave-requests:
     get:
       summary: List Coach leave requests
@@ -43,7 +49,7 @@ components:
   parameters:
     RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
-    CoachLeaveStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED]}
+    CoachLeaveStatus: {type: string, enum: [PENDING, APPROVED, REJECTED, WITHDRAWN, EXPIRED, CANCELLED]}
     CoachLeaveCreateRequest:
       type: object
       required: [startTime, endTime, reason]

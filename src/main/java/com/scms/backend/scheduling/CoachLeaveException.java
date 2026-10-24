@@ -34,6 +34,14 @@ public class CoachLeaveException extends RuntimeException {
 		return conflict("COACH_LEAVE_ALREADY_STARTED",
 			"A leave request cannot be approved after its start time.");
 	}
+	static CoachLeaveException cancellationAlreadyStarted() {
+		return conflict("COACH_LEAVE_ALREADY_STARTED",
+			"An approved leave request cannot be cancelled after its start time.");
+	}
+	static CoachLeaveException notApproved() {
+		return conflict("COACH_LEAVE_NOT_APPROVED",
+			"Only an approved leave request can be cancelled.");
+	}
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 	public String getField() { return field; }
