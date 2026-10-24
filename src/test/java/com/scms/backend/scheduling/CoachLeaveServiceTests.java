@@ -34,11 +34,12 @@ class CoachLeaveServiceTests {
 	@Mock ClassSessionRepository sessions;
 	@Mock AuditEventRepository audits;
 	@Mock NotificationWriter notifications;
+	@Mock CoachLeaveLifecycleService lifecycle;
 	CoachLeaveService service;
 	Instant now = Instant.parse("2026-10-22T01:00:00Z");
 
 	@BeforeEach void setUp() {
-		service = new CoachLeaveService(leaves, accounts, sessions, audits, notifications,
+		service = new CoachLeaveService(leaves, accounts, sessions, audits, notifications, lifecycle,
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
@@ -113,6 +114,35 @@ class CoachLeaveServiceTests {
 			new CoachLeaveReviewRequest("Approved"));
 		assertThat(response.status()).isEqualTo(CoachLeaveStatus.APPROVED);
 		verify(notifications).write(any(), any(), any(), any(), any(), any());
+	}
+
+	@Test void managerCannotApproveAfterLeaveHasStarted() {
+		Account manager = account(AccountRole.MANAGER); Account coach = account(AccountRole.COACH);
+		when(accounts.findById(manager.getId())).thenReturn(Optional.of(manager));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), coach, now.minusSeconds(60),
+			now.plusSeconds(3600), "Leave");
+		when(lifecycle.expireIfStarted(leave.getId(), now)).thenAnswer(invocation -> {
+			leave.expire(now);
+			return true;
+		});
+		when(leaves.findByIdForUpdate(leave.getId())).thenReturn(Optional.of(leave));
+
+		assertThatThrownBy(() -> service.approve(manager.getId(), leave.getId(), null))
+			.isInstanceOfSatisfying(CoachLeaveException.class, error ->
+				assertThat(error.getCode()).isEqualTo("COACH_LEAVE_ALREADY_STARTED"));
+		assertThat(leave.getStatus()).isEqualTo(CoachLeaveStatus.EXPIRED);
+		verify(notifications, org.mockito.Mockito.never()).write(any(), any(),
+			eq("COACH_LEAVE_APPROVED"), any(), any(), any());
+	}
+
+	@Test void listingRequestsCatchesUpExpiredLeaveLifecycleFirst() {
+		Account manager = account(AccountRole.MANAGER);
+		when(accounts.findById(manager.getId())).thenReturn(Optional.of(manager));
+		when(leaves.findAll()).thenReturn(List.of());
+
+		service.managerList(manager.getId(), null);
+
+		verify(lifecycle).catchUp(now);
 	}
 
 	private Account account(AccountRole role) {

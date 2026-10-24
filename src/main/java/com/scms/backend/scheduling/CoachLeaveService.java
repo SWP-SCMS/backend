@@ -25,12 +25,20 @@ class CoachLeaveService {
 	private final ClassSessionRepository sessions;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
+	private final CoachLeaveLifecycleService lifecycle;
 	private final Clock clock;
 
 	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
 			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
+		this(leaves, accounts, sessions, audits, notifications, null, clock);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
+			AuditEventRepository audits, NotificationWriter notifications, CoachLeaveLifecycleService lifecycle,
+			Clock clock) {
 		this.leaves = leaves; this.accounts = accounts; this.sessions = sessions; this.audits = audits;
-		this.notifications = notifications; this.clock = clock;
+		this.notifications = notifications; this.lifecycle = lifecycle; this.clock = clock;
 	}
 
 	@Transactional
@@ -56,15 +64,17 @@ class CoachLeaveService {
 		return response(leave);
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	List<CoachLeaveResponse> mine(UUID coachId) {
 		activeAccount(coachId, AccountRole.COACH);
+		catchUp();
 		return leaves.findByCoach_IdOrderByCreatedAtDesc(coachId).stream().map(this::response).toList();
 	}
 
 	@Transactional
 	CoachLeaveResponse withdraw(UUID coachId, UUID requestId) {
 		activeAccount(coachId, AccountRole.COACH);
+		expireIfStarted(requestId);
 		CoachLeaveRequest leave = leaves.findByIdForUpdate(requestId).filter(item -> item.getCoach().getId().equals(coachId))
 			.orElseThrow(CoachLeaveException::notFound);
 		if (leave.getStatus() != CoachLeaveStatus.PENDING)
@@ -76,9 +86,10 @@ class CoachLeaveService {
 		return response(leave);
 	}
 
-	@Transactional(readOnly = true)
+	@Transactional
 	List<CoachLeaveResponse> managerList(UUID managerId, CoachLeaveStatus status) {
 		activeAccount(managerId, AccountRole.MANAGER);
+		catchUp();
 		List<CoachLeaveRequest> result = status == null ? leaves.findAll() : leaves.findByStatusOrderByCreatedAtAsc(status);
 		return result.stream().map(this::response).toList();
 	}
@@ -95,7 +106,9 @@ class CoachLeaveService {
 
 	private CoachLeaveResponse review(UUID managerId, UUID requestId, CoachLeaveReviewRequest request, boolean approve) {
 		activeAccount(managerId, AccountRole.MANAGER);
+		expireIfStarted(requestId);
 		CoachLeaveRequest leave = leaves.findByIdForUpdate(requestId).orElseThrow(CoachLeaveException::notFound);
+		if (approve && leave.getStatus() == CoachLeaveStatus.EXPIRED) throw CoachLeaveException.alreadyStarted();
 		if (leave.getStatus() != CoachLeaveStatus.PENDING)
 			throw CoachLeaveException.conflict("COACH_LEAVE_NOT_PENDING", "Only a pending leave request can be reviewed.");
 		String note = normalize(request == null ? null : request.note(), false, "note");
@@ -116,6 +129,14 @@ class CoachLeaveService {
 			"COACH_LEAVE_REQUEST", leave.getId(), Map.of("startTime", leave.getStartTime().toString(),
 				"endTime", leave.getEndTime().toString(), "status", leave.getStatus().name()));
 		return response(leave);
+	}
+
+	private void catchUp() {
+		if (lifecycle != null) lifecycle.catchUp(clock.instant());
+	}
+
+	private void expireIfStarted(UUID requestId) {
+		if (lifecycle != null) lifecycle.expireIfStarted(requestId, clock.instant());
 	}
 
 	private void notifyManagers(CoachLeaveRequest leave, String event) {
