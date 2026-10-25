@@ -4,6 +4,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -40,6 +41,34 @@ class RoomControllerTests {
 	@MockitoBean RoomService roomService;
 	@MockitoBean RoomSuspensionService suspensionService;
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
+
+	@Test
+	void managerCanDiscoverRoomAvailability() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		UUID roomId = UUID.randomUUID();
+		UUID excludedSessionId = UUID.randomUUID();
+		Instant startTime = Instant.parse("2030-01-01T10:00:00Z");
+		Instant endTime = Instant.parse("2030-01-01T11:00:00Z");
+		when(roomService.availability(managerId, startTime, endTime, 4, excludedSessionId)).thenReturn(List.of(
+			new RoomAvailabilityResponse(roomId, "PT Zone", RoomUsageMode.SHARED, 10, 6, 4, true)));
+
+		mockMvc.perform(get("/api/v1/manager/rooms/availability")
+				.contextPath("/api/v1")
+				.param("startTime", startTime.toString())
+				.param("endTime", endTime.toString())
+				.param("requestedCapacity", "4")
+				.param("excludeSessionId", excludedSessionId.toString())
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].roomId").value(roomId.toString()))
+			.andExpect(jsonPath("$[0].usageMode").value("SHARED"))
+			.andExpect(jsonPath("$[0].occupiedCapacity").value(6))
+			.andExpect(jsonPath("$[0].availableCapacity").value(4))
+			.andExpect(jsonPath("$[0].available").value(true));
+
+		verify(roomService).availability(managerId, startTime, endTime, 4, excludedSessionId);
+	}
 
 	@Test
 	void managerExtendsSuspensionWithExpectedEndTimeContract() throws Exception {
