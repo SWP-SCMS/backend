@@ -10,10 +10,12 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
-import com.scms.backend.scheduling.WaitlistPromotionService;
+import com.scms.backend.scheduling.WaitlistPromotionCoordinator;
 import com.scms.backend.training.CoachAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 class MembershipTerminationExecutionService {
@@ -23,28 +25,28 @@ class MembershipTerminationExecutionService {
 	private final AccountRepository accounts;
 	private final CenterVisitRepository visits;
 	private final BookingRepository bookings;
-	private final WaitlistPromotionService waitlistPromotions;
 	private final CoachAssignmentRepository assignments;
 	private final MembershipFreezeExecutionService freezes;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
+	private final WaitlistPromotionCoordinator waitlistPromotions;
 
 	MembershipTerminationExecutionService(MembershipLifecycleService lifecycle,
 		MembershipTerminationRequestRepository requests, MembershipRepository memberships,
-		AccountRepository accounts, CenterVisitRepository visits, BookingRepository bookings,
-		WaitlistPromotionService waitlistPromotions, CoachAssignmentRepository assignments,
-		MembershipFreezeExecutionService freezes, AuditEventRepository audits, NotificationWriter notifications) {
+		AccountRepository accounts, CenterVisitRepository visits, BookingRepository bookings, CoachAssignmentRepository assignments,
+		MembershipFreezeExecutionService freezes, AuditEventRepository audits, NotificationWriter notifications,
+		WaitlistPromotionCoordinator waitlistPromotions) {
 		this.lifecycle = lifecycle;
 		this.requests = requests;
 		this.memberships = memberships;
 		this.accounts = accounts;
 		this.visits = visits;
 		this.bookings = bookings;
-		this.waitlistPromotions = waitlistPromotions;
 		this.assignments = assignments;
 		this.freezes = freezes;
 		this.audits = audits;
 		this.notifications = notifications;
+		this.waitlistPromotions = waitlistPromotions;
 	}
 
 	@Transactional
@@ -63,14 +65,21 @@ class MembershipTerminationExecutionService {
 		freezes.endActiveForTermination(request.getMemberAccountId(), now);
 		lifecycle.terminateActiveAndActivateReserved(request.getMemberAccountId(), now);
 		visits.checkoutOpenForMembershipTermination(request.getMemberAccountId(), actorId, now);
-		var freedSessionIds = bookings.findFutureSessionIdsForMembershipTermination(
-			request.getMemberAccountId(), now);
-		bookings.cancelFutureBookingsForMembershipTermination(request.getMemberAccountId(), actorId, now);
-		waitlistPromotions.promoteAvailableBySessionIds(freedSessionIds);
+		var cancelledSessionIds = bookings.cancelFutureBookingsForMembershipTermination(
+			request.getMemberAccountId(), actorId, now);
 		assignments.endActiveAssignmentsForMembershipTermination(request.getMemberAccountId(), now);
 		request.execute();
 		requests.saveAndFlush(request);
 		writeOutcome(actorId, request, "EXECUTED");
+		promoteAfterCommit(cancelledSessionIds);
+	}
+
+	private void promoteAfterCommit(java.util.List<UUID> sessionIds) {
+		if (sessionIds.isEmpty()) return;
+		var uniqueSessionIds = sessionIds.stream().distinct().toList();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override public void afterCommit() { uniqueSessionIds.forEach(waitlistPromotions::promote); }
+		});
 	}
 
 	@Transactional

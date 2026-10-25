@@ -76,4 +76,7 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 	@Query("select a from Account a where a.id = :id")
 	Optional<Account> findByIdForUpdate(UUID id);
 
+	@Query(value = "select id from accounts where id = :id for update skip locked", nativeQuery = true)
+	Optional<UUID> tryLockById(@Param("id") UUID id);
+
 }

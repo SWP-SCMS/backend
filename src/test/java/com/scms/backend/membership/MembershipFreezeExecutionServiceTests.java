@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -24,28 +25,29 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
-import com.scms.backend.scheduling.WaitlistPromotionService;
+import com.scms.backend.scheduling.WaitlistPromotionCoordinator;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 class MembershipFreezeExecutionServiceTests {
 	private final MembershipFreezeRequestRepository requests = mock(MembershipFreezeRequestRepository.class);
 	private final MembershipRepository memberships = mock(MembershipRepository.class);
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final BookingRepository bookings = mock(BookingRepository.class);
-	private final WaitlistPromotionService waitlistPromotions = mock(WaitlistPromotionService.class);
 	private final CenterVisitRepository visits = mock(CenterVisitRepository.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final NotificationWriter notifications = mock(NotificationWriter.class);
 	private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
 	private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 	private final TransactionStatus transactionStatus = mock(TransactionStatus.class);
+	private final WaitlistPromotionCoordinator waitlistPromotions = mock(WaitlistPromotionCoordinator.class);
 	private final MembershipFreezeExecutionService service = new MembershipFreezeExecutionService(requests, memberships,
-		accounts, bookings, waitlistPromotions, visits, audits, notifications, jdbc,
-		Clock.fixed(Instant.parse("2026-11-02T00:00:00Z"), ZoneOffset.UTC), transactionManager);
+		accounts, bookings, visits, audits, notifications, jdbc,
+		Clock.fixed(Instant.parse("2026-11-02T00:00:00Z"), ZoneOffset.UTC), transactionManager, waitlistPromotions);
 
 	MembershipFreezeExecutionServiceTests() {
 		when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any(TransactionDefinition.class)))
@@ -110,6 +112,43 @@ class MembershipFreezeExecutionServiceTests {
 		verify(notifications).write(eq("MEMBERSHIP_FREEZE_COMPLETED:" + requestId), eq(memberId),
 			eq("MEMBERSHIP_FREEZE_COMPLETED"), eq("MEMBERSHIP_FREEZE_REQUEST"), eq(requestId),
 			eq(Map.of("creditedDays", 3)));
+	}
+
+	@Test
+	void activatedFreezeRegistersChangedSessionsOnlyAfterCommit() {
+		UUID requestId = UUID.randomUUID();
+		UUID membershipId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		MembershipFreezeRequest request = new MembershipFreezeRequest(requestId, membershipId, memberId, memberId,
+			LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 5), "travel");
+		request.approve(UUID.randomUUID(), BigInteger.valueOf(100), Instant.parse("2026-10-22T00:00:00Z"));
+		request.schedule();
+		Membership membership = new Membership(membershipId, memberId, UUID.randomUUID(), UUID.randomUUID(),
+			"PLUS", "Offer", BigInteger.valueOf(100_000), "VND", 30, MembershipStatus.ACTIVE,
+			Instant.parse("2026-11-01T00:00:00Z"), Instant.parse("2026-12-01T00:00:00Z"));
+		when(requests.findById(requestId)).thenReturn(Optional.of(request));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(mock(com.scms.backend.account.Account.class)));
+		when(memberships.findByIdForUpdate(membershipId)).thenReturn(Optional.of(membership));
+		when(requests.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
+		when(jdbc.update(contains("status='ACTIVE'"), eq(Date.valueOf("2026-11-02")), eq(requestId))).thenReturn(1);
+		when(bookings.cancelFutureBookingsForMembershipFreeze(eq(memberId), eq(null),
+				eq(Instant.parse("2026-10-31T17:00:00Z")), eq(Instant.parse("2026-11-04T17:00:00Z")),
+				eq(Instant.parse("2026-11-02T00:00:00Z")))).thenReturn(List.of(sessionId));
+
+		TransactionSynchronizationManager.initSynchronization();
+		try {
+			service.activate(requestId, LocalDate.of(2026, 11, 2), Instant.parse("2026-11-02T00:00:00Z"));
+
+			var synchronizations = TransactionSynchronizationManager.getSynchronizations();
+			assertThat(synchronizations).hasSize(1);
+			verifyNoInteractions(waitlistPromotions);
+			synchronizations.getFirst().afterCommit();
+			verify(waitlistPromotions).promote(sessionId);
+		}
+		finally {
+			TransactionSynchronizationManager.clearSynchronization();
+		}
 	}
 
 	@Test

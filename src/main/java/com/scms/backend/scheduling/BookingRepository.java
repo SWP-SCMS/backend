@@ -9,11 +9,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface BookingRepository extends JpaRepository<Booking, UUID> {
+public interface BookingRepository extends JpaRepository<Booking, UUID>, BookingCancellationRepository {
 
 	@Query(value = """
 		select account.id as "memberId", profile.member_code as "memberCode",
@@ -150,38 +149,6 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	List<UUID> findFutureSessionIdsForMembershipFreeze(@Param("memberId") UUID memberId,
 		@Param("startAt") Instant startAt, @Param("endAt") Instant endAt, @Param("now") Instant now);
-
-	@Modifying(clearAutomatically = true, flushAutomatically = true)
-	@Query(value = """
-		update bookings booking
-		set status = 'CANCELLED',
-			cancelled_by_account_id = :actorId,
-			cancellation_source = 'MEMBERSHIP_TERMINATED',
-			cancelled_at = :now,
-			updated_at = :now,
-			version = version + 1
-		where booking.member_account_id = :memberId
-		  and booking.status = 'BOOKED'
-		  and exists (
-			select 1 from class_sessions session
-			where session.id = booking.class_session_id and session.start_time > :now
-		  )
-		""", nativeQuery = true)
-	int cancelFutureBookingsForMembershipTermination(@Param("memberId") UUID memberId,
-		@Param("actorId") UUID actorId, @Param("now") Instant now);
-
-	@Modifying(clearAutomatically = true, flushAutomatically = true)
-	@Query(value = """
-		update bookings booking set status = 'CANCELLED', cancelled_by_account_id = :actorId,
-			cancellation_source = 'MEMBERSHIP_FREEZE', cancelled_at = :now, updated_at = :now,
-			version = version + 1
-		where booking.member_account_id = :memberId and booking.status = 'BOOKED'
-		and exists (select 1 from class_sessions session where session.id = booking.class_session_id
-			and session.start_time >= :startAt and session.start_time < :endAt and session.start_time > :now)
-		""", nativeQuery = true)
-	int cancelFutureBookingsForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId,
-		@Param("startAt") Instant startAt, @Param("endAt") Instant endAt, @Param("now") Instant now);
-
 	interface BookedMemberView {
 		UUID getMemberId();
 		String getMemberCode();
