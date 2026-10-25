@@ -146,6 +146,26 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /manager/class-sessions/{id}/assignment:
+    patch:
+      summary: Change the Coach or Room assigned to a scheduled Session
+      operationId: updateClassSessionAssignment
+      description: For PT_1_1 Sessions, a Coach change locks active Bookings and Waitlist entries and requires every affected Member to have an ACTIVE assignment with the new Coach.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionAssignmentRequest'}}}
+      responses:
+        '200':
+          description: Session assignment updated.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ClassSessionResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/class-sessions/{id}/available-coaches:
     get:
       summary: List active Coaches available for the Session interval
@@ -308,6 +328,12 @@ components:
         size: {type: integer}
         totalElements: {type: integer, format: int64}
         totalPages: {type: integer}
+    ClassSessionAssignmentRequest:
+      type: object
+      properties:
+        coachId: {type: [string, 'null'], format: uuid}
+        roomId: {type: [string, 'null'], format: uuid}
+      description: At least one of coachId or roomId is required.
     ClassSessionResponse:
       type: object
       properties:
@@ -361,6 +387,12 @@ components:
       properties:
         code: {type: string, example: CLASS_HAS_ACTIVE_SESSIONS}
         affectedSessionIds: {type: array, items: {type: string, format: uuid}}
+        affectedBookings:
+          type: array
+          items: {$ref: '#/components/schemas/PtSessionAffectedBooking'}
+        affectedWaitlists:
+          type: array
+          items: {$ref: '#/components/schemas/PtSessionAffectedWaitlist'}
         affectedSessions:
           type: array
           items:
@@ -371,13 +403,29 @@ components:
               className: {type: string}
               startTime: {type: string, format: date-time}
               endTime: {type: string, format: date-time}
+    PtSessionAffectedBooking:
+      type: object
+      required: [bookingId, memberAccountId, memberCode, memberFullName]
+      properties:
+        bookingId: {type: string, format: uuid}
+        memberAccountId: {type: string, format: uuid}
+        memberCode: {type: string}
+        memberFullName: {type: string}
+    PtSessionAffectedWaitlist:
+      type: object
+      required: [waitlistId, memberAccountId, memberCode, memberFullName]
+      properties:
+        waitlistId: {type: string, format: uuid}
+        memberAccountId: {type: string, format: uuid}
+        memberCode: {type: string}
+        memberFullName: {type: string}
   responses:
     BadRequest: {description: Invalid request.}
     Unauthorized: {description: Authentication required.}
     Forbidden: {description: Manager role required.}
     NotFound: {description: Resource not found.}
     Conflict:
-      description: Request conflicts with current scheduling state. Class deactivation uses code CLASS_HAS_ACTIVE_SESSIONS and returns affected sessions.
+      description: Request conflicts with current scheduling state. PT Coach changes can return PT_SESSION_ASSIGNMENT_HAS_INCOMPATIBLE_MEMBERS with affected Bookings and Waitlists.
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/SchedulingProblem'}}}
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -21,6 +22,9 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.training.CoachAssignment;
+import com.scms.backend.training.CoachAssignmentRepository;
+import com.scms.backend.training.CoachAssignmentStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +43,9 @@ class ClassSessionAssignmentServiceTests {
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
 	@Mock SessionLifecycleService lifecycle;
+	@Mock BookingRepository bookings;
+	@Mock SessionWaitlistRepository waitlists;
+	@Mock CoachAssignmentRepository coachAssignments;
 	ClassSessionService service;
 
 	private final Instant now = Instant.parse("2026-10-06T05:30:00Z");
@@ -46,7 +53,7 @@ class ClassSessionAssignmentServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC));
+			Clock.fixed(now, ZoneOffset.UTC), null, null, coachAssignments, null, bookings, waitlists);
 	}
 
 	@Test
@@ -165,6 +172,62 @@ class ClassSessionAssignmentServiceTests {
 		verify(audits, never()).save(any());
 	}
 
+	@Test
+	void ptCoachChangeRejectsIncompatibleBookedAndWaitlistedMembers() {
+		UUID managerId = activeManager();
+		ClassSession session = ptSession();
+		Account newCoach = coach("New PT Coach");
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(),
+			UUID.randomUUID(), now);
+		SessionWaitlist waitlist = new SessionWaitlist(UUID.randomUUID(), session.getId(), UUID.randomUUID(),
+			UUID.randomUUID(), "MEMBER", now);
+		stubAssignment(session, newCoach, session.getRoom());
+		when(bookings.findBookedBySessionForUpdate(session.getId())).thenReturn(List.of(booking));
+		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(waitlist));
+		when(coachAssignments.findActiveForMembersAndCoachForUpdate(any(), any())).thenReturn(List.of());
+		when(accounts.findMemberIdentity(booking.getMemberAccountId()))
+			.thenReturn(Optional.of(identity("MB-100001", "Booked Member")));
+		when(accounts.findMemberIdentity(waitlist.getMemberId()))
+			.thenReturn(Optional.of(identity("MB-100002", "Waitlisted Member")));
+
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(),
+			new ClassSessionAssignmentRequest(newCoach.getId(), null)))
+			.isInstanceOfSatisfying(PtSessionAssignmentException.class, error -> {
+				assertThat(error.getCode()).isEqualTo("PT_SESSION_ASSIGNMENT_HAS_INCOMPATIBLE_MEMBERS");
+				assertThat(error.getAffectedBookings()).containsExactly(new PtSessionAffectedBooking(booking.getId(),
+					booking.getMemberAccountId(), "MB-100001", "Booked Member"));
+				assertThat(error.getAffectedWaitlists()).containsExactly(new PtSessionAffectedWaitlist(waitlist.getId(),
+					waitlist.getMemberId(), "MB-100002", "Waitlisted Member"));
+			});
+		assertThat(session.getTeachingCoach().getId()).isNotEqualTo(newCoach.getId());
+		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void ptCoachChangeSucceedsWhenEveryBookedAndWaitlistedMemberHasNewCoachAssignment() {
+		UUID managerId = activeManager();
+		ClassSession session = ptSession();
+		Account newCoach = coach("Compatible PT Coach");
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(),
+			UUID.randomUUID(), now);
+		SessionWaitlist waitlist = new SessionWaitlist(UUID.randomUUID(), session.getId(), UUID.randomUUID(),
+			UUID.randomUUID(), "MEMBER", now);
+		stubAssignment(session, newCoach, session.getRoom());
+		when(bookings.findBookedBySessionForUpdate(session.getId())).thenReturn(List.of(booking));
+		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(waitlist));
+		when(coachAssignments.findActiveForMembersAndCoachForUpdate(any(), any())).thenReturn(List.of(
+			assignment(booking.getMemberAccountId(), newCoach.getId(), managerId),
+			assignment(waitlist.getMemberId(), newCoach.getId(), managerId)));
+		when(sessions.saveAndFlush(session)).thenReturn(session);
+
+		ClassSessionDetailResponse response = service.updateAssignment(managerId, session.getId(),
+			new ClassSessionAssignmentRequest(newCoach.getId(), null));
+
+		assertThat(response.coachId()).isEqualTo(newCoach.getId());
+		verify(sessions).saveAndFlush(session);
+	}
+
 	private void stubAssignment(ClassSession session, Account coach, Room room) {
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
@@ -187,6 +250,29 @@ class ClassSessionAssignmentServiceTests {
 		return new ClassSession(UUID.randomUUID(), sportClass, null, coach("Coach"),
 			new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE), now.plusSeconds(3600),
 			now.plusSeconds(7200), 15, UUID.randomUUID());
+	}
+
+	private ClassSession ptSession() {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Personal Training", null,
+			DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "PT 1-1", SportClassType.PT_1_1,
+			null, SportClassStatus.ACTIVE);
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach("PT Coach"),
+			new Room(UUID.randomUUID(), "PT Zone", 20, RoomStatus.ACTIVE), now.plusSeconds(3600),
+			now.plusSeconds(7200), 1, UUID.randomUUID());
+	}
+
+	private CoachAssignment assignment(UUID memberId, UUID coachId, UUID managerId) {
+		return new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId, CoachAssignmentStatus.ACTIVE,
+			now.minusSeconds(3600), now.minusSeconds(3600));
+	}
+
+	private AccountRepository.MemberIdentityView identity(String code, String name) {
+		return new AccountRepository.MemberIdentityView() {
+			@Override public String getMemberCode() { return code; }
+			@Override public String getFullName() { return name; }
+			@Override public String getPhone() { return "0900000000"; }
+		};
 	}
 
 	private Account coach(String name) {

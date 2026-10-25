@@ -22,6 +22,18 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 			UUID coachAccountId, CoachAssignmentStatus status);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select assignment from CoachAssignment assignment
+		where assignment.memberAccountId in :memberAccountIds
+		  and assignment.coachAccountId = :coachAccountId
+		  and assignment.status = com.scms.backend.training.CoachAssignmentStatus.ACTIVE
+		order by assignment.memberAccountId, assignment.id
+		""")
+	List<CoachAssignment> findActiveForMembersAndCoachForUpdate(
+			@Param("memberAccountIds") java.util.Collection<UUID> memberAccountIds,
+			@Param("coachAccountId") UUID coachAccountId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from CoachAssignment a where a.memberAccountId = :memberAccountId and a.status = :status")
 	Optional<CoachAssignment> findByMemberAccountIdAndStatusForUpdate(@Param("memberAccountId") UUID memberAccountId,
 			@Param("status") CoachAssignmentStatus status);

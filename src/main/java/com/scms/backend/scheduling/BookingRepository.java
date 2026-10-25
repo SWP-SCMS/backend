@@ -34,6 +34,15 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 	@Query("select booking from Booking booking where booking.id = :id")
 	Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("""
+		select booking from Booking booking
+		where booking.classSessionId = :sessionId
+		  and booking.status = com.scms.backend.scheduling.BookingStatus.BOOKED
+		order by booking.id
+		""")
+	List<Booking> findBookedBySessionForUpdate(@Param("sessionId") UUID sessionId);
+
 	@Query(value = """
 		with required_benefits as (
 			select 'CLASS_BOOKING'::varchar(50) as benefit_code
