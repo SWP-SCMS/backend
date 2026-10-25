@@ -650,6 +650,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
 			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
+		if (exception.getImpact() != null) {
+			problem.setProperty("impact", exception.getImpact());
+		}
 		return problem;
 	}
 

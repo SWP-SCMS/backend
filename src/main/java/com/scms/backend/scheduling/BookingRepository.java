@@ -44,6 +44,26 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 	List<Booking> findBookedBySessionForUpdate(@Param("sessionId") UUID sessionId);
 
 	@Query(value = """
+		select booking.id as "id", session.id as "sessionId", session.start_time as "sessionStartTime"
+		from bookings booking
+		join class_sessions session on session.id = booking.class_session_id
+		join sport_classes sport_class on sport_class.id = session.sport_class_id
+		where booking.member_account_id = :memberId
+		  and booking.status = 'BOOKED'
+		  and session.status = 'SCHEDULED'
+		  and session.start_time > :now
+		  and session.teaching_coach_account_id = :coachId
+		  and sport_class.class_type = 'PT_1_1'
+		order by session.start_time, booking.id
+		""", nativeQuery = true)
+	List<PtImpactView> findFuturePtImpact(@Param("memberId") UUID memberId,
+		@Param("coachId") UUID coachId, @Param("now") Instant now);
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("select booking from Booking booking where booking.id in :ids and booking.status = com.scms.backend.scheduling.BookingStatus.BOOKED order by booking.id")
+	List<Booking> findBookedByIdsForUpdate(@Param("ids") List<UUID> ids);
+
+	@Query(value = """
 		with required_benefits as (
 			select 'CLASS_BOOKING'::varchar(50) as benefit_code
 			union
@@ -151,5 +171,11 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		UUID getMembershipId();
 		String getRequiredBenefitCode();
 		boolean getProvided();
+	}
+
+	interface PtImpactView {
+		UUID getId();
+		UUID getSessionId();
+		Instant getSessionStartTime();
 	}
 }

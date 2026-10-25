@@ -3,6 +3,8 @@ package com.scms.backend.training;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
+
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,6 +46,12 @@ public class ManagerCoachAssignmentController {
 			@PathVariable UUID memberId) {
 		Optional<CoachAssignmentResponse> response = service.getActive(accountId(jwt), memberId);
 		return response.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+	}
+
+	@GetMapping("/coach-assignment/impact")
+	public ResponseEntity<PtAssignmentImpactResponse> previewImpact(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId) {
+		return ResponseEntity.ok(service.previewImpact(accountId(jwt), memberId));
 	}
 
 	@GetMapping("/coach-assignments")

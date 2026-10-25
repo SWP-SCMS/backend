@@ -256,6 +256,7 @@ class GeneratedOpenApiTests {
 		"GET /manager/coaches/assignment-workloads",
 		"POST /manager/members/{memberId}/coach-assignment",
 		"GET /manager/members/{memberId}/coach-assignment",
+		"GET /manager/members/{memberId}/coach-assignment/impact",
 		"GET /manager/members/{memberId}/coach-assignments",
 		"PATCH /manager/members/{memberId}/coach-assignment/end"
 	);

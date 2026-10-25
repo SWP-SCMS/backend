@@ -1,5 +1,6 @@
 package com.scms.backend.training;
 
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
 import org.springframework.http.HttpStatus;
 
 public class CoachAssignmentException extends RuntimeException {
@@ -7,12 +8,19 @@ public class CoachAssignmentException extends RuntimeException {
 	private final HttpStatus status;
 	private final String code;
 	private final String field;
+	private final PtAssignmentImpactResponse impact;
 
 	private CoachAssignmentException(HttpStatus status, String code, String message, String field) {
+		this(status, code, message, field, null);
+	}
+
+	private CoachAssignmentException(HttpStatus status, String code, String message, String field,
+			PtAssignmentImpactResponse impact) {
 		super(message);
 		this.status = status;
 		this.code = code;
 		this.field = field;
+		this.impact = impact;
 	}
 
 	private CoachAssignmentException(HttpStatus status, String code, String message) {
@@ -60,6 +68,18 @@ public class CoachAssignmentException extends RuntimeException {
 		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_CONFLICT", "The Coach assignment could not be confirmed because state changed concurrently.");
 	}
 
+	public static CoachAssignmentException impactConfirmationRequired(PtAssignmentImpactResponse impact) {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED",
+			"Future PT bookings or waitlists must be previewed and confirmed before changing the Coach assignment.",
+			null, impact);
+	}
+
+	public static CoachAssignmentException impactChanged(PtAssignmentImpactResponse impact) {
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CHANGED",
+			"The affected future PT bookings or waitlists changed. Preview and confirm the current impact.",
+			null, impact);
+	}
+
 	public static CoachAssignmentException coachCapacityExceeded(int maximumMemberCount) {
 		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_CAPACITY_EXCEEDED",
 				"The Coach already has the maximum of " + maximumMemberCount + " active Members.");
@@ -79,5 +99,9 @@ public class CoachAssignmentException extends RuntimeException {
 
 	public String getField() {
 		return field;
+	}
+
+	public PtAssignmentImpactResponse getImpact() {
+		return impact;
 	}
 }
