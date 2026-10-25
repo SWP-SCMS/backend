@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,10 +39,11 @@ class WaitlistServiceTests {
 
 	@BeforeEach void setUp(){
 		service=new WaitlistService(waitlists,sessions,bookings,disciplines,accounts,assignments,audits,notifications,Clock.fixed(now,ZoneOffset.UTC));
-		session=session(1); when(accounts.findById(memberId)).thenReturn(Optional.of(account(memberId,AccountRole.MEMBER)));
+		session=session(1);
 	}
 
 	@Test void fullSessionJoinsWaitlistAtFifoPosition(){
+		when(accounts.findById(memberId)).thenReturn(Optional.of(account(memberId,AccountRole.MEMBER)));
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 		when(disciplines.findBySessionIdForUpdate(session.getId())).thenReturn(Optional.of(session.getSportClass().getDiscipline()));
 		when(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)).thenReturn(1L);
@@ -57,11 +60,25 @@ class WaitlistServiceTests {
 	}
 
 	@Test void sessionWithCapacityRejectsWaitlistJoin(){
+		when(accounts.findById(memberId)).thenReturn(Optional.of(account(memberId,AccountRole.MEMBER)));
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 		when(disciplines.findBySessionIdForUpdate(session.getId())).thenReturn(Optional.of(session.getSportClass().getDiscipline()));
 		when(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)).thenReturn(0L);
 		assertThatThrownBy(()->service.join(memberId,session.getId())).isInstanceOfSatisfying(WaitlistException.class,
 			error->assertThat(error.getCode()).isEqualTo("SESSION_NOT_FULL"));
+	}
+
+	@Test void expirationNotifiesMemberExactlyOnce(){
+		SessionWaitlist entry=new SessionWaitlist(UUID.randomUUID(),session.getId(),memberId,memberId,"MEMBER",now.minusSeconds(60));
+		when(waitlists.findExpiredForUpdate(now)).thenReturn(List.of(entry),List.of());
+
+		service.expireStarted(now);
+		service.expireStarted(now);
+
+		assertThat(entry.getStatus()).isEqualTo(WaitlistStatus.EXPIRED);
+		verify(notifications,times(1)).write("waitlist-expired:"+entry.getId(),memberId,"WAITLIST_EXPIRED",
+			"SESSION_WAITLIST",entry.getId(),Map.of("sessionId",session.getId().toString(),
+				"reasonCode","SESSION_STARTED"));
 	}
 
 	private ClassSession session(int capacity){
