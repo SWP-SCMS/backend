@@ -65,9 +65,14 @@ class SessionLifecycleIntegrationTests {
 		MemberProfile cancelledMember = member("Cancelled booking");
 		MemberProfile cancelledSessionMember = member("Cancelled session");
 		MemberProfile downtimeMember = member("Downtime");
+		MemberProfile waitlistedMember = member("Waitlisted");
 		Resources resources = resources(manager, coach);
 		ClassSession exact = session(resources, manager, NOW, NOW.plusSeconds(3600));
 		Booking exactBooking = booking(exact, bookedMember, manager);
+		UUID waitlistId = UUID.randomUUID();
+		jdbc.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
+			waitlistId, exact.getId(), waitlistedMember.getAccountId(), waitlistedMember.getAccountId(),
+			java.sql.Timestamp.from(NOW.minusSeconds(600)), java.sql.Timestamp.from(NOW.minusSeconds(600)));
 		ClassSession cancelledSession = session(resources(manager, account(AccountRole.COACH, "Cancelled coach")),
 			manager, NOW, NOW.plusSeconds(3600));
 		cancelledSession.cancel(NOW.minusSeconds(1), "cancelled");
@@ -97,6 +102,10 @@ class SessionLifecycleIntegrationTests {
 			exactBooking.getId(), downtimeBooking.getId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select recording_source from attendance where booking_id=?", String.class,
 			exactBooking.getId())).isEqualTo("SYSTEM");
+		assertThat(jdbc.queryForObject("select status from session_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("EXPIRED");
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key=? and notification_type='WAITLIST_EXPIRED'",
+			Long.class, "waitlist-expired:" + waitlistId)).isOne();
 	}
 
 	@Test

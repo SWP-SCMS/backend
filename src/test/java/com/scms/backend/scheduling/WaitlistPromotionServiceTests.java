@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -39,7 +41,17 @@ class WaitlistPromotionServiceTests {
 		WaitlistPromotionService service=new WaitlistPromotionService(waitlists,bookings,eligibility,audits,notifications,sessions,Clock.fixed(now,ZoneOffset.UTC));
 		service.promoteAvailable(session);
 		assertThat(first.getStatus()).isEqualTo(WaitlistStatus.SKIPPED); assertThat(first.getTerminalReasonCode()).isEqualTo("BOOKING_TIME_CONFLICT");
-		assertThat(second.getStatus()).isEqualTo(WaitlistStatus.PROMOTED); verify(notifications).write(any(),any(),any(),any(),any(),any());
+		assertThat(second.getStatus()).isEqualTo(WaitlistStatus.PROMOTED);
+		verify(notifications).write("waitlist-skipped:"+first.getId(),first.getMemberId(),"WAITLIST_SKIPPED",
+			"SESSION_WAITLIST",first.getId(),Map.of("sessionId",session.getId().toString(),
+				"reasonCode","BOOKING_TIME_CONFLICT"));
+		verify(notifications).write(eq("waitlist-promoted:"+second.getId()),eq(second.getMemberId()),
+			eq("WAITLIST_PROMOTED"),eq("BOOKING"),any(),
+			eq(Map.of("sessionId",session.getId().toString())));
+		service.promoteAvailable(session);
+		verify(notifications,times(1)).write("waitlist-skipped:"+first.getId(),first.getMemberId(),"WAITLIST_SKIPPED",
+			"SESSION_WAITLIST",first.getId(),Map.of("sessionId",session.getId().toString(),
+				"reasonCode","BOOKING_TIME_CONFLICT"));
 	}
 
 	@Test void locksEachDistinctScheduledSessionBeforePromotion(){

@@ -35,7 +35,15 @@ public class WaitlistPromotionService {
 			List<SessionWaitlist> waiting=waitlists.findWaitingBySessionForUpdate(session.getId()); if(waiting.isEmpty()) return;
 			SessionWaitlist entry=waiting.getFirst(); UUID membershipId;
 			try { membershipId=eligibility.validateEligibility(entry.getMemberId(),session); }
-			catch(BookingException exception){ entry.skip(exception.getCode(),now); waitlists.save(entry); audits.save(new AuditEvent(UUID.randomUUID(),null,"WAITLIST_SKIPPED","SESSION_WAITLIST",entry.getId(),Map.of("reasonCode",exception.getCode()))); continue; }
+			catch(BookingException exception){
+				entry.skip(exception.getCode(),now); waitlists.save(entry);
+				audits.save(new AuditEvent(UUID.randomUUID(),null,"WAITLIST_SKIPPED","SESSION_WAITLIST",
+					entry.getId(),Map.of("reasonCode",exception.getCode())));
+				notifications.write("waitlist-skipped:"+entry.getId(),entry.getMemberId(),"WAITLIST_SKIPPED",
+					"SESSION_WAITLIST",entry.getId(),Map.of("sessionId",session.getId().toString(),
+						"reasonCode",exception.getCode()));
+				continue;
+			}
 			Booking booking=new Booking(UUID.randomUUID(),session.getId(),entry.getMemberId(),membershipId,entry.getJoinedBy(),now);
 			bookings.saveAndFlush(booking); entry.promote(now); waitlists.save(entry);
 			audits.save(new AuditEvent(UUID.randomUUID(),null,"WAITLIST_PROMOTED","SESSION_WAITLIST",entry.getId(),Map.of("bookingId",booking.getId().toString())));

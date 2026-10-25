@@ -89,6 +89,9 @@ class WaitlistService {
 			entry.expire(now); waitlists.save(entry);
 			audits.save(new AuditEvent(UUID.randomUUID(),null,"WAITLIST_EXPIRED","SESSION_WAITLIST",entry.getId(),
 				Map.of("sessionId",entry.getSessionId().toString(),"reasonCode","SESSION_STARTED")));
+			notifications.write("waitlist-expired:"+entry.getId(),entry.getMemberId(),"WAITLIST_EXPIRED",
+				"SESSION_WAITLIST",entry.getId(),Map.of("sessionId",entry.getSessionId().toString(),
+					"reasonCode","SESSION_STARTED"));
 		}
 	}
 

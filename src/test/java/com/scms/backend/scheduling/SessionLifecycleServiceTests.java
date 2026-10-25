@@ -21,16 +21,18 @@ class SessionLifecycleServiceTests {
 
 	@Mock ClassSessionRepository sessions;
 	@Mock AttendanceRepository attendance;
+	@Mock WaitlistService waitlists;
 
 	@Test
 	void catchUpAdvancesStartedSessionsBackfillsAttendanceAndCompletesEndedSessions() {
 		Instant now = Instant.parse("2026-10-08T02:00:00Z");
-		SessionLifecycleService service = new SessionLifecycleService(sessions, attendance);
+		SessionLifecycleService service = new SessionLifecycleService(sessions, attendance, waitlists);
 
 		service.catchUp(now);
 
-		InOrder writes = inOrder(sessions, attendance);
+		InOrder writes = inOrder(sessions, waitlists, attendance);
 		writes.verify(sessions).advanceScheduledToInProgress(now);
+		writes.verify(waitlists).expireStarted(now);
 		writes.verify(attendance).insertAbsentForStartedBookings(now);
 		writes.verify(sessions).advanceInProgressToCompleted(now);
 	}
