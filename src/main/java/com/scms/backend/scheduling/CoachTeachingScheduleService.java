@@ -2,7 +2,9 @@ package com.scms.backend.scheduling;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -32,7 +34,7 @@ class CoachTeachingScheduleService {
 	}
 
 	@Transactional
-	ClassSessionPageResponse list(UUID coachId, Instant from, Instant to, ClassSessionStatus status,
+	CoachClassSessionPageResponse list(UUID coachId, Instant from, Instant to, ClassSessionStatus status,
 			Pageable pageable) {
 		ensureActiveCoach(coachId);
 		validateRange(from, to);
@@ -46,8 +48,18 @@ class CoachTeachingScheduleService {
 		if (status != null) filters = filters.and((root, ignored, builder) ->
 			builder.equal(root.get("status"), status));
 		var page = sessions.findAll(filters, pageable);
-		return new ClassSessionPageResponse(page.getContent().stream().map(ClassSessionResponse::from).toList(),
-			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+		var sessionIds = page.getContent().stream().map(ClassSession::getId).toList();
+		Map<UUID, ClassSession> sessionDetails = sessionIds.isEmpty() ? Map.of()
+			: sessions.findByIdIn(sessionIds).stream().collect(Collectors.toMap(ClassSession::getId,
+				session -> session));
+		Map<UUID, Long> bookedCounts = sessionIds.isEmpty() ? Map.of()
+			: sessions.countBookedBySessionIds(sessionIds).stream().collect(Collectors.toMap(
+				ClassSessionRepository.BookingCountView::getSessionId,
+				ClassSessionRepository.BookingCountView::getBookedCount));
+		var content = sessionIds.stream().map(sessionId -> CoachClassSessionResponse.from(
+			sessionDetails.get(sessionId), bookedCounts.getOrDefault(sessionId, 0L))).toList();
+		return new CoachClassSessionPageResponse(content, page.getNumber(), page.getSize(),
+			page.getTotalElements(), page.getTotalPages());
 	}
 
 	@Transactional

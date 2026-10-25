@@ -25,7 +25,7 @@ class CoachTeachingScheduleController {
 	}
 
 	@GetMapping
-	ResponseEntity<ClassSessionPageResponse> list(@AuthenticationPrincipal Jwt jwt,
+	ResponseEntity<CoachClassSessionPageResponse> list(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to,
 			@RequestParam(required = false) ClassSessionStatus status,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {

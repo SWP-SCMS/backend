@@ -54,12 +54,22 @@ class CoachTeachingScheduleServiceTests {
 			.thenReturn(true);
 		when(sessions.findAll(any(Specification.class), any(PageRequest.class)))
 			.thenReturn(new PageImpl<>(List.of(session)));
+		when(sessions.findByIdIn(List.of(session.getId()))).thenReturn(List.of(session));
+		when(sessions.countBookedBySessionIds(List.of(session.getId())))
+			.thenReturn(List.of(bookingCount(session.getId(), 7)));
 
-		ClassSessionPageResponse result = service.list(coachId, null, null, null,
+		CoachClassSessionPageResponse result = service.list(coachId, null, null, null,
 			PageRequest.of(0, 20));
 
-		assertThat(result.content()).singleElement()
-			.extracting(ClassSessionResponse::coachId).isEqualTo(coachId);
+		assertThat(result.content()).singleElement().satisfies(item -> {
+			assertThat(item.coachId()).isEqualTo(coachId);
+			assertThat(item.className()).isEqualTo("Vinyasa");
+			assertThat(item.classType()).isEqualTo(SportClassType.YOGA);
+			assertThat(item.disciplineName()).isEqualTo("Yoga");
+			assertThat(item.roomName()).isEqualTo("Studio");
+			assertThat(item.capacity()).isEqualTo(15);
+			assertThat(item.bookedCount()).isEqualTo(7);
+		});
 		verify(lifecycle).catchUp(now);
 	}
 
@@ -126,5 +136,12 @@ class CoachTeachingScheduleServiceTests {
 			LocalDate.of(1990, 1, 1), "{noop}password");
 		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, now.plusSeconds(3600),
 			now.plusSeconds(7200), 15, UUID.randomUUID());
+	}
+
+	private ClassSessionRepository.BookingCountView bookingCount(UUID sessionId, long bookedCount) {
+		return new ClassSessionRepository.BookingCountView() {
+			@Override public UUID getSessionId() { return sessionId; }
+			@Override public long getBookedCount() { return bookedCount; }
+		};
 	}
 }
