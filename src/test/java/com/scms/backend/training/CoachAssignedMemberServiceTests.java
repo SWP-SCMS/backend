@@ -72,8 +72,7 @@ class CoachAssignedMemberServiceTests {
 
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 				.thenReturn(true);
-		when(assignments.findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
-				coachId, CoachAssignmentStatus.ACTIVE, pageable))
+		when(assignments.findActiveAssignedMembers(coachId, null, pageable))
 				.thenReturn(new PageImpl<>(List.of(assignment), pageable, 1));
 		when(accounts.findAllById(List.of(memberId))).thenReturn(List.of(member));
 		when(profiles.findAllById(List.of(memberId))).thenReturn(List.of(profile));
@@ -82,7 +81,7 @@ class CoachAssignedMemberServiceTests {
 		when(profile.getProfileImageUrl()).thenReturn("https://cdn.example/member.png");
 		when(profile.getFitnessGoal()).thenReturn("Build strength");
 
-		CoachAssignedMemberPageResponse result = service.listAssignedMembers(coachId, pageable);
+		CoachAssignedMemberPageResponse result = service.listAssignedMembers(coachId, null, pageable);
 
 		assertThat(result.totalElements()).isEqualTo(1);
 		assertThat(result.content()).singleElement().satisfies(summary -> {
@@ -95,19 +94,17 @@ class CoachAssignedMemberServiceTests {
 
 		InOrder lifecycleThenList = inOrder(assignments);
 		lifecycleThenList.verify(assignments).endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
-		lifecycleThenList.verify(assignments).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
-				coachId, CoachAssignmentStatus.ACTIVE, pageable);
+		lifecycleThenList.verify(assignments).findActiveAssignedMembers(coachId, null, pageable);
 	}
 
 	@Test
 	void listAssignedMembers_returnsEmptyPageWhenCoachHasNoActiveAssignments() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 				.thenReturn(true);
-		when(assignments.findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
-				coachId, CoachAssignmentStatus.ACTIVE, pageable))
+		when(assignments.findActiveAssignedMembers(coachId, null, pageable))
 				.thenReturn(new PageImpl<>(List.of(), pageable, 0));
 
-		CoachAssignedMemberPageResponse result = service.listAssignedMembers(coachId, pageable);
+		CoachAssignedMemberPageResponse result = service.listAssignedMembers(coachId, "   ", pageable);
 
 		assertThat(result.content()).isEmpty();
 		assertThat(result.totalElements()).isZero();
@@ -120,12 +117,36 @@ class CoachAssignedMemberServiceTests {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 				.thenReturn(false);
 
-		assertThatThrownBy(() -> service.listAssignedMembers(coachId, pageable))
+		assertThatThrownBy(() -> service.listAssignedMembers(coachId, null, pageable))
 				.isInstanceOf(InvalidAuthenticatedAccountException.class);
 
 		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
-		verify(assignments, never()).findByCoachAccountIdAndStatusOrderByCreatedAtDesc(
-				coachId, CoachAssignmentStatus.ACTIVE, pageable);
+		verify(assignments, never()).findActiveAssignedMembers(coachId, null, pageable);
+	}
+
+	@Test
+	void listAssignedMembers_trimsSearchBeforeRepositoryPagination() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(assignments.findActiveAssignedMembers(coachId, "MBR-000001", pageable))
+			.thenReturn(new PageImpl<>(List.of(), pageable, 0));
+
+		CoachAssignedMemberPageResponse result = service.listAssignedMembers(coachId, "  MBR-000001  ", pageable);
+
+		assertThat(result.content()).isEmpty();
+		verify(assignments).findActiveAssignedMembers(coachId, "MBR-000001", pageable);
+	}
+
+	@Test
+	void listAssignedMembers_rejectsSearchLongerThanOneHundredCharacters() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.listAssignedMembers(coachId, "x".repeat(101), pageable))
+			.isInstanceOf(CoachAssignmentException.class)
+			.extracting("code", "field")
+			.containsExactly("VALIDATION_ERROR", "q");
+		verify(assignments, never()).endAllActiveAssignmentsWithExpiredPersonalCoaching(now);
 	}
 
 	@Test

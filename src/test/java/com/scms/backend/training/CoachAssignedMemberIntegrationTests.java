@@ -84,7 +84,7 @@ class CoachAssignedMemberIntegrationTests {
 				Timestamp.from(now.minusSeconds(86400 * 20)));
 
 		CoachAssignedMemberPageResponse result = assignedMemberService.listAssignedMembers(
-				coach.getId(), PageRequest.of(0, 20));
+				coach.getId(), null, PageRequest.of(0, 20));
 
 		assertThat(result.totalElements()).isEqualTo(1);
 		assertThat(result.content()).singleElement().satisfies(member -> {
@@ -96,6 +96,45 @@ class CoachAssignedMemberIntegrationTests {
 		assertThat(jdbc.queryForObject(
 				"select status from coach_assignments where id = ?", String.class, expiredAssignmentId))
 				.isEqualTo("ENDED");
+	}
+
+	@Test
+	void searchFiltersTheWholeAssignedScopeByCodeNameOrPhone() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Search Manager US40");
+		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Search Coach US40");
+		Account otherCoach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Other Search Coach US40");
+		Account target = createMember("Search Target US40", "Build strength");
+		Account newerMember = createMember("Newest Assigned US40", "Improve mobility");
+		Account outsideScope = createMember("Search Target Outside US40", "Lose weight");
+		Instant now = Instant.now();
+		for (Account member : java.util.List.of(target, newerMember, outsideScope)) {
+			createMembership(member.getId(), manager.getId(), now.minusSeconds(86400), now.plusSeconds(86400));
+		}
+		assignmentService.assign(manager.getId(), target.getId(),
+			new CoachAssignmentAssignRequest(coach.getId(), "Search target"));
+		assignmentService.assign(manager.getId(), newerMember.getId(),
+			new CoachAssignmentAssignRequest(coach.getId(), "Newer assignment"));
+		assignmentService.assign(manager.getId(), outsideScope.getId(),
+			new CoachAssignmentAssignRequest(otherCoach.getId(), "Outside scope"));
+
+		CoachAssignedMemberPageResponse byName = assignedMemberService.listAssignedMembers(
+			coach.getId(), "  search target  ", PageRequest.of(0, 1));
+		String memberCode = profiles.findById(target.getId()).orElseThrow().getMemberCode();
+		CoachAssignedMemberPageResponse byCode = assignedMemberService.listAssignedMembers(
+			coach.getId(), memberCode.toLowerCase(), PageRequest.of(0, 20));
+		CoachAssignedMemberPageResponse byPhone = assignedMemberService.listAssignedMembers(
+			coach.getId(), target.getPhone().substring(2), PageRequest.of(0, 20));
+		CoachAssignedMemberPageResponse unfiltered = assignedMemberService.listAssignedMembers(
+			coach.getId(), "   ", PageRequest.of(0, 20));
+
+		assertThat(byName.totalElements()).isEqualTo(1);
+		assertThat(byName.content()).extracting(CoachAssignedMemberSummaryResponse::memberAccountId)
+			.containsExactly(target.getId());
+		assertThat(byCode.content()).extracting(CoachAssignedMemberSummaryResponse::memberAccountId)
+			.containsExactly(target.getId());
+		assertThat(byPhone.content()).extracting(CoachAssignedMemberSummaryResponse::memberAccountId)
+			.containsExactly(target.getId());
+		assertThat(unfiltered.totalElements()).isEqualTo(2);
 	}
 
 	private Account createAccount(AccountRole role, AccountStatus status, String name) {

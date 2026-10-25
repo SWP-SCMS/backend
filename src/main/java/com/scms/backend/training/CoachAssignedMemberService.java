@@ -51,13 +51,13 @@ public class CoachAssignedMemberService {
 	 * Reconciles expired PERSONAL_COACHING entitlements before returning the list.
 	 */
 	@Transactional
-	public CoachAssignedMemberPageResponse listAssignedMembers(UUID coachId, Pageable pageable) {
+	public CoachAssignedMemberPageResponse listAssignedMembers(UUID coachId, String query, Pageable pageable) {
 		ensureActiveCoach(coachId);
+		String normalizedQuery = normalizeQuery(query);
 
 		assignments.endAllActiveAssignmentsWithExpiredPersonalCoaching(clock.instant());
 
-		Page<CoachAssignment> page = assignments.findByCoachAccountIdAndStatusOrderByCreatedAtDesc(coachId,
-				CoachAssignmentStatus.ACTIVE, pageable);
+		Page<CoachAssignment> page = assignments.findActiveAssignedMembers(coachId, normalizedQuery, pageable);
 
 		List<UUID> memberIds = page.getContent().stream()
 				.map(CoachAssignment::getMemberAccountId)
@@ -104,5 +104,16 @@ public class CoachAssignedMemberService {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
+	}
+
+	private String normalizeQuery(String query) {
+		if (query == null || query.isBlank()) {
+			return null;
+		}
+		String normalized = query.trim();
+		if (normalized.length() > 100) {
+			throw CoachAssignmentException.validationError("q", "q must be at most 100 characters");
+		}
+		return normalized;
 	}
 }

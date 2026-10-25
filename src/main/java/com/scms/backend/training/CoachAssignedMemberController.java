@@ -27,6 +27,7 @@ public class CoachAssignedMemberController {
 	/** US40: list all Members currently assigned to the authenticated Coach. */
 	@GetMapping
 	public ResponseEntity<CoachAssignedMemberPageResponse> list(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam(required = false) String q,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 		if (page < 0 || size < 1 || size > 100) {
@@ -35,7 +36,7 @@ public class CoachAssignedMemberController {
 					"page must be >= 0 and size must be between 1 and 100");
 		}
 		var pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
-		return ResponseEntity.ok(service.listAssignedMembers(coachId(jwt), pageable));
+		return ResponseEntity.ok(service.listAssignedMembers(coachId(jwt), q, pageable));
 	}
 
 	/** US41: get the full profile of a Member in the authenticated Coach's scope. */

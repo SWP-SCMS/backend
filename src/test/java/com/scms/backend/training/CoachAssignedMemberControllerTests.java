@@ -58,9 +58,10 @@ class CoachAssignedMemberControllerTests {
 			null, "Lose weight", UUID.randomUUID(), Instant.now());
 		var page = new CoachAssignedMemberPageResponse(List.of(summary), 0, 20, 1L, 1);
 
-		when(service.listAssignedMembers(eq(COACH_ID), any(Pageable.class))).thenReturn(page);
+		when(service.listAssignedMembers(eq(COACH_ID), eq("MBR-000001"), any(Pageable.class))).thenReturn(page);
 
 		mockMvc.perform(get("/coach/members")
+				.param("q", "MBR-000001")
 				.with(jwt().jwt(b -> b.subject(COACH_ID.toString()))
 						.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
 			.andExpect(status().isOk())
