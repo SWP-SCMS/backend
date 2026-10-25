@@ -15,6 +15,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.scheduling.WaitlistPromotionService;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -27,14 +28,17 @@ public class MemberStatusService {
 	private final AuditEventRepository auditRepository;
 	private final NotificationWriter notificationWriter;
 	private final JdbcTemplate jdbcTemplate;
+	private final WaitlistPromotionService waitlistPromotions;
 	private final Clock clock;
 
 	MemberStatusService(AccountRepository accountRepository, AuditEventRepository auditRepository,
-			NotificationWriter notificationWriter, JdbcTemplate jdbcTemplate, Clock clock) {
+			NotificationWriter notificationWriter, JdbcTemplate jdbcTemplate,
+			WaitlistPromotionService waitlistPromotions, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.auditRepository = auditRepository;
 		this.notificationWriter = notificationWriter;
 		this.jdbcTemplate = jdbcTemplate;
+		this.waitlistPromotions = waitlistPromotions;
 		this.clock = clock;
 	}
 
@@ -68,6 +72,8 @@ public class MemberStatusService {
 				"BOOKING", booking.id(), Map.of("sessionId", booking.sessionId().toString(),
 					"cancellationSource", "MEMBER_SUSPENDED"));
 		}
+		waitlistPromotions.promoteAvailableBySessionIds(cancelled.stream()
+			.map(CancelledBooking::sessionId).toList());
 		member.changeMemberStatus(request.status());
 		accountRepository.flush();
 

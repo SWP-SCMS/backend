@@ -24,6 +24,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
+import com.scms.backend.scheduling.WaitlistPromotionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -35,6 +36,7 @@ class MembershipFreezeExecutionServiceTests {
 	private final MembershipRepository memberships = mock(MembershipRepository.class);
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final BookingRepository bookings = mock(BookingRepository.class);
+	private final WaitlistPromotionService waitlistPromotions = mock(WaitlistPromotionService.class);
 	private final CenterVisitRepository visits = mock(CenterVisitRepository.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final NotificationWriter notifications = mock(NotificationWriter.class);
@@ -42,7 +44,7 @@ class MembershipFreezeExecutionServiceTests {
 	private final PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
 	private final TransactionStatus transactionStatus = mock(TransactionStatus.class);
 	private final MembershipFreezeExecutionService service = new MembershipFreezeExecutionService(requests, memberships,
-		accounts, bookings, visits, audits, notifications, jdbc,
+		accounts, bookings, waitlistPromotions, visits, audits, notifications, jdbc,
 		Clock.fixed(Instant.parse("2026-11-02T00:00:00Z"), ZoneOffset.UTC), transactionManager);
 
 	MembershipFreezeExecutionServiceTests() {

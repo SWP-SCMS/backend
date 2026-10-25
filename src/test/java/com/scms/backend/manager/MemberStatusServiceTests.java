@@ -25,6 +25,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.scheduling.WaitlistPromotionService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,13 +42,14 @@ class MemberStatusServiceTests {
 	@Mock AuditEventRepository audits;
 	@Mock NotificationWriter notifications;
 	@Mock JdbcTemplate jdbc;
+	@Mock WaitlistPromotionService waitlistPromotions;
 	private MemberStatusService service;
 	private final UUID managerId = UUID.randomUUID();
 	private final UUID memberId = UUID.randomUUID();
 
 	@BeforeEach
 	void setUp() {
-		service = new MemberStatusService(accounts, audits, notifications, jdbc,
+		service = new MemberStatusService(accounts, audits, notifications, jdbc, waitlistPromotions,
 			Clock.fixed(Instant.parse("2026-10-01T04:00:00Z"), ZoneOffset.UTC));
 	}
 
@@ -75,6 +77,7 @@ class MemberStatusServiceTests {
 		assertThat(audit.getValue().getBeforeData()).containsEntry("status", "ACTIVE");
 		verify(notifications).write(anyString(), eq(memberId), eq("MEMBER_SUSPENDED"), eq("ACCOUNT"), eq(memberId),
 			any());
+		verify(waitlistPromotions).promoteAvailableBySessionIds(List.of());
 	}
 
 	@Test

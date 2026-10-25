@@ -26,6 +26,7 @@ class MembershipFreezeExecutionIntegrationTests {
 	@Container @ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 	@Autowired JdbcTemplate jdbc;
+	@Autowired MembershipFreezeExecutionService execution;
 
 	@Test
 	void databaseInstallsTheActiveFreezeBookingAuthority() {
@@ -70,6 +71,41 @@ class MembershipFreezeExecutionIntegrationTests {
 		assertThatThrownBy(() -> jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
 			UUID.randomUUID(), futureSession(manager, coach, now.plusSeconds(3600)), member, membership, member))
 			.hasStackTraceContaining("MEMBERSHIP_FROZEN");
+	}
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void activatingFreezePromotesEligibleWaitlistMember() {
+		Instant now = Instant.now();
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID waitingMember = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID membership = membership(member, manager, now);
+		UUID waitingMembership = membership(waitingMember, manager, now);
+		UUID session = futureSession(manager, coach, now.plusSeconds(3600));
+		UUID booking = UUID.randomUUID();
+		UUID waitlist = UUID.randomUUID();
+		UUID request = UUID.randomUUID();
+		jdbc.update("update class_sessions set capacity=1 where id=?", session);
+		jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
+			booking, session, member, membership, member);
+		jdbc.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
+			waitlist, session, waitingMember, waitingMember, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now.minusSeconds(60)));
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'integration','SCHEDULED')",
+			request, membership, member, member, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(1)));
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')",
+			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(1)));
+
+		execution.activate(request, today, now);
+
+		assertThat(jdbc.queryForObject("select status from bookings where id=?", String.class, booking))
+			.isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select status from session_waitlists where id=?", String.class, waitlist))
+			.isEqualTo("PROMOTED");
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and membership_id=? and status='BOOKED'",
+			Long.class, session, waitingMember, waitingMembership)).isOne();
 	}
 
 	private UUID account(String role) {

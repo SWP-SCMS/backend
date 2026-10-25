@@ -127,6 +127,30 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 		""", nativeQuery = true)
 	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
 
+	@Query(value = """
+		select distinct booking.class_session_id
+		from bookings booking
+		join class_sessions session on session.id = booking.class_session_id
+		where booking.member_account_id = :memberId
+		  and booking.status = 'BOOKED'
+		  and session.start_time > :now
+		""", nativeQuery = true)
+	List<UUID> findFutureSessionIdsForMembershipTermination(@Param("memberId") UUID memberId,
+		@Param("now") Instant now);
+
+	@Query(value = """
+		select distinct booking.class_session_id
+		from bookings booking
+		join class_sessions session on session.id = booking.class_session_id
+		where booking.member_account_id = :memberId
+		  and booking.status = 'BOOKED'
+		  and session.start_time >= :startAt
+		  and session.start_time < :endAt
+		  and session.start_time > :now
+		""", nativeQuery = true)
+	List<UUID> findFutureSessionIdsForMembershipFreeze(@Param("memberId") UUID memberId,
+		@Param("startAt") Instant startAt, @Param("endAt") Instant endAt, @Param("now") Instant now);
+
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """
 		update bookings booking
