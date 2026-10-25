@@ -18,7 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecurringScheduleService {
 
 	private static final ZoneId GYM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
-	private static final int OCCURRENCE_COUNT = 30;
+	private static final int DEFAULT_SESSION_COUNT = 30;
+	private static final int MAX_SESSION_COUNT = 100;
 
 	private final RecurringScheduleRepository schedules;
 	private final ClassSessionRepository sessions;
@@ -37,10 +38,11 @@ public class RecurringScheduleService {
 	RecurringScheduleResponse create(UUID managerId, RecurringScheduleCreateRequest request) {
 		classSessionService.ensureActiveManager(managerId);
 		validateRequest(request);
+		int sessionCount = request.sessionCount() == null ? DEFAULT_SESSION_COUNT : request.sessionCount();
 		ClassSessionService.Resources resources = classSessionService.validateResources(request.classId(),
 			request.coachId(), request.roomId(), request.capacity());
 
-		List<Occurrence> occurrences = occurrences(request);
+		List<Occurrence> occurrences = occurrences(request, sessionCount);
 		if (!occurrences.getFirst().start().isAfter(clock.instant())) {
 			throw RecurringScheduleException.validation("startTime", "the first Session must be in the future");
 		}
@@ -52,7 +54,7 @@ public class RecurringScheduleService {
 		RecurringSchedule schedule = new RecurringSchedule(scheduleId, resources.sportClass(), resources.coach(),
 			resources.room(), request.startDate(),
 			request.weekdays().stream().map(Integer::shortValue).toArray(Short[]::new), request.startTime(),
-			request.endTime(), request.capacity(), managerId);
+			request.endTime(), request.capacity(), sessionCount, managerId);
 		List<ClassSession> newSessions = occurrences.stream()
 			.map(occurrence -> classSessionService.newScheduled(resources, schedule, occurrence.start(),
 				occurrence.end(), request.capacity(), managerId))
@@ -64,14 +66,14 @@ public class RecurringScheduleService {
 		catch (DataIntegrityViolationException exception) {
 			throw RecurringScheduleException.scheduleConflict();
 		}
-		return new RecurringScheduleResponse(scheduleId, OCCURRENCE_COUNT,
+		return new RecurringScheduleResponse(scheduleId, sessionCount,
 			newSessions.stream().map(ClassSession::getId).toList());
 	}
 
-	private List<Occurrence> occurrences(RecurringScheduleCreateRequest request) {
-		List<Occurrence> occurrences = new ArrayList<>(OCCURRENCE_COUNT);
+	private List<Occurrence> occurrences(RecurringScheduleCreateRequest request, int sessionCount) {
+		List<Occurrence> occurrences = new ArrayList<>(sessionCount);
 		LocalDate date = request.startDate();
-		while (occurrences.size() < OCCURRENCE_COUNT) {
+		while (occurrences.size() < sessionCount) {
 			if (request.weekdays().contains(date.getDayOfWeek().getValue())) {
 				Instant start = LocalDateTime.of(date, request.startTime()).atZone(GYM_ZONE).toInstant();
 				Instant end = LocalDateTime.of(date, request.endTime()).atZone(GYM_ZONE).toInstant();
@@ -107,6 +109,10 @@ public class RecurringScheduleService {
 		}
 		if (request.capacity() == null || request.capacity() <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
+		}
+		if (request.sessionCount() != null
+				&& (request.sessionCount() < 1 || request.sessionCount() > MAX_SESSION_COUNT)) {
+			throw RecurringScheduleException.validation("sessionCount", "must be between 1 and 100");
 		}
 	}
 

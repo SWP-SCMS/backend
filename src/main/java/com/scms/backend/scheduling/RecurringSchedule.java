@@ -65,7 +65,7 @@ public class RecurringSchedule {
 
 	RecurringSchedule(UUID id, SportClass sportClass, com.scms.backend.account.Account teachingCoach, Room room,
 			LocalDate startDate, Short[] weekdays, LocalTime startTime, LocalTime endTime,
-			int sessionCapacity, UUID createdByAccountId) {
+			int sessionCapacity, int sessionCount, UUID createdByAccountId) {
 		this.id = id;
 		this.sportClass = sportClass;
 		this.teachingCoach = teachingCoach;
@@ -75,6 +75,7 @@ public class RecurringSchedule {
 		this.startTime = startTime;
 		this.endTime = endTime;
 		this.sessionCapacity = sessionCapacity;
+		this.sessionCount = (short) sessionCount;
 		this.createdByAccountId = createdByAccountId;
 	}
 
