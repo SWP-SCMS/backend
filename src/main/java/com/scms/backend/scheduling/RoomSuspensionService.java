@@ -3,6 +3,7 @@ package com.scms.backend.scheduling;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -89,7 +90,8 @@ public class RoomSuspensionService {
 			RoomSuspensionExtensionRequest request) {
 		validateExtensionRequest(request);
 		ensureActiveManager(managerId);
-		Map<UUID, RoomSessionResolutionRequest> resolutions = resolutionMap(request.resolutions());
+		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
+			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
 		RoomSuspension suspension = suspensions.findByIdForUpdate(suspensionId)
 			.filter(candidate -> candidate.getRoom().getId().equals(roomId))
@@ -101,7 +103,7 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
 		}
 		String reason = normalizeReason(request.reason(), true);
-		Map<UUID, Room> lockedRooms = lockRooms(roomId, resolutions.values());
+		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
 			throw RoomException.suspensionConflict();
 		}
@@ -110,6 +112,7 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(now);
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, currentEndTime, request.endTime(),
 			false, now);
+		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
 		validateOperation(affected, resolutions, lockedRooms,
 			new Impact(suspension.getStartTime(), request.endTime(), false, reason));
@@ -143,13 +146,15 @@ public class RoomSuspensionService {
 	RoomResponse applyImpact(UUID managerId, UUID roomId, RoomImpactPreviewRequest request) {
 		ensureActiveManager(managerId);
 		Impact impact = validateImpact(request);
-		Map<UUID, RoomSessionResolutionRequest> resolutions = resolutionMap(request.resolutions());
+		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
+			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
-		Map<UUID, Room> lockedRooms = lockRooms(roomId, resolutions.values());
+		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		Room sourceRoom = lockedRooms.get(roomId);
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
+		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
 		validateOperation(affected, resolutions, lockedRooms, impact);
 		applyResolutions(managerId, affected, resolutions, lockedRooms);
@@ -238,29 +243,79 @@ public class RoomSuspensionService {
 		return new Impact(queryStart, queryEnd, request.permanentDisable(), reason);
 	}
 
-	private Map<UUID, RoomSessionResolutionRequest> resolutionMap(List<RoomSessionResolutionRequest> requests) {
+	private ResolutionInputs resolutionInputs(List<RoomSessionResolutionRequest> legacy,
+			RoomBulkResolutionRequest bulk, List<RoomSessionResolutionRequest> overrides) {
+		List<RoomSessionResolutionRequest> legacyRequests = legacy == null ? List.of() : legacy;
+		List<RoomSessionResolutionRequest> overrideRequests = overrides == null ? List.of() : overrides;
+		if (bulk != null && !legacyRequests.isEmpty()) {
+			throw RoomException.validation("resolutions", "cannot be combined with bulkResolution");
+		}
+		if (bulk == null && !overrideRequests.isEmpty()) {
+			throw RoomException.validation("resolutionOverrides", "requires bulkResolution");
+		}
+		if (bulk == null) {
+			return new ResolutionInputs(null, resolutionMap(legacyRequests, "resolutions"));
+		}
+		return new ResolutionInputs(normalizeBulkResolution(bulk),
+			resolutionMap(overrideRequests, "resolutionOverrides"));
+	}
+
+	private RoomBulkResolutionRequest normalizeBulkResolution(RoomBulkResolutionRequest request) {
+		if (request.action() == null) {
+			throw RoomException.validation("bulkResolution.action", "is required");
+		}
+		String action = request.action().trim().toUpperCase(java.util.Locale.ROOT);
+		if (!Set.of("MOVE", "CANCEL").contains(action)) {
+			throw RoomException.validation("bulkResolution.action", "must be MOVE or CANCEL");
+		}
+		if (action.equals("MOVE") && request.targetRoomId() == null) {
+			throw RoomException.validation("bulkResolution.targetRoomId", "is required for MOVE");
+		}
+		if (action.equals("CANCEL")) normalizeReason(request.reason(), true);
+		return new RoomBulkResolutionRequest(action, request.targetRoomId(), request.reason());
+	}
+
+	private Map<UUID, RoomSessionResolutionRequest> resolutionMap(List<RoomSessionResolutionRequest> requests,
+			String field) {
 		Map<UUID, RoomSessionResolutionRequest> result = new HashMap<>();
 		for (RoomSessionResolutionRequest request : requests) {
 			if (request == null || request.sessionId() == null || request.action() == null) {
-				throw RoomException.validation("resolutions", "sessionId and action are required");
+				throw RoomException.validation(field, "sessionId and action are required");
 			}
 			String action = request.action().trim().toUpperCase(java.util.Locale.ROOT);
-			if (action.isEmpty()) throw RoomException.validation("resolutions", "sessionId and action are required");
+			if (action.isEmpty()) throw RoomException.validation(field, "sessionId and action are required");
 			RoomSessionResolutionRequest normalized = new RoomSessionResolutionRequest(request.sessionId(), action,
 				request.targetRoomId(), request.startTime(), request.endTime(), request.reason());
 			if (result.put(normalized.sessionId(), normalized) != null) {
-				throw RoomException.validation("resolutions", "session IDs must be unique");
+				throw RoomException.validation(field, "session IDs must be unique");
 			}
 			if (!Set.of("MOVE", "RESCHEDULE", "CANCEL").contains(action)) {
-				throw RoomException.validation("resolutions.action", "must be MOVE, RESCHEDULE, or CANCEL");
+				throw RoomException.validation(field + ".action", "must be MOVE, RESCHEDULE, or CANCEL");
 			}
 			if (action.equals("MOVE") && request.targetRoomId() == null) {
-				throw RoomException.validation("resolutions.targetRoomId", "is required for MOVE");
+				throw RoomException.validation(field + ".targetRoomId", "is required for MOVE");
 			}
 			if (action.equals("RESCHEDULE") && (request.startTime() == null || request.endTime() == null)) {
-				throw RoomException.validation("resolutions.startTime", "startTime and endTime are required for RESCHEDULE");
+				throw RoomException.validation(field + ".startTime", "startTime and endTime are required for RESCHEDULE");
 			}
 			if ((action.equals("CANCEL") || action.equals("RESCHEDULE"))) normalizeReason(request.reason(), true);
+		}
+		return result;
+	}
+
+	private Map<UUID, RoomSessionResolutionRequest> effectiveResolutions(List<ClassSession> affected,
+			ResolutionInputs inputs) {
+		if (inputs.bulk() == null) return inputs.explicit();
+		Map<UUID, RoomSessionResolutionRequest> result = new HashMap<>();
+		for (ClassSession session : affected) {
+			result.put(session.getId(), new RoomSessionResolutionRequest(session.getId(), inputs.bulk().action(),
+				inputs.bulk().targetRoomId(), null, null, inputs.bulk().reason()));
+		}
+		for (var override : inputs.explicit().entrySet()) {
+			if (!result.containsKey(override.getKey())) {
+				throw RoomException.validation("resolutionOverrides", "sessionId must reference an affected session");
+			}
+			result.put(override.getKey(), override.getValue());
 		}
 		return result;
 	}
@@ -413,12 +468,22 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "is required");
 		}
 		normalizeReason(request.reason(), true);
-		if (request.resolutions() == null) {
-			throw RoomException.suspensionValidation("resolutions", "is required");
+		if (request.resolutions() == null && request.bulkResolution() == null) {
+			throw RoomException.suspensionValidation("resolutions", "resolutions or bulkResolution is required");
 		}
 	}
 
 	private record Impact(Instant startTime, Instant endTime, boolean permanentDisable, String reason) { }
+
+	private record ResolutionInputs(RoomBulkResolutionRequest bulk,
+			Map<UUID, RoomSessionResolutionRequest> explicit) {
+		Collection<RoomSessionResolutionRequest> lockCandidates() {
+			List<RoomSessionResolutionRequest> candidates = new ArrayList<>(explicit.values());
+			if (bulk != null) candidates.add(new RoomSessionResolutionRequest(null, bulk.action(),
+				bulk.targetRoomId(), null, null, bulk.reason()));
+			return candidates;
+		}
+	}
 
 	private Room findRoom(UUID roomId) {
 		return rooms.findById(roomId).orElseThrow(RoomException::notFound);

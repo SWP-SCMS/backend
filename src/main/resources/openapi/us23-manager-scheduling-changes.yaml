@@ -310,12 +310,17 @@ components:
         reason: {type: [string, 'null'], maxLength: 1000}
     RoomSuspensionExtensionRequest:
       type: object
-      required: [expectedEndTime, endTime, reason, resolutions]
+      description: Provide either resolutions or bulkResolution. Overrides are applied after the bulk template.
+      required: [expectedEndTime, endTime, reason]
       properties:
         expectedEndTime: {type: string, format: date-time}
         endTime: {type: string, format: date-time}
         reason: {type: string, maxLength: 1000}
         resolutions:
+          type: array
+          items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
+        bulkResolution: {$ref: '#/components/schemas/RoomBulkResolutionRequest'}
+        resolutionOverrides:
           type: array
           items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
     RoomSuspensionResponse:
@@ -330,6 +335,7 @@ components:
         createdBy: {type: string, format: uuid}
     RoomImpactPreviewRequest:
       type: object
+      description: For apply requests, provide resolutions or a bulkResolution. Overrides are applied after the bulk template.
       properties:
         startTime: {type: string, format: date-time}
         endTime: {type: string, format: date-time}
@@ -338,6 +344,18 @@ components:
         resolutions:
           type: array
           items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
+        bulkResolution: {$ref: '#/components/schemas/RoomBulkResolutionRequest'}
+        resolutionOverrides:
+          type: array
+          items: {$ref: '#/components/schemas/RoomSessionResolutionRequest'}
+    RoomBulkResolutionRequest:
+      type: object
+      description: Template applied to every affected session. RESCHEDULE is only supported through per-session resolutions or overrides.
+      required: [action]
+      properties:
+        action: {type: string, enum: [MOVE, CANCEL]}
+        targetRoomId: {type: [string, 'null'], format: uuid}
+        reason: {type: [string, 'null'], maxLength: 1000}
     RoomSessionResolutionRequest:
       type: object
       required: [sessionId, action]

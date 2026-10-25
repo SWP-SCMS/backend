@@ -178,6 +178,34 @@ class RoomSuspensionServiceTests {
 	}
 
 	@Test
+	void extensionAppliesBulkCancellationToFreshlyLockedAffectedSessions() {
+		UUID managerId = activeManager();
+		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
+		Instant startTime = now.plusSeconds(3600);
+		Instant currentEndTime = now.plusSeconds(7200);
+		Instant newEndTime = now.plusSeconds(10800);
+		RoomSuspension suspension = new RoomSuspension(UUID.randomUUID(), room, startTime, currentEndTime,
+			"Repair", managerId);
+		ClassSession session = org.mockito.Mockito.mock(ClassSession.class);
+		UUID sessionId = UUID.randomUUID();
+		when(session.getId()).thenReturn(sessionId);
+		when(session.getStatus()).thenReturn(ClassSessionStatus.SCHEDULED);
+		when(session.getStartTime()).thenReturn(now.plusSeconds(9000));
+		when(suspensions.findByIdForUpdate(suspension.getId())).thenReturn(Optional.of(suspension));
+		when(rooms.findByIdForUpdate(room.getId())).thenReturn(Optional.of(room));
+		when(sessions.findRoomImpactsForUpdate(room.getId(), currentEndTime, newEndTime, false, now))
+			.thenReturn(List.of(session));
+
+		service.extend(managerId, room.getId(), suspension.getId(), new RoomSuspensionExtensionRequest(
+			currentEndTime, newEndTime, "Extended repair", null,
+			new RoomBulkResolutionRequest("CANCEL", null, "Common cancellation reason"), List.of()));
+
+		verify(cancellationService).cancel(managerId, sessionId,
+			new ClassSessionCancellationRequest("Common cancellation reason"));
+		assertThat(suspension.getEndTime()).isEqualTo(newEndTime);
+	}
+
+	@Test
 	void rejectsMissingAndBlankReasonsBeforeLockingSuspension() {
 		UUID managerId = UUID.randomUUID();
 		UUID roomId = UUID.randomUUID();
@@ -453,6 +481,84 @@ class RoomSuspensionServiceTests {
 				new RoomSessionResolutionRequest(sessionId, "CANCEL", null, null, null, "Cancel")))))
 			.isInstanceOf(RoomException.class)
 			.extracting("code").isEqualTo("ROOM_HAS_IN_PROGRESS_SESSION");
+		verify(cancellationService, never()).cancel(any(), any(), any());
+		verify(roomService, never()).disableAfterImpactResolution(any(), any(), any());
+	}
+
+	@Test
+	void bulkMoveAppliesToEveryAffectedSessionAndOverrideWins() {
+		UUID managerId = activeManager();
+		Room source = new Room(UUID.randomUUID(), "Source", 20, RoomStatus.ACTIVE);
+		Room target = new Room(UUID.randomUUID(), "Target", 20, RoomStatus.ACTIVE);
+		ClassSession moved = org.mockito.Mockito.mock(ClassSession.class);
+		ClassSession cancelled = org.mockito.Mockito.mock(ClassSession.class);
+		com.scms.backend.account.Account coach = org.mockito.Mockito.mock(com.scms.backend.account.Account.class);
+		UUID movedId = UUID.randomUUID();
+		UUID cancelledId = UUID.randomUUID();
+		Instant start = now.plusSeconds(3600);
+		Instant end = now.plusSeconds(7200);
+		when(moved.getId()).thenReturn(movedId);
+		when(moved.getStatus()).thenReturn(ClassSessionStatus.SCHEDULED);
+		when(moved.getCapacity()).thenReturn(10);
+		when(moved.getTeachingCoach()).thenReturn(coach);
+		when(moved.getStartTime()).thenReturn(start);
+		when(moved.getEndTime()).thenReturn(end);
+		when(coach.getId()).thenReturn(UUID.randomUUID());
+		when(cancelled.getId()).thenReturn(cancelledId);
+		when(cancelled.getStatus()).thenReturn(ClassSessionStatus.SCHEDULED);
+		when(cancelled.getStartTime()).thenReturn(start);
+		when(rooms.findByIdForUpdate(source.getId())).thenReturn(Optional.of(source));
+		when(rooms.findByIdForUpdate(target.getId())).thenReturn(Optional.of(target));
+		when(sessions.findRoomImpactsForUpdate(source.getId(), start, end, false, now))
+			.thenReturn(List.of(moved, cancelled));
+		when(sessions.findConflictIdExcluding(movedId, coach.getId(), target.getId(), start, end))
+			.thenReturn(Optional.empty());
+
+		service.applyImpact(managerId, source.getId(), new RoomImpactPreviewRequest(start, end, false,
+			"Repair", List.of(), new RoomBulkResolutionRequest("MOVE", target.getId(), "Common move reason"),
+			List.of(new RoomSessionResolutionRequest(cancelledId, "CANCEL", null, null, null,
+				"Cancel only this session"))));
+
+		verify(sessionService).moveForRoomImpact(managerId, moved, target, "Common move reason");
+		verify(cancellationService).cancel(managerId, cancelledId,
+			new ClassSessionCancellationRequest("Cancel only this session"));
+	}
+
+	@Test
+	void rejectsRescheduleAsBulkActionBeforeTakingRoomLocks() {
+		UUID managerId = activeManager();
+
+		assertThatThrownBy(() -> service.applyImpact(managerId, UUID.randomUUID(), new RoomImpactPreviewRequest(
+			now.plusSeconds(3600), now.plusSeconds(7200), false, "Repair", List.of(),
+			new RoomBulkResolutionRequest("RESCHEDULE", null, "Move later"), List.of())))
+			.isInstanceOf(RoomException.class)
+			.satisfies(error -> {
+				RoomException exception = (RoomException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("bulkResolution.action");
+			});
+		org.mockito.Mockito.verifyNoInteractions(rooms);
+	}
+
+	@Test
+	void rejectsOverrideForSessionOutsideFreshAffectedSet() {
+		UUID managerId = activeManager();
+		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
+		ClassSession affected = org.mockito.Mockito.mock(ClassSession.class);
+		UUID affectedId = UUID.randomUUID();
+		when(affected.getId()).thenReturn(affectedId);
+		when(rooms.findByIdForUpdate(room.getId())).thenReturn(Optional.of(room));
+		when(sessions.findRoomImpactsForUpdate(room.getId(), now, now, true, now)).thenReturn(List.of(affected));
+
+		assertThatThrownBy(() -> service.applyImpact(managerId, room.getId(), new RoomImpactPreviewRequest(
+			null, null, true, "Retire", List.of(), new RoomBulkResolutionRequest("CANCEL", null, "Cancel"),
+			List.of(new RoomSessionResolutionRequest(UUID.randomUUID(), "CANCEL", null, null, null, "Override")))))
+			.isInstanceOf(RoomException.class)
+			.satisfies(error -> {
+				RoomException exception = (RoomException) error;
+				assertThat(exception.getCode()).isEqualTo("VALIDATION_ERROR");
+				assertThat(exception.getField()).isEqualTo("resolutionOverrides");
+			});
 		verify(cancellationService, never()).cancel(any(), any(), any());
 		verify(roomService, never()).disableAfterImpactResolution(any(), any(), any());
 	}

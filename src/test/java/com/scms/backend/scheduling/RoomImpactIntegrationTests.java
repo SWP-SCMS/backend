@@ -61,13 +61,18 @@ class RoomImpactIntegrationTests {
 		assertThat(preview.sessions()).singleElement().extracting(RoomImpactPreviewResponse.SessionImpact::sessionId)
 			.isEqualTo(future.getId());
 
+		ClassSession discoveredAfterPreview = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass,
+			null, coach, source, Instant.parse("2030-01-02T02:00:00Z"), Instant.parse("2030-01-02T03:00:00Z"),
+			10, manager.getId()));
 		RoomResponse result = service.applyImpact(manager.getId(), source.getId(), new RoomImpactPreviewRequest(
-			null, null, true, "Room retired", List.of(new RoomSessionResolutionRequest(
-			future.getId(), "MOVE", target.getId(), null, null, "Move to replacement room"))));
+			null, null, true, "Room retired", List.of(),
+			new RoomBulkResolutionRequest("MOVE", target.getId(), null), List.of()));
 
 		assertThat(result.status()).isEqualTo(RoomStatus.INACTIVE);
 		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, future.getId()))
 			.isEqualTo(target.getId());
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class,
+			discoveredAfterPreview.getId())).isEqualTo(target.getId());
 		assertThat(sessions.findById(completed.getId()).orElseThrow().getStatus())
 			.isEqualTo(ClassSessionStatus.COMPLETED);
 		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, completed.getId()))
