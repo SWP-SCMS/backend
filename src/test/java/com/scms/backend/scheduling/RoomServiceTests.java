@@ -8,6 +8,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -94,6 +95,37 @@ class RoomServiceTests {
 
 		assertThatThrownBy(() -> service.list(managerId))
 			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+	}
+
+	@Test
+	void availabilityMapsExclusiveSharedAndSuspendedRooms() {
+		UUID managerId = activeManager();
+		Instant startTime = Instant.parse("2030-01-01T10:00:00Z");
+		Instant endTime = Instant.parse("2030-01-01T11:00:00Z");
+		RoomAvailabilityView exclusive = availabilityView("Studio A", RoomUsageMode.EXCLUSIVE, 20, 10, false);
+		RoomAvailabilityView shared = availabilityView("Studio B", RoomUsageMode.SHARED, 20, 12, false);
+		RoomAvailabilityView suspended = availabilityView("Studio C", RoomUsageMode.SHARED, 20, 0, true);
+		when(rooms.findAvailability(startTime, endTime, null)).thenReturn(List.of(exclusive, shared, suspended));
+
+		List<RoomAvailabilityResponse> result = service.availability(managerId, startTime, endTime, 8, null);
+
+		assertThat(result).extracting(RoomAvailabilityResponse::available)
+			.containsExactly(false, true, false);
+		assertThat(result).extracting(RoomAvailabilityResponse::availableCapacity)
+			.containsExactly(0L, 8L, 0L);
+	}
+
+	@Test
+	void availabilityRejectsInvalidIntervalAndCapacity() {
+		UUID managerId = activeManager();
+		Instant startTime = Instant.parse("2030-01-01T10:00:00Z");
+
+		assertThatThrownBy(() -> service.availability(managerId, startTime, startTime, 1, null))
+			.isInstanceOf(RoomException.class)
+			.extracting("field").isEqualTo("endTime");
+		assertThatThrownBy(() -> service.availability(managerId, startTime, startTime.plusSeconds(3600), 0, null))
+			.isInstanceOf(RoomException.class)
+			.extracting("field").isEqualTo("requestedCapacity");
 	}
 
 	@Test
@@ -207,5 +239,17 @@ class RoomServiceTests {
 
 	private Room room(int capacity) {
 		return new Room(UUID.randomUUID(), "Studio A", capacity, RoomStatus.ACTIVE);
+	}
+
+	private RoomAvailabilityView availabilityView(String name, RoomUsageMode usageMode, int capacity,
+			long occupiedCapacity, boolean suspended) {
+		RoomAvailabilityView view = org.mockito.Mockito.mock(RoomAvailabilityView.class);
+		when(view.getRoomId()).thenReturn(UUID.randomUUID());
+		when(view.getName()).thenReturn(name);
+		when(view.getUsageMode()).thenReturn(usageMode.name());
+		when(view.getCapacity()).thenReturn(capacity);
+		when(view.getOccupiedCapacity()).thenReturn(occupiedCapacity);
+		when(view.getSuspended()).thenReturn(suspended);
+		return view;
 	}
 }

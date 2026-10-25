@@ -186,6 +186,7 @@ class GeneratedOpenApiTests {
 		"GET /manager/disciplines/{disciplineId}",
 		"PATCH /manager/disciplines/{disciplineId}",
 		"GET /manager/rooms",
+		"GET /manager/rooms/availability",
 		"POST /manager/rooms",
 		"GET /manager/rooms/{roomId}",
 		"PATCH /manager/rooms/{roomId}",

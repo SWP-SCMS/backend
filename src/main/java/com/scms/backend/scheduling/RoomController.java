@@ -1,5 +1,6 @@
 package com.scms.backend.scheduling;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
@@ -32,6 +34,14 @@ public class RoomController {
 	@GetMapping
 	ResponseEntity<List<RoomResponse>> list(@AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.ok(service.list(accountId(jwt)));
+	}
+
+	@GetMapping("/availability")
+	ResponseEntity<List<RoomAvailabilityResponse>> availability(@AuthenticationPrincipal Jwt jwt,
+			@RequestParam Instant startTime, @RequestParam Instant endTime, @RequestParam Integer requestedCapacity,
+			@RequestParam(required = false) UUID excludeSessionId) {
+		return ResponseEntity.ok(service.availability(accountId(jwt), startTime, endTime, requestedCapacity,
+			excludeSessionId));
 	}
 
 	@PostMapping

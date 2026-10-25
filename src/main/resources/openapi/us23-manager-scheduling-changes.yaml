@@ -1,10 +1,28 @@
 openapi: 3.1.0
 info:
   title: SCMS Manager Scheduling Changes
-  version: v4.3
+  version: v4.4
 servers:
   - url: /api/v1
 paths:
+  /manager/rooms/availability:
+    get:
+      summary: Discover active rooms available for a time interval
+      operationId: discoverRoomAvailability
+      description: Read-only availability discovery. Session mutations revalidate room constraints transactionally.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {name: startTime, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: endTime, in: query, required: true, schema: {type: string, format: date-time}}
+        - {name: requestedCapacity, in: query, required: true, schema: {type: integer, minimum: 1}}
+        - {name: excludeSessionId, in: query, required: false, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Active rooms with interval occupancy and availability.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/RoomAvailabilityResponse'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /manager/classes/types:
     get:
       summary: List supported sport class types
@@ -319,6 +337,17 @@ components:
         capacity: {type: integer}
         status: {type: string, enum: [ACTIVE, INACTIVE]}
         usageMode: {type: string, enum: [EXCLUSIVE, SHARED]}
+    RoomAvailabilityResponse:
+      type: object
+      required: [roomId, name, usageMode, capacity, occupiedCapacity, availableCapacity, available]
+      properties:
+        roomId: {type: string, format: uuid}
+        name: {type: string}
+        usageMode: {type: string, enum: [EXCLUSIVE, SHARED]}
+        capacity: {type: integer, minimum: 1}
+        occupiedCapacity: {type: integer, format: int64, minimum: 0}
+        availableCapacity: {type: integer, format: int64, minimum: 0}
+        available: {type: boolean}
     ClassSessionPageResponse:
       type: object
       required: [content, page, size, totalElements, totalPages]

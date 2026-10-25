@@ -1,5 +1,6 @@
 package com.scms.backend.scheduling;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,6 +35,22 @@ public class RoomService {
 		ensureActiveManager(managerId);
 		Sort sort = Sort.by("name").ascending().and(Sort.by("id").ascending());
 		return rooms.findAll(sort).stream().map(RoomResponse::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	List<RoomAvailabilityResponse> availability(UUID managerId, Instant startTime, Instant endTime,
+			Integer requestedCapacity, UUID excludeSessionId) {
+		ensureActiveManager(managerId);
+		if (startTime == null) throw RoomException.validation("startTime", "is required");
+		if (endTime == null || !endTime.isAfter(startTime)) {
+			throw RoomException.validation("endTime", "must be later than startTime");
+		}
+		if (requestedCapacity == null || requestedCapacity <= 0) {
+			throw RoomException.validation("requestedCapacity", "must be greater than zero");
+		}
+		return rooms.findAvailability(startTime, endTime, excludeSessionId).stream()
+			.map(room -> availabilityResponse(room, requestedCapacity))
+			.toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -107,6 +124,18 @@ public class RoomService {
 	private Map<String, Object> snapshot(Room room) {
 		return Map.of("name", room.getName(), "capacity", room.getCapacity(), "status", room.getStatus().name(),
 			"usageMode", room.getUsageMode().name());
+	}
+
+	private RoomAvailabilityResponse availabilityResponse(RoomAvailabilityView room, int requestedCapacity) {
+		RoomUsageMode usageMode = RoomUsageMode.valueOf(room.getUsageMode());
+		long occupiedCapacity = room.getOccupiedCapacity();
+		long availableCapacity = room.getSuspended() || usageMode == RoomUsageMode.EXCLUSIVE && occupiedCapacity > 0
+			? 0 : Math.max(0, (long) room.getCapacity() - occupiedCapacity);
+		boolean available = !room.getSuspended() && requestedCapacity <= room.getCapacity()
+			&& (usageMode == RoomUsageMode.EXCLUSIVE
+			? occupiedCapacity == 0 : occupiedCapacity + requestedCapacity <= room.getCapacity());
+		return new RoomAvailabilityResponse(room.getRoomId(), room.getName(), usageMode, room.getCapacity(),
+			occupiedCapacity, availableCapacity, available);
 	}
 
 	private Room findRoom(UUID roomId) {

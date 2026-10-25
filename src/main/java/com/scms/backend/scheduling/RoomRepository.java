@@ -10,6 +10,27 @@ import org.springframework.data.repository.query.Param;
 
 public interface RoomRepository extends JpaRepository<Room, UUID> {
 
+	@Query(value = """
+		select room.id as "roomId", room.name as "name", room.usage_mode as "usageMode",
+		       room.capacity as "capacity", coalesce(sum(session.capacity), 0) as "occupiedCapacity",
+		       exists (
+		           select 1 from room_suspensions suspension
+		           where suspension.room_id = room.id
+		             and suspension.start_time < :endTime and suspension.end_time > :startTime
+		       ) as "suspended"
+		from rooms room
+		left join class_sessions session on session.room_id = room.id
+		 and session.status in ('SCHEDULED', 'IN_PROGRESS')
+		 and session.start_time < :endTime and session.end_time > :startTime
+		 and session.id <> coalesce(cast(:excludeSessionId as uuid),
+		     cast('00000000-0000-0000-0000-000000000000' as uuid))
+		where room.status = 'ACTIVE'
+		group by room.id, room.name, room.usage_mode, room.capacity
+		order by room.name, room.id
+		""", nativeQuery = true)
+	java.util.List<RoomAvailabilityView> findAvailability(@Param("startTime") java.time.Instant startTime,
+			@Param("endTime") java.time.Instant endTime, @Param("excludeSessionId") UUID excludeSessionId);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Room r where r.id = :id")
 	java.util.Optional<Room> findByIdForUpdate(@Param("id") UUID id);
