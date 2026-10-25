@@ -45,6 +45,10 @@ components:
         - activityAt
         - content
         - createdByAccountId
+        - coachName
+        - sessionName
+        - sessionStartTime
+        - className
         - createdAt
         - updatedAt
       properties:
@@ -58,6 +62,10 @@ components:
           type: object
           additionalProperties: true
         createdByAccountId: { type: string, format: uuid }
+        coachName: { type: string }
+        sessionName: { type: ["string", "null"] }
+        sessionStartTime: { type: ["string", "null"], format: date-time }
+        className: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     MemberTrainingResultPageResponse:

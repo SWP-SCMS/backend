@@ -47,7 +47,7 @@ class MemberTrainingResultControllerTests {
 		Instant activityAt = Instant.parse("2026-10-14T07:00:00Z");
 		var response = new MemberTrainingResultResponse(
 			UUID.randomUUID(), memberId, null, null, sessionId, activityAt, Map.of("notes", "Yoga"),
-			UUID.randomUUID(), activityAt, activityAt);
+			UUID.randomUUID(), "Coach A", "Vinyasa", activityAt, "Vinyasa", activityAt, activityAt);
 		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
 				new MemberTrainingResultPageResponse(List.of(response), 0, 20, 1, 1));
 
@@ -57,6 +57,9 @@ class MemberTrainingResultControllerTests {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.content[0].memberAccountId").value(memberId.toString()))
 			.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
+			.andExpect(jsonPath("$.content[0].coachName").value("Coach A"))
+			.andExpect(jsonPath("$.content[0].sessionName").value("Vinyasa"))
+			.andExpect(jsonPath("$.content[0].className").value("Vinyasa"))
 			.andExpect(jsonPath("$.content[0].content.notes").value("Yoga"))
 			.andExpect(jsonPath("$.totalElements").value(1));
 	}

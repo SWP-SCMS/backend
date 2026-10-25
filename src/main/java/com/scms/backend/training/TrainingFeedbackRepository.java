@@ -1,9 +1,11 @@
 package com.scms.backend.training;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.scms.backend.scheduling.SportClassType;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,18 +16,28 @@ import org.springframework.data.repository.query.Param;
 public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedback, UUID> {
 
 	@Query("""
-		select f as feedback, r.classSessionId as classSessionId
+		select f as feedback, r.classSessionId as classSessionId, coach.fullName as coachName,
+		  sportClass.name as sessionName, session.startTime as sessionStartTime,
+		  sportClass.classType as classType
 		from TrainingFeedback f
 		left join TrainingResult r on r.id = f.trainingResultId
+		join Account coach on coach.id = f.createdByAccountId
+		left join ClassSession session on session.id = r.classSessionId
+		left join session.sportClass sportClass
 		where f.memberAccountId = :memberId
 		order by f.createdAt desc, f.id desc
 		""")
 	List<MemberFeedbackHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
 
 	@Query(value = """
-		select f as feedback, r.classSessionId as classSessionId
+		select f as feedback, r.classSessionId as classSessionId, coach.fullName as coachName,
+		  sportClass.name as sessionName, session.startTime as sessionStartTime,
+		  sportClass.classType as classType
 		from TrainingFeedback f
 		left join TrainingResult r on r.id = f.trainingResultId
+		join Account coach on coach.id = f.createdByAccountId
+		left join ClassSession session on session.id = r.classSessionId
+		left join session.sportClass sportClass
 		where f.memberAccountId = :memberId
 		order by f.createdAt desc, f.id desc
 		""", countQuery = "select count(f) from TrainingFeedback f where f.memberAccountId = :memberId")
@@ -85,5 +97,9 @@ public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedba
 	interface MemberFeedbackHistoryView {
 		TrainingFeedback getFeedback();
 		UUID getClassSessionId();
+		String getCoachName();
+		String getSessionName();
+		Instant getSessionStartTime();
+		SportClassType getClassType();
 	}
 }

@@ -47,7 +47,7 @@ class MemberTrainingFeedbackControllerTests {
 		Instant now = Instant.parse("2026-10-15T08:00:00Z");
 		var response = new MemberTrainingFeedbackResponse(
 			UUID.randomUUID(), memberId, null, null, resultId, sessionId, "Session feedback",
-			UUID.randomUUID(), now, now);
+			UUID.randomUUID(), "Coach A", "Vinyasa", now, "Vinyasa", now, now);
 		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
 				new MemberTrainingFeedbackPageResponse(List.of(response), 0, 20, 1, 1));
 
@@ -58,6 +58,9 @@ class MemberTrainingFeedbackControllerTests {
 			.andExpect(jsonPath("$.content[0].memberAccountId").value(memberId.toString()))
 			.andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString()))
 			.andExpect(jsonPath("$.content[0].trainingResultId").value(resultId.toString()))
+			.andExpect(jsonPath("$.content[0].coachName").value("Coach A"))
+			.andExpect(jsonPath("$.content[0].sessionName").value("Vinyasa"))
+			.andExpect(jsonPath("$.content[0].className").value("Vinyasa"))
 			.andExpect(jsonPath("$.content[0].content").value("Session feedback"))
 			.andExpect(jsonPath("$.totalElements").value(1));
 	}
