@@ -294,7 +294,8 @@ components:
       properties: { decisionNote: { type: string, maxLength: 1000 } }
     ManualActivationResponse:
       type: object
-      required: [requestId, accountId, memberId, maskedEmail, requestedByAccountId, reasonCode,
+      required: [requestId, accountId, memberId, maskedEmail, requestedByAccountId, requestedByName,
+        requestedByRole, reasonCode,
         reasonDetail, verificationMethod, evidenceNote, status, requestedAt, expiresAt]
       properties:
         requestId: { type: string, format: uuid }
@@ -302,6 +303,8 @@ components:
         memberId: { type: string }
         maskedEmail: { type: string }
         requestedByAccountId: { type: string, format: uuid }
+        requestedByName: { type: string }
+        requestedByRole: { type: string, enum: [RECEPTIONIST] }
         reasonCode: { type: string, enum: [EMAIL_DELIVERY_FAILED, MEMBER_CANNOT_ACCESS_EMAIL, ACCESSIBILITY_SUPPORT, OTHER] }
         reasonDetail: { type: string }
         verificationMethod: { type: string, enum: [IN_PERSON_GOVERNMENT_ID_CHECK, IN_PERSON_PROFILE_AND_REGISTERED_PHONE_MATCH, OTHER_APPROVED_PROCEDURE] }

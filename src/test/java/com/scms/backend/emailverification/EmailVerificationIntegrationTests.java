@@ -116,6 +116,14 @@ class EmailVerificationIntegrationTests {
 		ManualActivationResponse request=manual.create(receptionist,new ManualActivationCreateRequest(memberId,
 			ManualActivationReasonCode.MEMBER_CANNOT_ACCESS_EMAIL,"Mailbox unavailable",
 			ManualVerificationMethod.IN_PERSON_GOVERNMENT_ID_CHECK,"Original document checked in person",true));
+		assertThat(request.requestedByName()).isEqualTo("RECEPTIONIST");
+		assertThat(request.requestedByRole()).isEqualTo(AccountRole.RECEPTIONIST);
+		db.update("update accounts set full_name='Renamed Receptionist',status='INACTIVE' where id=?",receptionist);
+		ManualActivationResponse historical=manual.getForActor(manager,request.requestId(),AccountRole.MANAGER);
+		assertThat(historical.requestedByName()).isEqualTo("RECEPTIONIST");
+		assertThat(historical.requestedByRole()).isEqualTo(AccountRole.RECEPTIONIST);
+		assertThat(manual.list(manager,AccountRole.MANAGER,ManualActivationStatus.PENDING,0,20).content())
+			.extracting(ManualActivationResponse::requestedByName).contains("RECEPTIONIST");
 		ManualActivationResponse approved=manual.approve(manager,request.requestId(),new ManualActivationDecisionRequest("Evidence reviewed"));
 		assertThat(approved.status()).isEqualTo(ManualActivationStatus.APPROVED);
 		assertThat(db.queryForObject("select status from accounts where id=?",String.class,approved.accountId())).isEqualTo("ACTIVE");
