@@ -47,6 +47,7 @@ class ManualActivationService {
 	@Transactional
 	ManualActivationResponse create(UUID receptionist,ManualActivationCreateRequest request){ensure(receptionist,AccountRole.RECEPTIONIST);
 		limits.check("MANUAL_CREATE_ACTOR",receptionist.toString(),10,Duration.ofHours(1));Instant now=clock.instant();
+		RequesterSnapshot requester=requesterSnapshot(receptionist);
 		var rows=db.query("""
 			select a.id,p.member_code,a.email,a.registration_expires_at from accounts a join member_profiles p on p.account_id=a.id
 			where upper(p.member_code)=upper(?) for update of a
@@ -55,10 +56,12 @@ class ManualActivationService {
 		Integer eligible=db.queryForObject("select count(*) from accounts where id=? and role='MEMBER' and status='INACTIVE' and email_verification_required=true and registration_expires_at>?",Integer.class,pending.id(),Timestamp.from(now));
 		if(eligible==null||eligible!=1)throw error(HttpStatus.CONFLICT,"MANUAL_ACTIVATION_NOT_ELIGIBLE","Account is not eligible for manual activation.");
 		UUID id=UUID.randomUUID();try{db.update("""
-			insert into email_verification_manual_activation_requests(id,account_id,requested_by_account_id,reason_code,
-			 reason_detail,verification_method,evidence_note,status,requested_at,expires_at)
-			values (?,?,?,?,?,?,?,'PENDING',?,?)
-			""",id,pending.id(),receptionist,request.reasonCode().name(),request.reasonDetail().trim(),request.verificationMethod().name(),
+			insert into email_verification_manual_activation_requests(id,account_id,requested_by_account_id,
+			 requested_by_name_snapshot,requested_by_role_snapshot,reason_code,reason_detail,verification_method,
+			 evidence_note,status,requested_at,expires_at)
+			values (?,?,?,?,?,?,?,?,?,'PENDING',?,?)
+			""",id,pending.id(),receptionist,requester.name(),requester.role().name(),request.reasonCode().name(),
+			request.reasonDetail().trim(),request.verificationMethod().name(),
 			request.evidenceNote().trim(),Timestamp.from(now),Timestamp.from(pending.expiresAt()));}
 		catch(DataIntegrityViolationException ex){throw error(HttpStatus.CONFLICT,"MANUAL_ACTIVATION_REQUEST_PENDING","A manual activation request is already pending.");}
 		audits.save(new AuditEvent(UUID.randomUUID(),receptionist,"MANUAL_ACTIVATION_REQUESTED","MANUAL_ACTIVATION_REQUEST",id,
@@ -110,14 +113,18 @@ class ManualActivationService {
 	private RequestLock lockRequest(UUID id){List<RequestLock> rows=db.query("select account_id,requested_by_account_id,status,expires_at,reason_code,verification_method from email_verification_manual_activation_requests where id=? for update",(rs,n)->new RequestLock(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),ManualActivationStatus.valueOf(rs.getString(3)),rs.getTimestamp(4).toInstant(),rs.getString(5),rs.getString(6)),id);if(rows.isEmpty())throw error(HttpStatus.NOT_FOUND,"MANUAL_ACTIVATION_REQUEST_NOT_FOUND","Manual activation request was not found.");return rows.getFirst();}
 	private void terminateArtifacts(UUID account,Instant now){db.update("update email_verification_challenges set superseded_at=coalesce(superseded_at,?),updated_at=?,version=version+1 where account_id=? and consumed_at is null",Timestamp.from(now),Timestamp.from(now),account);db.update("update email_verification_sessions set revoked_at=coalesce(revoked_at,?),updated_at=? where account_id=?",Timestamp.from(now),Timestamp.from(now),account);db.update("update email_outbox set status='CANCELLED',payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,updated_at=? where account_id=? and status in ('PENDING','FAILED','PROCESSING')",Timestamp.from(now),account);}
 	private void ensure(UUID id,AccountRole role){if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE))throw new InvalidAuthenticatedAccountException();}
+	private RequesterSnapshot requesterSnapshot(UUID id){return db.queryForObject(
+		"select full_name,role from accounts where id=?",(rs,n)->new RequesterSnapshot(rs.getString(1),AccountRole.valueOf(rs.getString(2))),id);}
 	private void validatePage(int page,int size){if(page<0||size<1||size>100)throw error(HttpStatus.BAD_REQUEST,"VALIDATION_ERROR","page must be >= 0 and size between 1 and 100.");}
 	private EmailVerificationException error(HttpStatus status,String code,String message){return new EmailVerificationException(status,code,message);}
 	private String baseSelect(){return """
-		select r.id,r.account_id,p.member_code,a.email,r.requested_by_account_id,r.reason_code,r.reason_detail,
+		select r.id,r.account_id,p.member_code,a.email,r.requested_by_account_id,r.requested_by_name_snapshot,
+		 r.requested_by_role_snapshot,r.reason_code,r.reason_detail,
 		 r.verification_method,r.evidence_note,r.status,r.reviewed_by_account_id,r.decision_note,r.requested_at,r.reviewed_at,r.expires_at
 		from email_verification_manual_activation_requests r join accounts a on a.id=r.account_id join member_profiles p on p.account_id=a.id
 		""";}
-	private ManualActivationResponse map(ResultSet rs,int n)throws SQLException{return new ManualActivationResponse(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),EmailVerificationService.mask(rs.getString(4)),rs.getObject(5,UUID.class),ManualActivationReasonCode.valueOf(rs.getString(6)),rs.getString(7),ManualVerificationMethod.valueOf(rs.getString(8)),rs.getString(9),ManualActivationStatus.valueOf(rs.getString(10)),rs.getObject(11,UUID.class),rs.getString(12),rs.getTimestamp(13).toInstant(),rs.getTimestamp(14)==null?null:rs.getTimestamp(14).toInstant(),rs.getTimestamp(15).toInstant());}
+	private ManualActivationResponse map(ResultSet rs,int n)throws SQLException{return new ManualActivationResponse(rs.getObject(1,UUID.class),rs.getObject(2,UUID.class),rs.getString(3),EmailVerificationService.mask(rs.getString(4)),rs.getObject(5,UUID.class),rs.getString(6),AccountRole.valueOf(rs.getString(7)),ManualActivationReasonCode.valueOf(rs.getString(8)),rs.getString(9),ManualVerificationMethod.valueOf(rs.getString(10)),rs.getString(11),ManualActivationStatus.valueOf(rs.getString(12)),rs.getObject(13,UUID.class),rs.getString(14),rs.getTimestamp(15).toInstant(),rs.getTimestamp(16)==null?null:rs.getTimestamp(16).toInstant(),rs.getTimestamp(17).toInstant());}
 	private record PendingAccount(UUID id,String memberCode,String email,Instant expiresAt){}
+	private record RequesterSnapshot(String name,AccountRole role){}
 	private record RequestLock(UUID accountId,UUID requestedBy,ManualActivationStatus status,Instant expiresAt,String reasonCode,String verificationMethod){}
 }

@@ -579,7 +579,7 @@ class GeneratedOpenApiTests {
 		JsonNode manualActivation = document.at("/components/schemas/ManualActivationResponse/properties");
 		assertThat(manualActivation.properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.contains("reasonCode", "reasonDetail", "verificationMethod", "evidenceNote",
-				"reviewedByAccountId", "decisionNote");
+				"requestedByName", "requestedByRole", "reviewedByAccountId", "decisionNote");
 		for (String path : List.of("/reception/email-verification/manual-activation-requests",
 				"/manager/email-verification/manual-activation-requests")) {
 			JsonNode parameters = operation(document, path, "get").path("parameters");

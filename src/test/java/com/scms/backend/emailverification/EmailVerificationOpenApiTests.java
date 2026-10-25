@@ -28,7 +28,7 @@ class EmailVerificationOpenApiTests {
 			Map<String,Object> response=(Map<String,Object>)schemas.get("ManualActivationResponse");
 			Map<String,Object> properties=(Map<String,Object>)response.get("properties");
 			assertThat(properties).containsKeys("reasonCode","reasonDetail","verificationMethod","evidenceNote",
-				"reviewedByAccountId","decisionNote");
+				"requestedByName","requestedByRole","reviewedByAccountId","decisionNote");
 			assertThat(((Map<String,Object>)((Map<String,Object>)components.get("parameters")).get("Size"))
 				.toString()).contains("maximum=100");
 		}
