@@ -57,6 +57,24 @@ class RecurringScheduleIntegrationTests {
 
 	@Test
 	@Transactional
+	void persistsRequestedSessionCount() {
+		Fixture fixture = fixture();
+		RecurringScheduleCreateRequest request = new RecurringScheduleCreateRequest(fixture.classId(),
+			fixture.coachId(), fixture.roomId(), LocalDate.of(2030, 1, 1), List.of(1, 3, 5),
+			LocalTime.of(9, 0), LocalTime.of(10, 0), 12, 4);
+
+		RecurringScheduleResponse response = service.create(fixture.managerId(), request);
+
+		assertThat(response.sessionCount()).isEqualTo(4);
+		assertThat(response.sessionIds()).hasSize(4);
+		assertThat(jdbc.queryForObject("select session_count from recurring_schedules where id = ?", Integer.class,
+			response.id())).isEqualTo(4);
+		assertThat(jdbc.queryForObject("select count(*) from class_sessions where recurring_schedule_id = ?",
+			Long.class, response.id())).isEqualTo(4L);
+	}
+
+	@Test
+	@Transactional
 	void oneOverlappingOccurrenceRejectsTheWholeSecondBatch() {
 		Fixture fixture = fixture();
 		service.create(fixture.managerId(), request(fixture));

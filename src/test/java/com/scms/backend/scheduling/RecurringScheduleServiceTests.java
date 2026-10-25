@@ -80,6 +80,44 @@ class RecurringScheduleServiceTests {
 	}
 
 	@Test
+	void managerCanChooseSessionCount() {
+		UUID managerId = manager(AccountStatus.ACTIVE);
+		SportClass sportClass = sportClass(DisciplineStatus.ACTIVE, SportClassStatus.ACTIVE);
+		Room room = room(RoomStatus.ACTIVE, 20);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		stubActiveResources(sportClass, room, coach);
+		when(schedules.saveAndFlush(any(RecurringSchedule.class)))
+			.thenAnswer(invocation -> invocation.getArgument(0));
+		when(sessions.saveAllAndFlush(any())).thenAnswer(invocation -> invocation.getArgument(0));
+		RecurringScheduleCreateRequest request = new RecurringScheduleCreateRequest(sportClass.getId(), coach.getId(),
+			room.getId(), LocalDate.of(2026, 10, 6), List.of(2, 4), LocalTime.of(9, 0),
+			LocalTime.of(10, 0), 10, 3);
+
+		RecurringScheduleResponse result = service.create(managerId, request);
+
+		assertThat(result.sessionCount()).isEqualTo(3);
+		assertThat(result.sessionIds()).hasSize(3);
+		ArgumentCaptor<List<ClassSession>> created = ArgumentCaptor.forClass(List.class);
+		verify(sessions).saveAllAndFlush(created.capture());
+		assertThat(created.getValue()).hasSize(3);
+	}
+
+	@Test
+	void sessionCountMustBeBetweenOneAndOneHundred() {
+		UUID managerId = manager(AccountStatus.ACTIVE);
+		for (int sessionCount : List.of(0, 101)) {
+			RecurringScheduleCreateRequest request = new RecurringScheduleCreateRequest(UUID.randomUUID(),
+				UUID.randomUUID(), UUID.randomUUID(), LocalDate.of(2026, 10, 6), List.of(2),
+				LocalTime.of(9, 0), LocalTime.of(10, 0), 10, sessionCount);
+
+			assertThatThrownBy(() -> service.create(managerId, request))
+				.isInstanceOf(RecurringScheduleException.class)
+				.extracting("field").isEqualTo("sessionCount");
+		}
+		verify(schedules, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void inactiveManagerCannotCreateSchedule() {
 		UUID managerId = manager(AccountStatus.INACTIVE);
 

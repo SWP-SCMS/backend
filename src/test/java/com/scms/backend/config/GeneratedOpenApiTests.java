@@ -828,6 +828,30 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void recurringScheduleContractDocumentsOptionalBoundedSessionCount() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode generatedCount = generated.at(
+			"/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
+		assertThat(generatedCount.path("minimum").asInt()).isEqualTo(1);
+		assertThat(generatedCount.path("maximum").asInt()).isEqualTo(100);
+		assertThat(generatedCount.path("default").asInt()).isEqualTo(30);
+		assertThat(generated.at("/components/schemas/RecurringScheduleCreateRequest/required").toString())
+			.doesNotContain("sessionCount");
+
+		try (var stream = getClass().getResourceAsStream("/openapi/us23-manager-scheduling-changes.yaml")) {
+			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
+				.readTree(stream);
+			JsonNode documentedCount = documented.at(
+				"/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
+			assertThat(documentedCount.path("minimum").asInt()).isEqualTo(1);
+			assertThat(documentedCount.path("maximum").asInt()).isEqualTo(100);
+			assertThat(documentedCount.path("default").asInt()).isEqualTo(30);
+			assertThat(response(documented, "/manager/recurring-schedules", "post", "201")
+				.isMissingNode()).isFalse();
+		}
+	}
+
+	@Test
 	void generatedAndStaticContractsDescribeRoomSuspensionExtension() throws Exception {
 		JsonNode generated = generatedDocument();
 		JsonNode generatedPatch = operation(generated,

@@ -23,6 +23,23 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /manager/recurring-schedules:
+    post:
+      summary: Create a recurring schedule with a configurable Session count
+      operationId: createRecurringSchedule
+      description: Defaults sessionCount to 30 when omitted and validates every occurrence before writing.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RecurringScheduleCreateRequest'}}}
+      responses:
+        '201':
+          description: Recurring schedule and all requested Sessions created atomically.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RecurringScheduleResponse'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/classes/types:
     get:
       summary: List supported sport class types
@@ -241,6 +258,32 @@ components:
       required: true
       schema: {type: string, format: uuid}
   schemas:
+    RecurringScheduleCreateRequest:
+      type: object
+      required: [classId, coachId, roomId, startDate, weekdays, startTime, endTime, capacity]
+      properties:
+        classId: {type: string, format: uuid}
+        coachId: {type: string, format: uuid}
+        roomId: {type: string, format: uuid}
+        startDate: {type: string, format: date}
+        weekdays:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          items: {type: integer, minimum: 1, maximum: 7}
+        startTime: {type: string, format: time}
+        endTime: {type: string, format: time}
+        capacity: {type: integer, minimum: 1}
+        sessionCount: {type: integer, minimum: 1, maximum: 100, default: 30}
+    RecurringScheduleResponse:
+      type: object
+      required: [id, sessionCount, sessionIds]
+      properties:
+        id: {type: string, format: uuid}
+        sessionCount: {type: integer, minimum: 1, maximum: 100}
+        sessionIds:
+          type: array
+          items: {type: string, format: uuid}
     AvailableCoachResponse:
       type: object
       required: [coachAccountId, fullName, phone]
