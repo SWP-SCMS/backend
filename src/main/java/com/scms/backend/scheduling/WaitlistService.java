@@ -114,6 +114,7 @@ class WaitlistService {
 		}
 		return membershipId;
 	}
+	boolean tryLockMember(UUID memberId){ return accounts.tryLockById(memberId).isPresent(); }
 	private Account ensureActiveMember(UUID id){ Account account=accounts.findByIdForUpdate(id).or(()->accounts.findById(id)).orElseThrow(BookingException::memberNotActive); if(account.getRole()!=AccountRole.MEMBER||account.getStatus()!=AccountStatus.ACTIVE) throw BookingException.memberNotActive(); return account; }
 	private void ensureRole(UUID id,AccountRole role){ if(!accounts.existsByIdAndRoleAndStatus(id,role,AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
 	private WaitlistResponse response(SessionWaitlist entry){

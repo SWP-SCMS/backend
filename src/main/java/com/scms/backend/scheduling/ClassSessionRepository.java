@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.data.domain.Pageable;
 
 public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID>,
 		JpaSpecificationExecutor<ClassSession> {
@@ -43,6 +44,22 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("select session from ClassSession session where session.id = :id")
 	java.util.Optional<ClassSession> findByIdForUpdate(@Param("id") UUID id);
+
+	@Query(value = """
+		select session.id
+		from class_sessions session
+		where session.status = 'SCHEDULED' and session.start_time > :now
+		  and (cast(:cursor as uuid) is null or session.id > cast(:cursor as uuid))
+		  and exists (
+			select 1 from session_waitlists entry
+			where entry.class_session_id = session.id and entry.status = 'WAITING'
+		  )
+		  and (select count(*) from bookings booking
+			where booking.class_session_id = session.id and booking.status = 'BOOKED') < session.capacity
+		order by session.id
+		""", nativeQuery = true)
+	List<UUID> findWaitlistPromotionCandidateIds(@Param("now") Instant now, @Param("cursor") UUID cursor,
+		Pageable pageable);
 
 	@Query("select session.room.id from ClassSession session where session.id = :id")
 	java.util.Optional<UUID> findRoomIdById(@Param("id") UUID id);

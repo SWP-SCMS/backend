@@ -1,8 +1,10 @@
 package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -35,6 +37,8 @@ class WaitlistPromotionServiceTests {
 		ClassSession session=session(); SessionWaitlist first=entry(session),second=entry(session);
 		when(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)).thenReturn(0L,0L,1L);
 		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(first,second),List.of(second));
+		when(eligibility.tryLockMember(first.getMemberId())).thenReturn(true);
+		when(eligibility.tryLockMember(second.getMemberId())).thenReturn(true);
 		when(eligibility.validateEligibility(first.getMemberId(),session)).thenThrow(BookingException.timeConflict());
 		UUID membershipId=UUID.randomUUID(); when(eligibility.validateEligibility(second.getMemberId(),session)).thenReturn(membershipId);
 		when(bookings.saveAndFlush(any())).thenAnswer(invocation->invocation.getArgument(0));
@@ -64,6 +68,21 @@ class WaitlistPromotionServiceTests {
 		verify(sessions,times(1)).findByIdForUpdate(scheduled.getId());
 		verify(sessions,times(1)).findByIdForUpdate(cancelled.getId());
 		verify(bookings,times(1)).countByClassSessionIdAndStatus(scheduled.getId(),BookingStatus.BOOKED);
+	}
+
+	@Test void busyHeadMemberDefersTheSessionWithoutSkippingOrBypassing(){
+		ClassSession session=session(); SessionWaitlist head=entry(session);
+		when(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)).thenReturn(0L);
+		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(head));
+		when(eligibility.tryLockMember(head.getMemberId())).thenReturn(false);
+		WaitlistPromotionService service=new WaitlistPromotionService(waitlists,bookings,eligibility,audits,notifications,sessions,Clock.fixed(now,ZoneOffset.UTC));
+
+		assertThatCode(()->service.promoteAvailable(session)).doesNotThrowAnyException();
+
+		assertThat(head.getStatus()).isEqualTo(WaitlistStatus.WAITING);
+		verify(bookings,never()).saveAndFlush(any());
+		verify(audits,never()).save(any());
+		verify(notifications,never()).write(any(),any(),any(),any(),any(),any());
 	}
 
 	private SessionWaitlist entry(ClassSession session){return new SessionWaitlist(UUID.randomUUID(),session.getId(),UUID.randomUUID(),UUID.randomUUID(),"MEMBER",now.minusSeconds(60));}

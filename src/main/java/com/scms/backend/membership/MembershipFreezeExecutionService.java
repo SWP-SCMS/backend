@@ -15,13 +15,15 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
-import com.scms.backend.scheduling.WaitlistPromotionService;
+import com.scms.backend.scheduling.WaitlistPromotionCoordinator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Service
 class MembershipFreezeExecutionService {
@@ -31,22 +33,22 @@ class MembershipFreezeExecutionService {
 	private final MembershipRepository memberships;
 	private final AccountRepository accounts;
 	private final BookingRepository bookings;
-	private final WaitlistPromotionService waitlistPromotions;
 	private final CenterVisitRepository visits;
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final JdbcTemplate db;
 	private final Clock clock;
 	private final TransactionTemplate transactions;
+	private final WaitlistPromotionCoordinator waitlistPromotions;
 
 	MembershipFreezeExecutionService(MembershipFreezeRequestRepository requests, MembershipRepository memberships,
-			AccountRepository accounts, BookingRepository bookings, WaitlistPromotionService waitlistPromotions,
-			CenterVisitRepository visits, AuditEventRepository audits,
-			NotificationWriter notifications, JdbcTemplate db, Clock clock, PlatformTransactionManager transactionManager) {
+			AccountRepository accounts, BookingRepository bookings, CenterVisitRepository visits, AuditEventRepository audits,
+			NotificationWriter notifications, JdbcTemplate db, Clock clock, PlatformTransactionManager transactionManager,
+			WaitlistPromotionCoordinator waitlistPromotions) {
 		this.requests = requests; this.memberships = memberships; this.accounts = accounts; this.bookings = bookings;
-		this.waitlistPromotions = waitlistPromotions;
 		this.visits = visits; this.audits = audits; this.notifications = notifications; this.db = db; this.clock = clock;
 		this.transactions = new TransactionTemplate(transactionManager);
+		this.waitlistPromotions = waitlistPromotions;
 	}
 
 	void reconcileDue(Instant now) {
@@ -105,15 +107,22 @@ class MembershipFreezeExecutionService {
 		request.activate(); requests.saveAndFlush(request);
 		Instant start = request.getStartDate().atStartOfDay(BUSINESS_ZONE).toInstant();
 		Instant end = request.getEndDate().atStartOfDay(BUSINESS_ZONE).toInstant();
-		var freedSessionIds = bookings.findFutureSessionIdsForMembershipFreeze(
-			request.getMemberAccountId(), start, end, now);
-		bookings.cancelFutureBookingsForMembershipFreeze(request.getMemberAccountId(), null, start, end, now);
-		waitlistPromotions.promoteAvailableBySessionIds(freedSessionIds);
+		var cancelledSessionIds = bookings.cancelFutureBookingsForMembershipFreeze(
+			request.getMemberAccountId(), null, start, end, now);
 		visits.checkoutOpenForMembershipFreeze(request.getMemberAccountId(), null, now);
 		audits.save(new AuditEvent(UUID.randomUUID(), "MEMBERSHIP_FREEZE_ACTIVATED", "MEMBERSHIP_FREEZE_REQUEST", requestId,
 			Map.of("membershipId", request.getMembershipId().toString(), "startDate", request.getStartDate().toString(), "endDate", request.getEndDate().toString())));
 		notifications.write("MEMBERSHIP_FREEZE_ACTIVE:" + requestId, request.getMemberAccountId(), "MEMBERSHIP_FREEZE_ACTIVE",
 			"MEMBERSHIP_FREEZE_REQUEST", requestId, Map.of("startDate", request.getStartDate().toString(), "endDate", request.getEndDate().toString()));
+		promoteAfterCommit(cancelledSessionIds);
+	}
+
+	private void promoteAfterCommit(java.util.List<UUID> sessionIds) {
+		if (sessionIds.isEmpty()) return;
+		var uniqueSessionIds = sessionIds.stream().distinct().toList();
+		TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+			@Override public void afterCommit() { uniqueSessionIds.forEach(waitlistPromotions::promote); }
+		});
 	}
 
 	void complete(UUID requestId, LocalDate today) {

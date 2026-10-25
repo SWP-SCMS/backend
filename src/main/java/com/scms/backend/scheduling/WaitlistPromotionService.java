@@ -34,6 +34,7 @@ public class WaitlistPromotionService {
 		while(bookings.countByClassSessionIdAndStatus(session.getId(),BookingStatus.BOOKED)<session.getCapacity()){
 			List<SessionWaitlist> waiting=waitlists.findWaitingBySessionForUpdate(session.getId()); if(waiting.isEmpty()) return;
 			SessionWaitlist entry=waiting.getFirst(); UUID membershipId;
+			if(!eligibility.tryLockMember(entry.getMemberId())) return;
 			try { membershipId=eligibility.validateEligibility(entry.getMemberId(),session); }
 			catch(BookingException exception){
 				entry.skip(exception.getCode(),now); waitlists.save(entry);

@@ -15,6 +15,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -27,6 +29,7 @@ class MembershipFreezeExecutionIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 	@Autowired JdbcTemplate jdbc;
 	@Autowired MembershipFreezeExecutionService execution;
+	@Autowired PlatformTransactionManager transactionManager;
 
 	@Test
 	void databaseInstallsTheActiveFreezeBookingAuthority() {
@@ -74,7 +77,6 @@ class MembershipFreezeExecutionIntegrationTests {
 	}
 
 	@Test
-	@org.springframework.transaction.annotation.Transactional
 	void activatingFreezePromotesEligibleWaitlistMember() {
 		Instant now = Instant.now();
 		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
@@ -98,7 +100,7 @@ class MembershipFreezeExecutionIntegrationTests {
 		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')",
 			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(1)));
 
-		execution.activate(request, today, now);
+		new TransactionTemplate(transactionManager).executeWithoutResult(ignored -> execution.activate(request, today, now));
 
 		assertThat(jdbc.queryForObject("select status from bookings where id=?", String.class, booking))
 			.isEqualTo("CANCELLED");
@@ -106,6 +108,43 @@ class MembershipFreezeExecutionIntegrationTests {
 			.isEqualTo("PROMOTED");
 		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and membership_id=? and status='BOOKED'",
 			Long.class, session, waitingMember, waitingMembership)).isOne();
+	}
+
+	@Test
+	void activationCancelsBookingAndPromotesWaitlistAfterCommit() {
+		Instant now = Instant.now();
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		UUID manager = account("MANAGER");
+		UUID holder = account("MEMBER");
+		UUID waiter = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID holderMembership = membership(holder, manager, now);
+		UUID waiterMembership = membership(waiter, manager, now);
+		UUID session = futureSession(manager, coach, now.plusSeconds(3600), 1);
+		UUID booking = UUID.randomUUID();
+		jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
+			booking, session, holder, holderMembership, holder);
+		UUID waitlist = UUID.randomUUID();
+		jdbc.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source) values(?,?,?,'WAITING',?,'MEMBER')",
+			waitlist, session, waiter, waiter);
+		UUID request = UUID.randomUUID();
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,approver_account_id,start_date,end_date,reason,fee_amount,status,approved_at) values(?,?,?,?,?,?,?,'integration',0,'SCHEDULED',?)",
+			request, holderMembership, holder, holder, manager, java.sql.Date.valueOf(today),
+			java.sql.Date.valueOf(today.plusDays(2)), Timestamp.from(now.minusSeconds(60)));
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')",
+			UUID.randomUUID(), request, holderMembership, java.sql.Date.valueOf(today),
+			java.sql.Date.valueOf(today.plusDays(2)));
+
+		new TransactionTemplate(transactionManager).executeWithoutResult(ignored -> execution.activate(request, today, now));
+
+		assertThat(jdbc.queryForObject("select status from bookings where id=?", String.class, booking))
+			.isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select cancellation_source from bookings where id=?", String.class, booking))
+			.isEqualTo("MEMBERSHIP_FREEZE");
+		assertThat(jdbc.queryForObject("select status from session_waitlists where id=?", String.class, waitlist))
+			.isEqualTo("PROMOTED");
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? "
+			+ "and membership_id=? and status='BOOKED'", Long.class, session, waiter, waiterMembership)).isOne();
 	}
 
 	private UUID account(String role) {
@@ -129,12 +168,17 @@ class MembershipFreezeExecutionIntegrationTests {
 	}
 
 	private UUID futureSession(UUID manager, UUID coach, Instant start) {
+		return futureSession(manager, coach, start, 10);
+	}
+
+	private UUID futureSession(UUID manager, UUID coach, Instant start, int capacity) {
 		UUID discipline = UUID.randomUUID(); UUID sportClass = UUID.randomUUID(); UUID room = UUID.randomUUID(); UUID session = UUID.randomUUID();
 		jdbc.update("insert into disciplines(id,name,description,status) values(?,?,?,'ACTIVE')", discipline, "Freeze discipline " + discipline, "Freeze");
 		jdbc.update("insert into sport_classes(id,discipline_id,name,class_type,description,status) values(?,?,?,'GROUP',?,'ACTIVE')", sportClass, discipline, "Freeze class " + sportClass, "Freeze");
 		jdbc.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')", room, "Freeze room " + room);
-		jdbc.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,? ,10,'SCHEDULED',?)",
-			session, sportClass, coach, room, Timestamp.from(start), Timestamp.from(start.plusSeconds(3600)), manager);
+		jdbc.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,?,?,'SCHEDULED',?)",
+			session, sportClass, coach, room, Timestamp.from(start), Timestamp.from(start.plusSeconds(3600)), capacity,
+			manager);
 		return session;
 	}
 }

@@ -1,6 +1,9 @@
 package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -11,6 +14,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import com.scms.backend.scheduling.WaitlistPromotionCoordinator;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -25,6 +30,7 @@ class MembershipTerminationExecutionIntegrationTests {
 
 	@Autowired JdbcTemplate db;
 	@Autowired MembershipTerminationExecutionService execution;
+	@MockitoSpyBean WaitlistPromotionCoordinator promotions;
 
 	@Test
 	void immediateExecutionCleansUpAllFutureMemberActivityAtomically() {
@@ -39,7 +45,7 @@ class MembershipTerminationExecutionIntegrationTests {
 		UUID visit = openVisit(member, membership, now.minusSeconds(600));
 		UUID session = futureSession(manager, coach, now.plusSeconds(3600));
 		UUID booking = booking(member, membership, session, now);
-		UUID waitlist = waitlist(waitingMember, session, now);
+		UUID waitlist = waitlist(session, waitingMember, now);
 		UUID assignment = assignment(member, coach, manager, now.minusSeconds(1800));
 		UUID request = approvedRequest(membership, member, manager, now);
 
@@ -60,6 +66,76 @@ class MembershipTerminationExecutionIntegrationTests {
 			request, "MEMBERSHIP_TERMINATION_EXECUTED")).isOne();
 		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type=?",
 			Long.class, request, "MEMBERSHIP_TERMINATION_EXECUTED")).isOne();
+	}
+
+	@Test
+	void immediateExecutionPromotesFifoAndSkipsOnlyGenuinelyIneligibleMembers() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		UUID holder = account("MEMBER");
+		UUID ineligible = account("MEMBER");
+		UUID eligible = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID offer = offer(manager);
+		UUID holderMembership = membership(holder, manager, offer, now);
+		UUID eligibleMembership = membership(eligible, manager, offer(manager), now);
+		UUID session = futureSession(manager, coach, now.plusSeconds(3600), 1);
+		booking(holder, holderMembership, session, now);
+		UUID ineligibleEntry = waitlist(session, ineligible, now.minusSeconds(120));
+		UUID eligibleEntry = waitlist(session, eligible, now.minusSeconds(60));
+		UUID request = approvedRequest(holderMembership, holder, manager, now);
+
+		execution.executeImmediate(request, manager, now);
+
+		assertThat(status("session_waitlists", ineligibleEntry)).isEqualTo("SKIPPED");
+		assertThat(db.queryForObject("select terminal_reason_code from session_waitlists where id=?", String.class,
+			ineligibleEntry)).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+		assertThat(status("session_waitlists", eligibleEntry)).isEqualTo("PROMOTED");
+		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? "
+			+ "and membership_id=? and status='BOOKED'", Long.class, session, eligible, eligibleMembership)).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='WAITLIST_PROMOTED'",
+			Long.class, eligibleEntry)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where event_key=?", Long.class,
+			"waitlist-promoted:" + eligibleEntry)).isOne();
+	}
+
+	@Test
+	void rolledBackTerminationDoesNotDispatchPromotion() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		UUID holder = account("MEMBER");
+		UUID waiter = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID holderMembership = membership(holder, manager, offer(manager), now);
+		membership(waiter, manager, offer(manager), now);
+		UUID session = futureSession(manager, coach, now.plusSeconds(3600), 1);
+		UUID booking = booking(holder, holderMembership, session, now);
+		UUID waitlist = waitlist(session, waiter, now.minusSeconds(60));
+		UUID request = approvedRequest(holderMembership, holder, manager, now);
+		db.execute("""
+			create function fail_gap015_termination_audit() returns trigger language plpgsql as $$
+			begin
+				if new.action = 'MEMBERSHIP_TERMINATION_EXECUTED' then raise exception 'forced rollback'; end if;
+				return new;
+			end $$
+			""");
+		db.execute("create trigger fail_gap015_termination_audit before insert on audit_events "
+			+ "for each row execute function fail_gap015_termination_audit()");
+		clearInvocations(promotions);
+		try {
+			assertThatThrownBy(() -> execution.executeImmediate(request, manager, now)).isInstanceOf(RuntimeException.class);
+		}
+		finally {
+			db.execute("drop trigger fail_gap015_termination_audit on audit_events");
+			db.execute("drop function fail_gap015_termination_audit()");
+		}
+
+		assertThat(status("memberships", holderMembership)).isEqualTo("ACTIVE");
+		verifyNoInteractions(promotions);
+		assertThat(status("bookings", booking)).isEqualTo("BOOKED");
+		assertThat(status("session_waitlists", waitlist)).isEqualTo("WAITING");
+		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? "
+			+ "and status='BOOKED'", Long.class, session, waiter)).isZero();
 	}
 
 	private UUID account(String role) {
@@ -99,6 +175,10 @@ class MembershipTerminationExecutionIntegrationTests {
 	}
 
 	private UUID futureSession(UUID manager, UUID coach, Instant start) {
+		return futureSession(manager, coach, start, 10);
+	}
+
+	private UUID futureSession(UUID manager, UUID coach, Instant start, int capacity) {
 		UUID discipline = UUID.randomUUID();
 		UUID sportClass = UUID.randomUUID();
 		UUID room = UUID.randomUUID();
@@ -109,23 +189,23 @@ class MembershipTerminationExecutionIntegrationTests {
 			sportClass, discipline, "Termination class " + sportClass, "Termination");
 		db.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')", room,
 			"Termination room " + room);
-		db.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,? ,1,'SCHEDULED',?)",
+		db.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,?,?,'SCHEDULED',?)",
 			session, sportClass, coach, room, java.sql.Timestamp.from(start),
-			java.sql.Timestamp.from(start.plusSeconds(3600)), manager);
+			java.sql.Timestamp.from(start.plusSeconds(3600)), capacity, manager);
 		return session;
+	}
+
+	private UUID waitlist(UUID session, UUID member, Instant createdAt) {
+		UUID id = UUID.randomUUID();
+		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
+			id, session, member, member, java.sql.Timestamp.from(createdAt), java.sql.Timestamp.from(createdAt));
+		return id;
 	}
 
 	private UUID booking(UUID member, UUID membership, UUID session, Instant now) {
 		UUID id = UUID.randomUUID();
 		db.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
 			id, session, member, membership, member);
-		return id;
-	}
-
-	private UUID waitlist(UUID member, UUID session, Instant now) {
-		UUID id = UUID.randomUUID();
-		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
-			id, session, member, member, java.sql.Timestamp.from(now.minusSeconds(60)), java.sql.Timestamp.from(now.minusSeconds(60)));
 		return id;
 	}
 
