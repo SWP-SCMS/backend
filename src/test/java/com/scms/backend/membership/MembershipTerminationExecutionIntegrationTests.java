@@ -31,12 +31,15 @@ class MembershipTerminationExecutionIntegrationTests {
 		Instant now = Instant.now();
 		UUID manager = account("MANAGER");
 		UUID member = account("MEMBER");
+		UUID waitingMember = account("MEMBER");
 		UUID coach = account("COACH");
 		UUID offer = offer(manager);
 		UUID membership = membership(member, manager, offer, now);
+		membership(waitingMember, manager, offer, now);
 		UUID visit = openVisit(member, membership, now.minusSeconds(600));
 		UUID session = futureSession(manager, coach, now.plusSeconds(3600));
 		UUID booking = booking(member, membership, session, now);
+		UUID waitlist = waitlist(waitingMember, session, now);
 		UUID assignment = assignment(member, coach, manager, now.minusSeconds(1800));
 		UUID request = approvedRequest(membership, member, manager, now);
 
@@ -48,6 +51,9 @@ class MembershipTerminationExecutionIntegrationTests {
 		assertThat(status("bookings", booking)).isEqualTo("CANCELLED");
 		assertThat(db.queryForObject("select cancellation_source from bookings where id=?", String.class, booking))
 			.isEqualTo("MEMBERSHIP_TERMINATED");
+		assertThat(status("session_waitlists", waitlist)).isEqualTo("PROMOTED");
+		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and status='BOOKED'",
+			Long.class, session, waitingMember)).isOne();
 		assertThat(status("coach_assignments", assignment)).isEqualTo("ENDED");
 		assertThat(status("membership_termination_requests", request)).isEqualTo("EXECUTED");
 		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action=?", Long.class,
@@ -103,7 +109,7 @@ class MembershipTerminationExecutionIntegrationTests {
 			sportClass, discipline, "Termination class " + sportClass, "Termination");
 		db.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')", room,
 			"Termination room " + room);
-		db.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,? ,10,'SCHEDULED',?)",
+		db.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,capacity,status,created_by_account_id) values(?,?,?,?,?,? ,1,'SCHEDULED',?)",
 			session, sportClass, coach, room, java.sql.Timestamp.from(start),
 			java.sql.Timestamp.from(start.plusSeconds(3600)), manager);
 		return session;
@@ -113,6 +119,13 @@ class MembershipTerminationExecutionIntegrationTests {
 		UUID id = UUID.randomUUID();
 		db.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
 			id, session, member, membership, member);
+		return id;
+	}
+
+	private UUID waitlist(UUID member, UUID session, Instant now) {
+		UUID id = UUID.randomUUID();
+		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
+			id, session, member, member, java.sql.Timestamp.from(now.minusSeconds(60)), java.sql.Timestamp.from(now.minusSeconds(60)));
 		return id;
 	}
 

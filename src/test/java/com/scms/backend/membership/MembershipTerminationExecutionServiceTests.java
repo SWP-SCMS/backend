@@ -15,6 +15,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
+import com.scms.backend.scheduling.WaitlistPromotionService;
 import com.scms.backend.training.CoachAssignmentRepository;
 import org.junit.jupiter.api.Test;
 
@@ -26,12 +27,13 @@ class MembershipTerminationExecutionServiceTests {
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final CenterVisitRepository visits = mock(CenterVisitRepository.class);
 	private final BookingRepository bookings = mock(BookingRepository.class);
+	private final WaitlistPromotionService waitlistPromotions = mock(WaitlistPromotionService.class);
 	private final CoachAssignmentRepository assignments = mock(CoachAssignmentRepository.class);
 	private final MembershipFreezeExecutionService freezes = mock(MembershipFreezeExecutionService.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final NotificationWriter notifications = mock(NotificationWriter.class);
 	private final MembershipTerminationExecutionService service = new MembershipTerminationExecutionService(
-		lifecycle, requests, memberships, accounts, visits, bookings, assignments, freezes, audits, notifications);
+		lifecycle, requests, memberships, accounts, visits, bookings, waitlistPromotions, assignments, freezes, audits, notifications);
 
 	@Test
 	void immediateExecutionTerminatesMembershipAndCleansUpFutureActivity() {
@@ -59,6 +61,7 @@ class MembershipTerminationExecutionServiceTests {
 		verify(lifecycle).terminateActiveAndActivateReserved(memberId, NOW);
 		verify(visits).checkoutOpenForMembershipTermination(memberId, actorId, NOW);
 		verify(bookings).cancelFutureBookingsForMembershipTermination(memberId, actorId, NOW);
+		verify(waitlistPromotions).promoteAvailableBySessionIds(List.of());
 		verify(assignments).endActiveAssignmentsForMembershipTermination(memberId, NOW);
 		verify(request).execute();
 		verify(requests).saveAndFlush(request);

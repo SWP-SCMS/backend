@@ -10,6 +10,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.centervisit.CenterVisitRepository;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.BookingRepository;
+import com.scms.backend.scheduling.WaitlistPromotionService;
 import com.scms.backend.training.CoachAssignmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ class MembershipTerminationExecutionService {
 	private final AccountRepository accounts;
 	private final CenterVisitRepository visits;
 	private final BookingRepository bookings;
+	private final WaitlistPromotionService waitlistPromotions;
 	private final CoachAssignmentRepository assignments;
 	private final MembershipFreezeExecutionService freezes;
 	private final AuditEventRepository audits;
@@ -29,7 +31,8 @@ class MembershipTerminationExecutionService {
 
 	MembershipTerminationExecutionService(MembershipLifecycleService lifecycle,
 		MembershipTerminationRequestRepository requests, MembershipRepository memberships,
-		AccountRepository accounts, CenterVisitRepository visits, BookingRepository bookings, CoachAssignmentRepository assignments,
+		AccountRepository accounts, CenterVisitRepository visits, BookingRepository bookings,
+		WaitlistPromotionService waitlistPromotions, CoachAssignmentRepository assignments,
 		MembershipFreezeExecutionService freezes, AuditEventRepository audits, NotificationWriter notifications) {
 		this.lifecycle = lifecycle;
 		this.requests = requests;
@@ -37,6 +40,7 @@ class MembershipTerminationExecutionService {
 		this.accounts = accounts;
 		this.visits = visits;
 		this.bookings = bookings;
+		this.waitlistPromotions = waitlistPromotions;
 		this.assignments = assignments;
 		this.freezes = freezes;
 		this.audits = audits;
@@ -59,7 +63,10 @@ class MembershipTerminationExecutionService {
 		freezes.endActiveForTermination(request.getMemberAccountId(), now);
 		lifecycle.terminateActiveAndActivateReserved(request.getMemberAccountId(), now);
 		visits.checkoutOpenForMembershipTermination(request.getMemberAccountId(), actorId, now);
+		var freedSessionIds = bookings.findFutureSessionIdsForMembershipTermination(
+			request.getMemberAccountId(), now);
 		bookings.cancelFutureBookingsForMembershipTermination(request.getMemberAccountId(), actorId, now);
+		waitlistPromotions.promoteAvailableBySessionIds(freedSessionIds);
 		assignments.endActiveAssignmentsForMembershipTermination(request.getMemberAccountId(), now);
 		request.execute();
 		requests.saveAndFlush(request);

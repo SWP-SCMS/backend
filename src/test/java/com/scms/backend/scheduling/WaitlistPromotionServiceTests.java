@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,7 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class WaitlistPromotionServiceTests {
 	@Mock SessionWaitlistRepository waitlists; @Mock BookingRepository bookings; @Mock WaitlistService eligibility;
-	@Mock AuditEventRepository audits; @Mock NotificationWriter notifications;
+	@Mock AuditEventRepository audits; @Mock NotificationWriter notifications; @Mock ClassSessionRepository sessions;
 	Instant now=Instant.parse("2026-10-22T01:00:00Z");
 
 	@Test void skipsIneligibleHeadAndPromotesNextEntry(){
@@ -35,10 +36,22 @@ class WaitlistPromotionServiceTests {
 		when(eligibility.validateEligibility(first.getMemberId(),session)).thenThrow(BookingException.timeConflict());
 		UUID membershipId=UUID.randomUUID(); when(eligibility.validateEligibility(second.getMemberId(),session)).thenReturn(membershipId);
 		when(bookings.saveAndFlush(any())).thenAnswer(invocation->invocation.getArgument(0));
-		WaitlistPromotionService service=new WaitlistPromotionService(waitlists,bookings,eligibility,audits,notifications,Clock.fixed(now,ZoneOffset.UTC));
+		WaitlistPromotionService service=new WaitlistPromotionService(waitlists,bookings,eligibility,audits,notifications,sessions,Clock.fixed(now,ZoneOffset.UTC));
 		service.promoteAvailable(session);
 		assertThat(first.getStatus()).isEqualTo(WaitlistStatus.SKIPPED); assertThat(first.getTerminalReasonCode()).isEqualTo("BOOKING_TIME_CONFLICT");
 		assertThat(second.getStatus()).isEqualTo(WaitlistStatus.PROMOTED); verify(notifications).write(any(),any(),any(),any(),any(),any());
+	}
+
+	@Test void locksEachDistinctScheduledSessionBeforePromotion(){
+		ClassSession scheduled=session(); ClassSession cancelled=session(); cancelled.cancel(now.minusSeconds(60),"cancelled");
+		when(sessions.findByIdForUpdate(scheduled.getId())).thenReturn(java.util.Optional.of(scheduled));
+		when(sessions.findByIdForUpdate(cancelled.getId())).thenReturn(java.util.Optional.of(cancelled));
+		when(bookings.countByClassSessionIdAndStatus(scheduled.getId(),BookingStatus.BOOKED)).thenReturn(1L);
+		WaitlistPromotionService service=new WaitlistPromotionService(waitlists,bookings,eligibility,audits,notifications,sessions,Clock.fixed(now,ZoneOffset.UTC));
+		service.promoteAvailableBySessionIds(List.of(scheduled.getId(),cancelled.getId(),scheduled.getId()));
+		verify(sessions,times(1)).findByIdForUpdate(scheduled.getId());
+		verify(sessions,times(1)).findByIdForUpdate(cancelled.getId());
+		verify(bookings,times(1)).countByClassSessionIdAndStatus(scheduled.getId(),BookingStatus.BOOKED);
 	}
 
 	private SessionWaitlist entry(ClassSession session){return new SessionWaitlist(UUID.randomUUID(),session.getId(),UUID.randomUUID(),UUID.randomUUID(),"MEMBER",now.minusSeconds(60));}

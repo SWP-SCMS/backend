@@ -2,6 +2,8 @@ package com.scms.backend.scheduling;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -12,12 +14,20 @@ import com.scms.backend.notification.NotificationWriter;
 import org.springframework.stereotype.Service;
 
 @Service
-class WaitlistPromotionService {
+public class WaitlistPromotionService {
 	private final SessionWaitlistRepository waitlists; private final BookingRepository bookings;
 	private final WaitlistService eligibility; private final AuditEventRepository audits;
-	private final NotificationWriter notifications; private final Clock clock;
+	private final NotificationWriter notifications; private final ClassSessionRepository sessions; private final Clock clock;
 	WaitlistPromotionService(SessionWaitlistRepository waitlists,BookingRepository bookings,WaitlistService eligibility,
-			AuditEventRepository audits,NotificationWriter notifications,Clock clock){this.waitlists=waitlists;this.bookings=bookings;this.eligibility=eligibility;this.audits=audits;this.notifications=notifications;this.clock=clock;}
+			AuditEventRepository audits,NotificationWriter notifications,ClassSessionRepository sessions,Clock clock){this.waitlists=waitlists;this.bookings=bookings;this.eligibility=eligibility;this.audits=audits;this.notifications=notifications;this.sessions=sessions;this.clock=clock;}
+
+	public void promoteAvailableBySessionIds(Collection<UUID> sessionIds){
+		if(sessionIds==null||sessionIds.isEmpty()) return;
+		sessionIds.stream().distinct().sorted(Comparator.comparing(UUID::toString))
+			.map(sessions::findByIdForUpdate).flatMap(java.util.Optional::stream)
+			.filter(session->session.getStatus()==ClassSessionStatus.SCHEDULED)
+			.forEach(this::promoteAvailable);
+	}
 
 	void promoteAvailable(ClassSession session){
 		Instant now=clock.instant(); if(session.getStatus()!=ClassSessionStatus.SCHEDULED||!session.getStartTime().isAfter(now)){eligibility.expireStarted(now);return;}

@@ -61,6 +61,28 @@ class OperationalIntegrityIntegrationTests {
 	}
 
 	@Test
+	void suspensionPromotesEligibleWaitlistMember() {
+		Account manager = account(AccountRole.MANAGER);
+		Account coach = account(AccountRole.COACH);
+		Account member = account(AccountRole.MEMBER);
+		Account waitingMember = account(AccountRole.MEMBER);
+		UUID bookingId = futureBooking(manager.getId(), coach.getId(), member.getId());
+		UUID sessionId = db.queryForObject("select class_session_id from bookings where id=?", UUID.class, bookingId);
+		UUID waitingMembership = activeMembership(manager.getId(), waitingMember.getId(), Instant.now());
+		UUID waitlistId = UUID.randomUUID();
+		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',current_timestamp,current_timestamp)",
+			waitlistId, sessionId, waitingMember.getId(), waitingMember.getId());
+
+		memberStatuses.changeStatus(manager.getId(), member.getId(),
+			new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Promote the waitlist"));
+
+		assertThat(db.queryForObject("select status from session_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("PROMOTED");
+		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and membership_id=? and status='BOOKED'",
+			Long.class, sessionId, waitingMember.getId(), waitingMembership)).isOne();
+	}
+
+	@Test
 	void twoManagersCannotDeactivateEachOtherToZeroActiveManagers() throws Exception {
 		db.update("update accounts set status='INACTIVE' where role='MANAGER' and status='ACTIVE'");
 		Account first = account(AccountRole.MANAGER);
@@ -139,7 +161,7 @@ class OperationalIntegrityIntegrationTests {
 		db.update("""
 			insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,
 				capacity,status,created_by_account_id)
-			values(?,?,?,?,?,?,10,'SCHEDULED',?)
+			values(?,?,?,?,?,?,1,'SCHEDULED',?)
 			""", sessionId, sportClassId, coachId, roomId, Timestamp.from(now.plusSeconds(86400)),
 			Timestamp.from(now.plusSeconds(90000)), managerId);
 		db.update("""
@@ -147,6 +169,34 @@ class OperationalIntegrityIntegrationTests {
 			values(?,?,?,?,'BOOKED',?)
 			""", bookingId, sessionId, memberId, membershipId, memberId);
 		return bookingId;
+	}
+
+	private UUID activeMembership(UUID managerId, UUID memberId, Instant now) {
+		UUID offerId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID membershipId = UUID.randomUUID();
+		db.update("""
+			insert into membership_offers(id,plan_code,name,description,price_amount,duration_days,status,created_by_account_id)
+			values(?,'PLUS',?,'Waitlist promotion',12000,30,'ACTIVE',?)
+			""", offerId, "Plus " + offerId, managerId);
+		db.update("""
+			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
+				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
+				payment_method,status,paid_at)
+			values(?,?,?,?,?,'Plus','PLUS',12000,'VND',30,'CASH','PAID',?)
+			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId,
+			Timestamp.from(now));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,processed_by_account_id)
+			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId, Timestamp.from(now), managerId);
+		db.update("""
+			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
+				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
+			values(?,?,?,?,'PLUS','Plus',12000,'VND',30,'ACTIVE',?,?)
+			""", membershipId, memberId, orderId, offerId, Timestamp.from(now.minusSeconds(60)),
+			Timestamp.from(now.plusSeconds(86400 * 30L)));
+		return membershipId;
 	}
 
 	private Account account(AccountRole role) {
