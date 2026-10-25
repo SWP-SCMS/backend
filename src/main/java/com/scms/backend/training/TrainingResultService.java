@@ -73,7 +73,7 @@ public class TrainingResultService {
 		requireCurrentAssignment(coachId, memberId, clock.instant(), null);
 		var page = results.findHistoryByMemberAccountId(memberId, pageable);
 		return new TrainingResultPageResponse(page.getContent().stream()
-				.map(TrainingResultResponse::from).toList(), page.getNumber(), page.getSize(),
+				.map(view -> TrainingResultResponse.from(view.getResult())).toList(), page.getNumber(), page.getSize(),
 				page.getTotalElements(), page.getTotalPages());
 	}
 
