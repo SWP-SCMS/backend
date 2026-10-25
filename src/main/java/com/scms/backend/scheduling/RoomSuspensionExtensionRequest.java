@@ -8,9 +8,17 @@ import jakarta.validation.constraints.NotNull;
 
 public record RoomSuspensionExtensionRequest(@NotNull Instant expectedEndTime, @NotNull Instant endTime,
 		@NotBlank String reason,
-		@NotNull List<RoomSessionResolutionRequest> resolutions) {
+		List<RoomSessionResolutionRequest> resolutions,
+		RoomBulkResolutionRequest bulkResolution,
+		List<RoomSessionResolutionRequest> resolutionOverrides) {
+
+	public RoomSuspensionExtensionRequest(Instant expectedEndTime, Instant endTime, String reason,
+			List<RoomSessionResolutionRequest> resolutions) {
+		this(expectedEndTime, endTime, reason, resolutions, null, List.of());
+	}
 
 	public RoomSuspensionExtensionRequest {
 		resolutions = resolutions == null ? null : List.copyOf(resolutions);
+		resolutionOverrides = resolutionOverrides == null ? List.of() : List.copyOf(resolutionOverrides);
 	}
 }

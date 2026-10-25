@@ -105,6 +105,37 @@ class RoomControllerTests {
 	}
 
 	@Test
+	void managerExtendsSuspensionWithBulkResolutionAndOverride() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		UUID roomId = UUID.randomUUID();
+		UUID targetRoomId = UUID.randomUUID();
+		UUID suspensionId = UUID.randomUUID();
+		UUID overriddenSessionId = UUID.randomUUID();
+		Instant expectedEndTime = Instant.parse("2026-10-31T10:00:00Z");
+		Instant endTime = Instant.parse("2026-11-30T10:00:00Z");
+		RoomSuspensionExtensionRequest request = new RoomSuspensionExtensionRequest(expectedEndTime, endTime,
+			"Extended repair", null, new RoomBulkResolutionRequest("MOVE", targetRoomId, null),
+			List.of(new RoomSessionResolutionRequest(overriddenSessionId, "CANCEL", null, null, null,
+				"Coach unavailable")));
+		when(suspensionService.extend(managerId, roomId, suspensionId, request)).thenReturn(
+			new RoomSuspensionResponse(suspensionId, roomId, expectedEndTime, endTime, "Extended repair", managerId));
+
+		mockMvc.perform(patch("/api/v1/manager/rooms/{roomId}/suspensions/{suspensionId}", roomId, suspensionId)
+				.contextPath("/api/v1")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"expectedEndTime":"2026-10-31T10:00:00Z","endTime":"2026-11-30T10:00:00Z",
+					 "reason":"Extended repair","bulkResolution":{"action":"MOVE","targetRoomId":"%s"},
+					 "resolutionOverrides":[{"sessionId":"%s","action":"CANCEL","reason":"Coach unavailable"}]}
+					""".formatted(targetRoomId, overriddenSessionId))
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isOk());
+
+		verify(suspensionService).extend(managerId, roomId, suspensionId, request);
+	}
+
+	@Test
 	void nonManagerCannotExtendSuspension() throws Exception {
 		mockMvc.perform(patch("/api/v1/manager/rooms/{roomId}/suspensions/{suspensionId}",
 				UUID.randomUUID(), UUID.randomUUID())
@@ -160,14 +191,6 @@ class RoomControllerTests {
 			Map.entry("reason", """
 				{"expectedEndTime":"2026-10-31T10:00:00Z","endTime":"2026-11-30T10:00:00Z",
 				 "reason":"   ","resolutions":[]}
-				"""),
-			Map.entry("resolutions", """
-				{"expectedEndTime":"2026-10-31T10:00:00Z","endTime":"2026-11-30T10:00:00Z",
-				 "reason":"Gia han bao tri"}
-				"""),
-			Map.entry("resolutions", """
-				{"expectedEndTime":"2026-10-31T10:00:00Z","endTime":"2026-11-30T10:00:00Z",
-				 "reason":"Gia han bao tri","resolutions":null}
 				"""));
 
 		for (Map.Entry<String, String> invalid : invalidBodies) {

@@ -863,8 +863,16 @@ class GeneratedOpenApiTests {
 		assertThat(generatedRequest.path("expectedEndTime").path("format").asText()).isEqualTo("date-time");
 		assertThat(generatedRequest.path("endTime").path("format").asText()).isEqualTo("date-time");
 		assertThat(generatedRequest.path("resolutions").path("type").asText()).isEqualTo("array");
+		assertThat(generatedRequest.path("bulkResolution").path("$ref").asText())
+			.isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
+		assertThat(generatedRequest.path("resolutionOverrides").path("type").asText()).isEqualTo("array");
 		assertThat(generated.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
-			.contains("expectedEndTime", "endTime", "reason", "resolutions");
+			.contains("expectedEndTime", "endTime", "reason")
+			.doesNotContain("resolutions", "bulkResolution");
+		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum").toString())
+			.contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
+		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/required").toString())
+			.contains("action");
 		assertThat(response(generated, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
 			.isMissingNode()).isFalse();
 
@@ -877,7 +885,13 @@ class GeneratedOpenApiTests {
 				.path("schema").path("$ref").asText())
 				.isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
 			assertThat(documented.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
-				.contains("expectedEndTime", "endTime", "reason", "resolutions");
+				.contains("expectedEndTime", "endTime", "reason").doesNotContain("resolutions");
+			assertThat(documented.at("/components/schemas/RoomImpactPreviewRequest/properties/bulkResolution/$ref")
+				.asText()).isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
+			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum")
+				.toString()).contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
+			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/required").toString())
+				.contains("action");
 			assertThat(response(documented, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
 				.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
 		}
