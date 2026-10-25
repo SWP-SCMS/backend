@@ -59,7 +59,13 @@ class CoachTeachingScheduleIntegrationTests {
 					.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.totalElements").value(1))
-			.andExpect(jsonPath("$.content[0].id").value(fixture.sessionId().toString()));
+			.andExpect(jsonPath("$.content[0].id").value(fixture.sessionId().toString()))
+			.andExpect(jsonPath("$.content[0].className").value("Vinyasa"))
+			.andExpect(jsonPath("$.content[0].classType").value("YOGA"))
+			.andExpect(jsonPath("$.content[0].disciplineName").value("Yoga"))
+			.andExpect(jsonPath("$.content[0].roomName").value("Studio US37 A"))
+			.andExpect(jsonPath("$.content[0].capacity").value(12))
+			.andExpect(jsonPath("$.content[0].bookedCount").value(1));
 
 		mvc.perform(get("/coach/class-sessions/{id}", fixture.sessionId())
 				.with(jwt().jwt(token -> token.subject(fixture.coachId().toString()))

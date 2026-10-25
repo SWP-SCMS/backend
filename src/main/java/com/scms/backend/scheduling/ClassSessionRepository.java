@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -15,6 +16,9 @@ import org.springframework.data.domain.Pageable;
 
 public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID>,
 		JpaSpecificationExecutor<ClassSession> {
+
+	@EntityGraph(attributePaths = {"sportClass", "sportClass.discipline", "teachingCoach", "room"})
+	List<ClassSession> findByIdIn(Collection<UUID> ids);
 
 	java.util.Optional<ClassSession> findByIdAndTeachingCoach_Id(UUID id, UUID coachId);
 
