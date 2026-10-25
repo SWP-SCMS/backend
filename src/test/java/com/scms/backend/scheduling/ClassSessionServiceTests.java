@@ -47,7 +47,7 @@ class ClassSessionServiceTests {
 	@BeforeEach
 	void setUp() {
 		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle,
-			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves, null, notifications);
+			Clock.fixed(now, ZoneOffset.UTC), null, coachLeaves, null, notifications, null, null);
 	}
 
 	@Test

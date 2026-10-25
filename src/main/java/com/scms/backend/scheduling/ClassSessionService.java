@@ -4,8 +4,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -39,17 +41,20 @@ public class ClassSessionService {
 	private final CoachLeaveRepository coachLeaves;
 	private final CoachAssignmentRepository coachAssignments;
 	private final NotificationWriter notifications;
+	private final BookingRepository bookings;
+	private final SessionWaitlistRepository waitlists;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
 			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
-			CoachAssignmentRepository coachAssignments, NotificationWriter notifications) {
+			CoachAssignmentRepository coachAssignments, NotificationWriter notifications,
+			BookingRepository bookings, SessionWaitlistRepository waitlists) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -61,6 +66,8 @@ public class ClassSessionService {
 		this.coachLeaves = coachLeaves;
 		this.coachAssignments = coachAssignments;
 		this.notifications = notifications;
+		this.bookings = bookings;
+		this.waitlists = waitlists;
 	}
 
 	@Transactional
@@ -247,6 +254,7 @@ public class ClassSessionService {
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
 			session.getCapacity());
 		ensureAvailable(resources, session.getStartTime(), session.getEndTime(), session.getCapacity(), sessionId);
+		ensurePtMembersCompatible(session, beforeCoachId, coachId);
 		session.updateAssignment(resources.coach(), resources.room());
 		try {
 			sessions.saveAndFlush(session);
@@ -259,6 +267,50 @@ public class ClassSessionService {
 			Map.of("coachId", beforeCoachId.toString(), "roomId", beforeRoomId.toString()),
 			Map.of("coachId", coachId.toString(), "roomId", roomId.toString())));
 		return ClassSessionDetailResponse.from(session);
+	}
+
+	private void ensurePtMembersCompatible(ClassSession session, UUID currentCoachId, UUID requestedCoachId) {
+		if (session.getSportClass().getClassType() != SportClassType.PT_1_1
+				|| requestedCoachId.equals(currentCoachId)) {
+			return;
+		}
+		List<Booking> activeBookings = bookings.findBookedBySessionForUpdate(session.getId());
+		List<SessionWaitlist> activeWaitlists = waitlists.findWaitingBySessionForUpdate(session.getId());
+		Set<UUID> memberIds = new LinkedHashSet<>();
+		activeBookings.forEach(booking -> memberIds.add(booking.getMemberAccountId()));
+		activeWaitlists.forEach(entry -> memberIds.add(entry.getMemberId()));
+		if (memberIds.isEmpty()) return;
+
+		Set<UUID> compatibleMemberIds = coachAssignments
+			.findActiveForMembersAndCoachForUpdate(memberIds, requestedCoachId).stream()
+			.map(assignment -> assignment.getMemberAccountId())
+			.collect(Collectors.toSet());
+		Map<UUID, AccountRepository.MemberIdentityView> identities = new java.util.HashMap<>();
+		List<PtSessionAffectedBooking> affectedBookings = activeBookings.stream()
+			.filter(booking -> !compatibleMemberIds.contains(booking.getMemberAccountId()))
+			.map(booking -> {
+				var identity = memberIdentity(booking.getMemberAccountId(), identities);
+				return new PtSessionAffectedBooking(booking.getId(), booking.getMemberAccountId(),
+					identity.getMemberCode(), identity.getFullName());
+			})
+			.toList();
+		List<PtSessionAffectedWaitlist> affectedWaitlists = activeWaitlists.stream()
+			.filter(entry -> !compatibleMemberIds.contains(entry.getMemberId()))
+			.map(entry -> {
+				var identity = memberIdentity(entry.getMemberId(), identities);
+				return new PtSessionAffectedWaitlist(entry.getId(), entry.getMemberId(),
+					identity.getMemberCode(), identity.getFullName());
+			})
+			.toList();
+		if (!affectedBookings.isEmpty() || !affectedWaitlists.isEmpty()) {
+			throw PtSessionAssignmentException.incompatibleMembers(affectedBookings, affectedWaitlists);
+		}
+	}
+
+	private AccountRepository.MemberIdentityView memberIdentity(UUID memberId,
+			Map<UUID, AccountRepository.MemberIdentityView> identities) {
+		return identities.computeIfAbsent(memberId, id -> accounts.findMemberIdentity(id)
+			.orElseThrow(() -> RecurringScheduleException.notFound("member")));
 	}
 
 	private void advanceStatuses() {

@@ -48,6 +48,7 @@ import com.scms.backend.scheduling.DuplicateDisciplineException;
 import com.scms.backend.scheduling.SportClassException;
 import com.scms.backend.scheduling.RoomException;
 import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.PtSessionAssignmentException;
 import com.scms.backend.scheduling.BookingException;
 import com.scms.backend.scheduling.AttendanceException;
 import com.scms.backend.scheduling.CoachLeaveException;
@@ -388,6 +389,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 			problem.setProperty("occupiedCapacity", exception.getOccupiedCapacity());
 			problem.setProperty("requestedCapacity", exception.getRequestedCapacity());
 		}
+		return problem;
+	}
+
+	@ExceptionHandler(PtSessionAssignmentException.class)
+	ProblemDetail handlePtSessionAssignment(PtSessionAssignmentException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("PT Session assignment failed");
+		problem.setProperty("code", exception.getCode());
+		problem.setProperty("affectedBookings", exception.getAffectedBookings());
+		problem.setProperty("affectedWaitlists", exception.getAffectedWaitlists());
 		return problem;
 	}
 
