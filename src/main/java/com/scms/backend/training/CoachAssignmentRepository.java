@@ -45,10 +45,32 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	boolean existsByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 
-	@Query("select a from CoachAssignment a where a.coachAccountId = :coachAccountId "
-			+ "and a.status = :status order by a.createdAt desc, a.id desc")
-	Page<CoachAssignment> findByCoachAccountIdAndStatusOrderByCreatedAtDesc(@Param("coachAccountId") UUID coachAccountId,
-			@Param("status") CoachAssignmentStatus status, Pageable pageable);
+	@Query(value = """
+		select assignment.*
+		from coach_assignments assignment
+		join accounts account on account.id = assignment.member_account_id
+		join member_profiles profile on profile.account_id = account.id
+		where assignment.coach_account_id = :coachAccountId
+		  and assignment.status = 'ACTIVE'
+		  and (cast(:query as text) is null
+		    or lower(profile.member_code) like lower(concat('%', cast(:query as text), '%'))
+		    or lower(account.full_name) like lower(concat('%', cast(:query as text), '%'))
+		    or account.phone like concat('%', cast(:query as text), '%'))
+		order by assignment.created_at desc, assignment.id desc
+		""", countQuery = """
+		select count(*)
+		from coach_assignments assignment
+		join accounts account on account.id = assignment.member_account_id
+		join member_profiles profile on profile.account_id = account.id
+		where assignment.coach_account_id = :coachAccountId
+		  and assignment.status = 'ACTIVE'
+		  and (cast(:query as text) is null
+		    or lower(profile.member_code) like lower(concat('%', cast(:query as text), '%'))
+		    or lower(account.full_name) like lower(concat('%', cast(:query as text), '%'))
+		    or account.phone like concat('%', cast(:query as text), '%'))
+		""", nativeQuery = true)
+	Page<CoachAssignment> findActiveAssignedMembers(@Param("coachAccountId") UUID coachAccountId,
+			@Param("query") String query, Pageable pageable);
 
 	long countByCoachAccountIdAndStatus(UUID coachAccountId, CoachAssignmentStatus status);
 

@@ -24,6 +24,12 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - name: q
+          in: query
+          description: Case-insensitive search by Member code or full name, or partial phone number.
+          schema:
+            type: string
+            maxLength: 100
         - name: page
           in: query
           schema:
@@ -45,7 +51,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/CoachAssignedMemberPageResponse"
         "400":
-          description: Invalid pagination parameters.
+          description: Invalid search or pagination parameters.
           content:
             application/problem+json:
               schema:
