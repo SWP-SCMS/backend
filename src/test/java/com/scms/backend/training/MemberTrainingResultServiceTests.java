@@ -1,6 +1,7 @@
 package com.scms.backend.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.scms.backend.scheduling.SportClassType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -32,17 +34,25 @@ class MemberTrainingResultServiceTests {
 		TrainingResult personalResult = new TrainingResult(UUID.randomUUID(), memberId, assignmentId,
 			planVersionId, now.minusSeconds(3600), Map.of("notes", "Personal"), coachId,
 			now.minusSeconds(3600));
-		when(results.findHistoryByMemberAccountId(memberId)).thenReturn(List.of(sessionResult, personalResult));
+		var sessionView = view(sessionResult, "Coach One", "PT 1-1", now, SportClassType.PT_1_1);
+		var personalView = view(personalResult, "Coach One", null, null, null);
+		when(results.findHistoryByMemberAccountId(memberId)).thenReturn(List.of(sessionView, personalView));
 
 		List<MemberTrainingResultResponse> history = new MemberTrainingResultService(results)
 			.viewOwnHistory(memberId);
 
 		assertThat(history).hasSize(2);
 		assertThat(history.get(0).classSessionId()).isEqualTo(sessionId);
+		assertThat(history.get(0).coachName()).isEqualTo("Coach One");
+		assertThat(history.get(0).sessionName()).isEqualTo("PT 1-1");
+		assertThat(history.get(0).sessionStartTime()).isEqualTo(now);
+		assertThat(history.get(0).className()).isNull();
 		assertThat(history.get(0).coachAssignmentId()).isNull();
 		assertThat(history.get(1).coachAssignmentId()).isEqualTo(assignmentId);
 		assertThat(history.get(1).trainingPlanVersionId()).isEqualTo(planVersionId);
 		assertThat(history.get(1).classSessionId()).isNull();
+		assertThat(history.get(1).coachName()).isEqualTo("Coach One");
+		assertThat(history.get(1).sessionName()).isNull();
 		verify(results).findHistoryByMemberAccountId(memberId);
 	}
 
@@ -52,5 +62,16 @@ class MemberTrainingResultServiceTests {
 		when(results.findHistoryByMemberAccountId(memberId)).thenReturn(List.of());
 
 		assertThat(new MemberTrainingResultService(results).viewOwnHistory(memberId)).isEmpty();
+	}
+
+	private TrainingResultRepository.MemberTrainingResultHistoryView view(TrainingResult value,
+			String coachName, String sessionName, Instant sessionStartTime, SportClassType classType) {
+		var view = mock(TrainingResultRepository.MemberTrainingResultHistoryView.class);
+		when(view.getResult()).thenReturn(value);
+		when(view.getCoachName()).thenReturn(coachName);
+		when(view.getSessionName()).thenReturn(sessionName);
+		when(view.getSessionStartTime()).thenReturn(sessionStartTime);
+		when(view.getClassType()).thenReturn(classType);
+		return view;
 	}
 }

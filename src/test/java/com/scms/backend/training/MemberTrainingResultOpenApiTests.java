@@ -30,6 +30,9 @@ class MemberTrainingResultOpenApiTests {
 			Map<String, Object> schemas = (Map<String, Object>) ((Map<String, Object>) document.get("components"))
 				.get("schemas");
 			assertThat(schemas).containsKeys("MemberTrainingResultResponse", "ProblemDetail");
+			Map<String, Object> response = (Map<String, Object>) schemas.get("MemberTrainingResultResponse");
+			assertThat((Map<String, Object>) response.get("properties"))
+				.containsKeys("coachName", "sessionName", "sessionStartTime", "className");
 		}
 	}
 }

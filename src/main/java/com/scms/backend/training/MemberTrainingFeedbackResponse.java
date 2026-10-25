@@ -3,6 +3,8 @@ package com.scms.backend.training;
 import java.time.Instant;
 import java.util.UUID;
 
+import com.scms.backend.scheduling.SportClassType;
+
 public record MemberTrainingFeedbackResponse(
 	UUID id,
 	UUID memberAccountId,
@@ -12,13 +14,20 @@ public record MemberTrainingFeedbackResponse(
 	UUID classSessionId,
 	String content,
 	UUID createdByAccountId,
+	String coachName,
+	String sessionName,
+	Instant sessionStartTime,
+	String className,
 	Instant createdAt,
 	Instant updatedAt
 ) {
-	static MemberTrainingFeedbackResponse from(TrainingFeedback feedback, UUID classSessionId) {
+	static MemberTrainingFeedbackResponse from(TrainingFeedbackRepository.MemberFeedbackHistoryView view) {
+		TrainingFeedback feedback = view.getFeedback();
 		return new MemberTrainingFeedbackResponse(feedback.getId(), feedback.getMemberAccountId(),
 			feedback.getCoachAssignmentId(), feedback.getTrainingPlanVersionId(),
-			feedback.getTrainingResultId(), classSessionId, feedback.getContent(),
-			feedback.getCreatedByAccountId(), feedback.getCreatedAt(), feedback.getUpdatedAt());
+			feedback.getTrainingResultId(), view.getClassSessionId(), feedback.getContent(),
+			feedback.getCreatedByAccountId(), view.getCoachName(), view.getSessionName(),
+			view.getSessionStartTime(), view.getClassType() == SportClassType.PT_1_1 ? null : view.getSessionName(),
+			feedback.getCreatedAt(), feedback.getUpdatedAt());
 	}
 }

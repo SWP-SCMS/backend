@@ -20,7 +20,7 @@ public class MemberTrainingFeedbackService {
 	@Transactional(readOnly = true)
 	public List<MemberTrainingFeedbackResponse> viewOwnHistory(UUID memberId) {
 		return feedback.findHistoryByMemberAccountId(memberId).stream()
-			.map(view -> MemberTrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId()))
+			.map(MemberTrainingFeedbackResponse::from)
 			.toList();
 	}
 
@@ -28,7 +28,7 @@ public class MemberTrainingFeedbackService {
 	public MemberTrainingFeedbackPageResponse viewOwnHistory(UUID memberId, Pageable pageable) {
 		var page = feedback.findHistoryByMemberAccountId(memberId, pageable);
 		return new MemberTrainingFeedbackPageResponse(page.getContent().stream()
-				.map(view -> MemberTrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId()))
+				.map(MemberTrainingFeedbackResponse::from)
 				.toList(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 }

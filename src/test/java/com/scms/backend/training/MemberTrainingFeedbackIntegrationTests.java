@@ -2,6 +2,7 @@ package com.scms.backend.training;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.junit.jupiter.Container;
@@ -77,16 +79,31 @@ class MemberTrainingFeedbackIntegrationTests {
 			base.plusSeconds(10800)));
 		feedback.saveAndFlush(TrainingFeedback.forClassSessionResult(UUID.randomUUID(), otherMember.getId(),
 			otherResult.getId(), "Other member feedback", coach.getId(), base.plusSeconds(10900)));
+		jdbc.update("update accounts set status='INACTIVE' where id=?", coach.getId());
+		jdbc.update("update sport_classes set status='INACTIVE' where id="
+			+ "(select sport_class_id from class_sessions where id=?)", sessionId);
+		jdbc.update("update class_sessions set status='CANCELLED',cancelled_at=? where id=?",
+			Timestamp.from(base.plusSeconds(11000)), sessionId);
 
-		List<MemberTrainingFeedbackResponse> history = service.viewOwnHistory(member.getId());
+		var page = service.viewOwnHistory(member.getId(), PageRequest.of(0, 20));
+		List<MemberTrainingFeedbackResponse> history = page.content();
 
+		assertThat(page.totalElements()).isEqualTo(2);
 		assertThat(history).extracting(MemberTrainingFeedbackResponse::id)
 			.containsExactly(session.getId(), personal.getId());
 		assertThat(history).allMatch(item -> item.memberAccountId().equals(member.getId()));
 		assertThat(history.get(0).classSessionId()).isEqualTo(sessionId);
+		assertThat(history.get(0).coachName()).isEqualTo("Coach US50");
+		assertThat(history.get(0).sessionName()).startsWith("Vinyasa ");
+		assertThat(history.get(0).sessionStartTime()).isEqualTo(Instant.parse("2030-01-01T02:00:00Z"));
+		assertThat(history.get(0).className()).isEqualTo(history.get(0).sessionName());
 		assertThat(history.get(0).coachAssignmentId()).isNull();
 		assertThat(history.get(1).classSessionId()).isNull();
 		assertThat(history.get(1).coachAssignmentId()).isEqualTo(assignment.getId());
+		assertThat(history.get(1).coachName()).isEqualTo("Coach US50");
+		assertThat(history.get(1).sessionName()).isNull();
+		assertThat(history.get(1).sessionStartTime()).isNull();
+		assertThat(history.get(1).className()).isNull();
 		assertThat(assignments.findById(assignment.getId()).orElseThrow().getStatus())
 			.isEqualTo(CoachAssignmentStatus.ENDED);
 	}
