@@ -25,6 +25,9 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.scheduling.PtAssignmentImpactConfirmation;
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
+import com.scms.backend.scheduling.PtCoachAssignmentImpactService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +54,9 @@ class CoachAssignmentServiceTests {
 	@Mock
 	private NotificationWriter notifications;
 
+	@Mock
+	private PtCoachAssignmentImpactService impactService;
+
 	private final Instant fixedNow = Instant.parse("2026-10-12T10:00:00Z");
 	private final Clock clock = Clock.fixed(fixedNow, ZoneOffset.UTC);
 
@@ -68,7 +74,8 @@ class CoachAssignmentServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new CoachAssignmentService(assignments, accounts, audits, notifications, clock, 20);
+		service = new CoachAssignmentService(assignments, accounts, audits, notifications, clock, 20,
+			impactService);
 
 		managerId = UUID.randomUUID();
 		memberId = UUID.randomUUID();
@@ -276,13 +283,19 @@ class CoachAssignmentServiceTests {
 				.thenReturn(Optional.of(current));
 		when(assignments.saveAndFlush(any(CoachAssignment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-		CoachAssignmentAssignRequest request = new CoachAssignmentAssignRequest(secondCoachId, "Switching coach");
+		PtAssignmentImpactConfirmation confirmation = new PtAssignmentImpactConfirmation(List.of(), List.of());
+		PtAssignmentImpactResponse processed = PtAssignmentImpactResponse.empty();
+		when(impactService.resolve(managerId, memberId, coachId, fixedNow, confirmation)).thenReturn(processed);
+		CoachAssignmentAssignRequest request = new CoachAssignmentAssignRequest(secondCoachId, "Switching coach",
+			confirmation);
 
 		CoachAssignmentResponse response = service.assign(managerId, memberId, request);
 
 		assertThat(response).isNotNull();
 		assertThat(response.coachAccountId()).isEqualTo(secondCoachId);
 		assertThat(response.status()).isEqualTo(CoachAssignmentStatus.ACTIVE);
+		assertThat(response.processedImpact()).isSameAs(processed);
+		verify(impactService).resolve(managerId, memberId, coachId, fixedNow, confirmation);
 
 		// Old assignment must be ended
 		assertThat(current.getStatus()).isEqualTo(CoachAssignmentStatus.ENDED);

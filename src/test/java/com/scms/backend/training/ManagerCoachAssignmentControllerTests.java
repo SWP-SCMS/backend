@@ -15,6 +15,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.scms.backend.scheduling.PtAssignmentImpactItem;
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -142,6 +145,19 @@ class ManagerCoachAssignmentControllerTests {
 				.contextPath("/api/v1")
 				.with(managerJwt()))
 				.andExpect(status().isNoContent());
+	}
+
+	@Test
+	void previewImpact_returnsAffectedFuturePtEntries() throws Exception {
+		UUID bookingId = UUID.randomUUID();
+		when(service.previewImpact(managerId, memberId)).thenReturn(new PtAssignmentImpactResponse(1, 0,
+			List.of(new PtAssignmentImpactItem(bookingId, UUID.randomUUID(), now.plusSeconds(3600))), List.of()));
+
+		mockMvc.perform(get("/api/v1/manager/members/{memberId}/coach-assignment/impact", memberId)
+				.contextPath("/api/v1").with(managerJwt()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.bookingCount").value(1))
+			.andExpect(jsonPath("$.bookings[0].id").value(bookingId.toString()));
 	}
 
 	@Test

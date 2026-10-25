@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: SCMS Manager Personal Coach Assignment
-  version: v4.2
+  version: v4.3
 servers:
   - url: /api/v1
 paths:
@@ -101,6 +101,31 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /manager/members/{memberId}/coach-assignment/impact:
+    get:
+      summary: Preview future PT bookings and waitlists affected by ending or reassigning the Coach
+      operationId: previewCoachAssignmentImpact
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current impact snapshot. Submit its booking and waitlist IDs as impactConfirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PtAssignmentImpactResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /manager/members/{memberId}/coach-assignment/end:
     patch:
       summary: End current active Coach assignment for a Member
@@ -133,6 +158,9 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+        '409':
+          $ref: '#/components/responses/Conflict'
 
 components:
   securitySchemes:
@@ -173,7 +201,8 @@ components:
     Conflict:
       description: >-
         Business rule conflicts: PERSONAL_COACHING Benefit is required (PLUS_MEMBERSHIP_REQUIRED), MEMBER_NOT_ACTIVE, COACH_NOT_ACTIVE,
-        COACH_ALREADY_ASSIGNED, or COACH_ASSIGNMENT_CONFLICT.
+        COACH_ALREADY_ASSIGNED, COACH_ASSIGNMENT_CONFLICT, COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED,
+        or COACH_ASSIGNMENT_IMPACT_CHANGED. Impact conflicts include the current snapshot.
       content:
         application/problem+json:
           schema:
@@ -192,6 +221,10 @@ components:
         reason:
           type: [string, "null"]
           maxLength: 1000
+        impactConfirmation:
+          oneOf:
+            - $ref: '#/components/schemas/PtAssignmentImpactConfirmation'
+            - type: 'null'
 
     CoachAssignmentEndRequest:
       type: object
@@ -203,6 +236,10 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+        impactConfirmation:
+          oneOf:
+            - $ref: '#/components/schemas/PtAssignmentImpactConfirmation'
+            - type: 'null'
 
     CoachAssignmentResponse:
       type: object
@@ -248,6 +285,46 @@ components:
         createdAt:
           type: string
           format: date-time
+        processedImpact:
+          oneOf:
+            - $ref: '#/components/schemas/PtAssignmentImpactResponse'
+            - type: 'null'
+
+    PtAssignmentImpactConfirmation:
+      type: object
+      additionalProperties: false
+      properties:
+        bookingIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        waitlistIds:
+          type: array
+          uniqueItems: true
+          items: { type: string, format: uuid }
+
+    PtAssignmentImpactItem:
+      type: object
+      required: [id, sessionId, sessionStartTime]
+      additionalProperties: false
+      properties:
+        id: { type: string, format: uuid }
+        sessionId: { type: string, format: uuid }
+        sessionStartTime: { type: string, format: date-time }
+
+    PtAssignmentImpactResponse:
+      type: object
+      required: [bookingCount, waitlistCount, bookings, waitlists]
+      additionalProperties: false
+      properties:
+        bookingCount: { type: integer, minimum: 0 }
+        waitlistCount: { type: integer, minimum: 0 }
+        bookings:
+          type: array
+          items: { $ref: '#/components/schemas/PtAssignmentImpactItem' }
+        waitlists:
+          type: array
+          items: { $ref: '#/components/schemas/PtAssignmentImpactItem' }
 
     CoachAssignmentPageResponse:
       type: object
@@ -312,11 +389,15 @@ components:
             - ACTOR_NOT_ACTIVE_MANAGER
             - COACH_ASSIGNMENT_CONFLICT
             - COACH_CAPACITY_EXCEEDED
+            - COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED
+            - COACH_ASSIGNMENT_IMPACT_CHANGED
         errors:
           type: object
           additionalProperties:
             type: array
             items:
               type: string
+        impact:
+          $ref: '#/components/schemas/PtAssignmentImpactResponse'
         traceId:
           type: string

@@ -15,6 +15,8 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.notification.NotificationOutboxDispatcher;
+import com.scms.backend.scheduling.PtAssignmentImpactConfirmation;
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -65,7 +67,7 @@ class CoachAssignmentIntegrationTests {
 		return accounts.saveAndFlush(account);
 	}
 
-	private void createMembership(UUID memberId, UUID actorId, String planCode, Instant startsAt, Instant endsAt) {
+	private UUID createMembership(UUID memberId, UUID actorId, String planCode, Instant startsAt, Instant endsAt) {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
@@ -92,6 +94,88 @@ class CoachAssignmentIntegrationTests {
 				price_amount_snapshot, currency_code_snapshot, duration_days_snapshot, status, starts_at, ends_at)
 			values (?, ?, ?, ?, ?, 'Offer', 1000, 'VND', 30, 'ACTIVE', ?, ?)
 			""", membershipId, memberId, orderId, offerId, planCode, Timestamp.from(startsAt), Timestamp.from(endsAt));
+		return membershipId;
+	}
+
+	@Test
+	void endAssignment_requiresPreviewThenAtomicallyCancelsFuturePtImpact() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Manager Impact");
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "Member Impact");
+		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Coach Impact");
+		Instant now = Instant.now();
+		UUID membershipId = createMembership(member.getId(), manager.getId(), "PLUS",
+			now.minusSeconds(86400), now.plusSeconds(86400 * 30));
+		service.assign(manager.getId(), member.getId(), new CoachAssignmentAssignRequest(coach.getId(), "Start"));
+
+		UUID bookingSessionId = createPtSession(manager.getId(), coach.getId(), now.plusSeconds(86400),
+			"Booking impact");
+		UUID waitlistSessionId = createPtSession(manager.getId(), coach.getId(), now.plusSeconds(172800),
+			"Waitlist impact");
+		UUID bookingId = UUID.randomUUID();
+		UUID waitlistId = UUID.randomUUID();
+		jdbc.update("""
+			insert into bookings (id, class_session_id, member_account_id, membership_id, status,
+				booked_by_account_id)
+			values (?, ?, ?, ?, 'BOOKED', ?)
+			""", bookingId, bookingSessionId, member.getId(), membershipId, member.getId());
+		jdbc.update("""
+			insert into session_waitlists (id, class_session_id, member_account_id, status,
+				joined_by_account_id, source)
+			values (?, ?, ?, 'WAITING', ?, 'MEMBER')
+			""", waitlistId, waitlistSessionId, member.getId(), member.getId());
+
+		PtAssignmentImpactResponse preview = service.previewImpact(manager.getId(), member.getId());
+		assertThat(preview.bookingCount()).isEqualTo(1);
+		assertThat(preview.waitlistCount()).isEqualTo(1);
+		assertThatThrownBy(() -> service.endAssignment(manager.getId(), member.getId(),
+			new CoachAssignmentEndRequest("Changed")))
+			.isInstanceOf(CoachAssignmentException.class)
+			.hasFieldOrPropertyWithValue("code", "COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED");
+
+		CoachAssignmentResponse ended = service.endAssignment(manager.getId(), member.getId(),
+			new CoachAssignmentEndRequest("Changed", new PtAssignmentImpactConfirmation(
+				List.of(bookingId), List.of(waitlistId))));
+
+		assertThat(ended.status()).isEqualTo(CoachAssignmentStatus.ENDED);
+		assertThat(ended.processedImpact().bookingCount()).isEqualTo(1);
+		assertThat(jdbc.queryForObject("select status from bookings where id=?", String.class, bookingId))
+			.isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select cancellation_source from bookings where id=?", String.class,
+			bookingId)).isEqualTo("COACH_ASSIGNMENT_CHANGED");
+		assertThat(jdbc.queryForObject("select status from session_waitlists where id=?", String.class,
+			waitlistId)).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select terminal_reason_code from session_waitlists where id=?",
+			String.class, waitlistId)).isEqualTo("COACH_ASSIGNMENT_CHANGED");
+		assertThat(jdbc.queryForObject("""
+			select count(*) from notification_outbox
+			where recipient_account_id=? and notification_type in ('PT_BOOKING_CANCELLED','PT_WAITLIST_CANCELLED')
+			""", Integer.class, member.getId())).isEqualTo(2);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events
+			where actor_account_id=? and target_id in (?, ?) and action in ('BOOKING_CANCELLED','WAITLIST_CANCELLED')
+			""", Integer.class, manager.getId(), bookingId, waitlistId)).isEqualTo(2);
+	}
+
+	private UUID createPtSession(UUID managerId, UUID coachId, Instant startsAt, String suffix) {
+		UUID disciplineId = UUID.randomUUID();
+		UUID sportClassId = UUID.randomUUID();
+		UUID roomId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		jdbc.update("insert into disciplines (id,name,status) values (?,?,'ACTIVE')",
+			disciplineId, suffix + disciplineId);
+		jdbc.update("""
+			insert into sport_classes (id,discipline_id,name,class_type,status)
+			values (?,?,?,'PT_1_1','ACTIVE')
+			""", sportClassId, disciplineId, suffix + sportClassId);
+		jdbc.update("insert into rooms (id,name,capacity,status) values (?,?,1,'ACTIVE')",
+			roomId, suffix + roomId);
+		jdbc.update("""
+			insert into class_sessions (id,sport_class_id,teaching_coach_account_id,room_id,start_time,
+				end_time,capacity,status,created_by_account_id)
+			values (?,?,?,?,?,?,1,'SCHEDULED',?)
+			""", sessionId, sportClassId, coachId, roomId, Timestamp.from(startsAt),
+			Timestamp.from(startsAt.plusSeconds(3600)), managerId);
+		return sessionId;
 	}
 
 	@Test

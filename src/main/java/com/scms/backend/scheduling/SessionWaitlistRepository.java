@@ -24,6 +24,26 @@ interface SessionWaitlistRepository extends JpaRepository<SessionWaitlist, UUID>
 	List<SessionWaitlist> findWaitingBySessionForUpdate(@Param("sessionId") UUID sessionId);
 
 	@Query(value = """
+		select entry.id as "id", session.id as "sessionId", session.start_time as "sessionStartTime"
+		from session_waitlists entry
+		join class_sessions session on session.id = entry.class_session_id
+		join sport_classes sport_class on sport_class.id = session.sport_class_id
+		where entry.member_account_id = :memberId
+		  and entry.status = 'WAITING'
+		  and session.status = 'SCHEDULED'
+		  and session.start_time > :now
+		  and session.teaching_coach_account_id = :coachId
+		  and sport_class.class_type = 'PT_1_1'
+		order by session.start_time, entry.id
+		""", nativeQuery = true)
+	List<PtImpactView> findFuturePtImpact(@Param("memberId") UUID memberId,
+		@Param("coachId") UUID coachId, @Param("now") Instant now);
+
+	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+	@Query("select entry from SessionWaitlist entry where entry.id in :ids and entry.status = com.scms.backend.scheduling.WaitlistStatus.WAITING order by entry.id")
+	List<SessionWaitlist> findWaitingByIdsForUpdate(@Param("ids") List<UUID> ids);
+
+	@Query(value = """
 		select count(*) from session_waitlists entry
 		where entry.class_session_id = :sessionId and entry.status = 'WAITING'
 		  and (entry.created_at < :createdAt or (entry.created_at = :createdAt and entry.id < :id))
@@ -39,4 +59,10 @@ interface SessionWaitlistRepository extends JpaRepository<SessionWaitlist, UUID>
 		order by entry.sessionId, entry.createdAt, entry.id
 		""")
 	List<SessionWaitlist> findExpiredForUpdate(@Param("now") Instant now);
+
+	interface PtImpactView {
+		UUID getId();
+		UUID getSessionId();
+		Instant getSessionStartTime();
+	}
 }

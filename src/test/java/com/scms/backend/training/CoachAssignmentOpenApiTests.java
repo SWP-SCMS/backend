@@ -31,6 +31,7 @@ class CoachAssignmentOpenApiTests {
 			Map<String, Object> paths = (Map<String, Object>) document.get("paths");
 			assertThat(paths).containsKeys(
 				"/manager/members/{memberId}/coach-assignment",
+				"/manager/members/{memberId}/coach-assignment/impact",
 				"/manager/members/{memberId}/coach-assignments",
 				"/manager/members/{memberId}/coach-assignment/end"
 			);
@@ -47,8 +48,10 @@ class CoachAssignmentOpenApiTests {
 					List.of("200", "204", "401", "403", "404"));
 			assertOperationSecurityAndResponses(paths, "/manager/members/{memberId}/coach-assignments", "get",
 					List.of("200", "400", "401", "403", "404"));
+			assertOperationSecurityAndResponses(paths, "/manager/members/{memberId}/coach-assignment/impact", "get",
+					List.of("200", "401", "403", "404"));
 			assertOperationSecurityAndResponses(paths, "/manager/members/{memberId}/coach-assignment/end", "patch",
-					List.of("200", "400", "401", "403", "404"));
+					List.of("200", "400", "401", "403", "404", "409"));
 
 			// 2. Verify Component Responses use application/problem+json and ProblemDetail
 			for (String statusName : List.of("BadRequest", "Unauthorized", "Forbidden", "NotFound", "Conflict")) {
@@ -74,7 +77,8 @@ class CoachAssignmentOpenApiTests {
 				"MEMBER_NOT_ACTIVE", "COACH_NOT_ACTIVE",
 				"PLUS_MEMBERSHIP_REQUIRED", "COACH_ALREADY_ASSIGNED",
 				"COACH_ASSIGNMENT_NOT_FOUND", "ACTOR_NOT_ACTIVE_MANAGER",
-				"COACH_ASSIGNMENT_CONFLICT"
+				"COACH_ASSIGNMENT_CONFLICT", "COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED",
+				"COACH_ASSIGNMENT_IMPACT_CHANGED"
 			);
 
 			// 4. Verify CoachAssignmentResponse schema
@@ -86,7 +90,8 @@ class CoachAssignmentOpenApiTests {
 			Map<String, Object> respProps = (Map<String, Object>) assignmentResp.get("properties");
 			assertThat(respProps).containsKeys(
 				"id", "memberAccountId", "coachAccountId", "coachFullName", "coachPhone", "coachEmail",
-				"assignedByAccountId", "status", "startsAt", "endsAt", "endReason", "createdAt"
+				"assignedByAccountId", "status", "startsAt", "endsAt", "endReason", "createdAt",
+				"processedImpact"
 			);
 			// Nullability: type must be list with string and null
 			assertThat((List<String>) ((Map<String, Object>) respProps.get("coachFullName")).get("type"))
@@ -113,6 +118,10 @@ class CoachAssignmentOpenApiTests {
 			assertThat((List<String>) assignReq.get("required")).containsExactly("coachAccountId");
 			Map<String, Object> endReq = (Map<String, Object>) schemas.get("CoachAssignmentEndRequest");
 			assertThat((List<String>) endReq.get("required")).containsExactly("reason");
+			assertThat((Map<String, Object>) assignReq.get("properties")).containsKey("impactConfirmation");
+			assertThat((Map<String, Object>) endReq.get("properties")).containsKey("impactConfirmation");
+			assertThat(schemas).containsKeys("PtAssignmentImpactConfirmation", "PtAssignmentImpactItem",
+				"PtAssignmentImpactResponse");
 		}
 		catch (Exception exception) {
 			throw new AssertionError(exception);

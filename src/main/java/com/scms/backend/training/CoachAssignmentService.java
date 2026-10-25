@@ -16,7 +16,10 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
+import com.scms.backend.scheduling.PtAssignmentImpactResponse;
+import com.scms.backend.scheduling.PtCoachAssignmentImpactService;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -33,10 +36,19 @@ public class CoachAssignmentService {
 	private final NotificationWriter notifications;
 	private final Clock clock;
 	private final int maximumMemberCount;
+	private final PtCoachAssignmentImpactService impactService;
 
 	public CoachAssignmentService(CoachAssignmentRepository assignments, AccountRepository accounts,
 			AuditEventRepository audits, NotificationWriter notifications, Clock clock,
 			@Value("${scms.coach-assignment.maximum-member-count:20}") int maximumMemberCount) {
+		this(assignments, accounts, audits, notifications, clock, maximumMemberCount, null);
+	}
+
+	@Autowired
+	public CoachAssignmentService(CoachAssignmentRepository assignments, AccountRepository accounts,
+			AuditEventRepository audits, NotificationWriter notifications, Clock clock,
+			@Value("${scms.coach-assignment.maximum-member-count:20}") int maximumMemberCount,
+			PtCoachAssignmentImpactService impactService) {
 		this.assignments = assignments;
 		this.accounts = accounts;
 		this.audits = audits;
@@ -44,6 +56,7 @@ public class CoachAssignmentService {
 		this.clock = clock;
 		if (maximumMemberCount < 1) throw new IllegalArgumentException("maximumMemberCount must be positive");
 		this.maximumMemberCount = maximumMemberCount;
+		this.impactService = impactService;
 	}
 
 	@Transactional
@@ -92,6 +105,10 @@ public class CoachAssignmentService {
 				throw CoachAssignmentException.alreadyAssignedToThisCoach();
 			}
 			enforceCapacity(coachId);
+			PtAssignmentImpactResponse processedImpact = impactService == null
+				? PtAssignmentImpactResponse.empty()
+				: impactService.resolve(managerId, memberId, current.getCoachAccountId(), now,
+					request.impactConfirmation());
 
 			String endReason = request.reason() != null && !request.reason().isBlank()
 					? request.reason().trim() : "Reassigned to another coach";
@@ -129,7 +146,7 @@ public class CoachAssignmentService {
 					current.getCoachAccountId(), "TRAINING_COACH_ENDED", "COACH_ASSIGNMENT", current.getId(),
 					Map.of("memberAccountId", memberId.toString(), "reason", endReason));
 
-			return CoachAssignmentResponse.from(newAssignment, coach);
+			return CoachAssignmentResponse.from(newAssignment, coach, processedImpact);
 		}
 		else {
 			enforceCapacity(coachId);
@@ -214,7 +231,7 @@ public class CoachAssignmentService {
 	@Transactional
 	public CoachAssignmentResponse endAssignment(UUID managerId, UUID memberId, CoachAssignmentEndRequest request) {
 		ensureActiveManager(managerId);
-		ensureMemberExists(memberId);
+		ensureMemberExistsForUpdate(memberId);
 
 		if (request == null || request.reason() == null || request.reason().trim().isEmpty()) {
 			throw CoachAssignmentException.validationError("reason", "reason must be non-blank");
@@ -228,6 +245,10 @@ public class CoachAssignmentService {
 
 		CoachAssignment current = assignments.findByMemberAccountIdAndStatusForUpdate(memberId,
 				CoachAssignmentStatus.ACTIVE).orElseThrow(CoachAssignmentException::activeAssignmentNotFound);
+		PtAssignmentImpactResponse processedImpact = impactService == null
+			? PtAssignmentImpactResponse.empty()
+			: impactService.resolve(managerId, memberId, current.getCoachAccountId(), now,
+				request.impactConfirmation());
 		String reason = request.reason().trim();
 		current.end(now, reason);
 		assignments.saveAndFlush(current);
@@ -249,7 +270,19 @@ public class CoachAssignmentService {
 				Map.of("memberAccountId", memberId.toString(), "reason", reason));
 
 		Account coach = accounts.findById(current.getCoachAccountId()).orElse(null);
-		return CoachAssignmentResponse.from(current, coach);
+		return CoachAssignmentResponse.from(current, coach, processedImpact);
+	}
+
+	@Transactional
+	public PtAssignmentImpactResponse previewImpact(UUID managerId, UUID memberId) {
+		ensureActiveManager(managerId);
+		ensureMemberExists(memberId);
+		Instant now = clock.instant();
+		assignments.endActiveAssignmentIfPersonalCoachingExpired(memberId, now);
+		CoachAssignment current = assignments.findByMemberAccountIdAndStatus(memberId,
+			CoachAssignmentStatus.ACTIVE).orElseThrow(CoachAssignmentException::activeAssignmentNotFound);
+		return impactService == null ? PtAssignmentImpactResponse.empty()
+			: impactService.preview(memberId, current.getCoachAccountId(), now);
 	}
 
 	private void ensureActiveManager(UUID managerId) {
@@ -264,5 +297,11 @@ public class CoachAssignmentService {
 		if (member.getRole() != AccountRole.MEMBER) {
 			throw CoachAssignmentException.memberNotFound();
 		}
+	}
+
+	private void ensureMemberExistsForUpdate(UUID memberId) {
+		Account member = accounts.findByIdForUpdate(memberId).or(() -> accounts.findById(memberId))
+			.orElseThrow(CoachAssignmentException::memberNotFound);
+		if (member.getRole() != AccountRole.MEMBER) throw CoachAssignmentException.memberNotFound();
 	}
 }
