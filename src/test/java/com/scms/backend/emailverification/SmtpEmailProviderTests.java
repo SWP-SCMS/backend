@@ -6,7 +6,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Instant;
 import java.util.Properties;
+import java.util.UUID;
 
 import jakarta.mail.BodyPart;
 import jakarta.mail.Message;
@@ -22,23 +24,26 @@ import org.springframework.mail.javamail.JavaMailSender;
 class SmtpEmailProviderTests {
 	private JavaMailSender sender;
 	private SmtpEmailProvider provider;
+	private EmailMessageRenderer renderer;
 
 	@BeforeEach
 	void setUp() {
 		sender = mock(JavaMailSender.class);
 		when(sender.createMimeMessage()).thenAnswer(ignored -> new MimeMessage(Session.getInstance(new Properties())));
-		provider = new SmtpEmailProvider(sender, new EmailVerificationProperties(), "no-reply@scms.vn",
-			"smtp.example.test", "hotro@scms.vn");
+		EmailDeliveryProperties delivery = new EmailDeliveryProperties();
+		delivery.setFrom("no-reply@scms.vn");
+		delivery.setSupportContact("hotro@scms.vn");
+		renderer = new EmailMessageRenderer(delivery);
+		provider = new SmtpEmailProvider(sender, new EmailVerificationProperties(), delivery, "smtp.example.test");
 	}
 
 	@Test
 	void sendsVietnameseMultipartEmailAndEscapesUserControlledValues() throws Exception {
-		provider.sendVerificationOtp("member@example.com", "An <script>alert(1)</script>", "123456", 10);
+		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.VERIFICATION, "member@example.com",
+			"An <script>alert(1)</script>", "123456", 10, Instant.parse("2026-10-26T00:00:00Z"));
+		provider.send(request(email));
 
-		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
-		verify(sender).send(captor.capture());
-		MimeMessage message = captor.getValue();
-		message.saveChanges();
+		MimeMessage message = sentMessage();
 		assertThat(message.getSubject()).isEqualTo("Mã xác thực tài khoản SCMS");
 		assertThat(message.getRecipients(Message.RecipientType.TO)[0].toString()).isEqualTo("member@example.com");
 		assertThat(find(message, "text/plain")).contains("123456", "10 phút", "An <script>");
@@ -48,18 +53,16 @@ class SmtpEmailProviderTests {
 
 	@Test
 	void rejectsOtpOutsideTheGeneratedSixDigitFormat() {
-		assertThatThrownBy(() -> provider.sendVerificationOtp("member@example.com", "An", "12<script>", 10))
-			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> renderer.render("smtp", EmailMessageRenderer.VERIFICATION, "member@example.com",
+			"An", "12<script>", 10, Instant.now())).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	void sendsDedicatedPasswordResetTemplateWithSecurityWarning() throws Exception {
-		provider.sendPasswordResetOtp("member@example.com", "An", "654321", 10);
-
-		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
-		verify(sender).send(captor.capture());
-		MimeMessage message = captor.getValue();
-		message.saveChanges();
+		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.PASSWORD_RESET, "member@example.com",
+			"An", "654321", 10, Instant.parse("2026-10-26T00:00:00Z"));
+		provider.send(request(email));
+		MimeMessage message = sentMessage();
 		assertThat(message.getSubject()).isEqualTo("Mã OTP đặt lại mật khẩu SCMS");
 		assertThat(find(message, "text/plain")).contains("654321", "Nếu bạn không yêu cầu đặt lại mật khẩu");
 		assertThat(find(message, "text/html")).contains("654321", "Nếu bạn không yêu cầu đặt lại mật khẩu");
@@ -67,13 +70,25 @@ class SmtpEmailProviderTests {
 
 	@Test
 	void sendsDedicatedEmailChangeTemplate() throws Exception {
-		provider.sendEmailChangeOtp("new@example.com", "An", "654321", 10);
+		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.EMAIL_CHANGE, "new@example.com",
+			"An", "654321", 10, Instant.parse("2026-10-26T00:00:00Z"));
+		provider.send(request(email));
+		MimeMessage message = sentMessage();
+		assertThat(message.getSubject()).isEqualTo("Xác minh email mới cho tài khoản SCMS");
+		assertThat(find(message, "text/plain")).contains("654321", "Nếu bạn không yêu cầu đổi email");
+		assertThat(find(message, "text/html")).contains("654321", "Xác minh email mới");
+	}
+
+	private EmailDeliveryRequest request(EmailMessage email) {
+		return new EmailDeliveryRequest(UUID.randomUUID(), "{}", email);
+	}
+
+	private MimeMessage sentMessage() throws Exception {
 		ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
 		verify(sender).send(captor.capture());
-		MimeMessage message = captor.getValue();message.saveChanges();
-		assertThat(message.getSubject()).isEqualTo("Xác minh email mới cho tài khoản SCMS");
-		assertThat(find(message,"text/plain")).contains("654321","Nếu bạn không yêu cầu đổi email");
-		assertThat(find(message,"text/html")).contains("654321","Xác minh email mới");
+		MimeMessage message = captor.getValue();
+		message.saveChanges();
+		return message;
 	}
 
 	private String find(Part part, String mimeType) throws Exception {

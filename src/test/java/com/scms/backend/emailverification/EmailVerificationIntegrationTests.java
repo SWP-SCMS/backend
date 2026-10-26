@@ -72,6 +72,8 @@ class EmailVerificationIntegrationTests {
 		assertThat(db.queryForObject("select status from accounts where id=?",String.class,accountId)).isEqualTo("INACTIVE");
 		assertThat(db.queryForObject("select email_verification_required from accounts where id=?",Boolean.class,accountId)).isTrue();
 		assertThat(db.queryForObject("select payload_ciphertext is not null and payload_nonce is not null from email_outbox where account_id=?",Boolean.class,accountId)).isTrue();
+		assertThat(db.queryForMap("select payload_format,delivery_provider from email_outbox where account_id=?",accountId))
+			.containsEntry("payload_format","EMAIL_REQUEST_V1").containsEntry("delivery_provider","smtp");
 		String databaseText=db.queryForObject("select otp_digest||encode(payload_ciphertext,'hex') from email_verification_challenges c join email_outbox o on o.account_id=c.account_id where c.account_id=?",String.class,accountId);
 		assertThat(databaseText).doesNotContain("012345");
 		db.update("update email_verification_challenges set otp_digest=? where account_id=?",

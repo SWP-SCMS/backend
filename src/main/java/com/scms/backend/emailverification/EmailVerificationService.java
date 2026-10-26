@@ -24,12 +24,13 @@ public class EmailVerificationService {
 	private final JdbcTemplate db; private final EmailVerificationProperties properties;
 	private final EmailVerificationCrypto crypto; private final DatabaseRateLimiter limits; private final Clock clock;
 	private final AuditEventRepository audits; private final NotificationWriter notifications; private final AccountRepository accounts;
+	private final EmailOutboxEnqueuer outbox;
 
 	EmailVerificationService(JdbcTemplate db, EmailVerificationProperties properties, EmailVerificationCrypto crypto,
 			DatabaseRateLimiter limits, Clock clock, AuditEventRepository audits, NotificationWriter notifications,
-			AccountRepository accounts) {
+			AccountRepository accounts, EmailOutboxEnqueuer outbox) {
 		this.db=db; this.properties=properties; this.crypto=crypto; this.limits=limits; this.clock=clock;
-		this.audits=audits; this.notifications=notifications; this.accounts=accounts;
+		this.audits=audits; this.notifications=notifications; this.accounts=accounts; this.outbox=outbox;
 	}
 
 	public boolean enabled() { return properties.isEnabled(); }
@@ -170,13 +171,8 @@ public class EmailVerificationService {
 			insert into email_verification_challenges(id,account_id,generation,otp_digest,hmac_key_version,expires_at,max_attempts,resend_available_at)
 			values (?,?,?,?,?,?,?,?)
 			""",challengeId,accountId,generation,crypto.otpDigest(otp,hmacVersion),hmacVersion,Timestamp.from(expires),properties.getMaxAttempts(),Timestamp.from(resend));
-		String encryptionVersion=properties.getEncryptionActiveVersion(); var encrypted=crypto.encryptOtp(otp,encryptionVersion);
-		db.update("""
-			insert into email_outbox(id,event_key,account_id,generation,recipient_email,template_key,deliver_before,
-			 payload_ciphertext,payload_nonce,encryption_key_version,status,next_retry_at)
-			values (?,?,?,?,?,'EMAIL_VERIFICATION_OTP',?,?,?,?, 'PENDING',?)
-			""",UUID.randomUUID(),"EMAIL_VERIFICATION_OTP:"+accountId+":"+generation,accountId,generation,email,Timestamp.from(expires),
-			encrypted.ciphertext(),encrypted.nonce(),encryptionVersion,Timestamp.from(now));
+		outbox.enqueue("EMAIL_VERIFICATION_OTP:"+accountId+":"+generation,accountId,generation,email,
+			EmailMessageRenderer.VERIFICATION,otp,expires,now);
 		audits.save(new AuditEvent(UUID.randomUUID(),auditAction,"ACCOUNT",accountId,Map.of("source","SELF_REGISTRATION","generation",generation)));
 		return new Generated(expires,resend);
 	}

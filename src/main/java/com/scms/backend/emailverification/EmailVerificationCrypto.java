@@ -32,22 +32,30 @@ class EmailVerificationCrypto {
 	String rateKey(String value) { return hex(hmac(properties.rateLimitKeyBytes(), value)); }
 
 	Encrypted encryptOtp(String otp, String version) {
+		return encryptPayload(otp, version);
+	}
+
+	Encrypted encryptPayload(String payload, String version) {
 		try {
 			byte[] nonce = new byte[12]; random.nextBytes(nonce);
 			Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
 			cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(properties.encryptionKeyMap().get(version), "AES"),
 				new GCMParameterSpec(128, nonce));
-			return new Encrypted(cipher.doFinal(otp.getBytes(StandardCharsets.US_ASCII)), nonce);
-		} catch (Exception exception) { throw new IllegalStateException("Unable to encrypt email OTP", exception); }
+			return new Encrypted(cipher.doFinal(payload.getBytes(StandardCharsets.UTF_8)), nonce);
+		} catch (Exception exception) { throw new IllegalStateException("Unable to encrypt email payload", exception); }
 	}
 
 	String decryptOtp(byte[] ciphertext, byte[] nonce, String version) {
+		return decryptPayload(ciphertext, nonce, version);
+	}
+
+	String decryptPayload(byte[] ciphertext, byte[] nonce, String version) {
 		try {
 			Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
 			cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(properties.encryptionKeyMap().get(version), "AES"),
 				new GCMParameterSpec(128, nonce));
-			return new String(cipher.doFinal(ciphertext), StandardCharsets.US_ASCII);
-		} catch (Exception exception) { throw new IllegalStateException("Unable to decrypt email OTP", exception); }
+			return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
+		} catch (Exception exception) { throw new IllegalStateException("Unable to decrypt email payload", exception); }
 	}
 
 	private byte[] hmac(byte[] key, String value) {

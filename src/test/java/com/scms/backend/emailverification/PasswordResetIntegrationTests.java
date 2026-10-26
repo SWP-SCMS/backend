@@ -80,6 +80,8 @@ class PasswordResetIntegrationTests {
 			crypto.otpDigest("PASSWORD_RESET:" + requestId + ":" + generation + ":012345", "v1"), requestId);
 		assertThat(db.queryForObject("select template_key from email_outbox where event_key like 'PASSWORD_RESET_OTP:%'",
 			String.class)).isEqualTo("PASSWORD_RESET_OTP");
+		assertThat(db.queryForMap("select payload_format,delivery_provider from email_outbox where event_key like 'PASSWORD_RESET_OTP:%'"))
+			.containsEntry("payload_format","EMAIL_REQUEST_V1").containsEntry("delivery_provider","smtp");
 
 		MvcResult verified = mvc.perform(post("/api/v1/auth/password-reset/verify").contextPath("/api/v1")
 			.contentType(MediaType.APPLICATION_JSON)
