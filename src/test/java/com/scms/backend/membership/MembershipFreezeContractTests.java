@@ -54,6 +54,15 @@ class MembershipFreezeContractTests {
 	}
 
 	@Test
+	void effectiveDateMigrationIncludesPaidScheduledPeriodsInBookingAuthority() throws Exception {
+		String migration = Files.readString(Path.of("src/main/resources/db/migration/V47__freeze_effective_from_scheduled_start.sql"));
+		assertThat(migration).contains("freeze_period.status in ('SCHEDULED', 'ACTIVE')",
+			"coalesce(freeze_period.actual_start_date, freeze_period.scheduled_start_date) <=",
+			"coalesce(freeze_period.actual_end_date, freeze_period.scheduled_end_date) >",
+			"Asia/Ho_Chi_Minh", "MEMBERSHIP_FROZEN");
+	}
+
+	@Test
 	void openApiIncludesEveryFreezeStatusReturnedAfterExecution() throws Exception {
 		String contract = Files.readString(Path.of("src/main/resources/openapi/membership-freeze.yaml"));
 		assertThat(contract).contains("ACTIVE", "COMPLETED", "OBSOLETE", "WITHDRAWN",

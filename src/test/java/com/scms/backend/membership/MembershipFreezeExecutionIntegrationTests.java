@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
@@ -17,6 +18,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.scms.backend.centervisit.CenterVisitRepository;
+import com.scms.backend.scheduling.BookingRepository;
+import com.scms.backend.training.CoachAssignmentRepository;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -29,6 +33,9 @@ class MembershipFreezeExecutionIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 	@Autowired JdbcTemplate jdbc;
 	@Autowired MembershipFreezeExecutionService execution;
+	@Autowired BookingRepository bookings;
+	@Autowired CenterVisitRepository visits;
+	@Autowired CoachAssignmentRepository assignments;
 	@Autowired PlatformTransactionManager transactionManager;
 
 	@Test
@@ -74,6 +81,86 @@ class MembershipFreezeExecutionIntegrationTests {
 		assertThatThrownBy(() -> jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
 			UUID.randomUUID(), futureSession(manager, coach, now.plusSeconds(3600)), member, membership, member))
 			.hasStackTraceContaining("MEMBERSHIP_FROZEN");
+	}
+
+	@Test
+	void scheduledFreezeBlocksMembershipBenefitsAndDirectBookingFromItsApprovedStartDate() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID membership = membership(member, manager, now);
+		UUID request = UUID.randomUUID();
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		LocalDate startDate = today.minusDays(1);
+		LocalDate endDate = today.plusDays(1);
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'late scheduler','SCHEDULED')",
+			request, membership, member, member, java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate));
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')",
+			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate));
+
+		assertThat(bookings.hasActiveMembershipFreeze(member)).isTrue();
+		assertThat(visits.hasActiveMembershipFreeze(member)).isTrue();
+		assertThat(assignments.hasActiveMembershipFreeze(member)).isTrue();
+		assertThat(assignments.hasActiveMembershipBenefit(member, "PERSONAL_COACHING", now)).isFalse();
+		assertThatThrownBy(() -> jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
+			UUID.randomUUID(), futureSession(manager, coach, now.plusSeconds(3600)), member, membership, member))
+			.hasStackTraceContaining("MEMBERSHIP_FROZEN");
+	}
+
+	@Test
+	void earlyEndedActiveFreezeStopsBlockingBenefitsAndDirectBooking() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		UUID member = account("MEMBER");
+		UUID coach = account("COACH");
+		UUID membership = membership(member, manager, now);
+		UUID request = UUID.randomUUID();
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		LocalDate start = today.minusDays(2);
+		LocalDate end = today.plusDays(2);
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'ended early','COMPLETED')",
+			request, membership, member, member, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end));
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,actual_start_date,actual_end_date,status) values(?,?,?,?,?,?,?,'ACTIVE')",
+			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end),
+			java.sql.Date.valueOf(start), java.sql.Date.valueOf(today));
+
+		assertThat(bookings.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(visits.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(assignments.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(assignments.hasActiveMembershipBenefit(member, "PERSONAL_COACHING", now)).isTrue();
+		assertThatCode(() -> jdbc.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) values(?,?,?,?,'BOOKED',?)",
+			UUID.randomUUID(), futureSession(manager, coach, now.plusSeconds(3600)), member, membership, member))
+			.doesNotThrowAnyException();
+	}
+
+	@Test
+	void freezeOutsideItsScheduledWindowOrInTerminalStateDoesNotBlockBenefits() {
+		Instant now = Instant.now();
+		UUID manager = account("MANAGER");
+		LocalDate today = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+		assertFreezeInactive(manager, now, "SCHEDULED", "SCHEDULED", today.plusDays(1), today.plusDays(3));
+		assertFreezeInactive(manager, now, "SCHEDULED", "SCHEDULED", today.minusDays(2), today);
+		assertFreezeInactive(manager, now, "APPROVED_PENDING_PAYMENT", null, today.minusDays(1), today.plusDays(1));
+		assertFreezeInactive(manager, now, "COMPLETED", "COMPLETED", today.minusDays(1), today.plusDays(1));
+		assertFreezeInactive(manager, now, "OBSOLETE", "OBSOLETE", today.minusDays(1), today.plusDays(1));
+	}
+
+	private void assertFreezeInactive(UUID manager, Instant now, String requestStatus, String periodStatus,
+			LocalDate start, LocalDate end) {
+		UUID member = account("MEMBER");
+		UUID membership = membership(member, manager, now);
+		UUID request = UUID.randomUUID();
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,?,?)",
+			request, membership, member, member, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end), "boundary", requestStatus);
+		if (periodStatus != null) {
+			jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,?)",
+				UUID.randomUUID(), request, membership, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end), periodStatus);
+		}
+		assertThat(bookings.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(visits.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(assignments.hasActiveMembershipFreeze(member)).isFalse();
+		assertThat(assignments.hasActiveMembershipBenefit(member, "PERSONAL_COACHING", now)).isTrue();
 	}
 
 	@Test

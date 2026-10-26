@@ -131,7 +131,7 @@ class MembershipFreezeExecutionServiceTests {
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(mock(com.scms.backend.account.Account.class)));
 		when(memberships.findByIdForUpdate(membershipId)).thenReturn(Optional.of(membership));
 		when(requests.findByIdForUpdate(requestId)).thenReturn(Optional.of(request));
-		when(jdbc.update(contains("status='ACTIVE'"), eq(Date.valueOf("2026-11-02")), eq(requestId))).thenReturn(1);
+		when(jdbc.update(contains("status='ACTIVE'"), eq(Date.valueOf("2026-11-01")), eq(requestId))).thenReturn(1);
 		when(bookings.cancelFutureBookingsForMembershipFreeze(eq(memberId), eq(null),
 				eq(Instant.parse("2026-10-31T17:00:00Z")), eq(Instant.parse("2026-11-04T17:00:00Z")),
 				eq(Instant.parse("2026-11-02T00:00:00Z")))).thenReturn(List.of(sessionId));

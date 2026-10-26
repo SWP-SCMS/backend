@@ -27,9 +27,9 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 
 	@Query(value = """
 		select exists (select 1 from membership_freeze_periods freeze_period join memberships membership on membership.id = freeze_period.membership_id
-		where membership.member_account_id = :memberId and freeze_period.status = 'ACTIVE'
-		and freeze_period.scheduled_start_date <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
-		and freeze_period.scheduled_end_date > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date)
+		where membership.member_account_id = :memberId and freeze_period.status in ('SCHEDULED', 'ACTIVE')
+		and coalesce(freeze_period.actual_start_date, freeze_period.scheduled_start_date) <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
+		and coalesce(freeze_period.actual_end_date, freeze_period.scheduled_end_date) > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date)
 		""", nativeQuery = true)
 	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
 
