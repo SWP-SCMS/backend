@@ -18,7 +18,14 @@ class EmailOutboxDispatcher {
 		initialDelayString="${scms.email-verification.dispatch-initial-delay:10000}")
 	void dispatch(){Instant now=clock.instant();int expired=delivery.expire(now);if(expired>0)log.warn("event=email_outbox_expired count={}",expired);
 		for(int i=0;i<50;i++){var claimed=delivery.claim(clock.instant(),worker);if(claimed.isEmpty())return;var job=claimed.orElseThrow();
-			try{delivery.deliver(job,clock.instant());delivery.sent(job.id(),clock.instant());}
-			catch(RuntimeException ex){delivery.failed(job,clock.instant());log.warn("event=email_delivery_failed outboxId={} accountId={}",job.id(),job.accountId());}}
+			try{var result=delivery.deliver(job,clock.instant());delivery.sent(job.id(),result.providerMessageId(),clock.instant());}
+			catch(EmailDeliveryException ex){
+				if(ex.retryable())delivery.failed(job,clock.instant(),ex.errorName(),ex.retryAfter());
+				else delivery.terminal(job.id(),clock.instant(),ex.errorName());
+				log.warn("event=email_delivery_failed outboxId={} accountId={} provider={} error={} retryable={}",
+					job.id(),job.accountId(),job.deliveryProvider(),ex.errorName(),ex.retryable());}
+			catch(RuntimeException ex){delivery.failed(job,clock.instant(),"UNEXPECTED_EMAIL_PROVIDER_ERROR",null);
+				log.warn("event=email_delivery_failed outboxId={} accountId={} provider={} error=unexpected",
+					job.id(),job.accountId(),job.deliveryProvider());}}
 	}
 }

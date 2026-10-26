@@ -38,11 +38,12 @@ public class PasswordResetService {
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
+	private final EmailOutboxEnqueuer outbox;
 
 	PasswordResetService(JdbcTemplate db, AccountRepository accounts, PasswordEncoder passwords,
 			RefreshTokenService refreshTokens, EmailVerificationProperties properties,
 			EmailVerificationCrypto crypto, DatabaseRateLimiter limits, AuditEventRepository audits,
-			NotificationWriter notifications, Clock clock) {
+			NotificationWriter notifications, Clock clock, EmailOutboxEnqueuer outbox) {
 		this.db = db;
 		this.accounts = accounts;
 		this.passwords = passwords;
@@ -53,6 +54,7 @@ public class PasswordResetService {
 		this.audits = audits;
 		this.notifications = notifications;
 		this.clock = clock;
+		this.outbox = outbox;
 	}
 
 	@Transactional(noRollbackFor = EmailVerificationException.class)
@@ -207,15 +209,8 @@ public class PasswordResetService {
 	}
 
 	private void enqueueOtp(Account account, UUID requestId, int generation, String otp, Instant expiresAt, Instant now) {
-		String encryptionVersion = properties.getEncryptionActiveVersion();
-		var encrypted = crypto.encryptOtp(otp, encryptionVersion);
-		db.update("""
-			insert into email_outbox(id,event_key,account_id,generation,recipient_email,template_key,deliver_before,
-			 payload_ciphertext,payload_nonce,encryption_key_version,status,next_retry_at)
-			values (?,?,?,?,?,?,?,?,?,?,'PENDING',?)
-			""", UUID.randomUUID(), "PASSWORD_RESET_OTP:" + requestId + ":" + generation, account.getId(), generation,
-			account.getEmail(), TEMPLATE_KEY, Timestamp.from(expiresAt), encrypted.ciphertext(), encrypted.nonce(),
-			encryptionVersion, Timestamp.from(now));
+		outbox.enqueue("PASSWORD_RESET_OTP:" + requestId + ":" + generation, account.getId(), generation,
+			account.getEmail(), TEMPLATE_KEY, otp, expiresAt, now);
 	}
 
 	private void cancelOtpOutbox(UUID requestId, Instant now) {

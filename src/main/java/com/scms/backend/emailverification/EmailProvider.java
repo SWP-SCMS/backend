@@ -1,13 +1,6 @@
 package com.scms.backend.emailverification;
 
 public interface EmailProvider {
-	void sendVerificationOtp(String recipient, String recipientName, String otp, long expiresInMinutes);
-
-	default void sendPasswordResetOtp(String recipient, String recipientName, String otp, long expiresInMinutes) {
-		sendVerificationOtp(recipient, recipientName, otp, expiresInMinutes);
-	}
-
-	default void sendEmailChangeOtp(String recipient, String recipientName, String otp, long expiresInMinutes) {
-		sendVerificationOtp(recipient, recipientName, otp, expiresInMinutes);
-	}
+	String providerName();
+	EmailDeliveryResult send(EmailDeliveryRequest request);
 }

@@ -40,14 +40,15 @@ public class AccountEmailChangeService {
 	private final NotificationWriter notifications;
 	private final RefreshTokenService refreshTokens;
 	private final Clock clock;
+	private final EmailOutboxEnqueuer outbox;
 
 	AccountEmailChangeService(JdbcTemplate db, AccountRepository accounts, PasswordEncoder passwords,
 			EmailVerificationProperties properties, EmailVerificationCrypto crypto, DatabaseRateLimiter limits,
 			AuditEventRepository audits, NotificationWriter notifications, RefreshTokenService refreshTokens,
-			Clock clock) {
+			Clock clock, EmailOutboxEnqueuer outbox) {
 		this.db = db; this.accounts = accounts; this.passwords = passwords; this.properties = properties;
 		this.crypto = crypto; this.limits = limits; this.audits = audits; this.notifications = notifications;
-		this.refreshTokens = refreshTokens; this.clock = clock;
+		this.refreshTokens = refreshTokens; this.clock = clock; this.outbox = outbox;
 	}
 
 	@Transactional(noRollbackFor = EmailVerificationException.class)
@@ -253,15 +254,8 @@ public class AccountEmailChangeService {
 
 	private void enqueue(UUID requestId, UUID accountId, String email, String otp, int generation,
 			Instant expires, Instant now) {
-		String version = properties.getEncryptionActiveVersion();
-		var encrypted = crypto.encryptOtp(otp, version);
-		db.update("""
-			insert into email_outbox(id,event_key,account_id,generation,recipient_email,template_key,deliver_before,
-			 payload_ciphertext,payload_nonce,encryption_key_version,status,next_retry_at)
-			values (?,?,?,?,?,?,?,?,?,?,'PENDING',?)
-			""", UUID.randomUUID(), EVENT_PREFIX + requestId + ":" + generation, accountId, generation, email,
-			TEMPLATE_KEY, Timestamp.from(expires), encrypted.ciphertext(), encrypted.nonce(), version,
-			Timestamp.from(now));
+		outbox.enqueue(EVENT_PREFIX + requestId + ":" + generation, accountId, generation, email,
+			TEMPLATE_KEY, otp, expires, now);
 	}
 
 	private void cancelOutbox(UUID requestId, Instant now) {

@@ -60,6 +60,8 @@ class StaffEmailChangeIntegrationTests {
 		assertThat(pending.maskedEmail()).isEqualTo("n***@example.test");
 		assertThat(accounts.findById(account.getId()).orElseThrow().getEmail()).isEqualTo("old@example.test");
 		assertThat(service.status(account.getId()).pending()).isTrue();
+		assertThat(db.queryForMap("select payload_format,delivery_provider from email_outbox where account_id=?",account.getId()))
+			.containsEntry("payload_format","EMAIL_REQUEST_V1").containsEntry("delivery_provider","smtp");
 		assertThat(db.queryForObject("select count(*) from notification_outbox where recipient_account_id=? and notification_type='ACCOUNT_EMAIL_CHANGE_REQUESTED'",Integer.class,account.getId())).isEqualTo(1);
 		String otp=latestOtp(account.getId());
 
@@ -123,5 +125,5 @@ class StaffEmailChangeIntegrationTests {
 
 	private Account createAccount(AccountRole role,String email){UUID id=UUID.randomUUID();return accounts.saveAndFlush(new Account(id,role,AccountStatus.ACTIVE,"Account <safe>","09"+id.toString().substring(0,8),email,LocalDate.of(1990,1,1),passwords.encode("Secret123!")));}
 	private void insertRefreshToken(UUID accountId){db.update("insert into refresh_tokens(id,account_id,token_hash,expires_at) values (?,?,?,?)",UUID.randomUUID(),accountId,"a".repeat(64),Timestamp.from(Instant.now().plusSeconds(3600)));}
-	private String latestOtp(UUID accountId){Map<String,Object> row=db.queryForMap("select payload_ciphertext,payload_nonce,encryption_key_version from email_outbox where account_id=? and template_key='ACCOUNT_EMAIL_CHANGE_OTP' and status='PENDING' order by created_at desc limit 1",accountId);return crypto.decryptOtp((byte[])row.get("payload_ciphertext"),(byte[])row.get("payload_nonce"),(String)row.get("encryption_key_version"));}
+	private String latestOtp(UUID accountId){Map<String,Object> row=db.queryForMap("select payload_ciphertext,payload_nonce,encryption_key_version from email_outbox where account_id=? and template_key='ACCOUNT_EMAIL_CHANGE_OTP' and status='PENDING' order by created_at desc limit 1",accountId);String payload=crypto.decryptPayload((byte[])row.get("payload_ciphertext"),(byte[])row.get("payload_nonce"),(String)row.get("encryption_key_version"));var matcher=java.util.regex.Pattern.compile("\\b[0-9]{6}\\b").matcher(payload);if(!matcher.find())throw new AssertionError("OTP missing from encrypted email snapshot");return matcher.group();}
 }
