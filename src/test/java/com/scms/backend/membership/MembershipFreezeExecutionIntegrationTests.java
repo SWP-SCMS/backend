@@ -96,9 +96,9 @@ class MembershipFreezeExecutionIntegrationTests {
 		jdbc.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',?,?)",
 			waitlist, session, waitingMember, waitingMember, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now.minusSeconds(60)));
 		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'integration','SCHEDULED')",
-			request, membership, member, member, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(1)));
+			request, membership, member, member, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(2)));
 		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')",
-			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(1)));
+			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(today), java.sql.Date.valueOf(today.plusDays(2)));
 
 		new TransactionTemplate(transactionManager).executeWithoutResult(ignored -> execution.activate(request, today, now));
 
