@@ -197,9 +197,13 @@ class SepayServiceTests {
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
 
-		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
-			.doesNotThrowAnyException();
+		SepayWebhookResponse response = service("MB", "123456789", "SCMS GYM")
+			.webhook("hook-secret", request);
 
+		assertThat(response).isNotNull();
+		assertThat(response.success()).isTrue();
+		assertThat(response.processed()).isFalse();
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
 		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
 	}
 
@@ -217,9 +221,13 @@ class SepayServiceTests {
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
 
-		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
-			.doesNotThrowAnyException();
+		SepayWebhookResponse response = service("MB", "123456789", "SCMS GYM")
+			.webhook("hook-secret", request);
 
+		assertThat(response).isNotNull();
+		assertThat(response.success()).isTrue();
+		assertThat(response.processed()).isFalse();
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
 		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
 	}
 
@@ -239,9 +247,13 @@ class SepayServiceTests {
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
 
-		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
-			.doesNotThrowAnyException();
+		SepayWebhookResponse response = service("MB", "123456789", "SCMS GYM")
+			.webhook("hook-secret", request);
 
+		assertThat(response).isNotNull();
+		assertThat(response.success()).isTrue();
+		assertThat(response.processed()).isFalse();
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
 		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
 	}
 
@@ -265,9 +277,13 @@ class SepayServiceTests {
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
 
-		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
-			.doesNotThrowAnyException();
+		SepayWebhookResponse response = service("MB", "123456789", "SCMS GYM")
+			.webhook("hook-secret", request);
 
+		assertThat(response).isNotNull();
+		assertThat(response.success()).isTrue();
+		assertThat(response.processed()).isFalse();
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.DESTINATION_SNAPSHOT_MISSING);
 		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
 	}
 

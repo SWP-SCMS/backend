@@ -363,7 +363,9 @@ class GeneratedOpenApiTests {
 			.path("content").elements().next().path("schema");
 		if (schema.has("$ref")) schema = document.at(schema.path("$ref").asText().substring(1));
 
-		assertThat(schema.path("required").toString()).contains("success", "processed", "outcome");
+		List<String> requiredFields = new ArrayList<>();
+		schema.path("required").forEach(field -> requiredFields.add(field.asText()));
+		assertThat(requiredFields).contains("success", "processed", "outcome");
 	}
 
 	@Test

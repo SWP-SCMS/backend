@@ -510,7 +510,9 @@ class PaymentFlowIntegrationTests {
 		UUID payment = pendingPayment(order, 12000, reference);
 
 		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("DESTINATION_SNAPSHOT_MISSING"));
 
 		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
 			.isEqualTo("PENDING");
@@ -518,6 +520,15 @@ class PaymentFlowIntegrationTests {
 			.isEqualTo("PENDING_PAYMENT");
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
+		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
+			.isZero();
+		assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
+			.isZero();
+		assertThat(count("""
+			select count(*) from notification_outbox
+			where notification_type='PAYMENT_PAID' and target_id=?
+			""", payment))
+			.isZero();
 	}
 
 	@Test
@@ -537,9 +548,14 @@ class PaymentFlowIntegrationTests {
 			UUID payment = pendingPaymentWithDestinationSnapshot(order, 12000, reference);
 			long transactionId = 9200L + index;
 
-			assertThatCode(() -> fixed.webhook("hook-secret", new SepayWebhookRequest(
+			SepayWebhookResponse response = fixed.webhook("hook-secret", new SepayWebhookRequest(
 				transactionId, reference, "PAY " + reference, BigInteger.valueOf(12000), "in",
-				null, null, "123456789"))).doesNotThrowAnyException();
+				null, null, "123456789"));
+
+			assertThat(response).isNotNull();
+			assertThat(response.success()).isTrue();
+			assertThat(response.processed()).isFalse();
+			assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
 
 			assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
 				.isEqualTo("PENDING");
@@ -550,6 +566,11 @@ class PaymentFlowIntegrationTests {
 			assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
 				.isZero();
 			assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
+				.isZero();
+			assertThat(count("""
+				select count(*) from notification_outbox
+				where notification_type='PAYMENT_PAID' and target_id=?
+				""", payment))
 				.isZero();
 		}
 	}
@@ -567,7 +588,8 @@ class PaymentFlowIntegrationTests {
 
 		webhook("hook-secret", webhookBody(9202, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("PAYMENT_WINDOW_EXPIRED"));
 
 		reconcile(receptionist, payment, paidReconciliation(12000, reference, "manual-expired-" + order))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
@@ -594,28 +616,38 @@ class PaymentFlowIntegrationTests {
 			.andExpect(status().isUnauthorized());
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "out", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("PAYMENT_NOT_PAYABLE"));
 		webhook("hook-secret", webhookBody(9001, reference, "WRONG", 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("REFERENCE_MISMATCH"));
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12001, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("AMOUNT_MISMATCH"));
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "000"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("ACCOUNT_MISMATCH"));
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
 
-		String paid = webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(true)).andExpect(jsonPath("$.status").value("PAID"))
-			.andReturn().getResponse().getContentAsString();
-		String receiptId = JsonPath.read(paid, "$.receiptId");
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.receiptId").value(receiptId));
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(true))
+			.andExpect(jsonPath("$.outcome").value("FULFILLED"))
+			.andExpect(jsonPath("$.paymentId").value(payment.toString()))
+			.andExpect(jsonPath("$.paymentStatus").value("PAID"));
+		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(true))
+			.andExpect(jsonPath("$.outcome").value("ALREADY_PROCESSED"))
+			.andExpect(jsonPath("$.paymentId").value(payment.toString()))
+			.andExpect(jsonPath("$.paymentStatus").value("PAID"));
 		webhook("hook-secret", webhookBody(9002, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("PAYMENT_NOT_PAYABLE"));
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
@@ -630,11 +662,13 @@ class PaymentFlowIntegrationTests {
 
 		webhook("hook-secret", webhookBody(9301, reference, "WRONG", 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("REFERENCE_MISMATCH"));
 	}
 
 	@Test
-	void duplicateSepayTransactionIdCreatesOnePaidEventAndAtMostOneFulfillment() throws Exception {
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void concurrentDuplicateWebhookCompletesWithoutDeadlockOrDuplicateArtifacts() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
 		UUID offer = offer(manager, "PLUS", 12000, false);
@@ -642,18 +676,72 @@ class PaymentFlowIntegrationTests {
 		String reference = reference(sepay(member.getAccount(), order));
 		UUID payment = db.queryForObject("select id from payments where order_id=?", UUID.class, order);
 		String event = webhookBody(9302, reference, "PAY " + reference, 12000, "in", "123456789");
+		CountDownLatch orderLocked = new CountDownLatch(1);
+		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch requestsStarted = new CountDownLatch(2);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+		MvcResult firstResult;
+		MvcResult secondResult;
 
-		for (int attempt = 0; attempt < 2; attempt++) {
-			webhook("hook-secret", event).andExpect(status().isOk())
-				.andExpect(jsonPath("$.success").value(true));
+		try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					db.queryForObject("select id from membership_orders where id=? for update", UUID.class, order);
+					orderLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(orderLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> first = executor.submit(() -> {
+				await(start);
+				requestsStarted.countDown();
+				return webhook("hook-secret", event).andReturn();
+			});
+			Future<MvcResult> second = executor.submit(() -> {
+				await(start);
+				requestsStarted.countDown();
+				return webhook("hook-secret", event).andReturn();
+			});
+			try {
+				start.countDown();
+				assertThat(requestsStarted.await(10, TimeUnit.SECONDS)).isTrue();
+				allowCommit.countDown();
+				firstResult = first.get(10, TimeUnit.SECONDS);
+				secondResult = second.get(10, TimeUnit.SECONDS);
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				start.countDown();
+				allowCommit.countDown();
+			}
 		}
+
+		assertThat(List.of(firstResult, secondResult)).allSatisfy(result ->
+			assertThat(result.getResponse().getStatus()).isEqualTo(200));
+		List<JsonNode> acknowledgements = List.of(
+			objectMapper.readTree(firstResult.getResponse().getContentAsString()),
+			objectMapper.readTree(secondResult.getResponse().getContentAsString()));
+		assertThat(acknowledgements).allSatisfy(response -> {
+			assertThat(response.path("success").asBoolean()).isTrue();
+			assertThat(response.path("processed").asBoolean()).isTrue();
+		});
+		assertThat(acknowledgements.stream().map(response -> response.path("outcome").asText()).toList())
+			.containsExactlyInAnyOrder("FULFILLED", "ALREADY_PROCESSED");
 
 		assertThat(db.queryForObject("select provider_transaction_id from payments where id=?", String.class, payment))
 			.isEqualTo("9302");
+		assertThat(count("""
+			select count(*) from payment_provider_events
+			where provider='SEPAY' and provider_transaction_id='9302'
+			""")).isOne();
 		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
 			.isOne();
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
+		assertThat(count("""
+			select count(*) from notification_outbox
+			where notification_type='PAYMENT_PAID' and target_id=?
+			""", payment))
+			.isOne();
 	}
 
 	@Test
@@ -669,10 +757,12 @@ class PaymentFlowIntegrationTests {
 
 		webhook("hook-secret", webhookBody(777, firstRef, firstRef, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(true));
+			.andExpect(jsonPath("$.processed").value(true))
+			.andExpect(jsonPath("$.outcome").value("FULFILLED"));
 		webhook("hook-secret", webhookBody(777, secondRef, secondRef, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false));
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("ALREADY_PROCESSED"));
 		assertThat(count("select count(*) from memberships where order_id=?", secondOrder)).isZero();
 	}
 
