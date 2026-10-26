@@ -14,6 +14,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,8 +54,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @Transactional
 class ReceptionMemberMembershipSummaryIntegrationTests {
 
-	private static final Instant NOW = Instant.parse("2026-10-24T17:00:00Z");
-	private static final LocalDate TODAY = LocalDate.of(2026, 10, 25);
+	private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
+	private Instant now;
+	private LocalDate today;
 	private static final AtomicInteger PHONES = new AtomicInteger(750_000_000);
 	@Container @ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
@@ -73,7 +75,9 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 
 	@BeforeEach
 	void setUp() {
-		when(clock.instant()).thenReturn(NOW);
+		today = jdbc.queryForObject("select (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date", LocalDate.class);
+		now = today.atTime(12, 0).atZone(VIETNAM).toInstant();
+		when(clock.instant()).thenReturn(now);
 		when(clock.getZone()).thenReturn(ZoneOffset.UTC);
 		receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		member = profiles.saveAndFlush(new MemberProfile(account(AccountRole.MEMBER, AccountStatus.ACTIVE), "photo", null));
@@ -84,15 +88,15 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	@ParameterizedTest
 	@ValueSource(booleans = {false, true})
 	void bothSearchCriteriaReturnActiveAlongsideReservedWithCurrentInactivePlan(boolean byPhone) throws Exception {
-		UUID active = membership("ACTIVE", NOW.minusSeconds(82800), NOW.plusSeconds(2592000));
+		UUID active = membership("ACTIVE", now.minusSeconds(82800), now.plusSeconds(2592000));
 		membership("RESERVED", null, null);
 		jdbc.update("insert into membership_plan_benefits(plan_code,benefit_code) values(?,'PERSONAL_COACHING'),(?,'CENTER_ACCESS'),(?,'CLASS_BOOKING')", plan, plan, plan);
 		JsonNode summary = search(byPhone).path("activeMembership");
 		assertThat(summary.path("membershipId").asText()).isEqualTo(active.toString());
 		assertThat(summary.path("offerName").asText()).isEqualTo("Purchased offer");
 		assertThat(summary.path("planName").asText()).isEqualTo("Current plan");
-		assertThat(summary.path("effectiveStartDate").asText()).isEqualTo("2026-10-24");
-		assertThat(summary.path("effectiveEndDate").asText()).isEqualTo("2026-11-24");
+		assertThat(summary.path("effectiveStartDate").asText()).isEqualTo(today.minusDays(1).toString());
+		assertThat(summary.path("effectiveEndDate").asText()).isEqualTo(today.plusDays(30).toString());
 		assertThat(summary.path("benefitCodes").toString()).isEqualTo("[\"CENTER_ACCESS\",\"CLASS_BOOKING\",\"PERSONAL_COACHING\"]");
 		assertThat(summary.path("status").asText()).isEqualTo("ACTIVE");
 		assertThat(summary.path("frozen").asBoolean()).isFalse();
@@ -107,8 +111,8 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 		"ACTIVE,0,1,true", "ACTIVE,-1,0,false", "ACTIVE,1,2,false"})
 	void statusAndHalfOpenTimeBoundariesAreReadWithoutLifecycleMutation(String status, int start, int end, boolean current) {
 		boolean undated = status.equals("RESERVED") || status.equals("CANCELLED");
-		if (!status.equals("NONE")) membership(status, undated ? null : NOW.plusSeconds(start),
-			undated ? null : NOW.plusSeconds(end));
+		if (!status.equals("NONE")) membership(status, undated ? null : now.plusSeconds(start),
+			undated ? null : now.plusSeconds(end));
 		if (status.equals("TERMINATED") || status.equals("ACTIVE") && end == 0) membership("RESERVED", null, null);
 		var before = jdbc.queryForList("select * from memberships where member_account_id=?", member.getAccountId());
 		long audits = jdbc.queryForObject("select count(*) from audit_events", Long.class);
@@ -125,8 +129,8 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	@CsvSource({"SCHEDULED,1,3,false", "SCHEDULED,-1,1,false", "ACTIVE,0,1,true", "ACTIVE,-1,0,false",
 		"ACTIVE,1,2,false", "COMPLETED,-1,1,false", "ENDED_EARLY,-1,1,false"})
 	void frozenUsesOnlyEffectiveActivePeriodAndKeepsMembershipActive(String periodStatus, int start, int end, boolean frozen) {
-		UUID active = membership("ACTIVE", NOW.minusSeconds(86400), NOW.plusSeconds(864000));
-		freeze(active, periodStatus, TODAY.plusDays(start), TODAY.plusDays(end), null);
+		UUID active = membership("ACTIVE", now.minusSeconds(86400), now.plusSeconds(864000));
+		freeze(active, periodStatus, today.plusDays(start), today.plusDays(end), null);
 		var periods = jdbc.queryForList("select * from membership_freeze_periods where membership_id=?", active);
 		JsonNode summary = search(false).path("activeMembership");
 		assertThat(summary.path("membershipId").asText()).isEqualTo(active.toString());
@@ -137,18 +141,18 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 
 	@Test
 	void activePeriodWithActualEndTodayIsNotFrozenAndOtherMembershipFreezeDoesNotLeak() {
-		UUID active = membership("ACTIVE", NOW.minusSeconds(86400), NOW.plusSeconds(864000));
-		freeze(active, "ACTIVE", TODAY.minusDays(1), TODAY.plusDays(2), TODAY);
+		UUID active = membership("ACTIVE", now.minusSeconds(86400), now.plusSeconds(864000));
+		freeze(active, "ACTIVE", today.minusDays(1), today.plusDays(2), today);
 		assertThat(search(false).at("/activeMembership/frozen").asBoolean()).isFalse();
 		UUID reserved = membership("RESERVED", null, null);
-		freeze(reserved, "ACTIVE", TODAY.minusDays(1), TODAY.plusDays(2), null);
+		freeze(reserved, "ACTIVE", today.minusDays(1), today.plusDays(2), null);
 		assertThat(search(false).at("/activeMembership/frozen").asBoolean()).isFalse();
 	}
 
 	@ParameterizedTest
 	@ValueSource(ints = {0, 1, 3})
 	void membershipPlanBenefitsAndFreezeUseOneQueryRegardlessOfBenefits(int benefitCount) {
-		membership("ACTIVE", NOW.minusSeconds(1), NOW.plusSeconds(86400));
+		membership("ACTIVE", now.minusSeconds(1), now.plusSeconds(86400));
 		String[] codes = {"PERSONAL_COACHING", "CENTER_ACCESS", "CLASS_BOOKING"};
 		for (int i = 0; i < benefitCount; i++) jdbc.update("insert into membership_plan_benefits values(?,?)", plan, codes[i]);
 		clearInvocations(jdbc);
@@ -185,8 +189,8 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 		UUID offer = UUID.randomUUID(), order = UUID.randomUUID(), id = UUID.randomUUID();
 		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,?,'Current offer','Summary fixture',100000,'VND',30,'ACTIVE',?)", offer, plan, receptionist.getId());
 		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Purchased offer',?,100000,'VND',30,'CASH','PAID',?,?)",
-			order, "SUM-" + order, member.getAccountId(), receptionist.getId(), offer, plan, Timestamp.from(NOW), start == null ? "RESERVED" : "IMMEDIATE");
-		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at) values(?,?,'CASH','PAID',100000,'VND',?,?)", UUID.randomUUID(), order, receptionist.getId(), Timestamp.from(NOW));
+			order, "SUM-" + order, member.getAccountId(), receptionist.getId(), offer, plan, Timestamp.from(now), start == null ? "RESERVED" : "IMMEDIATE");
+		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at) values(?,?,'CASH','PAID',100000,'VND',?,?)", UUID.randomUUID(), order, receptionist.getId(), Timestamp.from(now));
 		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Purchased offer',100000,'VND',30,?,?,?)",
 			id, member.getAccountId(), order, offer, plan, status, start == null ? null : Timestamp.from(start), end == null ? null : Timestamp.from(end));
 		return id;

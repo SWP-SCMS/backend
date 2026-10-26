@@ -177,8 +177,8 @@ public class ReceptionMemberProfileService {
 			select membership.*, plan.display_name as plan_name, benefit.benefit_code,
 			       exists (select 1 from membership_freeze_periods period
 			               where period.membership_id=membership.id and period.status in ('SCHEDULED', 'ACTIVE')
-			                 and period.scheduled_start_date <= ?
-			                 and period.scheduled_end_date > ?) as frozen
+			                 and coalesce(period.actual_start_date, period.scheduled_start_date) <= ?
+			                 and coalesce(period.actual_end_date, period.scheduled_end_date) > ?) as frozen
 			from current_membership membership
 			left join membership_plans plan on plan.plan_code=membership.plan_code_snapshot
 			left join membership_plan_benefits benefit on benefit.plan_code=plan.plan_code
