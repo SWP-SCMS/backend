@@ -82,7 +82,7 @@ Contract US16 nằm tại `src/main/resources/openapi/us16-membership-order.yaml
 .\mvnw.cmd test
 ```
 
-Test khởi động PostgreSQL 17 sạch, chạy Flyway V1–V7, để Hibernate validate schema, và kiểm tra persistence,
+Test khởi động PostgreSQL 17 sạch, chạy toàn bộ migration Flyway hiện có, để Hibernate validate schema, và kiểm tra persistence,
 authentication, refresh-token rotation, cookie policy, security/CORS cùng ProblemDetail error handling. Test không
 kết nối Supabase.
 
