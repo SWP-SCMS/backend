@@ -6,6 +6,7 @@ on:
 
 jobs:
   unit-tests:
+    name: unit-tests (${{ github.event_name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,7 +34,7 @@ jobs:
           ./mvnw -ntp -Dtest="$test_pattern" test
 
   integration-tests:
-    name: integration-tests (shard ${{ matrix.shard }})
+    name: integration-tests (${{ github.event_name }}, shard ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
