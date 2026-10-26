@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -678,14 +679,15 @@ class PaymentFlowIntegrationTests {
 		String event = webhookBody(9302, reference, "PAY " + reference, 12000, "in", "123456789");
 		CountDownLatch orderLocked = new CountDownLatch(1);
 		CountDownLatch start = new CountDownLatch(1);
-		CountDownLatch requestsStarted = new CountDownLatch(2);
 		CountDownLatch allowCommit = new CountDownLatch(1);
+		AtomicReference<Integer> blockerPid = new AtomicReference<>();
 		MvcResult firstResult;
 		MvcResult secondResult;
 
 		try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
 			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
 				.executeWithoutResult(status -> {
+					blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
 					db.queryForObject("select id from membership_orders where id=? for update", UUID.class, order);
 					orderLocked.countDown();
 					await(allowCommit);
@@ -693,17 +695,15 @@ class PaymentFlowIntegrationTests {
 			assertThat(orderLocked.await(10, TimeUnit.SECONDS)).isTrue();
 			Future<MvcResult> first = executor.submit(() -> {
 				await(start);
-				requestsStarted.countDown();
 				return webhook("hook-secret", event).andReturn();
 			});
 			Future<MvcResult> second = executor.submit(() -> {
 				await(start);
-				requestsStarted.countDown();
 				return webhook("hook-secret", event).andReturn();
 			});
 			try {
 				start.countDown();
-				assertThat(requestsStarted.await(10, TimeUnit.SECONDS)).isTrue();
+				awaitBlockedBy(blockerPid.get(), 2);
 				allowCommit.countDown();
 				firstResult = first.get(10, TimeUnit.SECONDS);
 				secondResult = second.get(10, TimeUnit.SECONDS);
@@ -1393,6 +1393,25 @@ class PaymentFlowIntegrationTests {
 			Thread.currentThread().interrupt();
 			throw new AssertionError(exception);
 		}
+	}
+
+	private void awaitBlockedBy(int blockerPid, long expectedWaiters) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiters = db.queryForObject("""
+				with recursive blocked(pid) as (
+					select activity.pid from pg_stat_activity activity
+					where ? = any(pg_blocking_pids(activity.pid))
+					union
+					select activity.pid from pg_stat_activity activity
+					join blocked blocker on blocker.pid = any(pg_blocking_pids(activity.pid))
+				)
+				select count(*) from blocked
+				""", Long.class, blockerPid);
+			if (waiters != null && waiters >= expectedWaiters) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for webhook transactions to block on the Order lock");
 	}
 
 	private void assertNoCommerceArtifacts(UUID memberAccountId) {
