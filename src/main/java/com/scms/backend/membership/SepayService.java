@@ -127,19 +127,18 @@ class SepayService {
 	}
 
 	@Transactional
-	PaymentResultResponse webhook(String suppliedApiKey, SepayWebhookRequest request) {
+	SepayWebhookResponse webhook(String suppliedApiKey, SepayWebhookRequest request) {
 		if (webhookApiKey.isBlank() || suppliedApiKey == null || !MessageDigest.isEqual(
 				suppliedApiKey.getBytes(StandardCharsets.UTF_8), webhookApiKey.getBytes(StandardCharsets.UTF_8))) {
 			throw PaymentException.unauthorized("Invalid SePay webhook credentials");
 		}
-		if (request == null) throw PaymentException.validation("SePay webhook body is required");
-		if (!"in".equalsIgnoreCase(request.transferType())) {
-			throw PaymentException.validation("SePay transfer must be incoming");
-		}
+		if (request == null || request.id() == null || request.content() == null || request.content().isBlank()
+				|| request.transferAmount() == null || request.transferType() == null || request.transferType().isBlank())
+			throw PaymentException.validation("SePay webhook body is malformed");
 		String paymentReference = request.code() == null || request.code().isBlank()
 			? request.content().trim() : request.code().trim();
 		String normalizedPaymentReference = normalizeReference(paymentReference);
-		UUID paymentId;
+		UUID paymentId = null;
 		try {
 			paymentId = db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 				UUID.class, paymentReference);
@@ -148,32 +147,28 @@ class SepayService {
 				paymentId = db.queryForObject(
 					"select id from payments where provider='SEPAY' and replace(provider_reference, '-', '')=?",
 					UUID.class, normalizedPaymentReference);
-			} catch (EmptyResultDataAccessException fallbackException) {
-				throw PaymentException.notFound("SePay Payment was not found");
-			}
+			} catch (EmptyResultDataAccessException ignored) { }
 		}
-		Map<String, Object> payment = fulfillment.payment(paymentId);
-		String expectedReference = PaymentFulfillmentService.string(payment, "bank_transfer_content");
-		if (!normalizedPaymentReference.equals(normalizeReference(expectedReference))
-				|| request.content() == null
-				|| !normalizeReference(request.content()).contains(normalizeReference(expectedReference))) {
-			throw PaymentException.validation("SePay transfer content does not match Payment");
-		}
-		if (!PaymentFulfillmentService.amount(payment, "payment_amount").equals(request.transferAmount())) {
-			throw PaymentException.validation("SePay transfer amount does not match Payment");
-		}
-		String expectedAccount = PaymentFulfillmentService.string(payment, "bank_account_number_snapshot");
-		if (expectedAccount == null) expectedAccount = bankAccount;
-		if (request.accountNumber() == null || !expectedAccount.equals(request.accountNumber().trim())) {
-			throw PaymentException.validation("SePay bank account does not match configured account");
-		}
-		String providerTransactionId = String.valueOf(request.id());
-		return fulfillment.fulfill(paymentId, null, providerTransactionId,
-			"SePay webhook transaction " + providerTransactionId, "SePay incoming transfer confirmed");
+		return fulfillment.processSepayWebhook(paymentId, request, normalizedPaymentReference, payloadSha256(request));
 	}
 
 	private static String normalizeReference(String value) {
-		return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+		return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+	}
+	private static String payloadSha256(SepayWebhookRequest request) {
+		String canonical = String.join("|", request.id().toString(), normalizeReference(request.code()),
+			normalizeReference(request.content()), request.transferAmount().toString(),
+			request.transferType().trim().toUpperCase(Locale.ROOT), normalized(request.referenceCode()),
+			normalized(request.transactionDate()), normalized(request.accountNumber()));
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+				.digest(canonical.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
+	}
+	private static String normalized(String value) {
+		return value == null ? "" : value.trim();
 	}
 	private static boolean missingSnapshot(Map<String, Object> payment, String key) {
 		Object value = payment.get(key);

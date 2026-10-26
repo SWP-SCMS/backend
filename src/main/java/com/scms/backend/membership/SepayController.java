@@ -37,7 +37,7 @@ class SepayController {
 
 	@PostMapping("/payments/sepay/webhook")
 	@SecurityRequirements
-	ResponseEntity<PaymentResultResponse> webhook(
+	ResponseEntity<SepayWebhookResponse> webhook(
 			@RequestHeader(name = "Authorization", required = false) String authorization,
 			@Valid @RequestBody SepayWebhookRequest request) {
 		String apiKey = authorization != null && authorization.startsWith("Apikey ")

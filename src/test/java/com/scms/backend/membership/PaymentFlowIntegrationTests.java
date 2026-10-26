@@ -97,6 +97,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired PaymentService paymentService;
+	@Autowired SepayService sepayService;
 	@Autowired PaymentFulfillmentService fulfillment;
 	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
 	@Autowired Clock clock;
@@ -504,33 +505,40 @@ class PaymentFlowIntegrationTests {
 	@Test
 	void missingDestinationSnapshotIsNeverAutomaticallyFulfilled() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
-		MemberProfile member = member();
 		UUID offer = offer(manager, "PLUS", 12000, false);
-		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
-			Instant.now().plusSeconds(3600));
-		String reference = "LEGACY-" + order;
-		UUID payment = pendingPayment(order, 12000, reference);
+		List<String> snapshots = List.of(
+			"bank_code_snapshot", "bank_account_number_snapshot", "bank_account_name_snapshot");
 
-		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false))
-			.andExpect(jsonPath("$.outcome").value("DESTINATION_SNAPSHOT_MISSING"));
+		for (int index = 0; index < snapshots.size(); index++) {
+			MemberProfile member = member();
+			UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+				Instant.now().plusSeconds(3600));
+			String reference = "LEGACY-" + order;
+			UUID payment = pendingPaymentWithDestinationSnapshot(order, 12000, reference);
+			db.update("update payments set " + snapshots.get(index) + "=null where id=?", payment);
 
-		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
-			.isEqualTo("PENDING");
-		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
-			.isEqualTo("PENDING_PAYMENT");
-		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
-		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
-		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
-			.isZero();
-		assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
-			.isZero();
-		assertThat(count("""
-			select count(*) from notification_outbox
-			where notification_type='PAYMENT_PAID' and target_id=?
-			""", payment))
-			.isZero();
+			webhook("hook-secret", webhookBody(9102 + index, reference, "PAY " + reference,
+				12000, "in", "123456789"))
+				.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.processed").value(false))
+				.andExpect(jsonPath("$.outcome").value("DESTINATION_SNAPSHOT_MISSING"));
+
+			assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+				.isEqualTo("PENDING");
+			assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+				.isEqualTo("PENDING_PAYMENT");
+			assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
+			assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
+			assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
+				.isZero();
+			assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
+				.isZero();
+			assertThat(count("""
+				select count(*) from notification_outbox
+				where notification_type='PAYMENT_PAID' and target_id=?
+				""", payment))
+				.isZero();
+		}
 	}
 
 	@Test
@@ -575,6 +583,55 @@ class PaymentFlowIntegrationTests {
 				""", payment))
 				.isZero();
 		}
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void automaticWebhookCrossingDeadlineWhileWaitingForOrderLockDoesNotFulfill() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		String reference = reference(sepay(member.getAccount(), order));
+		UUID payment = db.queryForObject("select id from payments where order_id=?", UUID.class, order);
+		CountDownLatch orderLocked = new CountDownLatch(1);
+		CountDownLatch expireAndCommit = new CountDownLatch(1);
+		AtomicReference<Integer> blockerPid = new AtomicReference<>();
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					db.queryForObject("select id from membership_orders where id=? for update", UUID.class, order);
+					orderLocked.countDown();
+					await(expireAndCommit);
+					db.update("update membership_orders set expires_at=clock_timestamp() where id=?", order);
+				}));
+			assertThat(orderLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> webhook = executor.submit(() -> webhook("hook-secret",
+				webhookBody(9203, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn());
+			try {
+				awaitWebhookOrderWaiter(blockerPid.get());
+				expireAndCommit.countDown();
+				JsonNode response = objectMapper.readTree(webhook.get(10, TimeUnit.SECONDS)
+					.getResponse().getContentAsString());
+				assertThat(response.path("processed").asBoolean()).isFalse();
+				assertThat(response.path("outcome").asText()).isEqualTo("PAYMENT_WINDOW_EXPIRED");
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				expireAndCommit.countDown();
+			}
+		}
+
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("PENDING");
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
+		assertThat(db.queryForObject("""
+			select outcome from payment_provider_events
+			where provider='SEPAY' and provider_transaction_id='9203'
+			""", String.class)).isEqualTo("PAYMENT_WINDOW_EXPIRED");
 	}
 
 	@Test
@@ -666,6 +723,48 @@ class PaymentFlowIntegrationTests {
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.processed").value(false))
 			.andExpect(jsonPath("$.outcome").value("REFERENCE_MISMATCH"));
+		webhook("hook-secret", webhookBody(9300, "UNKNOWN", "UNKNOWN", 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("REFERENCE_MISMATCH"));
+		assertThat(count("""
+			select count(*) from payment_provider_events
+			where provider_transaction_id='9300' and payment_id is null and outcome='REFERENCE_MISMATCH'
+			""")).isOne();
+	}
+
+	@Test
+	void successfulWebhookRollsBackLedgerAndArtifactsWhenArtifactCreationFails() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		String reference = reference(sepay(member.getAccount(), order));
+		UUID payment = db.queryForObject("select id from payments where order_id=?", UUID.class, order);
+		SepayWebhookRequest request = new SepayWebhookRequest(9303L, reference, "PAY " + reference,
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+
+		try {
+			doThrow(new DataAccessResourceFailureException("forced receipt failure")).when(db)
+				.update(argThat(sql -> sql.contains("insert into receipts")),
+					org.mockito.ArgumentMatchers.any(Object[].class));
+
+			assertThatThrownBy(() -> sepayService.webhook("hook-secret", request))
+				.isInstanceOf(DataAccessResourceFailureException.class)
+				.hasMessageContaining("forced receipt failure");
+		}
+		finally {
+			reset(db);
+		}
+
+		assertThat(count("select count(*) from payment_provider_events where provider_transaction_id='9303'"))
+			.isZero();
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("PENDING");
+		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+			.isEqualTo("PENDING_PAYMENT");
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
 	}
 
 	@Test
@@ -1423,6 +1522,20 @@ class PaymentFlowIntegrationTests {
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
 		throw new AssertionError("Timed out waiting for the Order-then-Member webhook lock chain");
+	}
+
+	private void awaitWebhookOrderWaiter(int blockerPid) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiters = db.queryForObject("""
+				select count(*) from pg_stat_activity
+				where wait_event_type='Lock' and ? = any(pg_blocking_pids(pid))
+					and query ilike '%select id from membership_orders where id=%for update%'
+				""", Long.class, blockerPid);
+			if (waiters != null && waiters == 1) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for webhook to request the Order lock");
 	}
 
 	private void assertNoCommerceArtifacts(UUID memberAccountId) {
