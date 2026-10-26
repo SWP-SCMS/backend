@@ -31,6 +31,8 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -129,7 +131,7 @@ class SepayServiceTests {
 	}
 
 	@Test
-	void firstLegacyRetrySnapshotsCurrentDestinationOnce() {
+	void legacyPaymentRetryDoesNotBackfillSnapshotFromRuntimeConfiguration() {
 		UUID actor = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		Instant expiresAt = Instant.parse("2026-10-09T00:00:00Z");
@@ -151,23 +153,10 @@ class SepayServiceTests {
 		when(db.queryForList(
 			"select * from payments where order_id=? and status='PENDING' order by created_at limit 1", orderId))
 			.thenReturn(List.of(payment));
-		when(db.update(any(String.class), any(Object[].class))).thenAnswer(invocation -> {
-			payment.put("bank_code_snapshot", "MB");
-			payment.put("bank_account_number_snapshot", "123456789");
-			payment.put("bank_account_name_snapshot", "SCMS GYM");
-			return 1;
-		});
-		AtomicReference<SepayPaymentResponse> first = new AtomicReference<>();
 
-		assertThatCode(() -> first.set(service("MB", "123456789", "SCMS GYM").create(actor, orderId)))
-			.doesNotThrowAnyException();
-		SepayPaymentResponse second = service("VCB", "new-account", "NEW GYM").create(actor, orderId);
-
-		assertThat(first.get().bankCode()).isEqualTo("MB");
-		assertThat(second.bankCode()).isEqualTo("MB");
-		assertThat(second.bankAccountNumber()).isEqualTo("123456789");
-		assertThat(second.bankAccountName()).isEqualTo("SCMS GYM");
-		verify(db, times(1)).update(any(String.class), any(Object[].class));
+		assertThatThrownBy(() -> service("MB", "123456789", "SCMS GYM").create(actor, orderId))
+			.isInstanceOf(PaymentException.class);
+		verify(db, never()).update(any(String.class), any(Object[].class));
 	}
 
 	@Test
@@ -195,50 +184,112 @@ class SepayServiceTests {
 	}
 
 	@Test
-	void webhookUsesPersistedAccountAfterConfigurationRotation() {
+	void webhookAtExactExpirationIsAcknowledgedButNotFulfilled() {
 		UUID paymentId = UUID.randomUUID();
-		UUID orderId = UUID.randomUUID();
 		Map<String, Object> payment = Map.of(
 			"bank_transfer_content", "SCMS-ORD-123", "payment_amount", BigDecimal.valueOf(12000),
-			"bank_account_number_snapshot", "old-account");
-		PaymentResultResponse expected = new PaymentResultResponse(
-			paymentId, orderId, "PAID", "BANK_TRANSFER", UUID.randomUUID(), UUID.randomUUID(),
-			Instant.parse("2026-10-08T00:00:00Z"), FulfillmentMode.IMMEDIATE);
+			"bank_code_snapshot", "MB", "bank_account_number_snapshot", "123456789",
+			"bank_account_name_snapshot", "SCMS GYM",
+			"expires_at", Timestamp.from(Instant.parse("2026-10-08T00:00:00Z")));
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		when(fulfillment.payment(paymentId)).thenReturn(payment);
-		when(fulfillment.fulfill(paymentId, null, "9001", "SePay webhook transaction 9001",
-			"SePay incoming transfer confirmed")).thenReturn(expected);
-		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
-			BigInteger.valueOf(12000), "in", null, null, "old-account");
-		AtomicReference<PaymentResultResponse> result = new AtomicReference<>();
-
-		assertThatCode(() -> result.set(service("MB", "new-account", "NEW GYM")
-			.webhook("hook-secret", request))).doesNotThrowAnyException();
-
-		assertThat(result.get()).isSameAs(expected);
-	}
-
-	@Test
-	void directLegacyWebhookFallsBackToCurrentConfiguredAccount() {
-		UUID paymentId = UUID.randomUUID();
-		UUID orderId = UUID.randomUUID();
-		Map<String, Object> payment = new HashMap<>();
-		payment.put("bank_transfer_content", "SCMS-ORD-123");
-		payment.put("payment_amount", BigDecimal.valueOf(12000));
-		payment.put("bank_account_number_snapshot", null);
-		PaymentResultResponse expected = new PaymentResultResponse(
-			paymentId, orderId, "PAID", "BANK_TRANSFER", UUID.randomUUID(), UUID.randomUUID(),
-			Instant.parse("2026-10-08T00:00:00Z"), FulfillmentMode.RESERVED);
-		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
-			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
-		when(fulfillment.payment(paymentId)).thenReturn(payment);
-		when(fulfillment.fulfill(paymentId, null, "9001", "SePay webhook transaction 9001",
-			"SePay incoming transfer confirmed")).thenReturn(expected);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
 
-		assertThat(service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request)).isSameAs(expected);
+		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
+			.doesNotThrowAnyException();
+
+		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void webhookAfterExpirationIsAcknowledgedButNotFulfilled() {
+		UUID paymentId = UUID.randomUUID();
+		Map<String, Object> payment = Map.of(
+			"bank_transfer_content", "SCMS-ORD-123", "payment_amount", BigDecimal.valueOf(12000),
+			"bank_code_snapshot", "MB", "bank_account_number_snapshot", "123456789",
+			"bank_account_name_snapshot", "SCMS GYM",
+			"expires_at", Timestamp.from(Instant.parse("2026-10-07T23:59:59Z")));
+		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
+			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
+		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+
+		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
+			.doesNotThrowAnyException();
+
+		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void webhookRejectsAutomaticFulfillmentWhenExpirationIsMissing() {
+		UUID paymentId = UUID.randomUUID();
+		Map<String, Object> payment = new HashMap<>();
+		payment.put("bank_transfer_content", "SCMS-ORD-123");
+		payment.put("payment_amount", BigDecimal.valueOf(12000));
+		payment.put("bank_code_snapshot", "MB");
+		payment.put("bank_account_number_snapshot", "123456789");
+		payment.put("bank_account_name_snapshot", "SCMS GYM");
+		payment.put("expires_at", null);
+		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
+			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
+		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+
+		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
+			.doesNotThrowAnyException();
+
+		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+		"bank_code_snapshot", "bank_account_number_snapshot", "bank_account_name_snapshot"
+	})
+	void webhookRejectsAutomaticFulfillmentWhenAnyDestinationSnapshotIsMissing(String missingSnapshot) {
+		UUID paymentId = UUID.randomUUID();
+		Map<String, Object> payment = new HashMap<>();
+		payment.put("bank_transfer_content", "SCMS-ORD-123");
+		payment.put("payment_amount", BigDecimal.valueOf(12000));
+		payment.put("bank_code_snapshot", "MB");
+		payment.put("bank_account_number_snapshot", "123456789");
+		payment.put("bank_account_name_snapshot", "SCMS GYM");
+		payment.put("expires_at", Timestamp.from(Instant.parse("2026-10-09T00:00:00Z")));
+		payment.put(missingSnapshot, null);
+		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
+			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
+		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+
+		assertThatCode(() -> service("MB", "123456789", "SCMS GYM").webhook("hook-secret", request))
+			.doesNotThrowAnyException();
+
+		verify(fulfillment, never()).fulfill(any(), any(), any(), any(), any());
+	}
+
+	@Test
+	void webhookUsesPersistedAccountAfterConfigurationRotation() {
+		UUID paymentId = UUID.randomUUID();
+		Map<String, Object> payment = Map.of(
+			"bank_transfer_content", "SCMS-ORD-123", "payment_amount", BigDecimal.valueOf(12000),
+			"bank_code_snapshot", "MB", "bank_account_number_snapshot", "old-account",
+			"bank_account_name_snapshot", "OLD GYM",
+			"expires_at", Timestamp.from(Instant.parse("2026-10-09T00:00:00Z")));
+		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
+			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
+		when(fulfillment.payment(paymentId)).thenReturn(payment);
+		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
+			BigInteger.valueOf(12000), "in", null, null, "old-account");
+
+		assertThatCode(() -> service("MB", "new-account", "NEW GYM").webhook("hook-secret", request))
+			.doesNotThrowAnyException();
+
+		verify(fulfillment).fulfill(paymentId, null, "9001", "SePay webhook transaction 9001",
+			"SePay incoming transfer confirmed");
 	}
 
 	@Test

@@ -347,6 +347,26 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void sepayWebhookDocumentsAnonymousApiKeyHeaderAuthentication() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode webhook = operation(document, "/payments/sepay/webhook", "post");
+
+		assertThat(webhook.path("security").isArray()).isTrue();
+		assertThat(webhook.path("security")).isEmpty();
+		assertThat(webhook.path("description").asText()).contains("API key", "header");
+	}
+
+	@Test
+	void sepayWebhookAcknowledgementSchemaRequiresSuccessProcessedAndOutcome() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode schema = response(document, "/payments/sepay/webhook", "post", "200")
+			.path("content").elements().next().path("schema");
+		if (schema.has("$ref")) schema = document.at(schema.path("$ref").asText().substring(1));
+
+		assertThat(schema.path("required").toString()).contains("success", "processed", "outcome");
+	}
+
+	@Test
 	void generatedContractDocumentsSecuritySchemasAndDynamicStatuses() throws Exception {
 		JsonNode document = generatedDocument();
 

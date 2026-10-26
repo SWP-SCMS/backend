@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
@@ -488,17 +490,17 @@ class PaymentFlowIntegrationTests {
 			"VCB", "new-account", "NEW GYM", "hook-secret");
 		String reference = created.path("paymentReference").asText();
 
-		PaymentResultResponse result = rotated.webhook("hook-secret", new SepayWebhookRequest(
-			9101L, reference, "PAY " + reference, BigInteger.valueOf(12000), "in", null, null, "123456789"));
+		assertThatCode(() -> rotated.webhook("hook-secret", new SepayWebhookRequest(
+			9101L, reference, "PAY " + reference, BigInteger.valueOf(12000), "in", null, null, "123456789")))
+			.doesNotThrowAnyException();
 
-		assertThat(result.status()).isEqualTo("PAID");
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?",
 			UUID.fromString(created.path("paymentId").asText()))).isOne();
 	}
 
 	@Test
-	void directLegacyWebhookFallsBackToCurrentConfiguredAccount() throws Exception {
+	void missingDestinationSnapshotIsNeverAutomaticallyFulfilled() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		MemberProfile member = member();
 		UUID offer = offer(manager, "PLUS", 12000, false);
@@ -508,43 +510,72 @@ class PaymentFlowIntegrationTests {
 		UUID payment = pendingPayment(order, 12000, reference);
 
 		webhook("hook-secret", webhookBody(9102, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+			.andExpect(status().isOk());
 
-		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("PENDING");
+		assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+			.isEqualTo("PENDING_PAYMENT");
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
 	}
 
 	@Test
-	void legacyRetryRacingWebhookCompletesWithoutDeadlockOrDuplicateArtifacts() throws Exception {
+	void expiredAndExactBoundaryAutomaticWebhooksLeaveNoPaidArtifacts() {
 		Account manager = account(AccountRole.MANAGER);
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		Instant now = Instant.parse("2026-10-26T00:00:00Z");
+		SepayService fixed = new SepayService(db, accounts, fulfillment, Clock.fixed(now, ZoneOffset.UTC),
+			"MB", "123456789", "SCMS GYM", "hook-secret");
+		List<Instant> expirations = List.of(now, now.minusSeconds(1));
+
+		for (int index = 0; index < expirations.size(); index++) {
+			MemberProfile member = member();
+			UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
+				expirations.get(index));
+			String reference = "EXPIRED-WEBHOOK-" + order;
+			UUID payment = pendingPaymentWithDestinationSnapshot(order, 12000, reference);
+			long transactionId = 9200L + index;
+
+			assertThatCode(() -> fixed.webhook("hook-secret", new SepayWebhookRequest(
+				transactionId, reference, "PAY " + reference, BigInteger.valueOf(12000), "in",
+				null, null, "123456789"))).doesNotThrowAnyException();
+
+			assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+				.isEqualTo("PENDING");
+			assertThat(db.queryForObject("select status from membership_orders where id=?", String.class, order))
+				.isEqualTo("PENDING_PAYMENT");
+			assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
+			assertThat(count("select count(*) from receipts where payment_id=?", payment)).isZero();
+			assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
+				.isZero();
+			assertThat(count("select count(*) from notifications where event_key=?", "PAYMENT_PAID:" + payment))
+				.isZero();
+		}
+	}
+
+	@Test
+	void expiredPaymentCanStillBeManuallyReconciledWithEvidence() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile member = member();
 		UUID offer = offer(manager, "PLUS", 12000, false);
 		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
-			Instant.now().plusSeconds(3600));
-		String reference = "LEGACY-RACE-" + order;
-		UUID payment = pendingPayment(order, 12000, reference);
-		CountDownLatch start = new CountDownLatch(1);
-		ExecutorService executor = Executors.newFixedThreadPool(2);
+			Instant.now().minusSeconds(60));
+		String reference = "MANUAL-EXPIRED-" + order;
+		UUID payment = pendingPaymentWithDestinationSnapshot(order, 12000, reference);
 
-		try {
-			Future<MvcResult> retry = executor.submit(() -> {
-				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
-				return sepay(member.getAccount(), order).andReturn();
-			});
-			Future<MvcResult> webhook = executor.submit(() -> {
-				if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Race did not start");
-				return webhook("hook-secret",
-					webhookBody(9103, reference, "PAY " + reference, 12000, "in", "123456789")).andReturn();
-			});
-			start.countDown();
+		webhook("hook-secret", webhookBody(9202, reference, "PAY " + reference, 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 
-			int retryStatus = retry.get(10, TimeUnit.SECONDS).getResponse().getStatus();
-			assertThat(retryStatus).isIn(200, 409);
-			assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
-		}
-		finally {
-			start.countDown();
-			executor.shutdownNow();
-		}
+		reconcile(receptionist, payment, paidReconciliation(12000, reference, "manual-expired-" + order))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
+			.isEqualTo("PAID");
+		assertThat(db.queryForObject("select evidence from payments where id=?", String.class, payment))
+			.isEqualTo("bank statement");
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
@@ -562,23 +593,65 @@ class PaymentFlowIntegrationTests {
 		webhook(null, webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isUnauthorized());
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "out", "123456789"))
-			.andExpect(status().isBadRequest());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 		webhook("hook-secret", webhookBody(9001, reference, "WRONG", 12000, "in", "123456789"))
-			.andExpect(status().isBadRequest());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12001, "in", "123456789"))
-			.andExpect(status().isBadRequest());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "000"))
-			.andExpect(status().isBadRequest());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isZero();
 
 		String paid = webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(true)).andExpect(jsonPath("$.status").value("PAID"))
 			.andReturn().getResponse().getContentAsString();
 		String receiptId = JsonPath.read(paid, "$.receiptId");
 		webhook("hook-secret", webhookBody(9001, reference, "PAY " + reference, 12000, "in", "123456789"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.receiptId").value(receiptId));
 		webhook("hook-secret", webhookBody(9002, reference, "PAY " + reference, 12000, "in", "123456789"))
-			.andExpect(status().isConflict());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
+		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
+		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
+	}
+
+	@Test
+	void rejectedWebhookIsAcknowledgedWithoutProcessing() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		String reference = reference(sepay(member.getAccount(), order));
+
+		webhook("hook-secret", webhookBody(9301, reference, "WRONG", 12000, "in", "123456789"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
+	}
+
+	@Test
+	void duplicateSepayTransactionIdCreatesOnePaidEventAndAtMostOneFulfillment() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		MemberProfile member = member();
+		UUID offer = offer(manager, "PLUS", 12000, false);
+		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false, null);
+		String reference = reference(sepay(member.getAccount(), order));
+		UUID payment = db.queryForObject("select id from payments where order_id=?", UUID.class, order);
+		String event = webhookBody(9302, reference, "PAY " + reference, 12000, "in", "123456789");
+
+		for (int attempt = 0; attempt < 2; attempt++) {
+			webhook("hook-secret", event).andExpect(status().isOk())
+				.andExpect(jsonPath("$.success").value(true));
+		}
+
+		assertThat(db.queryForObject("select provider_transaction_id from payments where id=?", String.class, payment))
+			.isEqualTo("9302");
+		assertThat(count("select count(*) from audit_events where action='PAYMENT_PAID' and target_id=?", payment))
+			.isOne();
 		assertThat(count("select count(*) from memberships where order_id=?", order)).isOne();
 		assertThat(count("select count(*) from receipts where payment_id=?", payment)).isOne();
 	}
@@ -595,9 +668,11 @@ class PaymentFlowIntegrationTests {
 		String secondRef = reference(sepay(second.getAccount(), secondOrder));
 
 		webhook("hook-secret", webhookBody(777, firstRef, firstRef, 12000, "in", "123456789"))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(true));
 		webhook("hook-secret", webhookBody(777, secondRef, secondRef, 12000, "in", "123456789"))
-			.andExpect(status().isConflict());
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false));
 		assertThat(count("select count(*) from memberships where order_id=?", secondOrder)).isZero();
 	}
 
@@ -1055,6 +1130,15 @@ class PaymentFlowIntegrationTests {
 			values(?,?,'BANK_TRANSFER','PENDING',?,'VND',?,'SEPAY',?)
 			""", id, order, amount, content, content);
 		return id;
+	}
+
+	private UUID pendingPaymentWithDestinationSnapshot(UUID order, long amount, String content) {
+		UUID payment = pendingPayment(order, amount, content);
+		db.update("""
+			update payments set bank_code_snapshot='MB',bank_account_number_snapshot='123456789',
+				bank_account_name_snapshot='SCMS GYM' where id=?
+			""", payment);
+		return payment;
 	}
 
 	private void paidHistory(UUID member, UUID offer, long amount, Instant paidAt, boolean testData,
