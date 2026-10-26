@@ -36,10 +36,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class SepayServiceTests {
+	private static final String BANK_DESTINATION_SHA256 =
+		"7128318f4501a30f6c5648627306786fb6e7a26a15da6850a959c5b35a0a6859";
+
 	@Mock JdbcTemplate db;
 	@Mock AccountRepository accounts;
 	@Mock PaymentFulfillmentService fulfillment;
@@ -70,6 +74,50 @@ class SepayServiceTests {
 		assertThatThrownBy(() -> service.create(actor, orderId))
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("SePay bank configuration is missing");
+		verify(db, never()).update(any(String.class), any(Object[].class));
+	}
+
+	@Test
+	void matchingFingerprintAllowsCanonicalDestinationCreation() {
+		UUID actor = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID paymentId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update",
+			orderId, actor)).thenReturn(Map.of(
+			"status", "PENDING_PAYMENT", "order_number", "ORD-123", "price_amount_snapshot", BigDecimal.valueOf(12000)));
+		when(db.queryForList(
+			"select * from payments where order_id=? and status='PENDING' order by created_at limit 1", orderId))
+			.thenReturn(List.of());
+		when(db.queryForMap(eq("select * from payments where id=?"), any(UUID.class))).thenReturn(Map.of(
+			"id", paymentId, "order_id", orderId, "amount", BigDecimal.valueOf(12000), "currency_code", "VND",
+			"bank_transfer_content", "SCMS-ORD-123", "bank_code_snapshot", "mb",
+			"bank_account_number_snapshot", "123456789", "bank_account_name_snapshot", "scms gym",
+			"status", "PENDING"));
+
+		assertThatCode(() -> service(" mb ", " 123456789 ", " scms gym ", BANK_DESTINATION_SHA256)
+			.create(actor, orderId)).doesNotThrowAnyException();
+
+		verify(db, times(2)).update(any(String.class), any(Object[].class));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", "0000000000000000000000000000000000000000000000000000000000000000" })
+	void missingOrMismatchedFingerprintRejectsCreationBeforeWrites(String fingerprint) {
+		UUID actor = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update",
+			orderId, actor)).thenReturn(Map.of("status", "PENDING_PAYMENT"));
+		when(db.queryForList(
+			"select * from payments where order_id=? and status='PENDING' order by created_at limit 1", orderId))
+			.thenReturn(List.of());
+
+		assertThatThrownBy(() -> service("MB", "123456789", "SCMS GYM", fingerprint).create(actor, orderId))
+			.isInstanceOfSatisfying(PaymentException.class, exception -> {
+				assertThat(exception.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+				assertThat(exception.code()).isEqualTo("PAYMENT_DESTINATION_CONFIGURATION_INVALID");
+			});
 		verify(db, never()).update(any(String.class), any(Object[].class));
 	}
 
@@ -155,20 +203,27 @@ class SepayServiceTests {
 			.thenReturn(List.of(payment));
 
 		assertThatThrownBy(() -> service("MB", "123456789", "SCMS GYM").create(actor, orderId))
-			.isInstanceOf(PaymentException.class);
+			.isInstanceOfSatisfying(PaymentException.class, exception -> {
+				assertThat(exception.status()).isEqualTo(HttpStatus.CONFLICT);
+				assertThat(exception.code()).isEqualTo("PAYMENT_DESTINATION_SNAPSHOT_MISSING");
+			});
 		verify(db, never()).update(any(String.class), any(Object[].class));
 	}
 
-	@Test
-	void blankAccountNameRejectsLegacySnapshotBeforeWrite() {
+	@ParameterizedTest
+	@ValueSource(strings = {
+		"bank_code_snapshot", "bank_account_number_snapshot", "bank_account_name_snapshot"
+	})
+	void legacyPaymentRetryRejectsAnyBlankDestinationSnapshot(String blankSnapshot) {
 		UUID actor = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		Map<String, Object> payment = new HashMap<>();
 		payment.put("id", UUID.randomUUID());
 		payment.put("order_id", orderId);
-		payment.put("bank_code_snapshot", null);
-		payment.put("bank_account_number_snapshot", null);
-		payment.put("bank_account_name_snapshot", null);
+		payment.put("bank_code_snapshot", "MB");
+		payment.put("bank_account_number_snapshot", "123456789");
+		payment.put("bank_account_name_snapshot", "SCMS GYM");
+		payment.put(blankSnapshot, " ");
 		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update",
 			orderId, actor)).thenReturn(Map.of(
@@ -177,9 +232,9 @@ class SepayServiceTests {
 			"select * from payments where order_id=? and status='PENDING' order by created_at limit 1", orderId))
 			.thenReturn(List.of(payment));
 
-		assertThatThrownBy(() -> service("MB", "123456789", " ").create(actor, orderId))
-			.isInstanceOf(PaymentException.class)
-			.hasMessage("SePay bank configuration is missing");
+		assertThatThrownBy(() -> service("MB", "123456789", "SCMS GYM").create(actor, orderId))
+			.isInstanceOfSatisfying(PaymentException.class, exception ->
+				assertThat(exception.code()).isEqualTo("PAYMENT_DESTINATION_SNAPSHOT_MISSING"));
 		verify(db, never()).update(any(String.class), any(Object[].class));
 	}
 
@@ -375,8 +430,13 @@ class SepayServiceTests {
 	}
 
 	private SepayService service(String bankCode, String bankAccount, String bankAccountName) {
+		return service(bankCode, bankAccount, bankAccountName, BANK_DESTINATION_SHA256);
+	}
+
+	private SepayService service(String bankCode, String bankAccount, String bankAccountName,
+			String bankDestinationSha256) {
 		return new SepayService(db, accounts, fulfillment,
 			Clock.fixed(Instant.parse("2026-10-08T00:00:00Z"), ZoneOffset.UTC),
-			bankCode, bankAccount, bankAccountName, "hook-secret");
+			bankCode, bankAccount, bankAccountName, bankDestinationSha256, "hook-secret");
 	}
 }

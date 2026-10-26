@@ -4,10 +4,13 @@ import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -15,8 +18,10 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,12 +35,15 @@ class SepayService {
 	private final String bankCode;
 	private final String bankAccount;
 	private final String bankAccountName;
+	private final String bankDestinationSha256;
 	private final String webhookApiKey;
 
+	@Autowired
 	SepayService(JdbcTemplate db, AccountRepository accounts, PaymentFulfillmentService fulfillment, Clock clock,
 			@Value("${sepay.bank-code:}") String bankCode,
 			@Value("${sepay.bank-account:}") String bankAccount,
 			@Value("${sepay.bank-account-name:}") String bankAccountName,
+			@Value("${sepay.bank-destination-sha256:}") String bankDestinationSha256,
 			@Value("${sepay.webhook-api-key:}") String webhookApiKey) {
 		this.db = db;
 		this.accounts = accounts;
@@ -44,7 +52,13 @@ class SepayService {
 		this.bankCode = bankCode.trim();
 		this.bankAccount = bankAccount.trim();
 		this.bankAccountName = bankAccountName.trim();
+		this.bankDestinationSha256 = bankDestinationSha256.trim();
 		this.webhookApiKey = webhookApiKey;
+	}
+
+	SepayService(JdbcTemplate db, AccountRepository accounts, PaymentFulfillmentService fulfillment, Clock clock,
+			String bankCode, String bankAccount, String bankAccountName, String webhookApiKey) {
+		this(db, accounts, fulfillment, clock, bankCode, bankAccount, bankAccountName, "", webhookApiKey);
 	}
 
 	@Transactional
@@ -103,21 +117,11 @@ class SepayService {
 			payment = db.queryForMap("select * from payments where id=?", paymentId);
 		} else {
 			expiresAt = instant(order.get("expires_at"));
-			if (payment.get("bank_code_snapshot") == null
-					&& payment.get("bank_account_number_snapshot") == null
-					&& payment.get("bank_account_name_snapshot") == null) {
-				requireBankConfiguration();
-				int updated = db.update("""
-					update payments set bank_code_snapshot=?,bank_account_number_snapshot=?,
-						bank_account_name_snapshot=?,updated_at=current_timestamp
-					where id=? and status='PENDING' and bank_code_snapshot is null
-						and bank_account_number_snapshot is null and bank_account_name_snapshot is null
-					""", bankCode, bankAccount, bankAccountName, payment.get("id"));
-				if (updated != 1) throw PaymentException.conflict("Payment destination snapshot changed");
-				payment.put("bank_code_snapshot", bankCode);
-				payment.put("bank_account_number_snapshot", bankAccount);
-				payment.put("bank_account_name_snapshot", bankAccountName);
-			}
+			if (missingSnapshot(payment, "bank_code_snapshot")
+					|| missingSnapshot(payment, "bank_account_number_snapshot")
+					|| missingSnapshot(payment, "bank_account_name_snapshot"))
+				throw new PaymentException(HttpStatus.CONFLICT, "PAYMENT_DESTINATION_SNAPSHOT_MISSING",
+					"Payment destination snapshot is missing");
 		}
 		return response(order, payment, expiresAt);
 	}
@@ -171,6 +175,10 @@ class SepayService {
 	private static String normalizeReference(String value) {
 		return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
 	}
+	private static boolean missingSnapshot(Map<String, Object> payment, String key) {
+		Object value = payment.get(key);
+		return value == null || value.toString().isBlank();
+	}
 
 	private Map<String, Object> pendingPayment(UUID orderId) {
 		var rows = db.queryForList("select * from payments where order_id=? and status='PENDING' order by created_at limit 1",
@@ -197,6 +205,23 @@ class SepayService {
 	private void requireBankConfiguration() {
 		if (bankCode.isBlank() || bankAccount.isBlank() || bankAccountName.isBlank())
 			throw PaymentException.validation("SePay bank configuration is missing");
+		byte[] expected;
+		try {
+			expected = HexFormat.of().parseHex(bankDestinationSha256);
+		} catch (IllegalArgumentException exception) {
+			throw invalidBankDestinationConfiguration();
+		}
+		try {
+			String canonical = String.join("|", bankCode, bankAccount, bankAccountName).toUpperCase(Locale.ROOT);
+			byte[] actual = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
+			if (!MessageDigest.isEqual(actual, expected)) throw invalidBankDestinationConfiguration();
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 is unavailable", exception);
+		}
+	}
+	private PaymentException invalidBankDestinationConfiguration() {
+		return new PaymentException(HttpStatus.SERVICE_UNAVAILABLE, "PAYMENT_DESTINATION_CONFIGURATION_INVALID",
+			"SePay bank destination configuration is invalid");
 	}
 	private String enc(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
 	private Instant instant(Object value) {

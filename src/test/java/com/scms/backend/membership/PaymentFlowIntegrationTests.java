@@ -82,6 +82,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 	"sepay.bank-code=MB",
 	"sepay.bank-account=123456789",
 	"sepay.bank-account-name=SCMS GYM",
+	"sepay.bank-destination-sha256=7128318f4501a30f6c5648627306786fb6e7a26a15da6850a959c5b35a0a6859",
 	"sepay.webhook-api-key=hook-secret"
 })
 class PaymentFlowIntegrationTests {
