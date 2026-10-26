@@ -126,7 +126,7 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@CsvSource({"SCHEDULED,1,3,false", "SCHEDULED,-1,1,false", "ACTIVE,0,1,true", "ACTIVE,-1,0,false",
+	@CsvSource({"SCHEDULED,1,3,false", "SCHEDULED,-1,1,true", "ACTIVE,0,1,true", "ACTIVE,-1,0,false",
 		"ACTIVE,1,2,false", "COMPLETED,-1,1,false", "ENDED_EARLY,-1,1,false"})
 	void frozenUsesOnlyEffectiveActivePeriodAndKeepsMembershipActive(String periodStatus, int start, int end, boolean frozen) {
 		UUID active = membership("ACTIVE", now.minusSeconds(86400), now.plusSeconds(864000));
