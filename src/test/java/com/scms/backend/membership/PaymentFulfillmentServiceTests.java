@@ -2,17 +2,27 @@ package com.scms.backend.membership;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +40,81 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 class PaymentFulfillmentServiceTests {
+	private static final Instant NOW = Instant.parse("2026-10-26T00:00:00Z");
+
+	@Test
+	void duplicateWebhookLoadsImmutableEventBeforeLifecycleOrInsert() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID eventId = UUID.randomUUID();
+		SepayWebhookRequest request = new SepayWebhookRequest(4001L, "X".repeat(300), "X".repeat(300),
+			new BigInteger("9".repeat(40)), "in", null, null, "123456789");
+		when(db.queryForList(anyString(), eq("4001"))).thenReturn(List.of(Map.of(
+			"id", eventId, "payment_id", paymentId, "payload_sha256", "a".repeat(64), "outcome", "FULFILLED")));
+		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(Map.of(
+			"payment_id", paymentId, "order_id", orderId, "payment_status", "PAID",
+			"provider_transaction_id", "4001"));
+		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
+
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+			"X".repeat(300), "b".repeat(64));
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.ALREADY_PROCESSED);
+		assertThat(response.processed()).isFalse();
+		verifyNoInteractions(lifecycle);
+		verify(db, never()).update(anyString(), any(Object[].class));
+		ArgumentCaptor<String> eventSql = ArgumentCaptor.forClass(String.class);
+		verify(db).queryForList(eventSql.capture(), eq("4001"));
+		assertThat(eventSql.getValue()).contains("id,payment_id,payload_sha256,outcome")
+			.doesNotContain("transfer_amount", "payment_reference", "account_number_last4");
+	}
+
+	@Test
+	void automaticWebhookAtExactFulfillmentClockExpiryIsRejected() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		SepayWebhookRequest request = webhookRequest(4002L);
+		stubLockedWebhook(db, paymentId, orderId, memberId, "4002",
+			pendingWebhookRow(paymentId, orderId, memberId, NOW));
+		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
+		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
+
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+			"SCMSORDER", "c".repeat(64));
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
+		assertThat(response.processed()).isFalse();
+		verify(db, never()).update(argThat(sql -> sql.startsWith("update payments set status='PAID'")),
+			any(Object[].class));
+	}
+
+	@Test
+	void automaticWebhookJustBeforeFulfillmentClockExpiryAttemptsFulfillment() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID memberId = UUID.randomUUID();
+		SepayWebhookRequest request = webhookRequest(4003L);
+		stubLockedWebhook(db, paymentId, orderId, memberId, "4003",
+			pendingWebhookRow(paymentId, orderId, memberId, NOW.plusNanos(1)));
+		when(db.queryForObject(anyString(), eq(Integer.class), eq(memberId))).thenReturn(0);
+		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
+		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
+
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+			"SCMSORDER", "d".repeat(64));
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.FULFILLED);
+		assertThat(response.processed()).isTrue();
+		verify(db).update(argThat(sql -> sql.startsWith("update payments set status='PAID'")),
+			any(Object[].class));
+	}
 
 	@Test
 	void paymentForUpdateLocksOrderThenPaymentBeforeReadingProjection() {
@@ -180,5 +265,58 @@ class PaymentFulfillmentServiceTests {
 	private Account member(UUID id) {
 		return new Account(id, AccountRole.MEMBER, AccountStatus.ACTIVE, "Member", "0900000000",
 			id + "@example.test", LocalDate.of(1990, 1, 1), "hash");
+	}
+
+	private PaymentFulfillmentService service(JdbcTemplate db, MembershipLifecycleService lifecycle, Clock clock) {
+		return new PaymentFulfillmentService(db, lifecycle, mock(AuditEventRepository.class),
+			mock(NotificationWriter.class), clock);
+	}
+
+	private SepayWebhookRequest webhookRequest(long transactionId) {
+		return new SepayWebhookRequest(transactionId, "SCMS-ORDER", "PAY SCMS-ORDER",
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+	}
+
+	private void stubLockedWebhook(JdbcTemplate db, UUID paymentId, UUID orderId, UUID memberId,
+			String transactionId, Map<String, Object> row) {
+		when(db.queryForList(anyString(), eq(transactionId))).thenReturn(List.of());
+		when(db.queryForObject(
+			"select o.member_account_id from payments p join membership_orders o on o.id=p.order_id where p.id=?",
+			UUID.class, paymentId)).thenReturn(memberId);
+		when(db.queryForObject("select order_id from payments where id=?", UUID.class, paymentId)).thenReturn(orderId);
+		when(db.queryForObject("select id from membership_orders where id=? for update", UUID.class, orderId))
+			.thenReturn(orderId);
+		when(db.queryForObject("select id from payments where id=? for update", UUID.class, paymentId))
+			.thenReturn(paymentId);
+		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(row);
+	}
+
+	private Map<String, Object> pendingWebhookRow(UUID paymentId, UUID orderId, UUID memberId, Instant expiresAt) {
+		Map<String, Object> row = new HashMap<>();
+		row.put("payment_id", paymentId);
+		row.put("order_id", orderId);
+		row.put("payment_method", "BANK_TRANSFER");
+		row.put("payment_status", "PENDING");
+		row.put("order_status", "PENDING_PAYMENT");
+		row.put("bank_code_snapshot", "MB");
+		row.put("bank_account_number_snapshot", "123456789");
+		row.put("bank_account_name_snapshot", "SCMS GYM");
+		row.put("bank_transfer_content", "SCMS-ORDER");
+		row.put("payment_amount", BigDecimal.valueOf(12000));
+		row.put("payment_currency", "VND");
+		row.put("expires_at", Timestamp.from(expiresAt));
+		row.put("fulfillment_mode", "IMMEDIATE");
+		row.put("member_account_id", memberId);
+		row.put("offer_id", UUID.randomUUID());
+		row.put("plan_code_snapshot", "BASIC");
+		row.put("offer_name_snapshot", "Offer");
+		row.put("price_amount_snapshot", BigDecimal.valueOf(12000));
+		row.put("currency_code_snapshot", "VND");
+		row.put("duration_days_snapshot", 30);
+		row.put("order_number", "ORD-1");
+		row.put("member_code", "MB-1");
+		row.put("member_name", "Member");
+		row.put("provider_reference", "SCMS-ORDER");
+		return row;
 	}
 }

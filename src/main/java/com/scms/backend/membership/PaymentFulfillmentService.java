@@ -5,6 +5,7 @@ import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -68,6 +69,8 @@ class PaymentFulfillmentService {
 	@Transactional
 	SepayWebhookResponse processSepayWebhook(UUID paymentId, SepayWebhookRequest request,
 			String normalizedReference, String payloadSha256) {
+		Map<String, Object> existingEvent = event(request.id().toString());
+		if (existingEvent != null) return replayEvent(paymentId, request, payloadSha256, existingEvent);
 		if (paymentId == null) return finishEvent(null, request, normalizedReference, payloadSha256,
 			SepayWebhookOutcome.REFERENCE_MISMATCH, "Payment reference was not found", false);
 
@@ -122,7 +125,7 @@ class PaymentFulfillmentService {
 		}
 		if (!insertFinalEvent(paymentId, request, normalizedReference, payloadSha256,
 				SepayWebhookOutcome.FULFILLED, "Payment fulfilled automatically")) {
-			return replayEvent(paymentId, request, payloadSha256);
+			return replayEvent(paymentId, request, payloadSha256, event(request.id().toString()));
 		}
 		PaymentResultResponse result = fulfillLocked(row, paymentId, null, "SEPAY", transactionId,
 			"SePay webhook transaction " + transactionId, "SePay incoming transfer confirmed", now);
@@ -211,7 +214,7 @@ class PaymentFulfillmentService {
 			String detail, boolean processed) {
 		UUID paymentId = row == null ? null : uuid(row, "payment_id");
 		if (!insertFinalEvent(paymentId, request, normalizedReference, payloadSha256, outcome, detail)) {
-			return replayEvent(paymentId, request, payloadSha256);
+			return replayEvent(paymentId, request, payloadSha256, event(request.id().toString()));
 		}
 		return webhookResponse(row, processed, outcome);
 	}
@@ -227,12 +230,16 @@ class PaymentFulfillmentService {
 			normalizedReference, last4(request.accountNumber()), payloadSha256, outcome.name(), detail) == 1;
 	}
 
-	private SepayWebhookResponse replayEvent(UUID requestedPaymentId, SepayWebhookRequest request,
-			String payloadSha256) {
-		Map<String, Object> event = db.queryForMap("""
+	private Map<String, Object> event(String transactionId) {
+		List<Map<String, Object>> events = db.queryForList("""
 			select id,payment_id,payload_sha256,outcome from payment_provider_events
 			where provider='SEPAY' and provider_transaction_id=?
-			""", request.id().toString());
+			""", transactionId);
+		return events.isEmpty() ? null : events.getFirst();
+	}
+
+	private SepayWebhookResponse replayEvent(UUID requestedPaymentId, SepayWebhookRequest request,
+			String payloadSha256, Map<String, Object> event) {
 		UUID existingPaymentId = uuid(event, "payment_id");
 		boolean samePayload = payloadSha256.equals(string(event, "payload_sha256"));
 		boolean samePayment = Objects.equals(existingPaymentId, requestedPaymentId);
