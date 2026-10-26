@@ -703,7 +703,7 @@ class PaymentFlowIntegrationTests {
 			});
 			try {
 				start.countDown();
-				awaitBlockedBy(blockerPid.get(), 2);
+				awaitExpectedWebhookLockChain(blockerPid.get());
 				allowCommit.countDown();
 				firstResult = first.get(10, TimeUnit.SECONDS);
 				secondResult = second.get(10, TimeUnit.SECONDS);
@@ -1395,23 +1395,33 @@ class PaymentFlowIntegrationTests {
 		}
 	}
 
-	private void awaitBlockedBy(int blockerPid, long expectedWaiters) {
+	private void awaitExpectedWebhookLockChain(int blockerPid) {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		do {
-			Long waiters = db.queryForObject("""
-				with recursive blocked(pid) as (
-					select activity.pid from pg_stat_activity activity
-					where ? = any(pg_blocking_pids(activity.pid))
+			Map<String, Object> waiters = db.queryForMap("""
+				with recursive lock_chain(pid, query, depth) as (
+					select activity.pid, activity.query, 1 from pg_stat_activity activity
+					where activity.wait_event_type='Lock'
+						and ? = any(pg_blocking_pids(activity.pid))
 					union
-					select activity.pid from pg_stat_activity activity
-					join blocked blocker on blocker.pid = any(pg_blocking_pids(activity.pid))
+					select activity.pid, activity.query, chain.depth + 1
+					from pg_stat_activity activity
+					join lock_chain chain on chain.pid = any(pg_blocking_pids(activity.pid))
+					where activity.wait_event_type='Lock'
 				)
-				select count(*) from blocked
-				""", Long.class, blockerPid);
-			if (waiters != null && waiters >= expectedWaiters) return;
+				select
+					count(*) filter (where depth=1 and query ilike
+						'%select id from membership_orders where id=%for update%') order_waiters,
+					count(*) filter (where depth=2 and query ilike '%from accounts%for%update%') member_waiters,
+					count(*) chain_size
+				from lock_chain
+				""", blockerPid);
+			if (((Number) waiters.get("order_waiters")).longValue() == 1
+					&& ((Number) waiters.get("member_waiters")).longValue() == 1
+					&& ((Number) waiters.get("chain_size")).longValue() == 2) return;
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("Timed out waiting for webhook transactions to block on the Order lock");
+		throw new AssertionError("Timed out waiting for the Order-then-Member webhook lock chain");
 	}
 
 	private void assertNoCommerceArtifacts(UUID memberAccountId) {
