@@ -43,7 +43,8 @@ class SepayWebhookEventMigrationV48Tests {
 			select attribute.attname,
 			       format_type(attribute.atttypid, attribute.atttypmod) as data_type,
 			       attribute.attnotnull,
-			       definition.adbin is not null as has_default
+			       lower(btrim(coalesce(pg_get_expr(definition.adbin, definition.adrelid), '')))
+			           as default_expression
 			from pg_attribute attribute
 			left join pg_attrdef definition
 			  on definition.adrelid = attribute.attrelid and definition.adnum = attribute.attnum
@@ -52,19 +53,19 @@ class SepayWebhookEventMigrationV48Tests {
 			order by attribute.attnum
 			""", (result, row) -> new Column(
 			result.getString("attname"), result.getString("data_type"),
-			result.getBoolean("attnotnull"), result.getBoolean("has_default"))))
+			result.getBoolean("attnotnull"), result.getString("default_expression"))))
 			.containsExactly(
-				new Column("id", "uuid", true, false),
-				new Column("provider", "character varying(20)", true, false),
-				new Column("provider_transaction_id", "character varying(100)", true, false),
-				new Column("payment_id", "uuid", false, false),
-				new Column("transfer_amount", "numeric(19,0)", true, false),
-				new Column("payment_reference", "character varying(255)", false, false),
-				new Column("account_number_last4", "character varying(4)", false, false),
-				new Column("payload_sha256", "character(64)", true, false),
-				new Column("outcome", "character varying(50)", true, false),
-				new Column("detail", "character varying(500)", true, false),
-				new Column("received_at", "timestamp with time zone", true, true));
+				new Column("id", "uuid", true, ""),
+				new Column("provider", "character varying(20)", true, ""),
+				new Column("provider_transaction_id", "character varying(100)", true, ""),
+				new Column("payment_id", "uuid", false, ""),
+				new Column("transfer_amount", "numeric(19,0)", true, ""),
+				new Column("payment_reference", "character varying(255)", false, ""),
+				new Column("account_number_last4", "character varying(4)", false, ""),
+				new Column("payload_sha256", "character(64)", true, ""),
+				new Column("outcome", "character varying(50)", true, ""),
+				new Column("detail", "character varying(500)", true, ""),
+				new Column("received_at", "timestamp with time zone", true, "current_timestamp"));
 
 		assertThat(db.queryForObject("""
 			select indexdef from pg_indexes
@@ -80,19 +81,23 @@ class SepayWebhookEventMigrationV48Tests {
 			""", String.class)).isEqualTo("prevent_history_mutation");
 
 		UUID eventId = UUID.randomUUID();
-		insertEvent(db, eventId, "9001", null, OUTCOMES.get(0));
+		insertEvent(db, eventId, "SEPAY", "9001", null, OUTCOMES.get(0));
+		insertEvent(db, UUID.randomUUID(), "OTHER", "9001", null, OUTCOMES.get(0));
+		assertThat(db.queryForObject(
+			"select count(*) from payment_provider_events where provider_transaction_id='9001'", Long.class))
+			.isEqualTo(2);
 		for (String outcome : OUTCOMES.subList(1, OUTCOMES.size())) {
-			insertEvent(db, UUID.randomUUID(), outcome, null, outcome);
+			insertEvent(db, UUID.randomUUID(), "SEPAY", outcome, null, outcome);
 		}
 
-		assertThatThrownBy(() -> insertEvent(db, eventId, "other-id", null, OUTCOMES.get(0)))
+		assertThatThrownBy(() -> insertEvent(db, eventId, "SEPAY", "other-id", null, OUTCOMES.get(0)))
 			.isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "9001", null, OUTCOMES.get(0)))
+		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "SEPAY", "9001", null, OUTCOMES.get(0)))
 			.isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "invalid-outcome", null, "INVALID"))
+		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "SEPAY", "invalid-outcome", null, "INVALID"))
 			.isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "missing-payment", UUID.randomUUID(),
-			OUTCOMES.get(0))).isInstanceOf(DataIntegrityViolationException.class);
+		assertThatThrownBy(() -> insertEvent(db, UUID.randomUUID(), "SEPAY", "missing-payment",
+			UUID.randomUUID(), OUTCOMES.get(0))).isInstanceOf(DataIntegrityViolationException.class);
 		assertThatThrownBy(() -> db.update("update payment_provider_events set detail='changed' where id=?", eventId))
 			.isInstanceOf(UncategorizedSQLException.class)
 			.hasMessageContaining("payment_provider_events is append-only");
@@ -129,13 +134,14 @@ class SepayWebhookEventMigrationV48Tests {
 			postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()));
 	}
 
-	private void insertEvent(JdbcTemplate db, UUID id, String transactionId, UUID paymentId, String outcome) {
+	private void insertEvent(JdbcTemplate db, UUID id, String provider, String transactionId, UUID paymentId,
+			String outcome) {
 		db.update("""
 			insert into payment_provider_events
 			    (id, provider, provider_transaction_id, payment_id, transfer_amount, payment_reference,
 			     account_number_last4, payload_sha256, outcome, detail)
-			values (?, 'SEPAY', ?, ?, 500000, 'SCMS-ORDER', '6789', ?, ?, 'Migration test')
-			""", id, transactionId, paymentId, "a".repeat(64), outcome);
+			values (?, ?, ?, ?, 500000, 'SCMS-ORDER', '6789', ?, ?, 'Migration test')
+			""", id, provider, transactionId, paymentId, "a".repeat(64), outcome);
 	}
 
 	private LegacyRows seedLegacyCommerce(JdbcTemplate db) {
@@ -197,7 +203,7 @@ class SepayWebhookEventMigrationV48Tests {
 			+ " where id=?) snapshot", String.class, id);
 	}
 
-	private record Column(String name, String type, boolean notNull, boolean hasDefault) { }
+	private record Column(String name, String type, boolean notNull, String defaultExpression) { }
 
 	private record LegacyRows(UUID orderId, UUID paymentId, UUID receiptId) { }
 }
