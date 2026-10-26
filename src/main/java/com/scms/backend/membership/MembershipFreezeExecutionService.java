@@ -102,7 +102,7 @@ class MembershipFreezeExecutionService {
 				"MEMBERSHIP_FREEZE_COMPLETED", "MEMBERSHIP_FREEZE_REQUEST", requestId, Map.of("creditedDays", creditedDays));
 			return;
 		}
-		int activated = db.update("update membership_freeze_periods set status='ACTIVE', actual_start_date=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='SCHEDULED'", Date.valueOf(today), requestId);
+		int activated = db.update("update membership_freeze_periods set status='ACTIVE', actual_start_date=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='SCHEDULED'", Date.valueOf(request.getStartDate()), requestId);
 		if (activated != 1) return;
 		request.activate(); requests.saveAndFlush(request);
 		Instant start = request.getStartDate().atStartOfDay(BUSINESS_ZONE).toInstant();

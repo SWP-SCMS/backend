@@ -100,7 +100,7 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 			  and membership.ends_at > :at
 			  and not exists (
 				select 1 from membership_freeze_periods freeze_period
-				where freeze_period.membership_id = membership.id and freeze_period.status = 'ACTIVE'
+				where freeze_period.membership_id = membership.id and freeze_period.status in ('SCHEDULED', 'ACTIVE')
 				  and freeze_period.scheduled_start_date <= (:at at time zone 'Asia/Ho_Chi_Minh')::date
 				  and freeze_period.scheduled_end_date > (:at at time zone 'Asia/Ho_Chi_Minh')::date
 			  )
@@ -111,7 +111,7 @@ public interface CoachAssignmentRepository extends JpaRepository<CoachAssignment
 
 	@Query(value = """
 		select exists (select 1 from membership_freeze_periods freeze_period join memberships membership on membership.id = freeze_period.membership_id
-		where membership.member_account_id = :memberId and freeze_period.status = 'ACTIVE'
+		where membership.member_account_id = :memberId and freeze_period.status in ('SCHEDULED', 'ACTIVE')
 		and freeze_period.scheduled_start_date <= (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date
 		and freeze_period.scheduled_end_date > (current_timestamp at time zone 'Asia/Ho_Chi_Minh')::date)
 		""", nativeQuery = true)
