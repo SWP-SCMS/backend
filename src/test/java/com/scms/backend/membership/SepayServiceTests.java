@@ -102,7 +102,7 @@ class SepayServiceTests {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "", "0000000000000000000000000000000000000000000000000000000000000000" })
+	@ValueSource(strings = { "", "not-hex", "0000000000000000000000000000000000000000000000000000000000000000" })
 	void missingOrMismatchedFingerprintRejectsCreationBeforeWrites(String fingerprint) {
 		UUID actor = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();

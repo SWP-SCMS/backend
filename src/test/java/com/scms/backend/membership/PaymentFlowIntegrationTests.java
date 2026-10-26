@@ -464,7 +464,7 @@ class PaymentFlowIntegrationTests {
 		UUID order = order(member.getAccountId(), member.getAccountId(), offer, 12000, false,
 			Instant.now().plusSeconds(3600));
 		String persistedContent = "  SCMS-EXACT CONTENT  ";
-		pendingPayment(order, 12000, persistedContent);
+		pendingPaymentWithDestinationSnapshot(order, 12000, persistedContent);
 
 		JsonNode response = objectMapper.readTree(sepay(member.getAccount(), order).andExpect(status().isOk())
 			.andReturn().getResponse().getContentAsString());
