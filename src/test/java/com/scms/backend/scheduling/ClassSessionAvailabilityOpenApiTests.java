@@ -22,6 +22,10 @@ class ClassSessionAvailabilityOpenApiTests {
 			JsonNode schema = document.at("/components/schemas/AvailableCoachResponse");
 			assertThat(schema.path("required").toString())
 				.contains("coachAccountId", "fullName", "phone");
+			JsonNode discovery = document.at("/paths/~1manager~1coaches~1available/get");
+			assertThat(discovery.isMissingNode()).isFalse();
+			assertThat(discovery.at("/responses/200/content/application~1json/schema/items/$ref").asText())
+				.isEqualTo("#/components/schemas/AvailableCoachResponse");
 		}
 	}
 }

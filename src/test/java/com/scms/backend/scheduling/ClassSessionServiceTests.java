@@ -256,6 +256,36 @@ class ClassSessionServiceTests {
 	}
 
 	@Test
+	void coachDiscoveryReturnsOnlyCoachesAvailableForEveryWindow() {
+		UUID managerId = activeManager();
+		Instant firstStart = now.plusSeconds(3600);
+		Instant firstEnd = now.plusSeconds(7200);
+		Instant secondStart = now.plusSeconds(86400);
+		Instant secondEnd = secondStart.plusSeconds(3600);
+		UUID alwaysAvailableId = UUID.randomUUID();
+		ClassSessionRepository.AvailableCoachView alwaysAvailable = org.mockito.Mockito.mock(
+			ClassSessionRepository.AvailableCoachView.class);
+		when(alwaysAvailable.getCoachAccountId()).thenReturn(alwaysAvailableId);
+		when(alwaysAvailable.getFullName()).thenReturn("Always Available");
+		when(alwaysAvailable.getPhone()).thenReturn("0901234567");
+		ClassSessionRepository.AvailableCoachView laterBusy = org.mockito.Mockito.mock(
+			ClassSessionRepository.AvailableCoachView.class);
+		when(laterBusy.getCoachAccountId()).thenReturn(UUID.randomUUID());
+		when(laterBusy.getFullName()).thenReturn("Later Busy");
+		when(laterBusy.getPhone()).thenReturn("0907654321");
+		when(sessions.findAvailableCoachesForWindow(firstStart, firstEnd))
+			.thenReturn(List.of(alwaysAvailable, laterBusy));
+		when(sessions.findAvailableCoachesForWindow(secondStart, secondEnd))
+			.thenReturn(List.of(alwaysAvailable));
+
+		List<AvailableCoachResponse> result = service.availableCoaches(managerId,
+			List.of(firstStart, secondStart), List.of(firstEnd, secondEnd), null);
+
+		assertThat(result).containsExactly(
+			new AvailableCoachResponse(alwaysAvailableId, "Always Available", "0901234567"));
+	}
+
+	@Test
 	void managerCreatesRoomlessPtSlotWithCapacityOne() {
 		UUID managerId = activeManager();
 		Discipline discipline = new Discipline(UUID.randomUUID(), "PT", null, DisciplineStatus.ACTIVE);
