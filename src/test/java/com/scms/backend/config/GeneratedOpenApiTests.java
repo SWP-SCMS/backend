@@ -354,6 +354,17 @@ class GeneratedOpenApiTests {
 		assertThat(webhook.path("security").isArray()).isTrue();
 		assertThat(webhook.path("security")).isEmpty();
 		assertThat(webhook.path("description").asText()).contains("API key", "header");
+		JsonNode authorization = null;
+		for (JsonNode parameter : webhook.path("parameters")) {
+			if ("Authorization".equals(parameter.path("name").asText())) authorization = parameter;
+		}
+		assertThat(authorization).isNotNull();
+		assertThat(authorization.path("in").asText()).isEqualTo("header");
+		assertThat(authorization.path("description").asText()).contains("Apikey <credential>");
+		assertThat(webhook.at("/responses/200/description").asText()).contains("durably handled");
+		assertThat(webhook.at("/responses/400/description").asText()).contains("Malformed");
+		assertThat(webhook.at("/responses/401/description").asText()).contains("API-key credentials");
+		assertThat(webhook.at("/responses/500/description").asText()).contains("Transient");
 	}
 
 	@Test
