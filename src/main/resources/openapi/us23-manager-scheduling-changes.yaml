@@ -387,15 +387,19 @@ components:
         reason: {type: [string, 'null'], maxLength: 1000}
     RoomImpactPreviewResponse:
       type: object
-      required: [count, sessions]
+      required: [count, sessions, bulkAvailableTargetRooms]
       properties:
         count: {type: integer, minimum: 0}
         sessions:
           type: array
           items: {$ref: '#/components/schemas/RoomImpactSession'}
+        bulkAvailableTargetRooms:
+          type: array
+          description: Rooms that can accept every impacted Session in one bulk MOVE.
+          items: {$ref: '#/components/schemas/RoomImpactTargetRoom'}
     RoomImpactSession:
       type: object
-      required: [sessionId, classId, className, coachId, roomId, roomName, startTime, endTime, status, bookingCount]
+      required: [sessionId, classId, className, coachId, roomId, roomName, startTime, endTime, status, bookingCount, availableTargetRooms]
       properties:
         sessionId: {type: string, format: uuid}
         classId: {type: string, format: uuid}
@@ -408,6 +412,17 @@ components:
         status: {type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED]}
         version: {type: integer, format: int64, minimum: 0}
         bookingCount: {type: integer, format: int64, minimum: 0}
+        availableTargetRooms:
+          type: array
+          description: Rooms currently valid for moving this Session.
+          items: {$ref: '#/components/schemas/RoomImpactTargetRoom'}
+    RoomImpactTargetRoom:
+      type: object
+      required: [roomId, roomName, capacity]
+      properties:
+        roomId: {type: string, format: uuid}
+        roomName: {type: string}
+        capacity: {type: integer, minimum: 1}
     RoomResponse:
       type: object
       required: [id, name, capacity, status, usageMode]
