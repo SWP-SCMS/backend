@@ -347,6 +347,61 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void sepayWebhookDocumentsAnonymousApiKeyHeaderAuthentication() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode webhook = operation(document, "/payments/sepay/webhook", "post");
+
+		assertThat(webhook.path("security").isArray()).isTrue();
+		assertThat(webhook.path("security")).isEmpty();
+		assertThat(webhook.path("description").asText()).contains("API key", "header");
+		JsonNode authorization = null;
+		for (JsonNode parameter : webhook.path("parameters")) {
+			if ("Authorization".equals(parameter.path("name").asText())) authorization = parameter;
+		}
+		assertThat(authorization).isNotNull();
+		assertThat(authorization.path("in").asText()).isEqualTo("header");
+		assertThat(authorization.path("description").asText()).contains("Apikey <credential>");
+		assertThat(webhook.at("/responses/200/description").asText()).contains("durably handled");
+		assertThat(webhook.at("/responses/400/description").asText()).contains("Malformed");
+		assertThat(webhook.at("/responses/401/description").asText()).contains("API-key credentials");
+		assertThat(webhook.at("/responses/500/description").asText()).contains("Transient");
+		for (String status : List.of("400", "401", "500")) {
+			assertThat(webhook.at("/responses/" + status
+				+ "/content/application~1problem+json/schema/$ref").asText())
+				.as("webhook " + status)
+				.isEqualTo("#/components/schemas/ApiProblem");
+		}
+	}
+
+	@Test
+	void sepayWebhookAcknowledgementSchemaRequiresSuccessProcessedAndOutcome() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode schema = response(document, "/payments/sepay/webhook", "post", "200")
+			.path("content").elements().next().path("schema");
+		if (schema.has("$ref")) schema = document.at(schema.path("$ref").asText().substring(1));
+
+		List<String> requiredFields = new ArrayList<>();
+		schema.path("required").forEach(field -> requiredFields.add(field.asText()));
+		assertThat(requiredFields).contains("success", "processed", "outcome");
+	}
+
+	@Test
+	void sepayCreateOperationsDocumentConfigurationInvalidServiceUnavailable() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String path : List.of(
+			"/members/me/membership-orders/{orderId}/payments/sepay",
+			"/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")) {
+			JsonNode unavailable = response(document, path, "post", "503");
+			assertThat(unavailable.path("description").asText().toLowerCase())
+				.as(path)
+				.contains("configuration", "invalid");
+			assertThat(unavailable.at("/content/application~1problem+json/schema/$ref").asText())
+				.as(path)
+				.isEqualTo("#/components/schemas/ApiProblem");
+		}
+	}
+
+	@Test
 	void generatedContractDocumentsSecuritySchemasAndDynamicStatuses() throws Exception {
 		JsonNode document = generatedDocument();
 

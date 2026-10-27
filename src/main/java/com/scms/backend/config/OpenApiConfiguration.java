@@ -53,24 +53,30 @@ public class OpenApiConfiguration {
 				if (operation.getDescription() == null) {
 					operation.setDescription(constraint(path, publicOperation));
 				}
-				operation.getResponses().addApiResponse("400", reference("BadRequest"));
-				operation.getResponses().addApiResponse("401", reference("Unauthorized"));
+				addDefaultResponse(operation, "400", "BadRequest");
+				addDefaultResponse(operation, "401", "Unauthorized");
 				if (!publicOperation) {
-					operation.getResponses().addApiResponse("403", reference("Forbidden"));
+					addDefaultResponse(operation, "403", "Forbidden");
 				}
 				if (path.contains("{")) {
-					operation.getResponses().addApiResponse("404", reference("NotFound"));
+					addDefaultResponse(operation, "404", "NotFound");
 				}
 				if (method != HttpMethod.GET) {
-					operation.getResponses().addApiResponse("409", reference("Conflict"));
+					addDefaultResponse(operation, "409", "Conflict");
 				}
 				if (path.contains("email-verification") || path.contains("password-reset") || path.contains("email-change")
 						|| path.equals("/auth/register")) {
-					operation.getResponses().addApiResponse("429", reference("TooManyRequests"));
+					addDefaultResponse(operation, "429", "TooManyRequests");
 				}
 				applyKnownResponseVariants(path, method, operation);
 			}));
 		};
+	}
+
+	private void addDefaultResponse(Operation operation, String status, String component) {
+		if (!operation.getResponses().containsKey(status)) {
+			operation.getResponses().addApiResponse(status, reference(component));
+		}
 	}
 
 	private void applyKnownResponseVariants(String path, HttpMethod method, Operation operation) {

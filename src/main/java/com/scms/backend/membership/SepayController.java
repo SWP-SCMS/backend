@@ -2,6 +2,12 @@ package com.scms.backend.membership;
 
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 import jakarta.validation.Valid;
@@ -25,11 +31,25 @@ class SepayController {
 		"/members/me/membership-orders/{orderId}/payments/sepay",
 		"/members/me/membership-orders/{orderId}/bank-transfer"
 	})
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "OK",
+			content = @Content(schema = @Schema(implementation = SepayPaymentResponse.class))),
+		@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	})
 	ResponseEntity<SepayPaymentResponse> create(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.create(UUID.fromString(jwt.getSubject()), orderId));
 	}
 
 	@PostMapping("/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "OK",
+			content = @Content(schema = @Schema(implementation = SepayPaymentResponse.class))),
+		@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	})
 	ResponseEntity<SepayPaymentResponse> createForReceptionist(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable String memberId, @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.createForReceptionist(UUID.fromString(jwt.getSubject()), memberId, orderId));
@@ -37,7 +57,25 @@ class SepayController {
 
 	@PostMapping("/payments/sepay/webhook")
 	@SecurityRequirements
-	ResponseEntity<PaymentResultResponse> webhook(
+	@Operation(summary = "Receive a SePay transfer webhook", description = """
+		Public provider callback authenticated by an API key in the Authorization header using `Apikey <credential>`.
+		A 200 response with `success=true` acknowledges durable handling and does not necessarily mean the Payment is PAID.
+		When `processed=false`, SCMS creates no Membership or Receipt and the event requires manual review.
+		""")
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "Webhook durably handled or idempotently replayed"),
+		@ApiResponse(responseCode = "400", description = "Malformed webhook request",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem"))),
+		@ApiResponse(responseCode = "401", description = "Invalid webhook API-key credentials",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem"))),
+		@ApiResponse(responseCode = "500", description = "Transient processing or storage failure; provider may retry",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	})
+	ResponseEntity<SepayWebhookResponse> webhook(
+			@Parameter(description = "SePay API-key header in the form `Apikey <credential>`", required = true)
 			@RequestHeader(name = "Authorization", required = false) String authorization,
 			@Valid @RequestBody SepayWebhookRequest request) {
 		String apiKey = authorization != null && authorization.startsWith("Apikey ")
