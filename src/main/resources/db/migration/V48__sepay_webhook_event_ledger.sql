@@ -31,3 +31,7 @@ create index idx_payment_provider_events_payment_received_at
 create trigger trg_payment_provider_events_append_only
 before update or delete on payment_provider_events
 for each row execute function prevent_history_mutation();
+
+create trigger trg_payment_provider_events_no_truncate
+before truncate on payment_provider_events
+for each statement execute function prevent_history_mutation();

@@ -77,6 +77,7 @@ class SepayWebhookEventMigrationV48Tests {
 			from pg_trigger event_trigger
 			join pg_proc proc on proc.oid = event_trigger.tgfoid
 			where event_trigger.tgrelid='payment_provider_events'::regclass
+			  and event_trigger.tgname='trg_payment_provider_events_append_only'
 			  and not event_trigger.tgisinternal
 			""", String.class)).isEqualTo("prevent_history_mutation");
 
@@ -120,6 +121,17 @@ class SepayWebhookEventMigrationV48Tests {
 		assertThat(db.queryForObject("select count(*) from payment_provider_events", Long.class)).isZero();
 		assertThat(db.queryForObject(
 			"select count(*) from flyway_schema_history where version='48' and success", Long.class)).isOne();
+	}
+
+	@Test
+	void providerEventLedgerRejectsTruncate() {
+		flyway().migrate();
+		JdbcTemplate db = db();
+		insertEvent(db, UUID.randomUUID(), "SEPAY", "truncate-guard", null, OUTCOMES.get(0));
+
+		assertThatThrownBy(() -> db.execute("truncate table payment_provider_events"))
+			.isInstanceOf(UncategorizedSQLException.class)
+			.hasMessageContaining("payment_provider_events is append-only");
 	}
 
 	private Flyway flyway() {

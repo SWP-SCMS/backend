@@ -386,6 +386,22 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void sepayCreateOperationsDocumentConfigurationInvalidServiceUnavailable() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String path : List.of(
+			"/members/me/membership-orders/{orderId}/payments/sepay",
+			"/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")) {
+			JsonNode unavailable = response(document, path, "post", "503");
+			assertThat(unavailable.path("description").asText().toLowerCase())
+				.as(path)
+				.contains("configuration", "invalid");
+			assertThat(unavailable.at("/content/application~1problem+json/schema/$ref").asText())
+				.as(path)
+				.isEqualTo("#/components/schemas/ApiProblem");
+		}
+	}
+
+	@Test
 	void generatedContractDocumentsSecuritySchemasAndDynamicStatuses() throws Exception {
 		JsonNode document = generatedDocument();
 

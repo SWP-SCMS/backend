@@ -44,9 +44,22 @@ where p.provider = 'SEPAY' and p.status = 'PENDING'
 
 - Supplemental query executor: __________  Run time (UTC): __________
 - Supplemental row count: __________  Evidence reference/checksum: __________
-- Deduplicated combined count by `p.id`: __________
-- [ ] Merge both results, deduplicate by `p.id`, and classify every distinct payment below. The classified distinct count must equal the deduplicated combined count.
-- Classified distinct count: __________  Counts match: YES / NO
+- [ ] Run this read-only complete inventory and store its result with the preceding query evidence. It must return every pending SePay payment, including rows whose snapshots are complete and nonblank.
+
+```sql
+select p.id, p.order_id, o.order_number, o.expires_at,
+       p.bank_code_snapshot, p.bank_account_number_snapshot, p.bank_account_name_snapshot
+from payments p
+join membership_orders o on o.id = p.order_id
+where p.provider = 'SEPAY' and p.status = 'PENDING';
+```
+
+- Complete inventory executor: __________  Run time (UTC): __________
+- Complete pending count: __________  Evidence reference/checksum: __________
+- [ ] Group the complete inventory by the exact bank code, account number, and account name snapshots, including null/blank tuples. Classify every destination tuple against trusted immutable QR, provider, or approved deployment evidence for the destination presented when those payments were created; a complete nonblank tuple is not implicitly trusted.
+- [ ] Classify every payment below using its tuple classification and expiry/payment evidence. The classified payment count must equal the complete pending count, and every tuple must have an evidence-backed classification and reviewer.
+- Destination tuple count: __________  Classified tuple count: __________  Counts match: YES / NO
+- Classified payment count: __________  Complete pending count matches: YES / NO
 
 | Payment ID | Order number | Classification | Evidence/reference | Required action | Owner | Reviewer | Closed at (UTC) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -86,6 +99,8 @@ Use exactly one classification per row:
 
 - [ ] Deploy the exact immutable release artifact to staging first with the approved destination and independently stored fingerprint.
 - Staging release commit: __________  Artifact SHA-256: __________
+- [ ] Configure SePay to retry webhook deliveries automatically after every non-2xx response, and enable an incident alert for exhausted/delayed retries or repeated non-2xx responses before testing delivery.
+- Provider retry configuration evidence: __________  Incident alert test evidence: __________  On-call acknowledgement: __________
 - [ ] Complete every check below using non-production test data. Preserve request/response, database, and audit evidence without credentials or full bank details.
 
 | Check | Required result | Evidence reference | Executor / UTC time | Pass |
@@ -99,7 +114,9 @@ Use exactly one classification per row:
 | Snapshot missing/blank webhook | A webhook for a payment with a null, empty, or whitespace-only destination snapshot does not fulfil and appends `DESTINATION_SNAPSHOT_MISSING`. |  |  | [ ] |
 | Duplicate replay | Replaying the same provider transaction does not duplicate fulfilment, membership, receipt, revenue, or rights; the response is idempotent and the original ledger event remains unchanged. |  |  | [ ] |
 | Manual reconciliation after expiry | An authorized operator can resolve an expired pending payment from actual transaction evidence; actor, timestamp, reason, and evidence/reference are audited, with no duplicate fulfilment. |  |  | [ ] |
-| Whitespace inventory fixture | A pending staging payment with a whitespace-only snapshot is returned by the supplemental query, appears once in the deduplicated combined inventory, and is classified. |  |  | [ ] |
+| Whitespace inventory fixture | A pending staging payment with a whitespace-only snapshot is returned by the supplemental query, appears once in the complete inventory, and is classified. |  |  | [ ] |
+| Complete unapproved snapshot fixture | A pending staging payment with a complete nonblank but historically unapproved destination tuple appears in the complete inventory; rollout remains blocked until it receives an evidence-backed classification and its required disposition is closed. |  |  | [ ] |
+| Provider retry after non-2xx | Force the first delivery to return 500, then prove SePay automatically retries the same provider transaction ID and the retry fulfils the intended payment exactly once without duplicate membership, receipt, revenue, or rights. |  |  | [ ] |
 
 - Staging verifier: __________  Timestamp: __________
 - Staging disable evidence: __________  Re-enable evidence: __________
@@ -113,9 +130,10 @@ Use exactly one classification per row:
 - [ ] Drain every SePay payment-create/webhook request admitted before disable and its related database transaction. Do not start final inventory or cutover until monitoring shows both counts at zero.
 - Admitted requests at disable: __________  Related DB transactions at disable: __________
 - Drain metrics/query evidence: __________  Both zero at (UTC): __________  Verifier: __________
-- [ ] While both paths are disabled, re-run both read-only queries from Section 1, deduplicate by `p.id`, classify every delta, and confirm the classified count equals the combined distinct count.
-- Final plan-query count: __________  Supplemental count: __________  Combined distinct count: __________
-- Final classified count: __________  Inventory evidence: __________  Timestamp: __________
+- [ ] While both paths are disabled, re-run all three read-only queries from Section 1. Classify every complete-inventory destination tuple against trusted historical evidence, disposition every payment, and confirm both classified counts equal their complete-inventory counts.
+- Final plan-query count: __________  Supplemental count: __________  Complete pending count: __________
+- Final tuple count: __________  Classified tuple count: __________  Final classified payment count: __________
+- Complete unapproved fixture blocked/dispositioned evidence: __________  Inventory evidence: __________  Timestamp: __________
 - [ ] Deploy the immutable release artifact while public payment creation and webhook ingress remain disabled. Do not create an operator-only production test payment; use staging QR evidence produced by this exact artifact.
 - Release commit: __________  Expected artifact SHA-256: __________
 - Staging QR/expiry/snapshot rejection evidence for this artifact: __________

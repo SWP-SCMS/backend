@@ -31,11 +31,25 @@ class SepayController {
 		"/members/me/membership-orders/{orderId}/payments/sepay",
 		"/members/me/membership-orders/{orderId}/bank-transfer"
 	})
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "OK",
+			content = @Content(schema = @Schema(implementation = SepayPaymentResponse.class))),
+		@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	})
 	ResponseEntity<SepayPaymentResponse> create(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.create(UUID.fromString(jwt.getSubject()), orderId));
 	}
 
 	@PostMapping("/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "OK",
+			content = @Content(schema = @Schema(implementation = SepayPaymentResponse.class))),
+		@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	})
 	ResponseEntity<SepayPaymentResponse> createForReceptionist(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable String memberId, @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.createForReceptionist(UUID.fromString(jwt.getSubject()), memberId, orderId));
