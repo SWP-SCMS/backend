@@ -29,7 +29,24 @@ where p.provider = 'SEPAY' and p.status = 'PENDING'
 
 - Query executor: __________  Run time (UTC): __________
 - Result row count: __________  Evidence reference/checksum: __________
-- [ ] Classify every returned row in the table below. No row may be left unclassified.
+- [ ] Run this supplemental read-only sweep for blank or whitespace-only snapshots and store its result with the first query.
+
+```sql
+select p.id, p.order_id, o.order_number, o.expires_at,
+       p.bank_code_snapshot, p.bank_account_number_snapshot, p.bank_account_name_snapshot
+from payments p
+join membership_orders o on o.id = p.order_id
+where p.provider = 'SEPAY' and p.status = 'PENDING'
+  and (nullif(btrim(p.bank_code_snapshot), '') is null
+    or nullif(btrim(p.bank_account_number_snapshot), '') is null
+    or nullif(btrim(p.bank_account_name_snapshot), '') is null);
+```
+
+- Supplemental query executor: __________  Run time (UTC): __________
+- Supplemental row count: __________  Evidence reference/checksum: __________
+- Deduplicated combined count by `p.id`: __________
+- [ ] Merge both results, deduplicate by `p.id`, and classify every distinct payment below. The classified distinct count must equal the deduplicated combined count.
+- Classified distinct count: __________  Counts match: YES / NO
 
 | Payment ID | Order number | Classification | Evidence/reference | Required action | Owner | Reviewer | Closed at (UTC) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -52,9 +69,12 @@ Use exactly one classification per row:
 - Approved destination secure reference/version: __________
 - Approver 1: __________  Evidence checked: __________  Timestamp: __________
 - Approver 2: __________  Evidence checked: __________  Timestamp: __________
-- [ ] In approved secret tooling, trim each approved value, uppercase it, join the UTF-8 values with literal `|` separators and no spaces/newline, then calculate SHA-256:
+- [ ] In approved secret tooling, reproduce Java exactly: apply `String.trim()` to each value (removing leading/trailing characters less than or equal to U+0020), join the three results with a literal `|`, apply `toUpperCase(Locale.ROOT)`, encode as UTF-8 with no newline, and calculate SHA-256:
 
-  `UPPERCASE(TRIM(bankCode))|UPPERCASE(TRIM(bankAccount))|UPPERCASE(TRIM(bankAccountName))`
+  `String.join("|", bankCode.trim(), bankAccount.trim(), bankAccountName.trim()).toUpperCase(Locale.ROOT)`
+
+- [ ] Verify the non-sensitive known-answer vector used by the application test: inputs `" mb "`, `" 123456789 "`, `" scms gym "` produce canonical text `MB|123456789|SCMS GYM` and SHA-256 `7128318f4501a30f6c5648627306786fb6e7a26a15da6850a959c5b35a0a6859`.
+- Known-answer verifier: __________  Tool/test evidence: __________  Timestamp: __________
 
 - [ ] Record the resulting 64-character hexadecimal digest as `SEPAY_BANK_DESTINATION_SHA256` without exposing the source values in tickets, logs, or command history.
 - Fingerprint secret version/reference: __________  Digest verifier: __________  Timestamp: __________
@@ -70,27 +90,44 @@ Use exactly one classification per row:
 | Check | Required result | Evidence reference | Executor / UTC time | Pass |
 | --- | --- | --- | --- | --- |
 | QR destination | Decoded QR bank code, account, and account name match the two-person-approved destination; amount and transfer content match the order. |  |  | [ ] |
+| Creation disabled | With the cutover control enabled, a SePay payment/QR cannot be created and no payment row is written. |  |  | [ ] |
+| Webhook ingress disabled | With webhook ingress disabled, a request cannot reach payment processing and no provider event or fulfilment is created. |  |  | [ ] |
 | Valid webhook | A valid in-window webhook fulfils the intended payment/order once and creates one `FULFILLED` provider event. |  |  | [ ] |
 | Expired webhook | A webhook at or after expiry does not fulfil; payment/order remain pending for manual reconciliation and a `PAYMENT_WINDOW_EXPIRED` event is appended. |  |  | [ ] |
+| Snapshot missing/blank webhook | A webhook for a payment with a null, empty, or whitespace-only destination snapshot does not fulfil and appends `DESTINATION_SNAPSHOT_MISSING`. |  |  | [ ] |
 | Duplicate replay | Replaying the same provider transaction does not duplicate fulfilment, membership, receipt, revenue, or rights; the response is idempotent and the original ledger event remains unchanged. |  |  | [ ] |
 | Manual reconciliation after expiry | An authorized operator can resolve an expired pending payment from actual transaction evidence; actor, timestamp, reason, and evidence/reference are audited, with no duplicate fulfilment. |  |  | [ ] |
+| Whitespace inventory fixture | A pending staging payment with a whitespace-only snapshot is returned by the supplemental query, appears once in the deduplicated combined inventory, and is classified. |  |  | [ ] |
 
 - Staging verifier: __________  Timestamp: __________
-- [ ] Re-run the read-only inventory for production immediately before deployment; attach the result and reconcile any delta through Section 1.
-- Pre-production inventory evidence: __________  Row count: __________  Timestamp: __________
+- Staging disable evidence: __________  Re-enable evidence: __________
 
 ## 4. Production rollout, monitoring, and rollback
 
 - [ ] All legacy rows are dispositioned, staging checks pass, destination/fingerprint permissions are separated, and change alerts are active.
-- [ ] Deploy the application and confirm QR generation succeeds only with the approved destination/fingerprint pair.
+- [ ] Disable SePay payment creation and SePay webhook ingress before the final production inventory. Keep both disabled through inventory, deployment, verification, and cutover.
+- Disable approver/operator: __________  Disabled at (UTC): __________  Evidence: __________
+- [ ] While both paths are disabled, re-run both read-only queries from Section 1, deduplicate by `p.id`, classify every delta, and confirm the classified count equals the combined distinct count.
+- Final plan-query count: __________  Supplemental count: __________  Combined distinct count: __________
+- Final classified count: __________  Inventory evidence: __________  Timestamp: __________
+- [ ] Deploy the application while both paths remain disabled and confirm QR generation succeeds only with the approved destination/fingerprint pair.
+- [ ] Before re-enabling, verify the selected artifact rejects expired webhooks and null/empty/whitespace destination snapshots using the staging evidence tied to this release commit.
+- Expiry/snapshot rejection evidence: __________  Release commit: __________  Verifier: __________
+- [ ] Re-enable payment creation and webhook ingress only after the preceding checks pass and two-person approval is recorded.
+- Re-enable approver 1: __________  Approver 2: __________  Re-enabled at (UTC): __________  Evidence: __________
 - [ ] Monitor destination/fingerprint change alerts, invalid-destination errors, webhook outcomes, and duplicate/expired event rates during the deployment window.
 - Monitoring owner: __________  Dashboard/log reference: __________  End time (UTC): __________
 
 If rollback is required:
 
+- [ ] Disable SePay payment creation and webhook ingress immediately and record evidence; keep both disabled during rollback.
+- Rollback disable operator: __________  Disabled at (UTC): __________  Evidence: __________
 - [ ] Roll back the application artifact/configuration only to the approved prior version.
 - [ ] Keep additive migration V48 applied. Preserve the `payment_provider_events` table, its append-only trigger, and every existing provider event.
 - [ ] Do not drop/truncate the table or update/delete provider events. Continue manual reconciliation for unresolved payments and retain all evidence.
+- [ ] Do not re-enable payment creation or webhook ingress unless the selected rollback artifact itself has verified rejection of expired webhooks and null/empty/whitespace destination snapshots. Otherwise leave both disabled and use manual reconciliation.
+- Rollback artifact: __________  Expiry/snapshot rejection evidence: __________
+- Rollback re-enable approver 1: __________  Approver 2: __________  Re-enabled at (UTC): __________  Evidence: __________ / NOT RE-ENABLED
 - Rollback decision/incident: __________  Decider: __________  Timestamp: __________
 
 ## Final sign-off
