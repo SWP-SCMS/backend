@@ -2,6 +2,10 @@ package com.scms.backend.membership;
 
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 import jakarta.validation.Valid;
@@ -37,7 +41,19 @@ class SepayController {
 
 	@PostMapping("/payments/sepay/webhook")
 	@SecurityRequirements
+	@Operation(summary = "Receive a SePay transfer webhook", description = """
+		Public provider callback authenticated by an API key in the Authorization header using `Apikey <credential>`.
+		A 200 response with `success=true` acknowledges durable handling and does not necessarily mean the Payment is PAID.
+		When `processed=false`, SCMS creates no Membership or Receipt and the event requires manual review.
+		""")
+	@ApiResponses({
+		@ApiResponse(responseCode = "200", description = "Webhook durably handled or idempotently replayed"),
+		@ApiResponse(responseCode = "400", description = "Malformed webhook request"),
+		@ApiResponse(responseCode = "401", description = "Invalid webhook API-key credentials"),
+		@ApiResponse(responseCode = "500", description = "Transient processing or storage failure; provider may retry")
+	})
 	ResponseEntity<SepayWebhookResponse> webhook(
+			@Parameter(description = "SePay API-key header in the form `Apikey <credential>`", required = true)
 			@RequestHeader(name = "Authorization", required = false) String authorization,
 			@Valid @RequestBody SepayWebhookRequest request) {
 		String apiKey = authorization != null && authorization.startsWith("Apikey ")
