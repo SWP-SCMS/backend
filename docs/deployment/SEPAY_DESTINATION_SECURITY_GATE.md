@@ -84,7 +84,8 @@ Use exactly one classification per row:
 
 ## 3. Staging-first verification
 
-- [ ] Deploy to staging first with the approved destination and independently stored fingerprint.
+- [ ] Deploy the exact immutable release artifact to staging first with the approved destination and independently stored fingerprint.
+- Staging release commit: __________  Artifact SHA-256: __________
 - [ ] Complete every check below using non-production test data. Preserve request/response, database, and audit evidence without credentials or full bank details.
 
 | Check | Required result | Evidence reference | Executor / UTC time | Pass |
@@ -92,6 +93,7 @@ Use exactly one classification per row:
 | QR destination | Decoded QR bank code, account, and account name match the two-person-approved destination; amount and transfer content match the order. |  |  | [ ] |
 | Creation disabled | With the cutover control enabled, a SePay payment/QR cannot be created and no payment row is written. |  |  | [ ] |
 | Webhook ingress disabled | With webhook ingress disabled, a request cannot reach payment processing and no provider event or fulfilment is created. |  |  | [ ] |
+| Drain barrier | Hold one already-admitted SePay request and its database transaction open, disable creation and webhook ingress, and prove inventory/cutover remains blocked until that request finishes or aborts and both admitted-request and related-transaction metrics reach zero. |  |  | [ ] |
 | Valid webhook | A valid in-window webhook fulfils the intended payment/order once and creates one `FULFILLED` provider event. |  |  | [ ] |
 | Expired webhook | A webhook at or after expiry does not fulfil; payment/order remain pending for manual reconciliation and a `PAYMENT_WINDOW_EXPIRED` event is appended. |  |  | [ ] |
 | Snapshot missing/blank webhook | A webhook for a payment with a null, empty, or whitespace-only destination snapshot does not fulfil and appends `DESTINATION_SNAPSHOT_MISSING`. |  |  | [ ] |
@@ -101,18 +103,24 @@ Use exactly one classification per row:
 
 - Staging verifier: __________  Timestamp: __________
 - Staging disable evidence: __________  Re-enable evidence: __________
+- Staging drain metrics/evidence: __________  Zero observed at (UTC): __________
 
 ## 4. Production rollout, monitoring, and rollback
 
 - [ ] All legacy rows are dispositioned, staging checks pass, destination/fingerprint permissions are separated, and change alerts are active.
 - [ ] Disable SePay payment creation and SePay webhook ingress before the final production inventory. Keep both disabled through inventory, deployment, verification, and cutover.
 - Disable approver/operator: __________  Disabled at (UTC): __________  Evidence: __________
+- [ ] Drain every SePay payment-create/webhook request admitted before disable and its related database transaction. Do not start final inventory or cutover until monitoring shows both counts at zero.
+- Admitted requests at disable: __________  Related DB transactions at disable: __________
+- Drain metrics/query evidence: __________  Both zero at (UTC): __________  Verifier: __________
 - [ ] While both paths are disabled, re-run both read-only queries from Section 1, deduplicate by `p.id`, classify every delta, and confirm the classified count equals the combined distinct count.
 - Final plan-query count: __________  Supplemental count: __________  Combined distinct count: __________
 - Final classified count: __________  Inventory evidence: __________  Timestamp: __________
-- [ ] Deploy the application while both paths remain disabled and confirm QR generation succeeds only with the approved destination/fingerprint pair.
-- [ ] Before re-enabling, verify the selected artifact rejects expired webhooks and null/empty/whitespace destination snapshots using the staging evidence tied to this release commit.
-- Expiry/snapshot rejection evidence: __________  Release commit: __________  Verifier: __________
+- [ ] Deploy the immutable release artifact while public payment creation and webhook ingress remain disabled. Do not create an operator-only production test payment; use staging QR evidence produced by this exact artifact.
+- Release commit: __________  Expected artifact SHA-256: __________
+- Staging QR/expiry/snapshot rejection evidence for this artifact: __________
+- Production artifact SHA-256: __________  Digest matches: YES / NO  Verifier: __________
+- [ ] Keep webhook ingress disabled through cutover. Before re-enabling either path, confirm the artifact digest matches and the tied staging evidence proves the QR destination plus expired-webhook and null/empty/whitespace-snapshot rejection checks.
 - [ ] Re-enable payment creation and webhook ingress only after the preceding checks pass and two-person approval is recorded.
 - Re-enable approver 1: __________  Approver 2: __________  Re-enabled at (UTC): __________  Evidence: __________
 - [ ] Monitor destination/fingerprint change alerts, invalid-destination errors, webhook outcomes, and duplicate/expired event rates during the deployment window.
@@ -122,6 +130,9 @@ If rollback is required:
 
 - [ ] Disable SePay payment creation and webhook ingress immediately and record evidence; keep both disabled during rollback.
 - Rollback disable operator: __________  Disabled at (UTC): __________  Evidence: __________
+- [ ] Drain every request admitted before rollback disable and its related database transaction. Do not start rollback until both monitored counts reach zero.
+- Rollback admitted requests at disable: __________  Related DB transactions at disable: __________
+- Rollback drain metrics/query evidence: __________  Both zero at (UTC): __________  Verifier: __________
 - [ ] Roll back the application artifact/configuration only to the approved prior version.
 - [ ] Keep additive migration V48 applied. Preserve the `payment_provider_events` table, its append-only trigger, and every existing provider event.
 - [ ] Do not drop/truncate the table or update/delete provider events. Continue manual reconciliation for unresolved payments and retain all evidence.
