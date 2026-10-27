@@ -224,6 +224,45 @@ public class ClassSessionService {
 			.toList();
 	}
 
+	@Transactional(readOnly = true)
+	List<AvailableCoachResponse> availableCoaches(UUID managerId, List<Instant> startTimes,
+			List<Instant> endTimes, UUID memberAccountId) {
+		ensureActiveManager(managerId);
+		if (startTimes == null || endTimes == null || startTimes.isEmpty()) {
+			throw RecurringScheduleException.validation("startTime", "at least one time window is required");
+		}
+		if (startTimes.size() != endTimes.size()) {
+			throw RecurringScheduleException.validation("endTime", "must contain one value per startTime");
+		}
+		if (startTimes.size() > 100) {
+			throw RecurringScheduleException.validation("startTime", "at most 100 time windows are allowed");
+		}
+		for (int index = 0; index < startTimes.size(); index++) {
+			validateTimes(startTimes.get(index), endTimes.get(index));
+		}
+
+		Map<UUID, AvailableCoachResponse> available = new java.util.LinkedHashMap<>();
+		for (AvailableCoachResponse coach : sessions.findAvailableCoachesForWindow(
+				startTimes.getFirst(), endTimes.getFirst()).stream().map(AvailableCoachResponse::from).toList()) {
+			available.put(coach.coachAccountId(), coach);
+		}
+		for (int index = 1; index < startTimes.size() && !available.isEmpty(); index++) {
+			Set<UUID> windowCoachIds = sessions.findAvailableCoachesForWindow(startTimes.get(index), endTimes.get(index))
+				.stream().map(ClassSessionRepository.AvailableCoachView::getCoachAccountId).collect(Collectors.toSet());
+			available.keySet().retainAll(windowCoachIds);
+		}
+
+		if (memberAccountId != null) {
+			if (coachAssignments == null) return List.of();
+			Optional<UUID> assignedCoachId = coachAssignments
+				.findByMemberAccountIdAndStatus(memberAccountId, CoachAssignmentStatus.ACTIVE)
+				.map(assignment -> assignment.getCoachAccountId());
+			if (assignedCoachId.isEmpty()) return List.of();
+			available.keySet().retainAll(Set.of(assignedCoachId.get()));
+		}
+		return List.copyOf(available.values());
+	}
+
 	@Transactional
 	ClassSessionDetailResponse updateAssignment(UUID managerId, UUID sessionId,
 			ClassSessionAssignmentRequest request) {
