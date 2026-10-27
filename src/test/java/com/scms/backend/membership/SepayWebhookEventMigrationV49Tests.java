@@ -20,7 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 @Testcontainers
-class SepayWebhookEventMigrationV48Tests {
+class SepayWebhookEventMigrationV49Tests {
 
 	private static final List<String> OUTCOMES = List.of(
 		"FULFILLED", "ALREADY_PROCESSED", "PAYMENT_WINDOW_EXPIRED", "DESTINATION_SNAPSHOT_MISSING",
@@ -108,9 +108,9 @@ class SepayWebhookEventMigrationV48Tests {
 	}
 
 	@Test
-	void v48UpgradePreservesLegacyPaymentOrderAndReceiptRows() {
+	void v49UpgradePreservesLegacyPaymentOrderAndReceiptRows() {
 		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-			.target("47").load().migrate();
+			.target("48").load().migrate();
 		JdbcTemplate db = db();
 		LegacyRows legacy = seedLegacyCommerce(db);
 		List<String> before = snapshots(db, legacy);
@@ -120,7 +120,7 @@ class SepayWebhookEventMigrationV48Tests {
 		assertThat(snapshots(db, legacy)).containsExactlyElementsOf(before);
 		assertThat(db.queryForObject("select count(*) from payment_provider_events", Long.class)).isZero();
 		assertThat(db.queryForObject(
-			"select count(*) from flyway_schema_history where version='48' and success", Long.class)).isOne();
+			"select count(*) from flyway_schema_history where version='49' and success", Long.class)).isOne();
 	}
 
 	@Test
@@ -166,32 +166,32 @@ class SepayWebhookEventMigrationV48Tests {
 		Timestamp paidAt = Timestamp.from(Instant.parse("2026-10-01T02:03:04Z"));
 		db.update("""
 			insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash)
-			values(?, 'MANAGER', 'ACTIVE', 'V48 Manager', '0900000048', 'manager-v48@example.test',
+			values(?, 'MANAGER', 'ACTIVE', 'V49 Manager', '0900000048', 'manager-v49@example.test',
 			       date '1990-01-01', 'unused')
 			""", manager);
 		db.update("""
 			insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash)
-			values(?, 'MEMBER', 'ACTIVE', 'V48 Member', '0900000049', 'member-v48@example.test',
+			values(?, 'MEMBER', 'ACTIVE', 'V49 Member', '0900000049', 'member-v49@example.test',
 			       date '1990-01-01', 'unused')
 			""", member);
 		db.update("""
 			insert into membership_offers
 			    (id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id)
-			values(?,'BASIC','V48 Offer','Migration test',500000,'VND',30,'ACTIVE',?)
+			values(?,'BASIC','V49 Offer','Migration test',500000,'VND',30,'ACTIVE',?)
 			""", offer, manager);
 		db.update("""
 			insert into membership_orders
 			    (id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,
 			     plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
 			     payment_method,status,expires_at,paid_at)
-			values(?,?,?, ?,?,'V48 Offer','BASIC',500000,'VND',30,'BANK_TRANSFER','PAID',?,?)
+			values(?,?,?, ?,?,'V49 Offer','BASIC',500000,'VND',30,'BANK_TRANSFER','PAID',?,?)
 			""", order, "ORD-" + order, member, manager, offer, paidAt, paidAt);
 		db.update("""
 			insert into payments
 			    (id,order_id,method,status,amount,currency_code,bank_transfer_content,provider_reference,
 			     provider,provider_transaction_id,bank_code_snapshot,bank_account_number_snapshot,
 			     bank_account_name_snapshot,paid_at)
-			values(?,?,'BANK_TRANSFER','PAID',500000,'VND','SCMS-V48','SCMS-V48','SEPAY','legacy-v48',
+			values(?,?,'BANK_TRANSFER','PAID',500000,'VND','SCMS-V49','SCMS-V49','SEPAY','legacy-v49',
 			       'MB','123456789','SCMS GYM',?)
 			""", payment, order, paidAt);
 		db.update("""

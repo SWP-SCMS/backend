@@ -154,7 +154,7 @@ If rollback is required:
 - Rollback admitted requests at disable: __________  Related DB transactions at disable: __________
 - Rollback drain metrics/query evidence: __________  Both zero at (UTC): __________  Verifier: __________
 - [ ] Roll back the application artifact/configuration only to the approved prior version.
-- [ ] Keep additive migration V48 applied. Preserve the `payment_provider_events` table, its append-only trigger, and every existing provider event.
+- [ ] Keep additive migration V49 applied. Preserve the `payment_provider_events` table, its append-only trigger, and every existing provider event.
 - [ ] Do not drop/truncate the table or update/delete provider events. Continue manual reconciliation for unresolved payments and retain all evidence.
 - [ ] Do not re-enable payment creation or webhook ingress unless the selected rollback artifact itself has verified rejection of expired webhooks and null/empty/whitespace destination snapshots. Otherwise leave both disabled and use manual reconciliation.
 - Rollback artifact: __________  Expiry/snapshot rejection evidence: __________
