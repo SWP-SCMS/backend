@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -76,6 +77,36 @@ class ClassSessionAssignmentIntegrationTests {
 			.doesNotContain(busy.getId(), onLeave.getId(), inactive.getId());
 		assertThat(result).extracting(AvailableCoachResponse::fullName)
 			.containsSubsequence("A Assigned Coach", "B Available Coach");
+	}
+
+	@Test
+	void discoversCoachAvailableForEveryProposedOccurrenceBeforeCreation() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Gap 026 Manager");
+		Account available = saveAccount(AccountRole.COACH, "Gap 026 Always Available");
+		Account busyOnSecond = saveAccount(AccountRole.COACH, "Gap 026 Busy Later");
+		Account leaveOnFirst = saveAccount(AccountRole.COACH, "Gap 026 Leave First");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Gap 026 Discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Gap 026 Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 026 Room", 20, RoomStatus.ACTIVE));
+		Instant firstStart = Instant.parse("2033-01-01T02:00:00Z");
+		Instant firstEnd = Instant.parse("2033-01-01T03:00:00Z");
+		Instant secondStart = Instant.parse("2033-01-08T02:00:00Z");
+		Instant secondEnd = Instant.parse("2033-01-08T03:00:00Z");
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, busyOnSecond, room,
+			secondStart, secondEnd, 10, manager.getId()));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), leaveOnFirst, firstStart,
+			firstEnd, "Approved leave");
+		leave.approve(manager.getId(), "Approved", Instant.parse("2032-12-01T00:00:00Z"));
+		coachLeaves.saveAndFlush(leave);
+
+		var result = service.availableCoaches(manager.getId(), List.of(firstStart, secondStart),
+			List.of(firstEnd, secondEnd), null);
+
+		assertThat(result).extracting(AvailableCoachResponse::coachAccountId)
+			.contains(available.getId())
+			.doesNotContain(busyOnSecond.getId(), leaveOnFirst.getId());
 	}
 
 	@Test

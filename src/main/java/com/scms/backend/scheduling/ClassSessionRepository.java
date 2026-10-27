@@ -272,6 +272,29 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	List<AvailableCoachView> findAvailableCoaches(@Param("sessionId") UUID sessionId,
 		@Param("startTime") Instant startTime, @Param("endTime") Instant endTime);
 
+	@Query("""
+		select coach.id as coachAccountId, coach.fullName as fullName, coach.phone as phone
+		from Account coach
+		where coach.role = com.scms.backend.account.AccountRole.COACH
+		  and coach.status = com.scms.backend.account.AccountStatus.ACTIVE
+		  and not exists (
+			select conflict.id from ClassSession conflict
+			where conflict.teachingCoach.id = coach.id
+			  and conflict.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
+				com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
+			  and conflict.startTime < :endTime and conflict.endTime > :startTime
+		  )
+		  and not exists (
+			select leave.id from CoachLeaveRequest leave
+			where leave.coach.id = coach.id
+			  and leave.status = com.scms.backend.scheduling.CoachLeaveStatus.APPROVED
+			  and leave.startTime < :endTime and leave.endTime > :startTime
+		  )
+		order by coach.fullName, coach.id
+		""")
+	List<AvailableCoachView> findAvailableCoachesForWindow(@Param("startTime") Instant startTime,
+		@Param("endTime") Instant endTime);
+
 	@Query(value = """
 		select distinct booking.member_account_id
 		from bookings booking

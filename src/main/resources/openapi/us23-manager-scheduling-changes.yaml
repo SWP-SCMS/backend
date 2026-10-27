@@ -5,6 +5,25 @@ info:
 servers:
   - url: /api/v1
 paths:
+  /manager/coaches/available:
+    get:
+      summary: Discover Coaches available for every requested time window
+      operationId: discoverAvailableCoaches
+      description: Repeat startTime and endTime in matching order for recurring Sessions. When memberAccountId is supplied, the result is restricted to that Member's active PT Coach assignment. Session creation still revalidates availability transactionally.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - {name: startTime, in: query, required: true, schema: {type: array, minItems: 1, maxItems: 100, items: {type: string, format: date-time}}}
+        - {name: endTime, in: query, required: true, schema: {type: array, minItems: 1, maxItems: 100, items: {type: string, format: date-time}}}
+        - {name: memberAccountId, in: query, required: false, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Active Coaches available for all requested windows, ordered by full name and account ID.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/AvailableCoachResponse'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
   /manager/rooms/availability:
     get:
       summary: Discover active rooms available for a time interval
