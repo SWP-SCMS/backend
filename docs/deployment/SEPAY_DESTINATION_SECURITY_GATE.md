@@ -73,7 +73,7 @@ Use exactly one classification per row:
 
 **Prohibited:** generic or bulk `UPDATE`, copying current runtime bank configuration into legacy rows, or stamping one destination/expiry across multiple payments. This gate performs no automatic production mutation.
 
-- [ ] All row actions are closed or explicitly assigned before rollout.
+- [ ] Before rollout, every unapproved payment disposition is closed or evidence proves the payment is no longer automatically eligible. Assignment to an owner never passes this gate.
 - Classification approver: __________  Timestamp: __________
 
 ## 2. Destination approval and fingerprint
@@ -130,7 +130,7 @@ Use exactly one classification per row:
 - [ ] Drain every SePay payment-create/webhook request admitted before disable and its related database transaction. Do not start final inventory or cutover until monitoring shows both counts at zero.
 - Admitted requests at disable: __________  Related DB transactions at disable: __________
 - Drain metrics/query evidence: __________  Both zero at (UTC): __________  Verifier: __________
-- [ ] While both paths are disabled, re-run all three read-only queries from Section 1. Classify every complete-inventory destination tuple against trusted historical evidence, disposition every payment, and confirm both classified counts equal their complete-inventory counts.
+- [ ] While both paths are disabled, re-run all three read-only queries from Section 1. Classify every complete-inventory destination tuple against trusted historical evidence, disposition every payment, and confirm both classified counts equal their complete-inventory counts. For every unapproved payment, close the disposition or attach evidence that it is no longer automatically eligible; assignment alone never passes.
 - Final plan-query count: __________  Supplemental count: __________  Complete pending count: __________
 - Final tuple count: __________  Classified tuple count: __________  Final classified payment count: __________
 - Complete unapproved fixture blocked/dispositioned evidence: __________  Inventory evidence: __________  Timestamp: __________
@@ -139,7 +139,9 @@ Use exactly one classification per row:
 - Staging QR/expiry/snapshot rejection evidence for this artifact: __________
 - Production artifact SHA-256: __________  Digest matches: YES / NO  Verifier: __________
 - [ ] Keep webhook ingress disabled through cutover. Before re-enabling either path, confirm the artifact digest matches and the tied staging evidence proves the QR destination plus expired-webhook and null/empty/whitespace-snapshot rejection checks.
-- [ ] Re-enable payment creation and webhook ingress only after the preceding checks pass and two-person approval is recorded.
+- [ ] In the production SePay provider settings, configure automatic webhook retry after every non-2xx response and activate incident alerts for exhausted/delayed retries or repeated non-2xx responses. The evidence must identify the production environment; the staging forced-retry result is staging-only and does not satisfy this gate.
+- Production retry configuration evidence: __________  Production incident alert evidence: __________  On-call acknowledgement: __________
+- [ ] Re-enable payment creation and webhook ingress only after the preceding checks pass, every unapproved payment meets the closed-or-no-longer-automatically-eligible gate, production retry/alert evidence is recorded, and two-person approval is recorded. Assignment alone never passes.
 - Re-enable approver 1: __________  Approver 2: __________  Re-enabled at (UTC): __________  Evidence: __________
 - [ ] Monitor destination/fingerprint change alerts, invalid-destination errors, webhook outcomes, and duplicate/expired event rates during the deployment window.
 - Monitoring owner: __________  Dashboard/log reference: __________  End time (UTC): __________
