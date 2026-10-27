@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,6 +69,40 @@ class RoomControllerTests {
 			.andExpect(jsonPath("$[0].available").value(true));
 
 		verify(roomService).availability(managerId, startTime, endTime, 4, excludedSessionId);
+	}
+
+	@Test
+	void roomImpactPreviewSerializesPerSessionAndBulkTargets() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		UUID sourceRoomId = UUID.randomUUID();
+		UUID targetRoomId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		Instant startTime = Instant.parse("2030-01-01T10:00:00Z");
+		Instant endTime = Instant.parse("2030-01-01T11:00:00Z");
+		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(startTime, endTime, false);
+		RoomImpactPreviewResponse.TargetRoom target = new RoomImpactPreviewResponse.TargetRoom(
+			targetRoomId, "Studio B", 20);
+		RoomImpactPreviewResponse response = new RoomImpactPreviewResponse(1, List.of(
+			new RoomImpactPreviewResponse.SessionImpact(sessionId, UUID.randomUUID(), "Pilates", UUID.randomUUID(),
+				sourceRoomId, "Studio A", startTime, endTime, ClassSessionStatus.SCHEDULED, 4,
+				List.of(target))), List.of(target));
+		when(suspensionService.previewImpact(managerId, sourceRoomId, request)).thenReturn(response);
+
+		mockMvc.perform(post("/api/v1/manager/rooms/{roomId}/impact-preview", sourceRoomId)
+				.contextPath("/api/v1")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"startTime":"2030-01-01T10:00:00Z","endTime":"2030-01-01T11:00:00Z",
+					 "permanentDisable":false}
+					""")
+				.with(jwt().jwt(token -> token.subject(managerId.toString()).claim("role", "MANAGER"))
+					.authorities(new SimpleGrantedAuthority("ROLE_MANAGER"))))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.sessions[0].availableTargetRooms[0].roomId")
+				.value(targetRoomId.toString()))
+			.andExpect(jsonPath("$.bulkAvailableTargetRooms[0].roomName").value("Studio B"));
+
+		verify(suspensionService).previewImpact(managerId, sourceRoomId, request);
 	}
 
 	@Test

@@ -139,7 +139,64 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpacts(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
-		return RoomImpactPreviewResponse.from(affected, bookingCounts(affected));
+		TargetRoomAvailability availability = targetRoomAvailability(managerId, roomId, affected);
+		return RoomImpactPreviewResponse.from(affected, bookingCounts(affected), availability.bySession(),
+			availability.bulk());
+	}
+
+	private TargetRoomAvailability targetRoomAvailability(UUID managerId, UUID sourceRoomId,
+			List<ClassSession> affected) {
+		if (affected.isEmpty()) return new TargetRoomAvailability(Map.of(), List.of());
+		Map<UUID, List<RoomAvailabilityResponse>> details = new HashMap<>();
+		Map<UUID, List<RoomImpactPreviewResponse.TargetRoom>> bySession = new HashMap<>();
+		for (ClassSession session : affected) {
+			List<RoomAvailabilityResponse> available = roomService.availability(managerId, session.getStartTime(),
+				session.getEndTime(), session.getCapacity(), session.getId()).stream()
+				.filter(RoomAvailabilityResponse::available)
+				.filter(room -> !room.roomId().equals(sourceRoomId))
+				.toList();
+			details.put(session.getId(), available);
+			bySession.put(session.getId(), available.stream().map(RoomImpactPreviewResponse.TargetRoom::from).toList());
+		}
+
+		Set<UUID> commonRoomIds = new java.util.LinkedHashSet<>(details.get(affected.getFirst().getId()).stream()
+			.map(RoomAvailabilityResponse::roomId).toList());
+		for (int index = 1; index < affected.size() && !commonRoomIds.isEmpty(); index++) {
+			Set<UUID> sessionRoomIds = details.get(affected.get(index).getId()).stream()
+				.map(RoomAvailabilityResponse::roomId).collect(java.util.stream.Collectors.toSet());
+			commonRoomIds.retainAll(sessionRoomIds);
+		}
+		List<RoomImpactPreviewResponse.TargetRoom> bulk = details.get(affected.getFirst().getId()).stream()
+			.filter(room -> commonRoomIds.contains(room.roomId()))
+			.filter(room -> supportsBulkMove(room, affected, details))
+			.map(RoomImpactPreviewResponse.TargetRoom::from)
+			.toList();
+		return new TargetRoomAvailability(Map.copyOf(bySession), bulk);
+	}
+
+	private boolean supportsBulkMove(RoomAvailabilityResponse candidate, List<ClassSession> affected,
+			Map<UUID, List<RoomAvailabilityResponse>> details) {
+		if (candidate.usageMode() == RoomUsageMode.EXCLUSIVE) {
+			for (int first = 0; first < affected.size(); first++) {
+				for (int second = first + 1; second < affected.size(); second++) {
+					if (overlaps(affected.get(first), affected.get(second))) return false;
+				}
+			}
+			return true;
+		}
+		for (ClassSession anchor : affected) {
+			RoomAvailabilityResponse window = details.get(anchor.getId()).stream()
+				.filter(room -> room.roomId().equals(candidate.roomId())).findFirst().orElseThrow();
+			long movedCapacity = affected.stream().filter(session -> overlaps(anchor, session))
+				.mapToLong(ClassSession::getCapacity).sum();
+			if (window.occupiedCapacity() + movedCapacity > candidate.capacity()) return false;
+		}
+		return true;
+	}
+
+	private boolean overlaps(ClassSession first, ClassSession second) {
+		return first.getStartTime().isBefore(second.getEndTime())
+			&& first.getEndTime().isAfter(second.getStartTime());
 	}
 
 	@Transactional
@@ -474,6 +531,9 @@ public class RoomSuspensionService {
 	}
 
 	private record Impact(Instant startTime, Instant endTime, boolean permanentDisable, String reason) { }
+
+	private record TargetRoomAvailability(Map<UUID, List<RoomImpactPreviewResponse.TargetRoom>> bySession,
+		List<RoomImpactPreviewResponse.TargetRoom> bulk) { }
 
 	private record ResolutionInputs(RoomBulkResolutionRequest bulk,
 			Map<UUID, RoomSessionResolutionRequest> explicit) {

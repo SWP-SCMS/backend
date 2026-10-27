@@ -81,6 +81,43 @@ class RoomSuspensionServiceTests {
 	}
 
 	@Test
+	void previewReturnsPerSessionTargetsAndOnlyBulkSafeRooms() {
+		UUID managerId = activeManager();
+		Room source = new Room(UUID.randomUUID(), "Source", 20, RoomStatus.ACTIVE);
+		Instant firstStart = now.plusSeconds(3600);
+		Instant firstEnd = now.plusSeconds(7200);
+		Instant secondStart = now.plusSeconds(5400);
+		Instant secondEnd = now.plusSeconds(9000);
+		ClassSession first = previewSession(source, firstStart, firstEnd, 12);
+		ClassSession second = previewSession(source, secondStart, secondEnd, 12);
+		UUID exclusiveId = UUID.randomUUID();
+		UUID smallSharedId = UUID.randomUUID();
+		UUID bulkSafeId = UUID.randomUUID();
+		List<RoomAvailabilityResponse> firstAvailability = List.of(
+			new RoomAvailabilityResponse(exclusiveId, "Exclusive", RoomUsageMode.EXCLUSIVE, 30, 0, 30, true),
+			new RoomAvailabilityResponse(smallSharedId, "Small shared", RoomUsageMode.SHARED, 20, 0, 20, true),
+			new RoomAvailabilityResponse(bulkSafeId, "Bulk safe", RoomUsageMode.SHARED, 30, 0, 30, true));
+		List<RoomAvailabilityResponse> secondAvailability = List.copyOf(firstAvailability);
+		when(rooms.findById(source.getId())).thenReturn(Optional.of(source));
+		when(sessions.findRoomImpacts(source.getId(), firstStart, secondEnd, false, now))
+			.thenReturn(List.of(first, second));
+		when(roomService.availability(managerId, firstStart, firstEnd, 12, first.getId()))
+			.thenReturn(firstAvailability);
+		when(roomService.availability(managerId, secondStart, secondEnd, 12, second.getId()))
+			.thenReturn(secondAvailability);
+
+		RoomImpactPreviewResponse result = service.previewImpact(managerId, source.getId(),
+			new RoomImpactPreviewRequest(firstStart, secondEnd, false));
+
+		assertThat(result.sessions()).allSatisfy(impact -> assertThat(impact.availableTargetRooms())
+			.extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
+			.containsExactly(exclusiveId, smallSharedId, bulkSafeId));
+		assertThat(result.bulkAvailableTargetRooms())
+			.extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
+			.containsExactly(bulkSafeId);
+	}
+
+	@Test
 	void rejectsSuspensionOverlappingSession() {
 		UUID managerId = activeManager();
 		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
@@ -762,6 +799,24 @@ class RoomSuspensionServiceTests {
 		lenient().when(session.getCapacity()).thenReturn(10);
 		lenient().when(session.getTeachingCoach()).thenReturn(coach);
 		lenient().when(coach.getId()).thenReturn(UUID.randomUUID());
+		return session;
+	}
+
+	private ClassSession previewSession(Room room, Instant start, Instant end, int capacity) {
+		ClassSession session = org.mockito.Mockito.mock(ClassSession.class);
+		com.scms.backend.account.Account coach = org.mockito.Mockito.mock(com.scms.backend.account.Account.class);
+		SportClass sportClass = org.mockito.Mockito.mock(SportClass.class);
+		lenient().when(session.getId()).thenReturn(UUID.randomUUID());
+		lenient().when(session.getStatus()).thenReturn(ClassSessionStatus.SCHEDULED);
+		lenient().when(session.getRoom()).thenReturn(room);
+		lenient().when(session.getStartTime()).thenReturn(start);
+		lenient().when(session.getEndTime()).thenReturn(end);
+		lenient().when(session.getCapacity()).thenReturn(capacity);
+		lenient().when(session.getTeachingCoach()).thenReturn(coach);
+		lenient().when(session.getSportClass()).thenReturn(sportClass);
+		lenient().when(coach.getId()).thenReturn(UUID.randomUUID());
+		lenient().when(sportClass.getId()).thenReturn(UUID.randomUUID());
+		lenient().when(sportClass.getName()).thenReturn("Preview class");
 		return session;
 	}
 

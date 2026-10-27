@@ -79,6 +79,47 @@ class RoomImpactIntegrationTests {
 			.isEqualTo(source.getId());
 	}
 
+	@Test
+	void previewIncludesPerSessionAndBulkAvailableTargetRooms() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Gap 027 Manager");
+		Account firstCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach A");
+		Account secondCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach B");
+		Account blockingCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach C");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Gap 027 Discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Gap 027 Class",
+			SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Source", 20, RoomStatus.ACTIVE));
+		Room bulkTarget = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Bulk Target", 20,
+			RoomStatus.ACTIVE));
+		Room partialTarget = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Partial Target", 20,
+			RoomStatus.ACTIVE));
+		Instant firstStart = Instant.parse("2034-01-01T02:00:00Z");
+		Instant firstEnd = Instant.parse("2034-01-01T03:00:00Z");
+		Instant secondStart = Instant.parse("2034-01-02T02:00:00Z");
+		Instant secondEnd = Instant.parse("2034-01-02T03:00:00Z");
+		ClassSession first = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, firstCoach,
+			source, firstStart, firstEnd, 10, manager.getId()));
+		ClassSession second = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, secondCoach,
+			source, secondStart, secondEnd, 10, manager.getId()));
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, blockingCoach, partialTarget,
+			secondStart, secondEnd, 10, manager.getId()));
+
+		RoomImpactPreviewResponse preview = service.previewImpact(manager.getId(), source.getId(),
+			new RoomImpactPreviewRequest(firstStart.minusSeconds(60), secondEnd.plusSeconds(60), false));
+
+		RoomImpactPreviewResponse.SessionImpact firstImpact = preview.sessions().stream()
+			.filter(impact -> impact.sessionId().equals(first.getId())).findFirst().orElseThrow();
+		RoomImpactPreviewResponse.SessionImpact secondImpact = preview.sessions().stream()
+			.filter(impact -> impact.sessionId().equals(second.getId())).findFirst().orElseThrow();
+		assertThat(firstImpact.availableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
+			.contains(bulkTarget.getId(), partialTarget.getId());
+		assertThat(secondImpact.availableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
+			.contains(bulkTarget.getId()).doesNotContain(partialTarget.getId());
+		assertThat(preview.bulkAvailableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
+			.contains(bulkTarget.getId()).doesNotContain(partialTarget.getId());
+	}
+
 	private Account saveAccount(AccountRole role, String name) {
 		UUID id = UUID.randomUUID();
 		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name,
