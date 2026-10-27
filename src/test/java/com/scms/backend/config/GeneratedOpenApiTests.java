@@ -365,6 +365,12 @@ class GeneratedOpenApiTests {
 		assertThat(webhook.at("/responses/400/description").asText()).contains("Malformed");
 		assertThat(webhook.at("/responses/401/description").asText()).contains("API-key credentials");
 		assertThat(webhook.at("/responses/500/description").asText()).contains("Transient");
+		for (String status : List.of("400", "401", "500")) {
+			assertThat(webhook.at("/responses/" + status
+				+ "/content/application~1problem+json/schema/$ref").asText())
+				.as("webhook " + status)
+				.isEqualTo("#/components/schemas/ApiProblem");
+		}
 	}
 
 	@Test

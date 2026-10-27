@@ -4,6 +4,8 @@ import java.util.UUID;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
@@ -48,9 +50,15 @@ class SepayController {
 		""")
 	@ApiResponses({
 		@ApiResponse(responseCode = "200", description = "Webhook durably handled or idempotently replayed"),
-		@ApiResponse(responseCode = "400", description = "Malformed webhook request"),
-		@ApiResponse(responseCode = "401", description = "Invalid webhook API-key credentials"),
-		@ApiResponse(responseCode = "500", description = "Transient processing or storage failure; provider may retry")
+		@ApiResponse(responseCode = "400", description = "Malformed webhook request",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem"))),
+		@ApiResponse(responseCode = "401", description = "Invalid webhook API-key credentials",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem"))),
+		@ApiResponse(responseCode = "500", description = "Transient processing or storage failure; provider may retry",
+			content = @Content(mediaType = "application/problem+json",
+				schema = @Schema(ref = "#/components/schemas/ApiProblem")))
 	})
 	ResponseEntity<SepayWebhookResponse> webhook(
 			@Parameter(description = "SePay API-key header in the form `Apikey <credential>`", required = true)
