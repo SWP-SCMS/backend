@@ -26,20 +26,21 @@ public class EmailVerificationController {
 	public static final String COOKIE_NAME="scms_pending_verification";
 	private final EmailVerificationService service; private final EmailVerificationProperties properties;
 	private final PendingOriginPolicy originPolicy;
+	private final RailwayClientIpResolver clientIpResolver;
 	EmailVerificationController(EmailVerificationService service,EmailVerificationProperties properties,
-			PendingOriginPolicy originPolicy){this.service=service;this.properties=properties;this.originPolicy=originPolicy;}
+			PendingOriginPolicy originPolicy,RailwayClientIpResolver clientIpResolver){this.service=service;this.properties=properties;this.originPolicy=originPolicy;this.clientIpResolver=clientIpResolver;}
 
 	@PostMapping(value="/verify",consumes=MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<VerifyEmailResponse> verify(@Valid @RequestBody VerifyEmailRequest request,
 			@CookieValue(name=COOKIE_NAME,required=false) String cookie,HttpServletRequest http){
-		var result=service.verify(request,cookie,http.getRemoteAddr()); var response=ResponseEntity.ok();
+		var result=service.verify(request,cookie,clientIpResolver.resolve(http)); var response=ResponseEntity.ok();
 		if(result.clearCookie()) response.header(HttpHeaders.SET_COOKIE,clearCookie().toString()); return response.body(result.response());
 	}
 
 	@PostMapping(value="/resend",consumes=MediaType.APPLICATION_JSON_VALUE)
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	ResponseEntity<ResendEmailResponse> resend(@Valid @RequestBody ResendEmailRequest request,HttpServletRequest http){
-		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.resend(request,http.getRemoteAddr()));
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.resend(request,clientIpResolver.resolve(http)));
 	}
 
 	@PostMapping(value="/change-email",consumes=MediaType.APPLICATION_JSON_VALUE)
@@ -49,7 +50,7 @@ public class EmailVerificationController {
 			@RequestHeader(name=HttpHeaders.ORIGIN,required=false) String origin,HttpServletRequest http){
 		if(!originPolicy.allows(origin)) throw new EmailVerificationException(HttpStatus.FORBIDDEN,
 			"INVALID_PENDING_ORIGIN","The request origin is not allowed.");
-		var result=service.changeEmail(request,cookie,csrf,http.getRemoteAddr());
+		var result=service.changeEmail(request,cookie,csrf,clientIpResolver.resolve(http));
 		Duration remaining=Duration.between(result.response().serverTime(),result.response().registrationExpiresAt());
 		return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE,pendingCookie(result.sessionToken(),remaining).toString()).body(result.response());
 	}
