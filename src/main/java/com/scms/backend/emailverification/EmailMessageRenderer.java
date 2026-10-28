@@ -22,7 +22,7 @@ class EmailMessageRenderer {
 
 	EmailMessageRenderer(EmailDeliveryProperties properties) { this.properties = properties; }
 
-	EmailMessage render(String provider, String templateKey, String recipient, String recipientName, String otp,
+	EmailMessage render(String templateKey, String recipient, String recipientName, String otp,
 			long expiresInMinutes, Instant createdAt) {
 		if (otp == null || !otp.matches("^[0-9]{6}$"))
 			throw new IllegalArgumentException("OTP must contain exactly six digits");
@@ -54,7 +54,7 @@ class EmailMessageRenderer {
 			.replace("{{expiresInMinutes}}", Long.toString(expiresInMinutes))
 			.replace("{{supportContact}}", escape(support))
 			.replace("{{currentYear}}", Integer.toString(createdAt.atZone(ZoneOffset.UTC).getYear()));
-		return new EmailMessage(properties.senderFor(provider), List.of(recipient), subject, html, plain);
+		return new EmailMessage(properties.getFrom(), List.of(recipient), subject, html, plain);
 	}
 
 	private static String load(String name) {

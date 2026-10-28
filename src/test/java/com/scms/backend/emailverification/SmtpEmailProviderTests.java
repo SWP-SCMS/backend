@@ -39,7 +39,7 @@ class SmtpEmailProviderTests {
 
 	@Test
 	void sendsVietnameseMultipartEmailAndEscapesUserControlledValues() throws Exception {
-		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.VERIFICATION, "member@example.com",
+		EmailMessage email = renderer.render(EmailMessageRenderer.VERIFICATION, "member@example.com",
 			"An <script>alert(1)</script>", "123456", 10, Instant.parse("2026-10-26T00:00:00Z"));
 		provider.send(request(email));
 
@@ -53,13 +53,13 @@ class SmtpEmailProviderTests {
 
 	@Test
 	void rejectsOtpOutsideTheGeneratedSixDigitFormat() {
-		assertThatThrownBy(() -> renderer.render("smtp", EmailMessageRenderer.VERIFICATION, "member@example.com",
+		assertThatThrownBy(() -> renderer.render(EmailMessageRenderer.VERIFICATION, "member@example.com",
 			"An", "12<script>", 10, Instant.now())).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
 	void sendsDedicatedPasswordResetTemplateWithSecurityWarning() throws Exception {
-		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.PASSWORD_RESET, "member@example.com",
+		EmailMessage email = renderer.render(EmailMessageRenderer.PASSWORD_RESET, "member@example.com",
 			"An", "654321", 10, Instant.parse("2026-10-26T00:00:00Z"));
 		provider.send(request(email));
 		MimeMessage message = sentMessage();
@@ -70,7 +70,7 @@ class SmtpEmailProviderTests {
 
 	@Test
 	void sendsDedicatedEmailChangeTemplate() throws Exception {
-		EmailMessage email = renderer.render("smtp", EmailMessageRenderer.EMAIL_CHANGE, "new@example.com",
+		EmailMessage email = renderer.render(EmailMessageRenderer.EMAIL_CHANGE, "new@example.com",
 			"An", "654321", 10, Instant.parse("2026-10-26T00:00:00Z"));
 		provider.send(request(email));
 		MimeMessage message = sentMessage();

@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 class EmailOutboxEnqueuer {
 	static final String SNAPSHOT_FORMAT = "EMAIL_REQUEST_V1";
-	private static final Duration RESEND_IDEMPOTENCY_RETENTION = Duration.ofHours(24);
+	private static final Duration MAX_EMAIL_DELIVERY_WINDOW = Duration.ofHours(24);
 
 	private final JdbcTemplate db;
 	private final EmailVerificationProperties verification;
@@ -36,12 +36,12 @@ class EmailOutboxEnqueuer {
 		Duration window = Duration.between(now, deliverBefore);
 		if (window.isNegative() || window.isZero())
 			throw new IllegalArgumentException("Email delivery window must be positive");
-		if (window.compareTo(RESEND_IDEMPOTENCY_RETENTION) >= 0)
+		if (window.compareTo(MAX_EMAIL_DELIVERY_WINDOW) >= 0)
 			throw new IllegalArgumentException("Email delivery window must be shorter than 24 hours");
 		String provider = delivery.getProvider();
 		String recipientName = db.queryForObject("select full_name from accounts where id=?", String.class, accountId);
 		long minutes = Math.max(1, (window.toSeconds() + 59) / 60);
-		EmailMessage message = renderer.render(provider, templateKey, recipient, recipientName, otp, minutes, now);
+		EmailMessage message = renderer.render(templateKey, recipient, recipientName, otp, minutes, now);
 		String payload = codec.serialize(message);
 		String version = verification.getEncryptionActiveVersion();
 		var encrypted = crypto.encryptPayload(payload, version);
