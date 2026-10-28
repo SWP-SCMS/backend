@@ -13,6 +13,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.TimeZone;
 import java.time.ZoneOffset;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jayway.jsonpath.JsonPath;
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -33,7 +35,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -62,7 +67,8 @@ class EmailVerificationIntegrationTests {
 	@Container @ServiceConnection static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:17");
 	@Autowired MockMvc mvc;@Autowired JdbcTemplate db;@Autowired EmailVerificationCrypto crypto;
 	@Autowired AccountRepository accounts;@Autowired PasswordEncoder passwords;@Autowired ManualActivationService manual;
-	@Autowired AuditEventRepository audits;
+	@Autowired AuditEventRepository audits;@Autowired ObjectMapper objectMapper;
+	@Autowired PlatformTransactionManager transactionManager;
 
 	@Test
 	void registerCreatesEncryptedPendingArtifactsAndOtpActivatesExactlyOnce() throws Exception {
@@ -139,6 +145,7 @@ class EmailVerificationIntegrationTests {
 	}
 
 	@Test
+	@Transactional(propagation=Propagation.NOT_SUPPORTED)
 	void manualActivationRequestNotifiesOnlyActiveManagersWithoutSensitivePayload() throws Exception {
 		register("manual-notification@example.test","0907654324").andExpect(status().isCreated());
 		UUID receptionist=createActor(AccountRole.RECEPTIONIST,"0911111111","requester@example.test");
@@ -165,8 +172,9 @@ class EmailVerificationIntegrationTests {
 			assertThat(row.get("event_key")).isEqualTo("manual-activation:"+request.requestId()+":review-required:"+row.get("recipient_account_id"));
 			assertThat(row.get("target_type")).isEqualTo("MANUAL_ACTIVATION_REQUEST");
 			assertThat(row.get("target_id")).isEqualTo(request.requestId());
-			assertThat((String)row.get("payload")).contains(request.requestId().toString(),memberId,"RECEPTIONIST","PENDING")
-				.doesNotContain("manual-notification@example.test","Sensitive original document evidence");
+			assertThat(json((String)row.get("payload"))).isEqualTo(objectMapper.valueToTree(Map.of(
+				"requestId",request.requestId().toString(),"memberCode",memberId,
+				"requestedByName","RECEPTIONIST","status","PENDING")));
 		});
 
 		assertThatThrownBy(()->manual.create(receptionist,input))
@@ -174,8 +182,30 @@ class EmailVerificationIntegrationTests {
 		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED'",Integer.class)).isEqualTo(2);
 	}
 
+	@Test
+	@Transactional(propagation=Propagation.NOT_SUPPORTED)
+	void rollingBackManualActivationRequestAlsoRollsBackManagerNotifications() throws Exception {
+		register("manual-rollback@example.test","0907654325").andExpect(status().isCreated());
+		UUID receptionist=createActor(AccountRole.RECEPTIONIST,"0911111121","rollback-requester@example.test");
+		createActor(AccountRole.MANAGER,"0911111122","rollback-manager@example.test");
+		String memberId=db.queryForObject("select p.member_code from member_profiles p join accounts a on a.id=p.account_id where a.email='manual-rollback@example.test'",String.class);
+		ManualActivationCreateRequest input=new ManualActivationCreateRequest(memberId,
+			ManualActivationReasonCode.MEMBER_CANNOT_ACCESS_EMAIL,"Mailbox unavailable",
+			ManualVerificationMethod.IN_PERSON_GOVERNMENT_ID_CHECK,"Original document checked",true);
+
+		UUID requestId=new TransactionTemplate(transactionManager).execute(status->{
+			ManualActivationResponse created=manual.create(receptionist,input);
+			status.setRollbackOnly();
+			return created.requestId();
+		});
+
+		assertThat(db.queryForObject("select count(*) from email_verification_manual_activation_requests where id=?",Integer.class,requestId)).isZero();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=?",Integer.class,requestId)).isZero();
+	}
+
 	private org.springframework.test.web.servlet.ResultActions register(String email,String phone)throws Exception{return mvc.perform(post("/api/v1/auth/register").contextPath("/api/v1").contentType(MediaType.APPLICATION_JSON).content("""
 		{"fullName":"Email Member","phone":"%s","email":"%s","password":"Password123","birthDate":"2000-01-01"}
 		""".formatted(phone,email)));}
+	private JsonNode json(String value){try{return objectMapper.readTree(value);}catch(Exception exception){throw new AssertionError("Invalid JSON payload",exception);}}
 	private UUID createActor(AccountRole role,String phone,String email){UUID id=UUID.randomUUID();accounts.saveAndFlush(new Account(id,role,AccountStatus.ACTIVE,role.name(),phone,email,LocalDate.of(1990,1,1),passwords.encode("Password123")));return id;}
 }
