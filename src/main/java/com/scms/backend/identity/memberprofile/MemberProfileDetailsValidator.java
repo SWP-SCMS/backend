@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+import com.scms.backend.common.validation.PersonNameRules;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -29,6 +30,14 @@ public class MemberProfileDetailsValidator {
 		}
 		if (normalized.length() > maxLength) {
 			throw invalid(field, "must not exceed " + maxLength + " characters");
+		}
+		return normalized;
+	}
+
+	public String normalizePersonName(String value, String field, int maxLength) {
+		String normalized = normalizeRequired(value, field, maxLength);
+		if (!PersonNameRules.isValid(normalized)) {
+			throw invalid(field, "must contain letters and valid name separators only");
 		}
 		return normalized;
 	}
@@ -71,6 +80,11 @@ public class MemberProfileDetailsValidator {
 			throw invalid(field, "must not exceed " + maxLength + " characters");
 		}
 		return normalized;
+	}
+
+	public String normalizeOptionalPersonName(String value, String field, Integer maxLength) {
+		if (value == null) return null;
+		return normalizePersonName(value, field, maxLength == null ? Integer.MAX_VALUE : maxLength);
 	}
 
 	public String normalizeOptionalPhone(String value) {

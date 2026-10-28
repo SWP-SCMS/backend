@@ -76,7 +76,7 @@ class ManagerMemberService {
 		MemberProfile profile = findMember(accountId);
 		Account account = profile.getAccount();
 		String fullName = request.hasFullName()
-			? validator.normalizeRequired(request.fullName(), "fullName", 200) : account.getFullName();
+			? validator.normalizePersonName(request.fullName(), "fullName", 200) : account.getFullName();
 		String phone = request.hasPhone()
 			? validator.normalizePhone(request.phone(), "phone") : account.getPhone();
 		String email = request.hasEmail() ? validator.normalizeEmail(request.email()) : account.getEmail();
@@ -88,7 +88,7 @@ class ManagerMemberService {
 		String fitnessGoal = request.hasFitnessGoal()
 			? validator.normalizeOptional(request.fitnessGoal(), "fitnessGoal", null) : profile.getFitnessGoal();
 		String emergencyContactName = request.hasEmergencyContactName()
-			? validator.normalizeOptional(request.emergencyContactName(), "emergencyContactName", 200)
+			? validator.normalizeOptionalPersonName(request.emergencyContactName(), "emergencyContactName", 200)
 			: profile.getEmergencyContactName();
 		String emergencyContactPhone = request.hasEmergencyContactPhone()
 			? validator.normalizeOptionalPhone(request.emergencyContactPhone()) : profile.getEmergencyContactPhone();

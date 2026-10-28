@@ -54,7 +54,7 @@ class StaffProfileServiceTests {
 		Account account = new Account(id, AccountRole.COACH, AccountStatus.ACTIVE, "Old", "0900000001",
 			"old@example.com", LocalDate.of(1990, 1, 1), "hash");
 		when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
-		when(validator.normalizeRequired(" New ", "fullName", 200)).thenReturn("New");
+		when(validator.normalizePersonName(" New ", "fullName", 200)).thenReturn("New");
 		when(validator.normalizePhone("0900000002", "phone")).thenReturn("0900000002");
 		when(validator.validateBirthDate(LocalDate.of(1991, 2, 2))).thenReturn(LocalDate.of(1991, 2, 2));
 

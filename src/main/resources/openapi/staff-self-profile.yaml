@@ -68,7 +68,7 @@ components:
     StaffProfilePatchRequest:
       type: object
       properties:
-        fullName: {type: string}
+        fullName: {type: string, description: 'Allows Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.'}
         phone: {type: string}
         birthDate: {type: string, format: date}
     StaffProfileResponse:

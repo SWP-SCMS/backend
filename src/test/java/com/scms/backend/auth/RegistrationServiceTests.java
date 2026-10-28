@@ -81,6 +81,17 @@ class RegistrationServiceTests {
 	}
 
 	@Test
+	void rejectsInvalidMemberNameBeforeStartingRegistrationWork() {
+		RegistrationRequest request = new RegistrationRequest("Member 123!", "0901234567", "member@example.com",
+			"Password123", LocalDate.of(2000, 1, 15), null, null);
+
+		assertThatThrownBy(() -> registrationService.register(request))
+			.isInstanceOfSatisfying(RegistrationValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("fullName"));
+		verify(passwordEncoder, never()).encode(any());
+	}
+
+	@Test
 	void registrationRequestStringRepresentationRedactsPassword() {
 		RegistrationRequest request = new RegistrationRequest("Member", "0901234567", "member@example.com",
 			"secret-password", LocalDate.of(2000, 1, 15), null, null);

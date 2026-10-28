@@ -399,7 +399,7 @@ components:
         fullName:
           type: string
           maxLength: 200
-          description: Trimmed and non-blank; explicit null is invalid.
+          description: Trimmed and non-blank; explicit null is invalid. Allows Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.
         phone:
           type: string
           pattern: '^0[0-9]{9}$'
@@ -422,7 +422,7 @@ components:
         emergencyContactName:
           type: [string, 'null']
           maxLength: 200
-          description: Final-state paired with emergencyContactPhone; null clears the value.
+          description: Final-state paired with emergencyContactPhone; null clears the value. Non-null names allow Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.
         emergencyContactPhone:
           type: [string, 'null']
           pattern: '^0[0-9]{9}$'

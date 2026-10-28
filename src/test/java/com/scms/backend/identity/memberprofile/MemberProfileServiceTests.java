@@ -59,4 +59,20 @@ class MemberProfileServiceTests {
 			.isInstanceOfSatisfying(com.scms.backend.emailverification.EmailVerificationException.class,
 				exception -> assertThat(exception.getCode()).isEqualTo("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
 	}
+
+	@Test
+	void rejectsDigitsAndSymbolsInMemberFullName() {
+		UUID accountId = UUID.randomUUID();
+		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Valid Member",
+			"0901234567", "member@example.com", LocalDate.of(2000, 1, 15), "bcrypt-hash");
+		MemberProfile profile = new MemberProfile(account);
+		MemberProfilePatchRequest request = new MemberProfilePatchRequest();
+		request.setFullName("Member 123!");
+		when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+		when(memberProfileRepository.findById(accountId)).thenReturn(Optional.of(profile));
+
+		assertThatThrownBy(() -> memberProfileService.updateProfile(accountId, request))
+			.isInstanceOfSatisfying(MemberProfileValidationException.class,
+				exception -> assertThat(exception.getField()).isEqualTo("fullName"));
+	}
 }

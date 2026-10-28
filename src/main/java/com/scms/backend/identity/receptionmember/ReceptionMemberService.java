@@ -15,6 +15,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.RegistrationValidationException;
+import com.scms.backend.common.validation.PersonNameRules;
 import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -50,6 +51,9 @@ public class ReceptionMemberService {
 
 	@Transactional
 	ReceptionMemberCreateResponse createMember(UUID receptionistAccountId, ReceptionMemberCreateRequest request) {
+		if (!PersonNameRules.isValid(request.fullName())) {
+			throw new ReceptionMemberValidationException("fullName", "must contain letters and valid name separators only");
+		}
 		validateBirthDate(request.birthDate());
 		identifierAvailability.ensureAvailableForRegistration(request.email(), request.phone());
 

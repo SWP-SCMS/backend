@@ -10,6 +10,7 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.auth.AccountIdentifierAvailability;
+import com.scms.backend.common.validation.PersonNameRules;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import org.springframework.data.domain.Page;
@@ -45,7 +46,7 @@ public class StaffAccountService {
 			throw new StaffAccountValidationException("request", "must be a JSON object");
 		}
 		Account account = findStaff(accountId);
-		String fullName = request.hasFullName() ? normalizeRequired(request.fullName(), "fullName", 200) : account.getFullName();
+		String fullName = request.hasFullName() ? normalizePersonName(request.fullName(), "fullName") : account.getFullName();
 		String phone = request.hasPhone() ? normalizePhone(request.phone()) : account.getPhone();
 		String email = request.hasEmail() ? normalizeEmail(request.email()) : account.getEmail();
 		LocalDate birthDate = request.hasBirthDate() ? validateBirthDate(request.birthDate()) : account.getBirthDate();
@@ -121,6 +122,14 @@ public class StaffAccountService {
 			throw new StaffAccountValidationException(field, "must be non-blank and at most " + maxLength + " characters");
 		}
 		return value.trim();
+	}
+
+	private String normalizePersonName(String value, String field) {
+		String normalized = normalizeRequired(value, field, 200);
+		if (!PersonNameRules.isValid(normalized)) {
+			throw new StaffAccountValidationException(field, "must contain letters and valid name separators only");
+		}
+		return normalized;
 	}
 
 	private String normalizePhone(String value) {

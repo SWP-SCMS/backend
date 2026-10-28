@@ -61,7 +61,9 @@ components:
         fullName:
           type: string
           maxLength: 200
-          description: Leading and trailing whitespace is removed; the result must not be blank.
+          description: >-
+            Leading and trailing whitespace is removed; the result must not be blank. Allows Unicode
+            letters and combining marks, spaces, hyphens, apostrophes, and periods between name parts.
         phone:
           type: string
           pattern: '^0[0-9]{9}$'
