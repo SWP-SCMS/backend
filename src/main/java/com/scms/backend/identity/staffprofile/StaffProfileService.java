@@ -48,7 +48,7 @@ public class StaffProfileService {
 	StaffProfileResponse updateProfile(UUID accountId, StaffProfilePatchRequest request) {
 		Account account = loadStaff(accountId);
 		String fullName = request.fullName() == null ? account.getFullName()
-			: validator.normalizeRequired(request.fullName(), "fullName", 200);
+			: validator.normalizePersonName(request.fullName(), "fullName", 200);
 		String phone = request.phone() == null ? account.getPhone()
 			: validator.normalizePhone(request.phone(), "phone");
 		String email = request.email() == null ? account.getEmail() : validator.normalizeEmail(request.email());

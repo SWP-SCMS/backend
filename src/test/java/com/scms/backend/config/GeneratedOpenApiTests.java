@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import org.junit.jupiter.api.Test;
+import com.scms.backend.common.validation.PersonNameRules;
 import org.springdoc.core.configuration.SpringDocConfiguration;
 import org.springdoc.core.configuration.SpringDocSecurityConfiguration;
 import org.springdoc.core.properties.SpringDocConfigProperties;
@@ -619,6 +620,8 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedContractDocumentsEmailVerificationAndManualActivation() throws Exception {
 		JsonNode document = generatedDocument();
+		assertThat(document.at("/components/schemas/RegistrationRequest/properties/fullName/pattern").asText())
+			.isEqualTo(PersonNameRules.PATTERN);
 		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream()
 			.map(java.util.Map.Entry::getKey).toList()).contains("verificationRequired", "maskedEmail", "csrfToken",
 				"otpExpiresAt", "resendAvailableAt", "registrationExpiresAt", "serverTime");

@@ -89,7 +89,7 @@ public class ReceptionMemberProfileService {
 		Account account = profile.getAccount();
 
 		String fullName = request.hasFullName()
-			? validator.normalizeRequired(request.fullName(), "fullName", 200)
+			? validator.normalizePersonName(request.fullName(), "fullName", 200)
 			: account.getFullName();
 		String phone = request.hasPhone()
 			? validator.normalizePhone(request.phone(), "phone")
@@ -107,7 +107,7 @@ public class ReceptionMemberProfileService {
 			? validator.normalizeOptional(request.fitnessGoal(), "fitnessGoal", null)
 			: profile.getFitnessGoal();
 		String emergencyContactName = request.hasEmergencyContactName()
-			? validator.normalizeOptional(request.emergencyContactName(), "emergencyContactName", 200)
+			? validator.normalizeOptionalPersonName(request.emergencyContactName(), "emergencyContactName", 200)
 			: profile.getEmergencyContactName();
 		String emergencyContactPhone = request.hasEmergencyContactPhone()
 			? validator.normalizeOptionalPhone(request.emergencyContactPhone())

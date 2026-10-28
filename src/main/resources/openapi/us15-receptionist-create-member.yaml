@@ -92,6 +92,7 @@ components:
         fullName:
           type: string
           maxLength: 200
+          description: Allows Unicode letters and combining marks, spaces, hyphens, apostrophes, and periods between name parts; rejects digits and other symbols.
         phone:
           type: string
           pattern: '^0[0-9]{9}$'

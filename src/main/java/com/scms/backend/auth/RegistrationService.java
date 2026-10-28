@@ -12,6 +12,7 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.common.validation.PersonNameRules;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
@@ -57,6 +58,9 @@ public class RegistrationService {
 
 	@Transactional
 	RegistrationOutcome register(RegistrationRequest request, String remoteAddress) {
+		if (!PersonNameRules.isValid(request.fullName())) {
+			throw new RegistrationValidationException("fullName", "must contain letters and valid name separators only");
+		}
 		validatePassword(request.password());
 		validateBirthDate(request.birthDate());
 		emailVerification.rateLimitRegister(remoteAddress, request.email(), request.phone());

@@ -20,7 +20,7 @@ paths:
               required: [fullName, phone, email, birthDate, role]
               additionalProperties: false
               properties:
-                fullName: { type: string, minLength: 1, maxLength: 200 }
+                fullName: { type: string, minLength: 1, maxLength: 200, description: 'Allows Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.' }
                 phone: { type: string, pattern: '^0[0-9]{9}$' }
                 email: { type: string, format: email, maxLength: 320 }
                 birthDate: { type: string, format: date }
@@ -88,7 +88,7 @@ paths:
               type: object
               additionalProperties: false
               properties:
-                fullName: { type: string, minLength: 1, maxLength: 200 }
+                fullName: { type: string, minLength: 1, maxLength: 200, description: 'Allows Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.' }
                 phone: { type: string, pattern: '^0[0-9]{9}$' }
                 email: { type: string, format: email, maxLength: 320 }
                 birthDate: { type: string, format: date }

@@ -13,6 +13,7 @@ import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.common.validation.PersonNameRules;
 import com.scms.backend.notification.NotificationWriter;
 
 import org.springframework.dao.DataIntegrityViolationException;
@@ -74,8 +75,10 @@ public class StaffAccountCreateService {
 
 	private void validate(StaffAccountCreateRequest request) {
 		if (request == null) throw new StaffAccountValidationException("request", "must be a JSON object");
-		if (request.fullName() == null || request.fullName().isBlank() || request.fullName().length() > 200)
-			throw new StaffAccountValidationException("fullName", "must be non-blank and at most 200 characters");
+		if (request.fullName() == null || request.fullName().isBlank() || request.fullName().length() > 200
+				|| !PersonNameRules.isValid(request.fullName()))
+			throw new StaffAccountValidationException("fullName",
+				"must contain letters and valid name separators only and be at most 200 characters");
 		if (request.phone() == null || !request.phone().matches("0[0-9]{9}"))
 			throw new StaffAccountValidationException("phone", "must be 10 digits starting with 0");
 		if (request.email() == null || !request.email().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))
