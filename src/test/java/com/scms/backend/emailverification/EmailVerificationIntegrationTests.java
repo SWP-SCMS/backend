@@ -67,8 +67,9 @@ class EmailVerificationIntegrationTests {
 	@Container @ServiceConnection static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:17");
 	@Autowired MockMvc mvc;@Autowired JdbcTemplate db;@Autowired EmailVerificationCrypto crypto;
 	@Autowired AccountRepository accounts;@Autowired PasswordEncoder passwords;@Autowired ManualActivationService manual;
-	@Autowired AuditEventRepository audits;@Autowired ObjectMapper objectMapper;
+	@Autowired AuditEventRepository audits;
 	@Autowired PlatformTransactionManager transactionManager;
+	private final ObjectMapper objectMapper=new ObjectMapper();
 
 	@Test
 	void registerCreatesEncryptedPendingArtifactsAndOtpActivatesExactlyOnce() throws Exception {
