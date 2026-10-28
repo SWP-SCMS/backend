@@ -1,12 +1,15 @@
 package com.scms.backend.emailverification;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.TimeZone;
 import java.time.ZoneOffset;
@@ -133,6 +136,42 @@ class EmailVerificationIntegrationTests {
 		assertThat(db.queryForObject("select email_verified_at is null from accounts where id=?",Boolean.class,approved.accountId())).isTrue();
 		assertThat(audits.findAll().stream().map(e->e.getAction())).contains("MANUAL_ACTIVATION_REQUEST_APPROVED",
 			"EMAIL_VERIFICATION_BYPASSED","ACCOUNT_ACTIVATED_MANUALLY").doesNotContain("EMAIL_VERIFIED");
+	}
+
+	@Test
+	void manualActivationRequestNotifiesOnlyActiveManagersWithoutSensitivePayload() throws Exception {
+		register("manual-notification@example.test","0907654324").andExpect(status().isCreated());
+		UUID receptionist=createActor(AccountRole.RECEPTIONIST,"0911111111","requester@example.test");
+		UUID firstManager=createActor(AccountRole.MANAGER,"0911111112","manager-one@example.test");
+		UUID secondManager=createActor(AccountRole.MANAGER,"0911111113","manager-two@example.test");
+		UUID inactiveManager=createActor(AccountRole.MANAGER,"0911111114","inactive-manager@example.test");
+		db.update("update accounts set status='INACTIVE' where id=?",inactiveManager);
+		String memberId=db.queryForObject("select p.member_code from member_profiles p join accounts a on a.id=p.account_id where a.email='manual-notification@example.test'",String.class);
+		ManualActivationCreateRequest input=new ManualActivationCreateRequest(memberId,
+			ManualActivationReasonCode.MEMBER_CANNOT_ACCESS_EMAIL,"Mailbox unavailable",
+			ManualVerificationMethod.IN_PERSON_GOVERNMENT_ID_CHECK,"Sensitive original document evidence",true);
+
+		ManualActivationResponse request=manual.create(receptionist,input);
+
+		List<Map<String,Object>> events=db.queryForList("""
+			select event_key,recipient_account_id,notification_type,target_type,target_id,payload::text payload
+			from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED'
+			order by recipient_account_id
+			""");
+		assertThat(events).hasSize(2);
+		assertThat(events).extracting(row->(UUID)row.get("recipient_account_id"))
+			.containsExactlyInAnyOrder(firstManager,secondManager).doesNotContain(inactiveManager,receptionist);
+		assertThat(events).allSatisfy(row->{
+			assertThat(row.get("event_key")).isEqualTo("manual-activation:"+request.requestId()+":review-required:"+row.get("recipient_account_id"));
+			assertThat(row.get("target_type")).isEqualTo("MANUAL_ACTIVATION_REQUEST");
+			assertThat(row.get("target_id")).isEqualTo(request.requestId());
+			assertThat((String)row.get("payload")).contains(request.requestId().toString(),memberId,"RECEPTIONIST","PENDING")
+				.doesNotContain("manual-notification@example.test","Sensitive original document evidence");
+		});
+
+		assertThatThrownBy(()->manual.create(receptionist,input))
+			.isInstanceOf(EmailVerificationException.class);
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED'",Integer.class)).isEqualTo(2);
 	}
 
 	private org.springframework.test.web.servlet.ResultActions register(String email,String phone)throws Exception{return mvc.perform(post("/api/v1/auth/register").contextPath("/api/v1").contentType(MediaType.APPLICATION_JSON).content("""
