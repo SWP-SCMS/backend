@@ -158,17 +158,19 @@ class EmailVerificationIntegrationTests {
 		ManualActivationCreateRequest input=new ManualActivationCreateRequest(memberId,
 			ManualActivationReasonCode.MEMBER_CANNOT_ACCESS_EMAIL,"Mailbox unavailable",
 			ManualVerificationMethod.IN_PERSON_GOVERNMENT_ID_CHECK,"Sensitive original document evidence",true);
+		List<UUID> expectedManagerIds=db.queryForList("select id from accounts where role='MANAGER' and status='ACTIVE'",UUID.class);
 
 		ManualActivationResponse request=manual.create(receptionist,input);
 
 		List<Map<String,Object>> events=db.queryForList("""
 			select event_key,recipient_account_id,notification_type,target_type,target_id,payload::text payload
-			from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED'
+			from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED' and target_id=?
 			order by recipient_account_id
-			""");
-		assertThat(events).hasSize(2);
+			""",request.requestId());
+		assertThat(events).hasSize(expectedManagerIds.size());
 		assertThat(events).extracting(row->(UUID)row.get("recipient_account_id"))
-			.containsExactlyInAnyOrder(firstManager,secondManager).doesNotContain(inactiveManager,receptionist);
+			.containsExactlyInAnyOrderElementsOf(expectedManagerIds)
+			.contains(firstManager,secondManager).doesNotContain(inactiveManager,receptionist);
 		assertThat(events).allSatisfy(row->{
 			assertThat(row.get("event_key")).isEqualTo("manual-activation:"+request.requestId()+":review-required:"+row.get("recipient_account_id"));
 			assertThat(row.get("target_type")).isEqualTo("MANUAL_ACTIVATION_REQUEST");
@@ -180,7 +182,7 @@ class EmailVerificationIntegrationTests {
 
 		assertThatThrownBy(()->manual.create(receptionist,input))
 			.isInstanceOf(EmailVerificationException.class);
-		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED'",Integer.class)).isEqualTo(2);
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type='MANUAL_ACTIVATION_REVIEW_REQUIRED' and target_id=?",Integer.class,request.requestId())).isEqualTo(expectedManagerIds.size());
 	}
 
 	@Test
