@@ -77,12 +77,15 @@ class EmailOutboxDeliveryService {
 			 count(*) filter (where status='PROCESSING' and locked_at<?),
 			 count(*) filter (where status='TERMINAL_FAILED' and updated_at>=?),
 			 count(*) filter (where status in ('PENDING','FAILED','PROCESSING') and created_at<?),
-			 count(*) filter (where status='SENT' and sent_at>=?)
+			 count(*) filter (where status='SENT' and sent_at>=?),
+			 coalesce(max(extract(epoch from (? - created_at))) filter
+				(where status in ('PENDING','FAILED','PROCESSING')), 0)
 			 from email_outbox
 			""", (rs, row) -> new OutboxMetrics(rs.getLong(1), rs.getLong(2), rs.getLong(3),
-				rs.getLong(4), rs.getLong(5), rs.getLong(6)), Timestamp.from(now.minus(Duration.ofMinutes(2))),
+				rs.getLong(4), rs.getLong(5), rs.getLong(6), rs.getLong(7)), Timestamp.from(now.minus(Duration.ofMinutes(2))),
 			Timestamp.from(now.minus(Duration.ofMinutes(5))), Timestamp.from(now.minus(Duration.ofHours(24))),
-			Timestamp.from(now.minus(Duration.ofMinutes(10))), Timestamp.from(now.minus(Duration.ofHours(24))));
+			Timestamp.from(now.minus(Duration.ofMinutes(10))), Timestamp.from(now.minus(Duration.ofHours(24))),
+			Timestamp.from(now));
 	}
 
 	static java.util.List<String> alertLevels(OutboxMetrics metrics) {
@@ -95,7 +98,7 @@ class EmailOutboxDeliveryService {
 	}
 
 	record OutboxMetrics(long failed, long pendingOlderThan2m, long processingOlderThan5m,
-		long terminalFailedRecent, long activeOlderThan10m, long sentLast24h) { }
+		long terminalFailedRecent, long activeOlderThan10m, long sentLast24h, long oldestActiveAgeSeconds) { }
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	void sent(UUID id, String providerMessageId, Instant now) {

@@ -34,9 +34,9 @@ class EmailOutboxDispatcher {
 	void logHealth() {
 		var metrics = delivery.metrics(clock.instant());
 		var levels = EmailOutboxDeliveryService.alertLevels(metrics);
-		String event = "event=email_outbox_health failed={} pendingOlderThan2m={} processingOlderThan5m={} terminalFailedRecent={} activeOlderThan10m={} sentLast24h={}";
+		String event = "event=email_outbox_health failed={} pendingOlderThan2m={} processingOlderThan5m={} terminalFailedRecent={} activeOlderThan10m={} oldestActiveAgeSeconds={} sentLast24h={}";
 		Object[] values = {metrics.failed(), metrics.pendingOlderThan2m(), metrics.processingOlderThan5m(),
-			metrics.terminalFailedRecent(), metrics.activeOlderThan10m(), metrics.sentLast24h()};
+			metrics.terminalFailedRecent(), metrics.activeOlderThan10m(), metrics.oldestActiveAgeSeconds(), metrics.sentLast24h()};
 		if (levels.contains("ERROR")) log.error(event, values);
 		else if (levels.contains("WARN")) log.warn(event, values);
 		else log.info(event, values);
