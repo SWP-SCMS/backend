@@ -66,6 +66,10 @@ class ManualActivationService {
 		catch(DataIntegrityViolationException ex){throw error(HttpStatus.CONFLICT,"MANUAL_ACTIVATION_REQUEST_PENDING","A manual activation request is already pending.");}
 		audits.save(new AuditEvent(UUID.randomUUID(),receptionist,"MANUAL_ACTIVATION_REQUESTED","MANUAL_ACTIVATION_REQUEST",id,
 			Map.of("accountId",pending.id().toString(),"requestId",id.toString(),"reasonCode",request.reasonCode().name(),"verificationMethod",request.verificationMethod().name())));
+		for(Account manager:accounts.findAllByRoleAndStatusOrderByIdAsc(AccountRole.MANAGER,AccountStatus.ACTIVE))
+			notifications.write("manual-activation:"+id+":review-required:"+manager.getId(),manager.getId(),
+				"MANUAL_ACTIVATION_REVIEW_REQUIRED","MANUAL_ACTIVATION_REQUEST",id,
+				Map.of("requestId",id.toString(),"memberCode",pending.memberCode(),"requestedByName",requester.name(),"status","PENDING"));
 		return getForActor(receptionist,id,AccountRole.RECEPTIONIST);
 	}
 
