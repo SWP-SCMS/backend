@@ -63,7 +63,7 @@ class EmailOutboxDeliveryService {
 			message = codec.deserialize(payload);
 		} else {
 			long minutes = Math.max(1, (Duration.between(now, job.deliverBefore()).toSeconds() + 59) / 60);
-			message = renderer.render(job.deliveryProvider(), job.templateKey(), job.recipient(),
+			message = renderer.render(job.templateKey(), job.recipient(),
 				job.recipientName(), decrypted, minutes, now);
 			payload = codec.serialize(message);
 		}
