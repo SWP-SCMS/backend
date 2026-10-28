@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import com.scms.backend.emailverification.EmailVerificationController;
 import com.scms.backend.emailverification.EmailVerificationProperties;
 import org.springframework.http.HttpHeaders;
+import com.scms.backend.emailverification.RailwayClientIpResolver;
 
 @RestController
 @RequestMapping("/auth")
@@ -23,19 +24,21 @@ public class RegistrationController {
 	private final RegistrationService registrationService;
 	private final EmailVerificationController emailVerificationController;
 	private final EmailVerificationProperties emailVerificationProperties;
+	private final RailwayClientIpResolver clientIpResolver;
 
 	RegistrationController(RegistrationService registrationService, EmailVerificationController emailVerificationController,
-			EmailVerificationProperties emailVerificationProperties) {
+			EmailVerificationProperties emailVerificationProperties, RailwayClientIpResolver clientIpResolver) {
 		this.registrationService = registrationService;
 		this.emailVerificationController=emailVerificationController;
 		this.emailVerificationProperties=emailVerificationProperties;
+		this.clientIpResolver=clientIpResolver;
 	}
 
 	@PostMapping("/register")
 	@SecurityRequirements
 	@ResponseStatus(HttpStatus.CREATED)
 	ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request,HttpServletRequest http) {
-		RegistrationOutcome outcome=registrationService.register(request,http.getRemoteAddr());
+		RegistrationOutcome outcome=registrationService.register(request,clientIpResolver.resolve(http));
 		var response=ResponseEntity.status(HttpStatus.CREATED);
 		if(outcome.pendingSessionToken()!=null) response.header(HttpHeaders.SET_COOKIE,
 			emailVerificationController.pendingCookie(outcome.pendingSessionToken(),emailVerificationProperties.getRegistrationTtl()).toString());

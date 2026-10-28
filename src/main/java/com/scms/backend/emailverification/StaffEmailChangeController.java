@@ -20,8 +20,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 @RequestMapping("/staff/me/email-change")
 public class StaffEmailChangeController {
 	private final AccountEmailChangeService service;private final RefreshTokenCookieService cookies;
-	StaffEmailChangeController(AccountEmailChangeService service,RefreshTokenCookieService cookies){this.service=service;this.cookies=cookies;}
-	@PostMapping ResponseEntity<StaffEmailChangeResponse> begin(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody StaffEmailChangeRequest request,jakarta.servlet.http.HttpServletRequest http){var result=service.begin(id(jwt),new AccountEmailChangeRequest(request.newEmail(),request.currentPassword()),http.getRemoteAddr());return ResponseEntity.status(HttpStatus.ACCEPTED).body(response(result));}
+	private final RailwayClientIpResolver clientIpResolver;
+	StaffEmailChangeController(AccountEmailChangeService service,RefreshTokenCookieService cookies,RailwayClientIpResolver clientIpResolver){this.service=service;this.cookies=cookies;this.clientIpResolver=clientIpResolver;}
+	@PostMapping ResponseEntity<StaffEmailChangeResponse> begin(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody StaffEmailChangeRequest request,jakarta.servlet.http.HttpServletRequest http){var result=service.begin(id(jwt),new AccountEmailChangeRequest(request.newEmail(),request.currentPassword()),clientIpResolver.resolve(http));return ResponseEntity.status(HttpStatus.ACCEPTED).body(response(result));}
 	@PostMapping("/verify") ResponseEntity<StaffEmailChangeVerifyResponse> verify(@AuthenticationPrincipal Jwt jwt,@Valid @RequestBody StaffEmailChangeVerifyRequest request){var result=service.verify(id(jwt),new AccountEmailChangeVerifyRequest(request.otp()));return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE,cookies.clear().toString()).body(new StaffEmailChangeVerifyResponse(result.verified(),result.email()));}
 	@PostMapping("/resend") ResponseEntity<StaffEmailChangeResponse> resend(@AuthenticationPrincipal Jwt jwt){return ResponseEntity.accepted().body(response(service.resend(id(jwt))));}
 	@DeleteMapping @ResponseStatus(HttpStatus.NO_CONTENT) ResponseEntity<Void> cancel(@AuthenticationPrincipal Jwt jwt){service.cancel(id(jwt));return ResponseEntity.noContent().build();}

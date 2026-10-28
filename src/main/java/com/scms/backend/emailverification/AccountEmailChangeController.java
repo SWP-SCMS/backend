@@ -24,9 +24,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AccountEmailChangeController {
 	private final AccountEmailChangeService service;
 	private final RefreshTokenCookieService cookies;
+	private final RailwayClientIpResolver clientIpResolver;
 
-	AccountEmailChangeController(AccountEmailChangeService service, RefreshTokenCookieService cookies) {
+	AccountEmailChangeController(AccountEmailChangeService service, RefreshTokenCookieService cookies,
+			RailwayClientIpResolver clientIpResolver) {
 		this.service = service; this.cookies = cookies;
+		this.clientIpResolver = clientIpResolver;
 	}
 
 	@GetMapping
@@ -37,13 +40,13 @@ public class AccountEmailChangeController {
 	@PostMapping
 	ResponseEntity<AccountEmailChangeResponse> begin(@AuthenticationPrincipal Jwt jwt,
 			@Valid @RequestBody AccountEmailChangeRequest request, HttpServletRequest http) {
-		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.begin(id(jwt), request, http.getRemoteAddr()));
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.begin(id(jwt), request, clientIpResolver.resolve(http)));
 	}
 
 	@PutMapping
 	ResponseEntity<AccountEmailChangeResponse> replace(@AuthenticationPrincipal Jwt jwt,
 			@Valid @RequestBody AccountEmailChangeRequest request, HttpServletRequest http) {
-		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.replace(id(jwt), request, http.getRemoteAddr()));
+		return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.replace(id(jwt), request, clientIpResolver.resolve(http)));
 	}
 
 	@PostMapping("/verify")

@@ -39,6 +39,7 @@ class EmailOutboxEnqueuer {
 		if (window.compareTo(MAX_EMAIL_DELIVERY_WINDOW) >= 0)
 			throw new IllegalArgumentException("Email delivery window must be shorter than 24 hours");
 		String provider = delivery.getProvider();
+		recipient = delivery.recipient(recipient);
 		String recipientName = db.queryForObject("select full_name from accounts where id=?", String.class, accountId);
 		long minutes = Math.max(1, (window.toSeconds() + 59) / 60);
 		EmailMessage message = renderer.render(templateKey, recipient, recipientName, otp, minutes, now);

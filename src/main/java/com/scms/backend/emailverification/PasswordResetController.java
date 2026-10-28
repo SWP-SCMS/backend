@@ -21,23 +21,26 @@ import org.springframework.web.bind.annotation.RestController;
 public class PasswordResetController {
 	private final PasswordResetService service;
 	private final PasswordResetCookieService cookies;
+	private final RailwayClientIpResolver clientIpResolver;
 
-	PasswordResetController(PasswordResetService service, PasswordResetCookieService cookies) {
+	PasswordResetController(PasswordResetService service, PasswordResetCookieService cookies,
+			RailwayClientIpResolver clientIpResolver) {
 		this.service = service;
 		this.cookies = cookies;
+		this.clientIpResolver = clientIpResolver;
 	}
 
 	@PostMapping(value = "/request", consumes = MediaType.APPLICATION_JSON_VALUE)
 	@ResponseStatus(HttpStatus.ACCEPTED)
 	PasswordResetAcceptedResponse request(@Valid @RequestBody PasswordResetRequest request,
 			HttpServletRequest servletRequest) {
-		return service.request(request, clientIp(servletRequest));
+		return service.request(request, clientIpResolver.resolve(servletRequest));
 	}
 
 	@PostMapping(value = "/verify", consumes = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<PasswordResetVerifiedResponse> verify(@Valid @RequestBody PasswordResetVerifyRequest request,
 			HttpServletRequest servletRequest) {
-		PasswordResetService.VerifyResult result = service.verify(request, clientIp(servletRequest));
+		PasswordResetService.VerifyResult result = service.verify(request, clientIpResolver.resolve(servletRequest));
 		return ResponseEntity.ok()
 			.header(HttpHeaders.SET_COOKIE, cookies.create(result.sessionToken()).toString())
 			.body(result.response());
@@ -52,6 +55,4 @@ public class PasswordResetController {
 			.header(HttpHeaders.SET_COOKIE, cookies.clear().toString())
 			.build();
 	}
-
-	private String clientIp(HttpServletRequest request) { return request.getRemoteAddr(); }
 }

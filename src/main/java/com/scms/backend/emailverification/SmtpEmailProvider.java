@@ -30,6 +30,11 @@ class SmtpEmailProvider implements EmailProvider {
 		if (verification.isEnabled() && delivery.getProvider().equals("smtp")
 				&& (delivery.getFrom().isBlank() || host.isBlank()))
 			throw new IllegalStateException("SMTP host and sender are required when SCMS_EMAIL_PROVIDER=smtp");
+		if (verification.isEnabled() && delivery.getProvider().equals("smtp") && delivery.getSmtpUsername().isBlank())
+			throw new IllegalStateException("SMTP_USERNAME is required when email verification is enabled");
+		if (!delivery.getFrom().isBlank() && !delivery.getSmtpUsername().isBlank()
+				&& !delivery.isAllowCustomFrom() && !delivery.getFrom().equalsIgnoreCase(delivery.getSmtpUsername()))
+			throw new IllegalStateException("SMTP_FROM must equal SMTP_USERNAME unless SMTP_ALLOW_CUSTOM_FROM=true");
 	}
 
 	@Override

@@ -27,4 +27,28 @@ class EmailOutboxDeliveryServiceTests {
 		assertThatThrownBy(() -> EmailOutboxDeliveryService.retryDelay(0, null))
 			.isInstanceOf(IllegalArgumentException.class);
 	}
+
+	@Test
+	void reportsOnlyThresholdsThatAreExceeded() {
+		var metrics = new EmailOutboxDeliveryService.OutboxMetrics(1, 1, 1, 1, 1, 40);
+		assertThat(EmailOutboxDeliveryService.alertLevels(metrics)).containsExactly("WARN", "ERROR");
+	}
+
+	@Test
+	void doesNotRaiseAlertsAtWarnBoundariesOrBelowErrorSentThreshold() {
+		var metrics = new EmailOutboxDeliveryService.OutboxMetrics(0, 0, 0, 0, 0, 39);
+		assertThat(EmailOutboxDeliveryService.alertLevels(metrics)).isEmpty();
+	}
+
+	@Test
+	void warnsForFailedPendingAndProcessingButErrorsOnlyAtTerminalActiveOrFortySent() {
+		assertThat(EmailOutboxDeliveryService.alertLevels(
+			new EmailOutboxDeliveryService.OutboxMetrics(0, 0, 0, 0, 0, 40))).containsExactly("ERROR");
+		assertThat(EmailOutboxDeliveryService.alertLevels(
+			new EmailOutboxDeliveryService.OutboxMetrics(0, 0, 0, 1, 0, 0))).containsExactly("ERROR");
+		assertThat(EmailOutboxDeliveryService.alertLevels(
+			new EmailOutboxDeliveryService.OutboxMetrics(0, 0, 0, 0, 1, 0))).containsExactly("ERROR");
+		assertThat(EmailOutboxDeliveryService.alertLevels(
+			new EmailOutboxDeliveryService.OutboxMetrics(0, 1, 0, 0, 0, 0))).containsExactly("WARN");
+	}
 }

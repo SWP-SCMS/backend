@@ -40,6 +40,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 	"scms.email-verification.rate-limit-key=cmF0ZS1saW1pdC1rZXktMzItYnl0ZXMtbG9uZyEhISE=",
 	"scms.email-verification.resend-cooldown=0s",
 	"spring.mail.host=localhost",
+	"scms.email.smtp-username=no-reply@example.test",
 	"scms.email.from=no-reply@example.test",
 	"scms.email-verification.dispatch-delay=3600000",
 	"scms.email-verification.dispatch-initial-delay=3600000"

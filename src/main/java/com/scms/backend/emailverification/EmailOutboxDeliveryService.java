@@ -70,6 +70,33 @@ class EmailOutboxDeliveryService {
 		return providers.send(job.deliveryProvider(), new EmailDeliveryRequest(job.id(), payload, message));
 	}
 
+	OutboxMetrics metrics(Instant now) {
+		return db.queryForObject("""
+			select count(*) filter (where status='FAILED'),
+			 count(*) filter (where status='PENDING' and created_at<?),
+			 count(*) filter (where status='PROCESSING' and locked_at<?),
+			 count(*) filter (where status='TERMINAL_FAILED' and updated_at>=?),
+			 count(*) filter (where status in ('PENDING','FAILED','PROCESSING') and created_at<?),
+			 count(*) filter (where status='SENT' and sent_at>=?)
+			 from email_outbox
+			""", (rs, row) -> new OutboxMetrics(rs.getLong(1), rs.getLong(2), rs.getLong(3),
+				rs.getLong(4), rs.getLong(5), rs.getLong(6)), Timestamp.from(now.minus(Duration.ofMinutes(2))),
+			Timestamp.from(now.minus(Duration.ofMinutes(5))), Timestamp.from(now.minus(Duration.ofHours(24))),
+			Timestamp.from(now.minus(Duration.ofMinutes(10))), Timestamp.from(now.minus(Duration.ofHours(24))));
+	}
+
+	static java.util.List<String> alertLevels(OutboxMetrics metrics) {
+		var levels = new java.util.ArrayList<String>(2);
+		if (metrics.failed() > 0 || metrics.pendingOlderThan2m() > 0 || metrics.processingOlderThan5m() > 0)
+			levels.add("WARN");
+		if (metrics.terminalFailedRecent() > 0 || metrics.activeOlderThan10m() > 0 || metrics.sentLast24h() >= 40)
+			levels.add("ERROR");
+		return java.util.List.copyOf(levels);
+	}
+
+	record OutboxMetrics(long failed, long pendingOlderThan2m, long processingOlderThan5m,
+		long terminalFailedRecent, long activeOlderThan10m, long sentLast24h) { }
+
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	void sent(UUID id, String providerMessageId, Instant now) {
 		db.update("""
