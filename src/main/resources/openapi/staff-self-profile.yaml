@@ -28,6 +28,25 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/StaffProfileResponse'}
         '409': {description: Email changes require the verified email-change flow}
+  /staff/me/profile/image:
+    post:
+      summary: Upload or replace the authenticated staff profile image
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary, description: 'JPEG or PNG, at most 5 MB'}
+      responses:
+        '200':
+          description: Updated staff profile
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StaffProfileResponse'}
   /staff/me/email-change:
     post:
       summary: Start a verified staff email change
@@ -67,13 +86,14 @@ components:
   schemas:
     StaffProfilePatchRequest:
       type: object
+      additionalProperties: false
       properties:
         fullName: {type: string, description: 'Allows Unicode letters and combining marks with spaces, hyphens, apostrophes, or periods between name parts.'}
         phone: {type: string}
         birthDate: {type: string, format: date}
     StaffProfileResponse:
       type: object
-      required: [accountId, fullName, phone, email, birthDate, role, status, pendingEmailChange]
+      required: [accountId, fullName, phone, email, birthDate, role, status, profileImageUrl, pendingEmailChange]
       properties:
         accountId: {type: string, format: uuid}
         fullName: {type: string}
@@ -82,6 +102,7 @@ components:
         birthDate: {type: string, format: date}
         role: {type: string, enum: [MANAGER, RECEPTIONIST, COACH]}
         status: {type: string, enum: [ACTIVE, INACTIVE]}
+        profileImageUrl: {type: [string, 'null']}
         pendingEmailChange: {type: boolean}
         pendingEmailMasked: {type: [string, 'null']}
         pendingEmailOtpExpiresAt: {type: [string, 'null'], format: date-time}

@@ -46,6 +46,9 @@ public class Account {
 	@Column(name = "password_hash", nullable = false, length = 255)
 	private String passwordHash;
 
+	@Column(name = "profile_image_url", columnDefinition = "text")
+	private String profileImageUrl;
+
 	@Column(name = "email_verified_at")
 	private Instant emailVerifiedAt;
 
@@ -107,6 +110,15 @@ public class Account {
 
 	public void changePassword(String passwordHash) {
 		this.passwordHash = Objects.requireNonNull(passwordHash);
+	}
+
+	public String replaceStaffProfileImage(String profileImageUrl) {
+		if (role == AccountRole.MEMBER) {
+			throw new IllegalStateException("Member accounts store profile images in member profiles");
+		}
+		String previous = this.profileImageUrl;
+		this.profileImageUrl = Objects.requireNonNull(profileImageUrl);
+		return previous;
 	}
 
 	public void changeMemberStatus(AccountStatus newStatus) {
@@ -212,6 +224,10 @@ public class Account {
 
 	public String getPasswordHash() {
 		return passwordHash;
+	}
+
+	public String getProfileImageUrl() {
+		return profileImageUrl;
 	}
 
 	public Instant getEmailVerifiedAt() { return emailVerifiedAt; }

@@ -1,6 +1,7 @@
 package com.scms.backend.member;
 
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
+import com.scms.backend.identity.staffprofile.StaffProfileResponse;
 import java.util.UUID;
 
 import org.springframework.http.MediaType;
@@ -33,6 +34,12 @@ public class ProfileImageUploadController {
 	ResponseEntity<MemberProfileResponse> uploadReceptionMemberProfileImage(@AuthenticationPrincipal Jwt jwt,
 			@PathVariable String memberId, @RequestPart("file") MultipartFile file) {
 		return ResponseEntity.ok(service.uploadForReceptionist(accountId(jwt), memberId, file));
+	}
+
+	@PostMapping(path = "/staff/me/profile/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+	ResponseEntity<StaffProfileResponse> uploadStaffProfileImage(@AuthenticationPrincipal Jwt jwt,
+			@RequestPart("file") MultipartFile file) {
+		return ResponseEntity.ok(service.uploadForStaff(accountId(jwt), file));
 	}
 
 	private UUID accountId(Jwt jwt) {

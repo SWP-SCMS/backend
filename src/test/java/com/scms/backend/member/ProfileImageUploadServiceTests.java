@@ -15,6 +15,7 @@ import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import com.scms.backend.identity.memberprofile.MemberProfileService;
 import com.scms.backend.identity.memberprofile.MemberProfileValidationException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
+import com.scms.backend.identity.staffprofile.StaffProfileService;
 
 import javax.imageio.ImageIO;
 
@@ -68,7 +69,9 @@ class ProfileImageUploadServiceTests {
 		ProfileImageStorage storage = Mockito.mock(ProfileImageStorage.class);
 		MemberProfileService memberService = Mockito.mock(MemberProfileService.class);
 		ReceptionMemberProfileService receptionService = Mockito.mock(ReceptionMemberProfileService.class);
-		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService);
+		StaffProfileService staffService = Mockito.mock(StaffProfileService.class);
+		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService,
+			staffService);
 		UUID accountId = UUID.randomUUID();
 		ProfileImageStorage.StoredImage stored = new ProfileImageStorage.StoredImage("/profile-images/new.jpg");
 		when(storage.store(Mockito.any())).thenReturn(stored);
@@ -95,7 +98,9 @@ class ProfileImageUploadServiceTests {
 		ProfileImageStorage storage = Mockito.mock(ProfileImageStorage.class);
 		MemberProfileService memberService = Mockito.mock(MemberProfileService.class);
 		ReceptionMemberProfileService receptionService = Mockito.mock(ReceptionMemberProfileService.class);
-		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService);
+		StaffProfileService staffService = Mockito.mock(StaffProfileService.class);
+		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService,
+			staffService);
 		UUID accountId = UUID.randomUUID();
 		ProfileImageStorage.StoredImage stored = new ProfileImageStorage.StoredImage("/profile-images/new.jpg");
 		when(storage.store(Mockito.any())).thenReturn(stored);
@@ -123,7 +128,9 @@ class ProfileImageUploadServiceTests {
 		ProfileImageStorage storage = Mockito.mock(ProfileImageStorage.class);
 		MemberProfileService memberService = Mockito.mock(MemberProfileService.class);
 		ReceptionMemberProfileService receptionService = Mockito.mock(ReceptionMemberProfileService.class);
-		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService);
+		StaffProfileService staffService = Mockito.mock(StaffProfileService.class);
+		ProfileImageUploadService service = new ProfileImageUploadService(storage, memberService, receptionService,
+			staffService);
 		UUID accountId = UUID.randomUUID();
 		ProfileImageStorage.StoredImage stored = new ProfileImageStorage.StoredImage("/profile-images/new.jpg");
 		when(storage.store(Mockito.any())).thenReturn(stored);

@@ -178,6 +178,6 @@ class StaffProfileIntegrationTests {
 	}
 
 	private static Stream<String> readOnlyFields() {
-		return Stream.of("id", "role", "status", "password", "passwordHash", "unknown");
+		return Stream.of("id", "role", "status", "password", "passwordHash", "profileImageUrl", "unknown");
 	}
 }
