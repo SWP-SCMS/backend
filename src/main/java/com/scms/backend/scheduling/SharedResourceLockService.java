@@ -14,14 +14,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class SharedResourceLockService {
 	private final AccountRepository accounts;
 	private final RoomRepository rooms;
+	private final SharedResourceLockRendezvous rendezvous;
 
-	SharedResourceLockService(AccountRepository accounts, RoomRepository rooms) {
+	SharedResourceLockService(AccountRepository accounts, RoomRepository rooms, SharedResourceLockRendezvous rendezvous) {
 		this.accounts = accounts;
 		this.rooms = rooms;
+		this.rendezvous = rendezvous;
 	}
 
 	@Transactional
 	public void lock(Collection<UUID> coachIds, Collection<UUID> roomIds) {
+		rendezvous.beforeLock();
 		Set<UUID> ids = new TreeSet<>(Comparator.comparing(UUID::toString));
 		if (coachIds != null) ids.addAll(coachIds.stream().filter(java.util.Objects::nonNull).toList());
 		if (roomIds != null) ids.addAll(roomIds.stream().filter(java.util.Objects::nonNull).toList());

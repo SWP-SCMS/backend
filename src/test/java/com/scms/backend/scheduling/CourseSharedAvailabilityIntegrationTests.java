@@ -2,6 +2,7 @@ package com.scms.backend.scheduling;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 
 import java.math.BigInteger;
 import java.time.Instant;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -42,11 +44,13 @@ class CourseSharedAvailabilityIntegrationTests {
 	@Autowired RoomRepository rooms;
 	@Autowired CourseSessionService courseSessions;
 	@Autowired ClassSessionService gymSessions;
+	@Autowired ClassSessionRepository classSessions;
 	@Autowired RoomService roomService;
 	@Autowired RoomSuspensionService roomSuspensions;
 	@Autowired JdbcTemplate jdbc;
 	@Autowired SharedResourceLockService resourceLocks;
 	@Autowired PlatformTransactionManager transactionManager;
+	@MockitoBean SharedResourceLockRendezvous lockRendezvous;
 
 	@Test
 	void courseAndGymBlockEachOtherByRoomAndCoachButAllowAdjacentAndCompletedWindows() {
@@ -122,8 +126,12 @@ class CourseSharedAvailabilityIntegrationTests {
 			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
 		UUID runId = insertRun(discipline.getId(), courseCoach.getId());
 		Instant start = Instant.parse("2035-01-12T02:00:00Z"), end = start.plusSeconds(3600);
-		CountDownLatch resourceLocked = new CountDownLatch(1), gymStarted = new CountDownLatch(1),
+		CountDownLatch resourceLocked = new CountDownLatch(1), gymAtLock = new CountDownLatch(1),
 			releaseCourse = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("gym-race")) gymAtLock.countDown();
+			return null;
+		}).when(lockRendezvous).beforeLock();
 		var executor = Executors.newFixedThreadPool(2);
 		try {
 			var course = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
@@ -135,7 +143,7 @@ class CourseSharedAvailabilityIntegrationTests {
 			}));
 			assertThat(resourceLocked.await(10, TimeUnit.SECONDS)).isTrue();
 			var gym = executor.submit(() -> {
-				gymStarted.countDown();
+				Thread.currentThread().setName("gym-race");
 				try {
 					gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(),
 						gymCoach.getId(), room.getId(), start, end, 10));
@@ -143,7 +151,7 @@ class CourseSharedAvailabilityIntegrationTests {
 				}
 				catch (Throwable failure) { return failure; }
 			});
-			assertThat(gymStarted.await(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(gymAtLock.await(10, TimeUnit.SECONDS)).isTrue();
 			releaseCourse.countDown();
 
 			assertThat(course.get(10, TimeUnit.SECONDS)).isNotNull();
@@ -153,6 +161,26 @@ class CourseSharedAvailabilityIntegrationTests {
 			releaseCourse.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	void roomlessPtSessionCanChangeCoach() {
+		Account manager = account(AccountRole.MANAGER, "PT Manager");
+		Account firstCoach = account(AccountRole.COACH, "PT Coach One");
+		Account secondCoach = account(AccountRole.COACH, "PT Coach Two");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "PT discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass pt = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "PT class",
+			SportClassType.PT_1_1, null, SportClassStatus.ACTIVE));
+		Instant start = Instant.parse("2035-01-14T02:00:00Z");
+		ClassSession session = classSessions.saveAndFlush(new ClassSession(UUID.randomUUID(), pt, null, firstCoach,
+			null, start, start.plusSeconds(3600), 1, manager.getId()));
+
+		ClassSessionDetailResponse changed = gymSessions.updateAssignment(manager.getId(), session.getId(),
+			new ClassSessionAssignmentRequest(secondCoach.getId(), null));
+
+		assertThat(changed.coachId()).isEqualTo(secondCoach.getId());
+		assertThat(changed.roomId()).isNull();
 	}
 
 	@Test

@@ -320,8 +320,8 @@ public class ClassSessionService {
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
 		UUID roomId = request.roomId() == null ? sourceRoomId : request.roomId();
 		UUID beforeCoachId = session.getTeachingCoach().getId();
-		UUID beforeRoomId = session.getRoom().getId();
-		if (coachId.equals(beforeCoachId) && roomId.equals(beforeRoomId)) {
+		UUID beforeRoomId = session.getRoom() == null ? null : session.getRoom().getId();
+		if (coachId.equals(beforeCoachId) && java.util.Objects.equals(roomId, beforeRoomId)) {
 			return ClassSessionDetailResponse.from(session);
 		}
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
@@ -335,10 +335,11 @@ public class ClassSessionService {
 		catch (DataIntegrityViolationException exception) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		Map<String, Object> before = new java.util.HashMap<>(), after = new java.util.HashMap<>();
+		before.put("coachId", beforeCoachId.toString()); before.put("roomId", beforeRoomId == null ? null : beforeRoomId.toString());
+		after.put("coachId", coachId.toString()); after.put("roomId", roomId == null ? null : roomId.toString());
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_ASSIGNMENT_CHANGED", "CLASS_SESSION",
-			sessionId, "Manager changed session assignment",
-			Map.of("coachId", beforeCoachId.toString(), "roomId", beforeRoomId.toString()),
-			Map.of("coachId", coachId.toString(), "roomId", roomId.toString())));
+			sessionId, "Manager changed session assignment", before, after));
 		return ClassSessionDetailResponse.from(session);
 	}
 
