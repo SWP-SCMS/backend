@@ -286,23 +286,35 @@ public class ClassSessionService {
 			throw RecurringScheduleException.validation("request", "coachId or roomId is required");
 		}
 		advanceStatuses();
-		UUID sourceRoomId = sessions.findRoomIdById(sessionId)
-			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
-		if (resourceLocks == null) lockAssignmentRooms(sourceRoomId, request.roomId());
-		else {
-			UUID sourceCoachId = sessions.findCoachIdById(sessionId)
+		UUID sourceRoomId;
+		UUID sourceCoachId = null;
+		if (resourceLocks == null) {
+			sourceRoomId = sessions.findRoomIdById(sessionId)
 				.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+			lockAssignmentRooms(sourceRoomId, request.roomId());
+		}
+		else {
+			ClassSession resourceSnapshot = sessions.findById(sessionId)
+				.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+			sourceRoomId = resourceSnapshot.getRoom() == null ? null : resourceSnapshot.getRoom().getId();
+			sourceCoachId = resourceSnapshot.getTeachingCoach().getId();
 			resourceLocks.lock(request.coachId() == null ? List.of(sourceCoachId)
-				: List.of(sourceCoachId, request.coachId()), request.roomId() == null ? List.of(sourceRoomId)
-				: List.of(sourceRoomId, request.roomId()));
+				: List.of(sourceCoachId, request.coachId()), request.roomId() == null
+					? (sourceRoomId == null ? List.of() : List.of(sourceRoomId))
+					: (sourceRoomId == null ? List.of(request.roomId()) : List.of(sourceRoomId, request.roomId())));
 		}
 		if (lockRendezvous != null) lockRendezvous.await();
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (resourceLocks != null && (!session.getTeachingCoach().getId().equals(sourceCoachId)
+				|| !java.util.Objects.equals(session.getRoom() == null ? null : session.getRoom().getId(), sourceRoomId))) {
+			throw RecurringScheduleException.sessionConflict();
+		}
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
 			throw RecurringScheduleException.sessionNotScheduled();
 		}
-		if (request.roomId() == null && !session.getRoom().getId().equals(sourceRoomId)) {
+		if (request.roomId() == null && !java.util.Objects.equals(
+				session.getRoom() == null ? null : session.getRoom().getId(), sourceRoomId)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
@@ -488,17 +500,20 @@ public class ClassSessionService {
 		if (reason.isEmpty()) throw RecurringScheduleException.validation("reason", "is required");
 		if (reason.length() > 1000) throw RecurringScheduleException.validation("reason", "must be at most 1000 characters");
 		advanceStatuses();
-		UUID currentRoomLockId = resourceLocks == null ? null : sessions.findRoomIdById(sessionId)
+		ClassSession resourceSnapshot = resourceLocks == null ? null : sessions.findById(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
-		UUID currentCoachLockId = resourceLocks == null ? null : sessions.findCoachIdById(sessionId)
-			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		UUID currentRoomLockId = resourceSnapshot == null || resourceSnapshot.getRoom() == null
+			? null : resourceSnapshot.getRoom().getId();
+		UUID currentCoachLockId = resourceSnapshot == null ? null : resourceSnapshot.getTeachingCoach().getId();
 		if (resourceLocks != null) resourceLocks.lock(request.coachId() == null ? List.of(currentCoachLockId)
-			: List.of(currentCoachLockId, request.coachId()), request.roomId() == null ? List.of(currentRoomLockId)
-			: List.of(currentRoomLockId, request.roomId()));
+			: List.of(currentCoachLockId, request.coachId()), request.roomId() == null
+				? (currentRoomLockId == null ? List.of() : List.of(currentRoomLockId))
+				: (currentRoomLockId == null ? List.of(request.roomId()) : List.of(currentRoomLockId, request.roomId())));
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
 		if (resourceLocks != null && (!session.getTeachingCoach().getId().equals(currentCoachLockId)
-				|| !session.getRoom().getId().equals(currentRoomLockId))) throw RecurringScheduleException.sessionConflict();
+				|| !java.util.Objects.equals(session.getRoom() == null ? null : session.getRoom().getId(),
+					currentRoomLockId))) throw RecurringScheduleException.sessionConflict();
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) throw RecurringScheduleException.sessionNotScheduled();
 		if (!request.expectedVersion().equals(session.getVersion())) throw RecurringScheduleException.versionConflict();
 		if (clock.instant().isAfter(session.getStartTime().minus(Duration.ofHours(24)))) {
