@@ -28,6 +28,21 @@ public class CourseException extends RuntimeException {
 			"The course run can only be changed while it is in draft.");
 	}
 
+	static CourseException invalidSession() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SESSION_INVALID",
+			"The course session cannot be changed in its current state or with the requested schedule.");
+	}
+
+	static CourseException resourceConflict() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SESSION_RESOURCE_CONFLICT",
+			"The requested room or coach is unavailable for this course session.");
+	}
+
+	static CourseException roomCapacityConflict() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SESSION_ROOM_CAPACITY_CONFLICT",
+			"The course run capacity cannot exceed the assigned room capacity.");
+	}
+
 	public HttpStatus getStatus() {
 		return status;
 	}

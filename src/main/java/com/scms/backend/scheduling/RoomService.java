@@ -12,6 +12,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseSessionRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -23,11 +24,19 @@ public class RoomService {
 	private final RoomRepository rooms;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
+	private final CourseSessionRepository courseSessions;
 
 	RoomService(RoomRepository rooms, AccountRepository accounts, AuditEventRepository audits) {
+		this(rooms, accounts, audits, null);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	RoomService(RoomRepository rooms, AccountRepository accounts, AuditEventRepository audits,
+			CourseSessionRepository courseSessions) {
 		this.rooms = rooms;
 		this.accounts = accounts;
 		this.audits = audits;
+		this.courseSessions = courseSessions;
 	}
 
 	@Transactional(readOnly = true)
@@ -90,6 +99,7 @@ public class RoomService {
 		int capacity = request.capacity() == null ? room.getCapacity() : validateCapacity(request.capacity());
 		RoomUsageMode usageMode = request.usageMode() == null ? room.getUsageMode() : request.usageMode();
 		if (request.capacity() != null && (rooms.existsActiveSessionOverCapacity(roomId, capacity)
+				|| (courseSessions != null && courseSessions.existsRunOverRoomCapacity(roomId, capacity))
 				|| (usageMode == RoomUsageMode.SHARED && rooms.existsActiveLoadOverCapacity(roomId, capacity)))) {
 			throw RoomException.capacityConflict();
 		}
@@ -100,6 +110,8 @@ public class RoomService {
 		RoomStatus status = request.status() == null ? room.getStatus() : request.status();
 		if (room.getStatus() != RoomStatus.INACTIVE && status == RoomStatus.INACTIVE) {
 			List<UUID> blockingSessionIds = rooms.findBlockingSessionIds(roomId);
+			if (courseSessions != null) blockingSessionIds = java.util.stream.Stream.concat(
+				blockingSessionIds.stream(), courseSessions.findBlockingRoomSessionIds(roomId).stream()).distinct().toList();
 			if (!blockingSessionIds.isEmpty()) throw RoomException.activeSessionsConflict(blockingSessionIds);
 		}
 		room.update(name, capacity, status, usageMode);

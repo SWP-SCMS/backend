@@ -69,9 +69,9 @@ public class Room {
 		this.usageMode = usageMode;
 	}
 
-	UUID getId() { return id; }
+	public UUID getId() { return id; }
 	String getName() { return name; }
-	int getCapacity() { return capacity; }
-	RoomStatus getStatus() { return status; }
+	public int getCapacity() { return capacity; }
+	public RoomStatus getStatus() { return status; }
 	RoomUsageMode getUsageMode() { return usageMode; }
 }

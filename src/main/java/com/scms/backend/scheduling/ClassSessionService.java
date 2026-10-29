@@ -18,6 +18,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseSessionRepository;
 import com.scms.backend.training.CoachAssignmentRepository;
 import com.scms.backend.training.CoachAssignmentStatus;
 import com.scms.backend.notification.NotificationWriter;
@@ -43,10 +44,21 @@ public class ClassSessionService {
 	private final NotificationWriter notifications;
 	private final BookingRepository bookings;
 	private final SessionWaitlistRepository waitlists;
+	private final CourseSessionRepository courseSessions;
+	private final SharedResourceLockService resourceLocks;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null, null, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null, null, null, null, null);
+	}
+
+	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
+			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
+			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
+			CoachAssignmentRepository coachAssignments, NotificationWriter notifications,
+			BookingRepository bookings, SessionWaitlistRepository waitlists) {
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, lockRendezvous, coachLeaves,
+			coachAssignments, notifications, bookings, waitlists, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
@@ -54,7 +66,8 @@ public class ClassSessionService {
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
 			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
 			CoachAssignmentRepository coachAssignments, NotificationWriter notifications,
-			BookingRepository bookings, SessionWaitlistRepository waitlists) {
+			BookingRepository bookings, SessionWaitlistRepository waitlists,
+			CourseSessionRepository courseSessions, SharedResourceLockService resourceLocks) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -68,6 +81,8 @@ public class ClassSessionService {
 		this.notifications = notifications;
 		this.bookings = bookings;
 		this.waitlists = waitlists;
+		this.courseSessions = courseSessions;
+		this.resourceLocks = resourceLocks;
 	}
 
 	@Transactional
@@ -273,7 +288,14 @@ public class ClassSessionService {
 		advanceStatuses();
 		UUID sourceRoomId = sessions.findRoomIdById(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
-		lockAssignmentRooms(sourceRoomId, request.roomId());
+		if (resourceLocks == null) lockAssignmentRooms(sourceRoomId, request.roomId());
+		else {
+			UUID sourceCoachId = sessions.findCoachIdById(sessionId)
+				.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+			resourceLocks.lock(request.coachId() == null ? List.of(sourceCoachId)
+				: List.of(sourceCoachId, request.coachId()), request.roomId() == null ? List.of(sourceRoomId)
+				: List.of(sourceRoomId, request.roomId()));
+		}
 		if (lockRendezvous != null) lockRendezvous.await();
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
@@ -383,6 +405,7 @@ public class ClassSessionService {
 		if (capacity == null || capacity <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
 		}
+		if (resourceLocks != null) resourceLocks.lock(List.of(coachId), roomId == null ? List.of() : List.of(roomId));
 		Optional<SportClass> classResult = classes.findByIdForUpdate(classId);
 		if (classResult == null || classResult.isEmpty()) classResult = classes.findById(classId);
 		SportClass sportClass = classResult.orElseThrow(() -> RecurringScheduleException.notFound("class"));
@@ -419,15 +442,15 @@ public class ClassSessionService {
 		java.util.Set<UUID> roomIds = new java.util.TreeSet<>(java.util.Comparator.comparing(UUID::toString));
 		roomIds.add(sourceRoomId);
 		if (requestedRoomId != null) roomIds.add(requestedRoomId);
-		for (UUID roomId : roomIds) {
-			rooms.findByIdForUpdate(roomId)
-				.orElseThrow(() -> RecurringScheduleException.notFound("room"));
-		}
+		for (UUID roomId : roomIds) rooms.findByIdForUpdate(roomId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("room"));
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime, int requestedCapacity,
 			UUID excludeSessionId) {
 		UUID roomId = resources.room() == null ? null : resources.room().getId();
+		if (courseSessions != null && courseSessions.existsResourceOverlap(resources.coach().getId(), roomId,
+				startTime, endTime)) throw RecurringScheduleException.sessionConflict();
 		boolean coachConflict = excludeSessionId == null
 			? sessions.existsCoachOverlap(resources.coach().getId(), startTime, endTime)
 			: sessions.existsCoachOverlapExcluding(excludeSessionId, resources.coach().getId(), startTime, endTime);

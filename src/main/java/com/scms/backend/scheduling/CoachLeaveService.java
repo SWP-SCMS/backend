@@ -14,6 +14,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseSessionRepository;
 import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -28,18 +29,26 @@ class CoachLeaveService {
 	private final NotificationWriter notifications;
 	private final CoachLeaveLifecycleService lifecycle;
 	private final Clock clock;
+	private final CourseSessionRepository courseSessions;
 
 	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
 			AuditEventRepository audits, NotificationWriter notifications, Clock clock) {
-		this(leaves, accounts, sessions, audits, notifications, null, clock);
+		this(leaves, accounts, sessions, audits, notifications, null, clock, null);
+	}
+
+	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
+			AuditEventRepository audits, NotificationWriter notifications, CoachLeaveLifecycleService lifecycle,
+			Clock clock) {
+		this(leaves, accounts, sessions, audits, notifications, lifecycle, clock, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	CoachLeaveService(CoachLeaveRepository leaves, AccountRepository accounts, ClassSessionRepository sessions,
 			AuditEventRepository audits, NotificationWriter notifications, CoachLeaveLifecycleService lifecycle,
-			Clock clock) {
+			Clock clock, CourseSessionRepository courseSessions) {
 		this.leaves = leaves; this.accounts = accounts; this.sessions = sessions; this.audits = audits;
 		this.notifications = notifications; this.lifecycle = lifecycle; this.clock = clock;
+		this.courseSessions = courseSessions;
 	}
 
 	@Transactional
@@ -134,8 +143,7 @@ class CoachLeaveService {
 		if (approve) {
 			accounts.findByIdForUpdate(leave.getCoach().getId())
 				.orElseThrow(InvalidAuthenticatedAccountException::new);
-			List<UUID> affected = sessions.findActiveOverlapIdsByCoach(leave.getCoach().getId(),
-				leave.getStartTime(), leave.getEndTime());
+			List<UUID> affected = affectedSessionIds(leave);
 			if (!affected.isEmpty()) throw CoachLeaveException.affectedSessions(affected);
 			leave.approve(managerId, note, now);
 		}
@@ -194,8 +202,14 @@ class CoachLeaveService {
 		return normalized;
 	}
 	private CoachLeaveResponse response(CoachLeaveRequest leave) {
-		return CoachLeaveResponse.from(leave, sessions.findActiveOverlapIdsByCoach(leave.getCoach().getId(),
-			leave.getStartTime(), leave.getEndTime()));
+		return CoachLeaveResponse.from(leave, affectedSessionIds(leave));
+	}
+
+	private List<UUID> affectedSessionIds(CoachLeaveRequest leave) {
+		var gym = sessions.findActiveOverlapIdsByCoach(leave.getCoach().getId(), leave.getStartTime(), leave.getEndTime());
+		if (courseSessions == null) return gym;
+		return java.util.stream.Stream.concat(gym.stream(), courseSessions.findActiveOverlapIdsByCoach(
+			leave.getCoach().getId(), leave.getStartTime(), leave.getEndTime()).stream()).distinct().toList();
 	}
 	private Map<String, Object> snapshot(CoachLeaveRequest leave) {
 		return Map.of("coachId", leave.getCoach().getId().toString(), "startTime", leave.getStartTime().toString(),
