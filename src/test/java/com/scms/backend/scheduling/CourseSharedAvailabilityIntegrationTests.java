@@ -37,10 +37,11 @@ class CourseSharedAvailabilityIntegrationTests {
 	@Autowired CourseSessionService courseSessions;
 	@Autowired ClassSessionService gymSessions;
 	@Autowired RoomService roomService;
+	@Autowired RoomSuspensionService roomSuspensions;
 	@Autowired JdbcTemplate jdbc;
 
 	@Test
-	void courseSessionBlocksGymRoomAndCoachButNotAdjacentOrCompletedWindows() {
+	void courseAndGymBlockEachOtherByRoomAndCoachButAllowAdjacentAndCompletedWindows() {
 		Account manager = account(AccountRole.MANAGER, "Course Manager");
 		Account courseCoach = account(AccountRole.COACH, "Course Coach");
 		Account gymCoach = account(AccountRole.COACH, "Gym Coach");
@@ -49,6 +50,8 @@ class CourseSharedAvailabilityIntegrationTests {
 		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
 			"Shared resource class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
 		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Course shared room", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.SHARED));
+		Room secondRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Course coach room", 20,
 			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
 		UUID runId = insertRun(discipline.getId(), courseCoach.getId());
 		Instant start = Instant.parse("2035-01-10T02:00:00Z"), end = start.plusSeconds(3600);
@@ -66,6 +69,36 @@ class CourseSharedAvailabilityIntegrationTests {
 		jdbc.update("update course_sessions set status='COMPLETED' where id=?", courseSession.getId());
 		gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(), gymCoach.getId(),
 			room.getId(), start, end, 10));
+		assertThatThrownBy(() -> courseSessions.create(runId, 2, courseCoach.getId(), room.getId(), start, end,
+			BigInteger.valueOf(100_000))).isInstanceOf(com.scms.backend.course.CourseException.class);
+
+		Instant coachStart = end.plusSeconds(7200), coachEnd = coachStart.plusSeconds(3600);
+		gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(), courseCoach.getId(),
+			secondRoom.getId(), coachStart, coachEnd, 10));
+		assertThatThrownBy(() -> courseSessions.create(runId, 3, courseCoach.getId(), room.getId(), coachStart,
+			coachEnd, BigInteger.valueOf(100_000))).isInstanceOf(com.scms.backend.course.CourseException.class);
+	}
+
+	@Test
+	void ongoingCourseSessionBlocksRoomDeactivationAndAppearsInPermanentImpact() {
+		Account manager = account(AccountRole.MANAGER, "Ongoing Manager");
+		Account coach = account(AccountRole.COACH, "Ongoing Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Ongoing discipline",
+			null, DisciplineStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Ongoing room", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		UUID runId = insertRun(discipline.getId(), coach.getId());
+		var session = courseSessions.create(runId, 1, coach.getId(), room.getId(),
+			Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z"), BigInteger.TEN);
+		Instant now = Instant.now();
+		jdbc.update("update course_sessions set start_at=?, end_at=? where id=?", now.minusSeconds(1800),
+			now.plusSeconds(1800), session.getId());
+
+		assertThatThrownBy(() -> roomService.update(manager.getId(), room.getId(),
+			new RoomPatchRequest(null, null, RoomStatus.INACTIVE))).isInstanceOf(RoomException.class);
+		RoomImpactPreviewResponse preview = roomSuspensions.previewImpact(manager.getId(), room.getId(),
+			new RoomImpactPreviewRequest(null, null, true));
+		assertThat(preview.courseSessionIds()).contains(session.getId());
 	}
 
 	private UUID insertRun(UUID disciplineId, UUID coachId) {
@@ -78,7 +111,7 @@ class CourseSharedAvailabilityIntegrationTests {
 			insert into course_runs(id, run_code, course_id, primary_coach_account_id, tuition_vnd,
 			 capacity, minimum_enrollment, registration_opens_at, registration_closes_at,
 			 planned_start_at, planned_end_at, total_units, named_coach_commitment, status)
-			values (?, ?, ?, ?, 100000, 20, 1, ?, ?, ?, ?, 1, false, 'DRAFT')
+			values (?, ?, ?, ?, 100000, 10, 1, ?, ?, ?, ?, 3, false, 'DRAFT')
 			""", runId, "RUN-" + runId, courseId, coachId, Instant.parse("2034-12-01T00:00:00Z"),
 			Instant.parse("2035-01-01T00:00:00Z"), Instant.parse("2035-01-10T00:00:00Z"),
 			Instant.parse("2035-01-11T00:00:00Z"));

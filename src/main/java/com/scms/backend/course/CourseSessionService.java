@@ -64,10 +64,15 @@ public class CourseSessionService {
 
 	@Transactional
 	public CourseSession reschedule(UUID sessionId, UUID roomId, UUID coachId, Instant startAt, Instant endAt) {
+		UUID currentRoomId = sessions.findRoomIdById(sessionId).orElseThrow(CourseException::invalidSession);
+		UUID currentCoachId = sessions.findCoachIdById(sessionId).orElseThrow(CourseException::invalidSession);
+		UUID requestedRoomId = roomId == null ? currentRoomId : roomId;
+		UUID requestedCoachId = coachId == null ? currentCoachId : coachId;
+		resourceLocks.lock(List.of(currentCoachId, requestedCoachId), List.of(currentRoomId, requestedRoomId));
 		CourseSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(CourseException::invalidSession);
-		UUID requestedRoomId = roomId == null ? session.getRoom().getId() : roomId;
-		UUID requestedCoachId = coachId == null ? session.getCoach().getId() : coachId;
-		resourceLocks.lock(List.of(requestedCoachId), List.of(requestedRoomId));
+		if (!session.getRoom().getId().equals(currentRoomId) || !session.getCoach().getId().equals(currentCoachId)) {
+			throw CourseException.resourceConflict();
+		}
 		Room room = rooms.findById(requestedRoomId).orElseThrow(CourseException::resourceConflict);
 		Account coach = accounts.findById(requestedCoachId).orElseThrow(CourseException::resourceConflict);
 		validateResources(session.getCourseRun(), coach, room, startAt, endAt, sessionId);

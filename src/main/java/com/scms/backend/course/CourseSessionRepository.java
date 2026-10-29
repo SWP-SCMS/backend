@@ -15,6 +15,12 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 	@Query("select session from CourseSession session where session.id = :id")
 	java.util.Optional<CourseSession> findByIdForUpdate(@Param("id") UUID id);
 
+	@Query("select session.room.id from CourseSession session where session.id = :id")
+	java.util.Optional<UUID> findRoomIdById(@Param("id") UUID id);
+
+	@Query("select session.coach.id from CourseSession session where session.id = :id")
+	java.util.Optional<UUID> findCoachIdById(@Param("id") UUID id);
+
 	@Query("""
 		select (count(session) > 0) from CourseSession session
 		where session.status in (com.scms.backend.course.CourseSessionStatus.SCHEDULED,
@@ -51,7 +57,7 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 		select session.id from course_sessions session
 		where session.room_id = :roomId
 		  and session.status in ('SCHEDULED', 'MAKEUP_SCHEDULED')
-		  and ((:permanentDisable = true and session.start_at > :now)
+		  and ((:permanentDisable = true and session.end_at > :now)
 		    or (:permanentDisable = false and session.start_at < :endAt and session.end_at > :startAt))
 		order by session.id
 		""", nativeQuery = true)
@@ -63,7 +69,7 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 		select session.id from course_sessions session
 		where session.room_id = :roomId
 		  and session.status in ('SCHEDULED', 'MAKEUP_SCHEDULED')
-		  and session.start_at > current_timestamp
+		  and session.end_at > current_timestamp
 		order by session.start_at, session.id
 		""", nativeQuery = true)
 	List<UUID> findBlockingRoomSessionIds(@Param("roomId") UUID roomId);

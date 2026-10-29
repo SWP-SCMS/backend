@@ -488,8 +488,17 @@ public class ClassSessionService {
 		if (reason.isEmpty()) throw RecurringScheduleException.validation("reason", "is required");
 		if (reason.length() > 1000) throw RecurringScheduleException.validation("reason", "must be at most 1000 characters");
 		advanceStatuses();
+		UUID currentRoomLockId = resourceLocks == null ? null : sessions.findRoomIdById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		UUID currentCoachLockId = resourceLocks == null ? null : sessions.findCoachIdById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (resourceLocks != null) resourceLocks.lock(request.coachId() == null ? List.of(currentCoachLockId)
+			: List.of(currentCoachLockId, request.coachId()), request.roomId() == null ? List.of(currentRoomLockId)
+			: List.of(currentRoomLockId, request.roomId()));
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (resourceLocks != null && (!session.getTeachingCoach().getId().equals(currentCoachLockId)
+				|| !session.getRoom().getId().equals(currentRoomLockId))) throw RecurringScheduleException.sessionConflict();
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) throw RecurringScheduleException.sessionNotScheduled();
 		if (!request.expectedVersion().equals(session.getVersion())) throw RecurringScheduleException.versionConflict();
 		if (clock.instant().isAfter(session.getStartTime().minus(Duration.ofHours(24)))) {

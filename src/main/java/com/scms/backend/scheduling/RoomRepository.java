@@ -12,13 +12,12 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 
 	@Query(value = """
 		select room.id as "roomId", room.name as "name", room.usage_mode as "usageMode",
-		       room.capacity as "capacity", coalesce(sum(session.capacity), 0) + coalesce((
-		           select max(run.capacity) from course_sessions course_session
-		           join course_runs run on run.id = course_session.course_run_id
+		       room.capacity as "capacity", coalesce(sum(session.capacity), 0) + case when exists (
+		           select 1 from course_sessions course_session
 		           where course_session.room_id = room.id
 		             and course_session.status in ('SCHEDULED', 'MAKEUP_SCHEDULED')
 		             and course_session.start_at < :endTime and course_session.end_at > :startTime
-		       ), 0) as "occupiedCapacity",
+		       ) then room.capacity else 0 end as "occupiedCapacity",
 		       exists (
 		           select 1 from room_suspensions suspension
 		           where suspension.room_id = room.id
@@ -40,14 +39,13 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 	@Query(value = """
 		select affected.id as "sessionId", room.id as "roomId", room.name as "name",
 		       room.usage_mode as "usageMode", room.capacity as "capacity",
-		       coalesce(sum(occupied.capacity), 0) + coalesce((
-		           select max(run.capacity) from course_sessions course_session
-		           join course_runs run on run.id = course_session.course_run_id
+		       coalesce(sum(occupied.capacity), 0) + case when exists (
+		           select 1 from course_sessions course_session
 		           where course_session.room_id = room.id
 		             and course_session.status in ('SCHEDULED', 'MAKEUP_SCHEDULED')
 		             and course_session.start_at < affected.end_time
 		             and course_session.end_at > affected.start_time
-		       ), 0) as "occupiedCapacity",
+		       ) then room.capacity else 0 end as "occupiedCapacity",
 		       exists (
 		           select 1 from room_suspensions suspension
 		           where suspension.room_id = room.id
