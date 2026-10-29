@@ -151,14 +151,14 @@ public class CourseRun {
 	}
 
 	private boolean hasValidOpeningDetails(String policyVersion) {
-		return tuitionVnd != null && tuitionVnd.signum() > 0
+		return tuitionVnd != null && tuitionVnd.signum() > 0 && tuitionVnd.toString().length() <= 19
 			&& capacity > 0 && minimumEnrollment > 0 && minimumEnrollment <= capacity
 			&& registrationOpensAt != null && registrationClosesAt != null
 			&& plannedStartAt != null && plannedEndAt != null
 			&& registrationOpensAt.isBefore(registrationClosesAt)
 			&& !registrationClosesAt.isAfter(plannedStartAt)
 			&& plannedStartAt.isBefore(plannedEndAt)
-			&& totalUnits > 0 && policyVersion != null && !policyVersion.isBlank();
+			&& totalUnits > 0 && policyVersion != null && !policyVersion.isBlank() && policyVersion.length() <= 100;
 	}
 
 	private void transition(CourseRunStatus required, CourseRunStatus next) {

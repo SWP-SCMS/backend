@@ -54,8 +54,9 @@ create table course_runs (
     ),
     constraint chk_course_runs_total_units check (total_units > 0),
     constraint chk_course_runs_policy_snapshot check (
-        (status = 'DRAFT' and (policy_version_snapshot is null or btrim(policy_version_snapshot) <> ''))
-        or (status <> 'DRAFT' and policy_version_snapshot is not null and btrim(policy_version_snapshot) <> '')
+        (status in ('DRAFT', 'CANCELLED') and (policy_version_snapshot is null or btrim(policy_version_snapshot) <> ''))
+        or (status not in ('DRAFT', 'CANCELLED')
+            and policy_version_snapshot is not null and btrim(policy_version_snapshot) <> '')
     ),
     constraint chk_course_runs_status check (status in (
         'DRAFT', 'OPEN_FOR_REGISTRATION', 'CONFIRMED', 'IN_PROGRESS',

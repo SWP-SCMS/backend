@@ -68,3 +68,18 @@ Result: 16 tests, 0 failures, 0 errors, exit code 0. The final pre-commit rerun 
 
 - Docker is unavailable locally, so PostgreSQL execution of V51 and Hibernate schema validation were not observed here. The focused contract compiles and is ready for the Docker-enabled CI integration shard.
 - The report is committed separately so it can record the exact implementation commit SHA without a self-referential commit hash.
+
+## Review fixes — 2026-10-29
+
+- Updated `chk_course_runs_policy_snapshot` so `DRAFT` and `CANCELLED` accept a null or nonblank snapshot, while every opened operational state requires a nonblank snapshot.
+- Added a PostgreSQL contract case covering successful `DRAFT -> CANCELLED` with a null snapshot and rejection of `DRAFT -> OPEN_FOR_REGISTRATION` with a null snapshot.
+- Aligned opening validation with the database columns: tuition accepts 19 digits and rejects 20; policy version accepts 100 characters and rejects 101 with `COURSE_RUN_INVALID_OPENING`.
+
+Review-fix TDD and validation evidence:
+
+- RED: `.\mvnw.cmd -ntp -Dtest=CourseRunTests test` ran 19 tests with exactly 2 expected failures and 0 errors; the missing guards accepted 20-digit tuition and a 101-character policy.
+- GREEN: the same focused command ran 19 tests with 0 failures and 0 errors.
+- Non-container CI-equivalent suite: 168 classes; 825 tests, 0 failures, 0 errors.
+- PostgreSQL contract command was attempted before and after the SQL fix. Both attempts compiled the tests, then stopped before execution because Testcontainers could not find a valid Docker environment.
+- `git diff --check`: clean (line-ending conversion warnings only).
+- The remaining local concern is unchanged: the new PostgreSQL assertions require Docker-enabled CI for execution.

@@ -38,6 +38,31 @@ class CourseRunTests {
 		assertThat(run.getStatus()).isEqualTo(CourseRunStatus.COMPLETED);
 	}
 
+	@Test
+	void openingAcceptsDatabaseColumnBoundaries() {
+		CourseRun run = run(new BigInteger("9999999999999999999"), 20, 3,
+			REGISTRATION_OPENS, REGISTRATION_CLOSES, PLANNED_START, PLANNED_END, 12);
+		String policy = "P".repeat(100);
+
+		run.openForRegistration(policy);
+
+		assertThat(run.getStatus()).isEqualTo(CourseRunStatus.OPEN_FOR_REGISTRATION);
+		assertThat(run.getPolicyVersionSnapshot()).isEqualTo(policy);
+	}
+
+	@Test
+	void openingRejectsTuitionBeyondDatabasePrecision() {
+		CourseRun run = run(new BigInteger("10000000000000000000"), 20, 3,
+			REGISTRATION_OPENS, REGISTRATION_CLOSES, PLANNED_START, PLANNED_END, 12);
+
+		assertInvalidOpening(run, "POLICY-2026-01");
+	}
+
+	@Test
+	void openingRejectsPolicyBeyondDatabaseLength() {
+		assertInvalidOpening(validRun(), "P".repeat(101));
+	}
+
 	@ParameterizedTest
 	@EnumSource(value = CourseRunStatus.class, names = {
 		"DRAFT", "OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS"
@@ -72,13 +97,7 @@ class CourseRunTests {
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("invalidOpeningCases")
 	void openingRejectsInvalidImmutablePricingAndPolicyFields(String description, CourseRun run, String policy) {
-		assertThatThrownBy(() -> run.openForRegistration(policy))
-			.isInstanceOfSatisfying(CourseException.class, exception -> {
-				assertThat(exception.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
-				assertThat(exception.getCode()).isEqualTo("COURSE_RUN_INVALID_OPENING");
-			});
-		assertThat(run.getStatus()).isEqualTo(CourseRunStatus.DRAFT);
-		assertThat(run.getPolicyVersionSnapshot()).isNull();
+		assertInvalidOpening(run, policy);
 	}
 
 	@Test
@@ -151,5 +170,15 @@ class CourseRunTests {
 				assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT);
 				assertThat(exception.getCode()).isEqualTo("COURSE_RUN_INVALID_TRANSITION");
 			});
+	}
+
+	private static void assertInvalidOpening(CourseRun run, String policy) {
+		assertThatThrownBy(() -> run.openForRegistration(policy))
+			.isInstanceOfSatisfying(CourseException.class, exception -> {
+				assertThat(exception.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+				assertThat(exception.getCode()).isEqualTo("COURSE_RUN_INVALID_OPENING");
+			});
+		assertThat(run.getStatus()).isEqualTo(CourseRunStatus.DRAFT);
+		assertThat(run.getPolicyVersionSnapshot()).isNull();
 	}
 }

@@ -1,7 +1,9 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -71,6 +73,25 @@ class CourseCatalogMigrationV51Tests {
 			fixture.sessionId())).isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	@Test
+	void policySnapshotRequirementFollowsTheRunLifecycle() {
+		flyway().migrate();
+		JdbcTemplate db = db();
+		Fixture fixture = insertValidCatalog(db);
+		UUID cancelledRun = UUID.randomUUID();
+		UUID openedRun = UUID.randomUUID();
+		insertDraftRun(db, cancelledRun, "RUN-CANCELLED-NO-POLICY", fixture.courseId(), fixture.coachId());
+		insertDraftRun(db, openedRun, "RUN-OPEN-NO-POLICY", fixture.courseId(), fixture.coachId());
+
+		assertAll(
+			() -> assertThatCode(() -> db.update("update course_runs set status='CANCELLED' where id=?",
+				cancelledRun)).doesNotThrowAnyException(),
+			() -> assertThatThrownBy(() -> db.update(
+				"update course_runs set status='OPEN_FOR_REGISTRATION' where id=?", openedRun))
+				.isInstanceOf(DataIntegrityViolationException.class)
+		);
+	}
+
 	private Fixture insertValidCatalog(JdbcTemplate db) {
 		UUID disciplineId = UUID.randomUUID();
 		UUID coachId = UUID.randomUUID();
@@ -110,6 +131,16 @@ class CourseCatalogMigrationV51Tests {
 			values (?, ?, ?, ?, 5000000, ?, ?, ?, ?, ?, ?, 12, true, 'POLICY-2026-01', 'OPEN_FOR_REGISTRATION')
 			""", id, code, courseId, coachId, capacity, minimumEnrollment, Timestamp.from(registrationOpens),
 			Timestamp.from(registrationCloses), Timestamp.from(plannedStart), Timestamp.from(plannedEnd));
+	}
+
+	private void insertDraftRun(JdbcTemplate db, UUID id, String code, UUID courseId, UUID coachId) {
+		db.update("""
+			insert into course_runs(id, run_code, course_id, primary_coach_account_id, tuition_vnd,
+				capacity, minimum_enrollment, registration_opens_at, registration_closes_at,
+				planned_start_at, planned_end_at, total_units, named_coach_commitment, status)
+			values (?, ?, ?, ?, 5000000, 20, 3, ?, ?, ?, ?, 12, true, 'DRAFT')
+			""", id, code, courseId, coachId, Timestamp.from(REGISTRATION_OPENS),
+			Timestamp.from(REGISTRATION_CLOSES), Timestamp.from(PLANNED_START), Timestamp.from(PLANNED_END));
 	}
 
 	private void insertCoach(JdbcTemplate db, UUID coachId) {
