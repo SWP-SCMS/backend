@@ -83,3 +83,11 @@ Review-fix TDD and validation evidence:
 - PostgreSQL contract command was attempted before and after the SQL fix. Both attempts compiled the tests, then stopped before execution because Testcontainers could not find a valid Docker environment.
 - `git diff --check`: clean (line-ending conversion warnings only).
 - The remaining local concern is unchanged: the new PostgreSQL assertions require Docker-enabled CI for execution.
+
+## CI migration-head follow-up — 2026-10-29
+
+- CI Push/PR integration shard 0 supplied RED evidence at `292d2d3`: `MembershipOrderMigrationV7Tests` line 56 expected Flyway history only through V50, while the fresh migration correctly applied V51. CI also confirmed V51 fresh migration and Hibernate startup succeeded; this was the only failed assertion.
+- Updated that exact full-history assertion to include V51. A repository search found only one other exact migration-head assertion, `FoundationIntegrationTests`, which already includes V51. Migration-specific checks for V39/V49 were intentionally unchanged.
+- Local compile: `.\mvnw.cmd -ntp -DskipTests test` succeeded.
+- Local focused migration test compiled then stopped before execution because Testcontainers could not find a valid Docker environment.
+- CI-equivalent non-container suite: 168 classes; 825 tests, 0 failures, 0 errors.
