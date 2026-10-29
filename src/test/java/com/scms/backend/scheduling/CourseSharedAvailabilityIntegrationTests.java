@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -128,13 +129,18 @@ class CourseSharedAvailabilityIntegrationTests {
 		Instant start = Instant.parse("2035-01-12T02:00:00Z"), end = start.plusSeconds(3600);
 		CountDownLatch resourceLocked = new CountDownLatch(1), gymAtLock = new CountDownLatch(1),
 			releaseCourse = new CountDownLatch(1);
+		AtomicInteger coursePid = new AtomicInteger(), gymPid = new AtomicInteger();
 		doAnswer(invocation -> {
-			if (Thread.currentThread().getName().equals("gym-race")) gymAtLock.countDown();
+			if (Thread.currentThread().getName().equals("gym-race")) {
+				gymPid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
+				gymAtLock.countDown();
+			}
 			return null;
 		}).when(lockRendezvous).beforeLock();
 		var executor = Executors.newFixedThreadPool(2);
 		try {
 			var course = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+				coursePid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
 				resourceLocks.lock(List.of(courseCoach.getId()), List.of(room.getId()));
 				resourceLocked.countDown();
 				await(releaseCourse);
@@ -152,6 +158,7 @@ class CourseSharedAvailabilityIntegrationTests {
 				catch (Throwable failure) { return failure; }
 			});
 			assertThat(gymAtLock.await(10, TimeUnit.SECONDS)).isTrue();
+			awaitDatabaseLock(gymPid.get(), coursePid.get());
 			releaseCourse.countDown();
 
 			assertThat(course.get(10, TimeUnit.SECONDS)).isNotNull();
@@ -210,6 +217,19 @@ class CourseSharedAvailabilityIntegrationTests {
 	private static void await(CountDownLatch latch) {
 		try { if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("latch timeout"); }
 		catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new IllegalStateException(exception); }
+	}
+
+	private void awaitDatabaseLock(int waiterPid, int blockerPid) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiting = jdbc.queryForObject("""
+				select count(*) from pg_stat_activity
+				where pid=? and wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))
+				""", Long.class, waiterPid, blockerPid);
+			if (waiting != null && waiting == 1) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for Gym to block on the Course resource lock");
 	}
 
 	private UUID insertRun(UUID disciplineId, UUID coachId) {
