@@ -139,24 +139,27 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpacts(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
-		TargetRoomAvailability availability = targetRoomAvailability(managerId, roomId, affected);
+		TargetRoomAvailability availability = targetRoomAvailability(roomId, affected);
 		return RoomImpactPreviewResponse.from(affected, bookingCounts(affected), availability.bySession(),
 			availability.bulk());
 	}
 
-	private TargetRoomAvailability targetRoomAvailability(UUID managerId, UUID sourceRoomId,
-			List<ClassSession> affected) {
+	private TargetRoomAvailability targetRoomAvailability(UUID sourceRoomId, List<ClassSession> affected) {
 		if (affected.isEmpty()) return new TargetRoomAvailability(Map.of(), List.of());
 		Map<UUID, List<RoomAvailabilityResponse>> details = new HashMap<>();
 		Map<UUID, List<RoomImpactPreviewResponse.TargetRoom>> bySession = new HashMap<>();
+		for (ClassSession session : affected) details.put(session.getId(), new ArrayList<>());
+		Map<UUID, Integer> requestedCapacity = new HashMap<>();
+		for (ClassSession session : affected) requestedCapacity.put(session.getId(), session.getCapacity());
+		for (RoomSessionAvailabilityView row : rooms.findBatchAvailability(sourceRoomId,
+			affected.stream().map(ClassSession::getId).toList())) {
+			RoomAvailabilityResponse room = roomService.availabilityResponse(row,
+				requestedCapacity.get(row.getSessionId()));
+			if (room.available()) details.get(row.getSessionId()).add(room);
+		}
 		for (ClassSession session : affected) {
-			List<RoomAvailabilityResponse> available = roomService.availability(managerId, session.getStartTime(),
-				session.getEndTime(), session.getCapacity(), session.getId()).stream()
-				.filter(RoomAvailabilityResponse::available)
-				.filter(room -> !room.roomId().equals(sourceRoomId))
-				.toList();
-			details.put(session.getId(), available);
-			bySession.put(session.getId(), available.stream().map(RoomImpactPreviewResponse.TargetRoom::from).toList());
+			bySession.put(session.getId(), details.get(session.getId()).stream()
+				.map(RoomImpactPreviewResponse.TargetRoom::from).toList());
 		}
 
 		Set<UUID> commonRoomIds = new java.util.LinkedHashSet<>(details.get(affected.getFirst().getId()).stream()
@@ -166,37 +169,85 @@ public class RoomSuspensionService {
 				.map(RoomAvailabilityResponse::roomId).collect(java.util.stream.Collectors.toSet());
 			commonRoomIds.retainAll(sessionRoomIds);
 		}
+		Map<UUID, Long> overlappingCapacity = overlappingCapacity(affected);
+		boolean overlappingSessions = hasOverlappingSessions(affected);
 		List<RoomImpactPreviewResponse.TargetRoom> bulk = details.get(affected.getFirst().getId()).stream()
 			.filter(room -> commonRoomIds.contains(room.roomId()))
-			.filter(room -> supportsBulkMove(room, affected, details))
+			.filter(room -> supportsBulkMove(room, affected, details, overlappingCapacity, overlappingSessions))
 			.map(RoomImpactPreviewResponse.TargetRoom::from)
 			.toList();
 		return new TargetRoomAvailability(Map.copyOf(bySession), bulk);
 	}
 
 	private boolean supportsBulkMove(RoomAvailabilityResponse candidate, List<ClassSession> affected,
-			Map<UUID, List<RoomAvailabilityResponse>> details) {
+			Map<UUID, List<RoomAvailabilityResponse>> details, Map<UUID, Long> overlappingCapacity,
+			boolean overlappingSessions) {
 		if (candidate.usageMode() == RoomUsageMode.EXCLUSIVE) {
-			for (int first = 0; first < affected.size(); first++) {
-				for (int second = first + 1; second < affected.size(); second++) {
-					if (overlaps(affected.get(first), affected.get(second))) return false;
-				}
-			}
-			return true;
+			return !overlappingSessions;
 		}
 		for (ClassSession anchor : affected) {
 			RoomAvailabilityResponse window = details.get(anchor.getId()).stream()
 				.filter(room -> room.roomId().equals(candidate.roomId())).findFirst().orElseThrow();
-			long movedCapacity = affected.stream().filter(session -> overlaps(anchor, session))
-				.mapToLong(ClassSession::getCapacity).sum();
-			if (window.occupiedCapacity() + movedCapacity > candidate.capacity()) return false;
+			if (window.occupiedCapacity() + overlappingCapacity.get(anchor.getId()) > candidate.capacity()) return false;
 		}
 		return true;
 	}
 
-	private boolean overlaps(ClassSession first, ClassSession second) {
-		return first.getStartTime().isBefore(second.getEndTime())
-			&& first.getEndTime().isAfter(second.getStartTime());
+	private Map<UUID, Long> overlappingCapacity(List<ClassSession> sessions) {
+		List<CapacityPoint> starts = sessions.stream()
+			.map(session -> new CapacityPoint(session.getStartTime(), session.getCapacity()))
+			.sorted(Comparator.comparing(CapacityPoint::time)).toList();
+		List<CapacityPoint> ends = sessions.stream()
+			.map(session -> new CapacityPoint(session.getEndTime(), session.getCapacity()))
+			.sorted(Comparator.comparing(CapacityPoint::time)).toList();
+		long[] startPrefix = capacityPrefix(starts);
+		long[] endPrefix = capacityPrefix(ends);
+		Map<UUID, Long> result = new HashMap<>();
+		for (ClassSession session : sessions) {
+			int started = lowerBound(starts, session.getEndTime());
+			int ended = upperBound(ends, session.getStartTime());
+			result.put(session.getId(), startPrefix[started] - endPrefix[ended]);
+		}
+		return result;
+	}
+
+	private long[] capacityPrefix(List<CapacityPoint> points) {
+		long[] prefix = new long[points.size() + 1];
+		for (int index = 0; index < points.size(); index++) {
+			prefix[index + 1] = prefix[index] + points.get(index).capacity();
+		}
+		return prefix;
+	}
+
+	private int lowerBound(List<CapacityPoint> points, Instant time) {
+		int low = 0;
+		int high = points.size();
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (points.get(middle).time().isBefore(time)) low = middle + 1;
+			else high = middle;
+		}
+		return low;
+	}
+
+	private int upperBound(List<CapacityPoint> points, Instant time) {
+		int low = 0;
+		int high = points.size();
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (!points.get(middle).time().isAfter(time)) low = middle + 1;
+			else high = middle;
+		}
+		return low;
+	}
+
+	private boolean hasOverlappingSessions(List<ClassSession> sessions) {
+		Instant latestEnd = null;
+		for (ClassSession session : sessions.stream().sorted(Comparator.comparing(ClassSession::getStartTime)).toList()) {
+			if (latestEnd != null && session.getStartTime().isBefore(latestEnd)) return true;
+			if (latestEnd == null || session.getEndTime().isAfter(latestEnd)) latestEnd = session.getEndTime();
+		}
+		return false;
 	}
 
 	@Transactional
@@ -534,6 +585,8 @@ public class RoomSuspensionService {
 
 	private record TargetRoomAvailability(Map<UUID, List<RoomImpactPreviewResponse.TargetRoom>> bySession,
 		List<RoomImpactPreviewResponse.TargetRoom> bulk) { }
+
+	private record CapacityPoint(Instant time, int capacity) { }
 
 	private record ResolutionInputs(RoomBulkResolutionRequest bulk,
 			Map<UUID, RoomSessionResolutionRequest> explicit) {

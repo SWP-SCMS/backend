@@ -127,15 +127,25 @@ public class RoomService {
 	}
 
 	private RoomAvailabilityResponse availabilityResponse(RoomAvailabilityView room, int requestedCapacity) {
-		RoomUsageMode usageMode = RoomUsageMode.valueOf(room.getUsageMode());
-		long occupiedCapacity = room.getOccupiedCapacity();
-		long availableCapacity = room.getSuspended() || usageMode == RoomUsageMode.EXCLUSIVE && occupiedCapacity > 0
-			? 0 : Math.max(0, (long) room.getCapacity() - occupiedCapacity);
-		boolean available = !room.getSuspended() && requestedCapacity <= room.getCapacity()
+		return availabilityResponse(room.getRoomId(), room.getName(), room.getUsageMode(), room.getCapacity(),
+			room.getOccupiedCapacity(), room.getSuspended(), requestedCapacity);
+	}
+
+	RoomAvailabilityResponse availabilityResponse(RoomSessionAvailabilityView room, int requestedCapacity) {
+		return availabilityResponse(room.getRoomId(), room.getName(), room.getUsageMode(), room.getCapacity(),
+			room.getOccupiedCapacity(), room.getSuspended(), requestedCapacity);
+	}
+
+	private RoomAvailabilityResponse availabilityResponse(UUID roomId, String name, String usageModeValue,
+			int capacity, long occupiedCapacity, boolean suspended, int requestedCapacity) {
+		RoomUsageMode usageMode = RoomUsageMode.valueOf(usageModeValue);
+		long availableCapacity = suspended || usageMode == RoomUsageMode.EXCLUSIVE && occupiedCapacity > 0
+			? 0 : Math.max(0, (long) capacity - occupiedCapacity);
+		boolean available = !suspended && requestedCapacity <= capacity
 			&& (usageMode == RoomUsageMode.EXCLUSIVE
-			? occupiedCapacity == 0 : occupiedCapacity + requestedCapacity <= room.getCapacity());
-		return new RoomAvailabilityResponse(room.getRoomId(), room.getName(), usageMode, room.getCapacity(),
-			occupiedCapacity, availableCapacity, available);
+			? occupiedCapacity == 0 : occupiedCapacity + requestedCapacity <= capacity);
+		return new RoomAvailabilityResponse(roomId, name, usageMode, capacity, occupiedCapacity,
+			availableCapacity, available);
 	}
 
 	private Room findRoom(UUID roomId) {
