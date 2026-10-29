@@ -112,6 +112,17 @@ class StaffProfileServiceTests {
 	}
 
 	@Test
+	void replacesAndReturnsStaffProfileImage() {
+		UUID id = UUID.randomUUID();
+		Account account = account(id);
+		when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
+
+		assertThat(service.replaceProfileImage(id, "/profile-images/new.png")).isNull();
+		assertThat(service.getProfile(id).profileImageUrl()).isEqualTo("/profile-images/new.png");
+		verify(accounts).flush();
+	}
+
+	@Test
 	void databaseUniqueRaceIsTranslatedBeforeAuditIsWritten() {
 		UUID id = UUID.randomUUID();
 		Account account = account(id);

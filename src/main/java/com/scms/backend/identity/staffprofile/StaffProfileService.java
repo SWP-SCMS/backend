@@ -40,8 +40,16 @@ public class StaffProfileService {
 	}
 
 	@Transactional(readOnly = true)
-	StaffProfileResponse getProfile(UUID accountId) {
+	public StaffProfileResponse getProfile(UUID accountId) {
 		return toResponse(loadStaff(accountId));
+	}
+
+	@Transactional
+	public String replaceProfileImage(UUID accountId, String profileImageUrl) {
+		Account account = loadStaff(accountId);
+		String previous = account.replaceStaffProfileImage(profileImageUrl);
+		accounts.flush();
+		return previous;
 	}
 
 	@Transactional
@@ -98,7 +106,7 @@ public class StaffProfileService {
 	private StaffProfileResponse toResponse(Account account) {
 		var pending = emailChanges.status(account.getId());
 		return new StaffProfileResponse(account.getId(), account.getFullName(), account.getPhone(), account.getEmail(),
-			account.getBirthDate(), account.getRole(), account.getStatus(), pending.pending(), pending.maskedEmail(),
-			pending.otpExpiresAt(), pending.resendAvailableAt());
+			account.getBirthDate(), account.getRole(), account.getStatus(), account.getProfileImageUrl(),
+			pending.pending(), pending.maskedEmail(), pending.otpExpiresAt(), pending.resendAvailableAt());
 	}
 }

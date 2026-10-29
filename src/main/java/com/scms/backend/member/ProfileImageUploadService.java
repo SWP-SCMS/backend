@@ -5,6 +5,8 @@ import java.util.UUID;
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import com.scms.backend.identity.memberprofile.MemberProfileService;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
+import com.scms.backend.identity.staffprofile.StaffProfileResponse;
+import com.scms.backend.identity.staffprofile.StaffProfileService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,12 +24,14 @@ public class ProfileImageUploadService {
 	private final ProfileImageStorage storage;
 	private final MemberProfileService memberProfileService;
 	private final ReceptionMemberProfileService receptionMemberProfileService;
+	private final StaffProfileService staffProfileService;
 
 	ProfileImageUploadService(ProfileImageStorage storage, MemberProfileService memberProfileService,
-			ReceptionMemberProfileService receptionMemberProfileService) {
+			ReceptionMemberProfileService receptionMemberProfileService, StaffProfileService staffProfileService) {
 		this.storage = storage;
 		this.memberProfileService = memberProfileService;
 		this.receptionMemberProfileService = receptionMemberProfileService;
+		this.staffProfileService = staffProfileService;
 	}
 
 	@Transactional
@@ -53,6 +57,21 @@ public class ProfileImageUploadService {
 			String oldUrl = receptionMemberProfileService.replaceProfileImage(receptionistAccountId, memberId,
 				stored.url());
 			MemberProfileResponse response = receptionMemberProfileService.getProfile(receptionistAccountId, memberId);
+			cleanupAfterCommit(stored.url(), oldUrl);
+			return response;
+		}
+		catch (RuntimeException exception) {
+			deleteQuietly(stored.url());
+			throw exception;
+		}
+	}
+
+	@Transactional
+	StaffProfileResponse uploadForStaff(UUID accountId, MultipartFile file) {
+		ProfileImageStorage.StoredImage stored = storage.store(file);
+		try {
+			String oldUrl = staffProfileService.replaceProfileImage(accountId, stored.url());
+			StaffProfileResponse response = staffProfileService.getProfile(accountId);
 			cleanupAfterCommit(stored.url(), oldUrl);
 			return response;
 		}

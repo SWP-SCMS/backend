@@ -206,6 +206,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/manager/coach-assignments/candidates",
 					"/manager/coaches/assignment-workloads").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")
+				.requestMatchers(HttpMethod.POST, "/staff/me/profile/image")
+					.hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers("/staff/me/profile").hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers("/staff/me/email-change", "/staff/me/email-change/**")
 					.hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")

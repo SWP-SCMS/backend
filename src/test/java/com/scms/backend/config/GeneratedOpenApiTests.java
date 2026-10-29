@@ -82,6 +82,7 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/membership-orders/{orderId}/payments/sepay",
 		"GET /staff/me/profile",
 		"PATCH /staff/me/profile",
+		"POST /staff/me/profile/image",
 		"POST /staff/me/email-change",
 		"POST /staff/me/email-change/verify",
 		"POST /staff/me/email-change/resend",
@@ -967,6 +968,15 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void staffProfileContractsKeepImageUploadOutOfPatchAndRequireNullableImageInResponses() throws Exception {
+		assertStaffProfileSchemas(generatedDocument());
+		try (var input = getClass().getResourceAsStream("/openapi/staff-self-profile.yaml")) {
+			assertThat(input).isNotNull();
+			assertStaffProfileSchemas(new ObjectMapper(new YAMLFactory()).readTree(input));
+		}
+	}
+
+	@Test
 	void generatedCoachLeaveResponseIncludesCoachIdentity() throws Exception {
 		JsonNode response = generatedDocument().at("/components/schemas/CoachLeaveResponse");
 		assertThat(response.path("properties").has("coachId")).isTrue();
@@ -1004,6 +1014,17 @@ class GeneratedOpenApiTests {
 		assertThat(schema.at("/properties/benefitCodes/uniqueItems").asBoolean()).isTrue();
 		assertThat(schema.at("/properties/frozen/type").asText()).isEqualTo("boolean");
 		assertThat(schema.at("/properties/status/enum")).containsExactly(objectMapper.getNodeFactory().textNode("ACTIVE"));
+	}
+
+	private void assertStaffProfileSchemas(JsonNode document) {
+		JsonNode patch = document.at("/components/schemas/StaffProfilePatchRequest");
+		assertThat(patch.path("additionalProperties").asBoolean()).isFalse();
+		assertThat(patch.path("properties").has("profileImageUrl")).isFalse();
+		JsonNode response = document.at("/components/schemas/StaffProfileResponse");
+		assertThat(response.path("required"))
+			.contains(objectMapper.getNodeFactory().textNode("profileImageUrl"));
+		assertThat(response.at("/properties/profileImageUrl/type")).containsExactlyInAnyOrder(
+			objectMapper.getNodeFactory().textNode("string"), objectMapper.getNodeFactory().textNode("null"));
 	}
 
 	private JsonNode generatedDocument() throws Exception {
