@@ -3,7 +3,9 @@ package com.scms.backend.scheduling;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -93,18 +95,19 @@ class RoomSuspensionServiceTests {
 		UUID exclusiveId = UUID.randomUUID();
 		UUID smallSharedId = UUID.randomUUID();
 		UUID bulkSafeId = UUID.randomUUID();
-		List<RoomAvailabilityResponse> firstAvailability = List.of(
-			new RoomAvailabilityResponse(exclusiveId, "Exclusive", RoomUsageMode.EXCLUSIVE, 30, 0, 30, true),
-			new RoomAvailabilityResponse(smallSharedId, "Small shared", RoomUsageMode.SHARED, 20, 0, 20, true),
-			new RoomAvailabilityResponse(bulkSafeId, "Bulk safe", RoomUsageMode.SHARED, 30, 0, 30, true));
-		List<RoomAvailabilityResponse> secondAvailability = List.copyOf(firstAvailability);
+		List<RoomSessionAvailabilityView> batchAvailability = List.of(
+			availability(first, exclusiveId, "Exclusive", RoomUsageMode.EXCLUSIVE, 30, 0, false),
+			availability(first, smallSharedId, "Small shared", RoomUsageMode.SHARED, 20, 0, false),
+			availability(first, bulkSafeId, "Bulk safe", RoomUsageMode.SHARED, 30, 0, false),
+			availability(second, exclusiveId, "Exclusive", RoomUsageMode.EXCLUSIVE, 30, 0, false),
+			availability(second, smallSharedId, "Small shared", RoomUsageMode.SHARED, 20, 0, false),
+			availability(second, bulkSafeId, "Bulk safe", RoomUsageMode.SHARED, 30, 0, false));
 		when(rooms.findById(source.getId())).thenReturn(Optional.of(source));
 		when(sessions.findRoomImpacts(source.getId(), firstStart, secondEnd, false, now))
 			.thenReturn(List.of(first, second));
-		when(roomService.availability(managerId, firstStart, firstEnd, 12, first.getId()))
-			.thenReturn(firstAvailability);
-		when(roomService.availability(managerId, secondStart, secondEnd, 12, second.getId()))
-			.thenReturn(secondAvailability);
+		when(rooms.findBatchAvailability(source.getId(), List.of(first.getId(), second.getId())))
+			.thenReturn(batchAvailability);
+		doCallRealMethod().when(roomService).availabilityResponse(any(RoomSessionAvailabilityView.class), anyInt());
 
 		RoomImpactPreviewResponse result = service.previewImpact(managerId, source.getId(),
 			new RoomImpactPreviewRequest(firstStart, secondEnd, false));
@@ -115,6 +118,22 @@ class RoomSuspensionServiceTests {
 		assertThat(result.bulkAvailableTargetRooms())
 			.extracting(RoomImpactPreviewResponse.TargetRoom::roomId)
 			.containsExactly(bulkSafeId);
+		verify(rooms).findBatchAvailability(source.getId(), List.of(first.getId(), second.getId()));
+		verify(roomService, never()).availability(any(), any(), any(), any(), any());
+	}
+
+	private RoomSessionAvailabilityView availability(ClassSession session, UUID roomId, String name,
+			RoomUsageMode usageMode, int capacity, long occupied, boolean suspended) {
+		UUID sessionId = session.getId();
+		RoomSessionAvailabilityView view = org.mockito.Mockito.mock(RoomSessionAvailabilityView.class);
+		when(view.getSessionId()).thenReturn(sessionId);
+		when(view.getRoomId()).thenReturn(roomId);
+		when(view.getName()).thenReturn(name);
+		when(view.getUsageMode()).thenReturn(usageMode.name());
+		when(view.getCapacity()).thenReturn(capacity);
+		when(view.getOccupiedCapacity()).thenReturn(occupied);
+		when(view.getSuspended()).thenReturn(suspended);
+		return view;
 	}
 
 	@Test

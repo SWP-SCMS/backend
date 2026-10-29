@@ -31,6 +31,27 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
 	java.util.List<RoomAvailabilityView> findAvailability(@Param("startTime") java.time.Instant startTime,
 			@Param("endTime") java.time.Instant endTime, @Param("excludeSessionId") UUID excludeSessionId);
 
+	@Query(value = """
+		select affected.id as "sessionId", room.id as "roomId", room.name as "name",
+		       room.usage_mode as "usageMode", room.capacity as "capacity",
+		       coalesce(sum(occupied.capacity), 0) as "occupiedCapacity",
+		       exists (
+		           select 1 from room_suspensions suspension
+		           where suspension.room_id = room.id
+		             and suspension.start_time < affected.end_time and suspension.end_time > affected.start_time
+		       ) as "suspended"
+		from class_sessions affected
+		join rooms room on room.status = 'ACTIVE' and room.id <> :sourceRoomId
+		left join class_sessions occupied on occupied.room_id = room.id
+		 and occupied.status in ('SCHEDULED', 'IN_PROGRESS')
+		 and occupied.start_time < affected.end_time and occupied.end_time > affected.start_time
+		where affected.id in (:sessionIds)
+		group by affected.id, affected.start_time, affected.end_time, room.id, room.name, room.usage_mode, room.capacity
+		order by affected.start_time, affected.id, room.name, room.id
+		""", nativeQuery = true)
+	java.util.List<RoomSessionAvailabilityView> findBatchAvailability(@Param("sourceRoomId") UUID sourceRoomId,
+			@Param("sessionIds") java.util.Collection<UUID> sessionIds);
+
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select r from Room r where r.id = :id")
 	java.util.Optional<Room> findByIdForUpdate(@Param("id") UUID id);
