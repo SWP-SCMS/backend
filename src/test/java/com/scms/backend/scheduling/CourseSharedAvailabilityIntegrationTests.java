@@ -7,6 +7,10 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -19,6 +23,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -39,6 +45,8 @@ class CourseSharedAvailabilityIntegrationTests {
 	@Autowired RoomService roomService;
 	@Autowired RoomSuspensionService roomSuspensions;
 	@Autowired JdbcTemplate jdbc;
+	@Autowired SharedResourceLockService resourceLocks;
+	@Autowired PlatformTransactionManager transactionManager;
 
 	@Test
 	void courseAndGymBlockEachOtherByRoomAndCoachButAllowAdjacentAndCompletedWindows() {
@@ -101,6 +109,81 @@ class CourseSharedAvailabilityIntegrationTests {
 		assertThat(preview.courseSessionIds()).contains(session.getId());
 	}
 
+	@Test
+	void concurrentCourseAndGymCreationSerializesOnSharedRoomWithoutDeadlock() throws Exception {
+		Account manager = account(AccountRole.MANAGER, "Race Manager");
+		Account courseCoach = account(AccountRole.COACH, "Race Course Coach");
+		Account gymCoach = account(AccountRole.COACH, "Race Gym Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Race discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Race class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Race room", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		UUID runId = insertRun(discipline.getId(), courseCoach.getId());
+		Instant start = Instant.parse("2035-01-12T02:00:00Z"), end = start.plusSeconds(3600);
+		CountDownLatch resourceLocked = new CountDownLatch(1), gymStarted = new CountDownLatch(1),
+			releaseCourse = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var course = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
+				resourceLocks.lock(List.of(courseCoach.getId()), List.of(room.getId()));
+				resourceLocked.countDown();
+				await(releaseCourse);
+				return courseSessions.create(runId, 1, courseCoach.getId(), room.getId(), start, end,
+					BigInteger.valueOf(100_000));
+			}));
+			assertThat(resourceLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var gym = executor.submit(() -> {
+				gymStarted.countDown();
+				try {
+					gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(),
+						gymCoach.getId(), room.getId(), start, end, 10));
+					return null;
+				}
+				catch (Throwable failure) { return failure; }
+			});
+			assertThat(gymStarted.await(10, TimeUnit.SECONDS)).isTrue();
+			releaseCourse.countDown();
+
+			assertThat(course.get(10, TimeUnit.SECONDS)).isNotNull();
+			assertThat(gym.get(10, TimeUnit.SECONDS)).isInstanceOf(RecurringScheduleException.class);
+		}
+		finally {
+			releaseCourse.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void courseRescheduleExcludesItselfAndRejectsAnotherCourseCoachConflict() {
+		Account coach = account(AccountRole.COACH, "Reschedule Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Reschedule discipline",
+			null, DisciplineStatus.ACTIVE));
+		Room firstRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Reschedule room 1", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Room secondRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Reschedule room 2", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		UUID runId = insertRun(discipline.getId(), coach.getId());
+		Instant firstStart = Instant.parse("2035-01-13T02:00:00Z");
+		var first = courseSessions.create(runId, 1, coach.getId(), firstRoom.getId(), firstStart,
+			firstStart.plusSeconds(3600), BigInteger.TEN);
+		Instant shifted = firstStart.plusSeconds(1800);
+		courseSessions.reschedule(first.getId(), firstRoom.getId(), coach.getId(), shifted,
+			shifted.plusSeconds(3600));
+		Instant secondStart = firstStart.plusSeconds(7200);
+		courseSessions.create(runId, 2, coach.getId(), secondRoom.getId(), secondStart,
+			secondStart.plusSeconds(3600), BigInteger.TEN);
+
+		assertThatThrownBy(() -> courseSessions.reschedule(first.getId(), firstRoom.getId(), coach.getId(),
+			secondStart, secondStart.plusSeconds(3600))).isInstanceOf(com.scms.backend.course.CourseException.class);
+	}
+
+	private static void await(CountDownLatch latch) {
+		try { if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("latch timeout"); }
+		catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new IllegalStateException(exception); }
+	}
+
 	private UUID insertRun(UUID disciplineId, UUID coachId) {
 		UUID courseId = UUID.randomUUID(), runId = UUID.randomUUID();
 		jdbc.update("""
@@ -114,7 +197,7 @@ class CourseSharedAvailabilityIntegrationTests {
 			values (?, ?, ?, ?, 100000, 10, 1, ?, ?, ?, ?, 3, false, 'DRAFT')
 			""", runId, "RUN-" + runId, courseId, coachId, Instant.parse("2034-12-01T00:00:00Z"),
 			Instant.parse("2035-01-01T00:00:00Z"), Instant.parse("2035-01-10T00:00:00Z"),
-			Instant.parse("2035-01-11T00:00:00Z"));
+			Instant.parse("2035-02-01T00:00:00Z"));
 		return runId;
 	}
 
