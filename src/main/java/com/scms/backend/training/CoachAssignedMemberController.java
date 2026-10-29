@@ -3,7 +3,6 @@ package com.scms.backend.training;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -35,7 +34,7 @@ public class CoachAssignedMemberController {
 					org.springframework.http.HttpStatus.BAD_REQUEST,
 					"page must be >= 0 and size must be between 1 and 100");
 		}
-		var pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+		var pageable = PageRequest.of(page, size);
 		return ResponseEntity.ok(service.listAssignedMembers(coachId(jwt), q, pageable));
 	}
 

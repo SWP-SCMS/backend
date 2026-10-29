@@ -1,7 +1,9 @@
 package com.scms.backend.training;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -18,6 +20,7 @@ import com.scms.backend.common.error.SecurityProblemDetailHandler;
 import com.scms.backend.config.SecurityConfiguration;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -67,6 +70,10 @@ class CoachAssignedMemberControllerTests {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.totalElements").value(1))
 			.andExpect(jsonPath("$.content[0].memberId").value("MBR-000001"));
+
+		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+		verify(service).listAssignedMembers(eq(COACH_ID), eq("MBR-000001"), pageable.capture());
+		assertThat(pageable.getValue().getSort().isUnsorted()).isTrue();
 	}
 
 	@Test
