@@ -221,7 +221,7 @@ class CourseOrderIntegrationTests {
 			.andReturn().getResponse().getContentAsString()).isEqualTo(body);
 		assertThat(db.queryForObject("select count(*) from course_orders where member_account_id=? and course_run_id=?",
 			Long.class, waiting.getAccountId(), fixture.runId())).isOne();
-		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_WAITLIST_ACCEPTED' and entity_id=?",
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_WAITLIST_ACCEPTED' and target_id=?",
 			Long.class, waitlistId)).isOne();
 		assertThat(db.queryForObject("select count(*) from notification_outbox where event_key=?",
 			Long.class, "course-waitlist-invited:" + waitlistId)).isOne();
@@ -280,6 +280,8 @@ class CourseOrderIntegrationTests {
 		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, nextId))
 			.isEqualTo("WAITING");
 
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?",
+			holder.getAccountId(), fixture.runId());
 		waitlists.promote(fixture.runId(), NOW);
 		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, nextId))
 			.isEqualTo("INVITED");
