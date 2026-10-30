@@ -739,6 +739,10 @@ class GeneratedOpenApiTests {
 		List<String> requiredFields = new ArrayList<>();
 		schema.path("required").forEach(field -> requiredFields.add(field.asText()));
 		assertThat(requiredFields).contains("success", "processed", "outcome");
+		assertThat(resolve(document, schema.at("/properties/outcome")).path("enum").values()).toIterable()
+			.extracting(JsonNode::asText).contains("COURSE_PAYMENT_RECORDED");
+		assertThat(operation(document, "/payments/sepay/webhook", "post").path("description").asText())
+			.contains("CoursePayment", "does not create an Enrollment");
 	}
 
 	@Test

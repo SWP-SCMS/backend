@@ -24,7 +24,8 @@ class SepayWebhookEventMigrationV49Tests {
 
 	private static final List<String> OUTCOMES = List.of(
 		"FULFILLED", "ALREADY_PROCESSED", "PAYMENT_WINDOW_EXPIRED", "DESTINATION_SNAPSHOT_MISSING",
-		"REFERENCE_MISMATCH", "AMOUNT_MISMATCH", "ACCOUNT_MISMATCH", "PAYMENT_NOT_PAYABLE");
+		"REFERENCE_MISMATCH", "AMOUNT_MISMATCH", "ACCOUNT_MISMATCH", "PAYMENT_NOT_PAYABLE",
+		"COURSE_PAYMENT_RECORDED");
 
 	@Container
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
@@ -65,7 +66,8 @@ class SepayWebhookEventMigrationV49Tests {
 				new Column("payload_sha256", "character(64)", true, ""),
 				new Column("outcome", "character varying(50)", true, ""),
 				new Column("detail", "character varying(500)", true, ""),
-				new Column("received_at", "timestamp with time zone", true, "current_timestamp"));
+				new Column("received_at", "timestamp with time zone", true, "current_timestamp"),
+				new Column("course_payment_id", "uuid", false, ""));
 
 		assertThat(db.queryForObject("""
 			select indexdef from pg_indexes

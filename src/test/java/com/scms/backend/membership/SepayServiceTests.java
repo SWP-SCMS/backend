@@ -240,13 +240,43 @@ class SepayServiceTests {
 	}
 
 	@Test
+	void courseReferenceRoutesOnlyToCoursePayment() {
+		UUID coursePaymentId = UUID.randomUUID();
+		UUID courseOrderId = UUID.randomUUID();
+		String reference = "COR-0123456789ABCDEF0123456789ABCDEF";
+		SepayWebhookRequest request = new SepayWebhookRequest(9000L, reference, "PAY " + reference,
+			BigInteger.valueOf(12000), "in", null, null, "123456789");
+		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
+			UUID.class, reference)).thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
+		when(db.queryForObject(
+			"select id from payments where provider='SEPAY' and replace(provider_reference, '-', '')=?",
+			UUID.class, "COR0123456789ABCDEF0123456789ABCDEF"))
+			.thenThrow(new org.springframework.dao.EmptyResultDataAccessException(1));
+		when(db.queryForObject("select id from course_payments where payment_reference=?", UUID.class, reference))
+			.thenReturn(coursePaymentId);
+		when(fulfillment.processSepayWebhook(eq(null), eq(coursePaymentId), eq(request),
+			eq("COR0123456789ABCDEF0123456789ABCDEF"), anyString()))
+			.thenReturn(new SepayWebhookResponse(true, false, SepayWebhookOutcome.COURSE_PAYMENT_RECORDED,
+				coursePaymentId, courseOrderId, "PENDING"));
+
+		SepayWebhookResponse response = service("MB", "123456789", "SCMS GYM")
+			.webhook("hook-secret", request);
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.COURSE_PAYMENT_RECORDED);
+		assertThat(response.processed()).isFalse();
+		assertThat(response.paymentId()).isEqualTo(coursePaymentId);
+		verify(fulfillment).processSepayWebhook(eq(null), eq(coursePaymentId), eq(request),
+			eq("COR0123456789ABCDEF0123456789ABCDEF"), anyString());
+	}
+
+	@Test
 	void webhookAtExactExpirationIsAcknowledgedButNotFulfilled() {
 		UUID paymentId = UUID.randomUUID();
 		when(db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
-		when(fulfillment.processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString()))
+		when(fulfillment.processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString()))
 			.thenReturn(new SepayWebhookResponse(true, false, SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED,
 				paymentId, UUID.randomUUID(), "PENDING"));
 
@@ -267,7 +297,7 @@ class SepayServiceTests {
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
-		when(fulfillment.processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString()))
+		when(fulfillment.processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString()))
 			.thenReturn(new SepayWebhookResponse(true, false, SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED,
 				paymentId, UUID.randomUUID(), "PENDING"));
 
@@ -288,7 +318,7 @@ class SepayServiceTests {
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
-		when(fulfillment.processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString()))
+		when(fulfillment.processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString()))
 			.thenReturn(new SepayWebhookResponse(true, false, SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED,
 				paymentId, UUID.randomUUID(), "PENDING"));
 
@@ -312,7 +342,7 @@ class SepayServiceTests {
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "123456789");
-		when(fulfillment.processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString()))
+		when(fulfillment.processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString()))
 			.thenReturn(new SepayWebhookResponse(true, false, SepayWebhookOutcome.DESTINATION_SNAPSHOT_MISSING,
 				paymentId, UUID.randomUUID(), "PENDING"));
 
@@ -333,14 +363,14 @@ class SepayServiceTests {
 			UUID.class, "SCMS-ORD-123")).thenReturn(paymentId);
 		SepayWebhookRequest request = new SepayWebhookRequest(9001L, "SCMS-ORD-123", "PAY SCMS-ORD-123",
 			BigInteger.valueOf(12000), "in", null, null, "old-account");
-		when(fulfillment.processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString()))
+		when(fulfillment.processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString()))
 			.thenReturn(new SepayWebhookResponse(true, true, SepayWebhookOutcome.FULFILLED,
 				paymentId, UUID.randomUUID(), "PAID"));
 
 		assertThatCode(() -> service("MB", "new-account", "NEW GYM").webhook("hook-secret", request))
 			.doesNotThrowAnyException();
 
-		verify(fulfillment).processSepayWebhook(eq(paymentId), eq(request), eq("SCMSORD123"), anyString());
+		verify(fulfillment).processSepayWebhook(eq(paymentId), eq(null), eq(request), eq("SCMSORD123"), anyString());
 	}
 
 	@Test

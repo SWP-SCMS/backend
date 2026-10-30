@@ -67,10 +67,13 @@ class PaymentFulfillmentService {
 	}
 
 	@Transactional
-	SepayWebhookResponse processSepayWebhook(UUID paymentId, SepayWebhookRequest request,
+	SepayWebhookResponse processSepayWebhook(UUID paymentId, UUID coursePaymentId, SepayWebhookRequest request,
 			String normalizedReference, String payloadSha256) {
 		Map<String, Object> existingEvent = event(request.id().toString());
-		if (existingEvent != null) return replayEvent(paymentId, request, payloadSha256, existingEvent);
+		if (existingEvent != null) return replayEvent(paymentId, coursePaymentId, request, payloadSha256, existingEvent);
+		if (paymentId == null && coursePaymentId != null) {
+			return processCourseSepayWebhook(coursePaymentId, request, normalizedReference, payloadSha256);
+		}
 		if (paymentId == null) return finishEvent(null, request, normalizedReference, payloadSha256,
 			SepayWebhookOutcome.REFERENCE_MISMATCH, "Payment reference was not found", false);
 
@@ -131,6 +134,54 @@ class PaymentFulfillmentService {
 			"SePay webhook transaction " + transactionId, "SePay incoming transfer confirmed", now);
 		return new SepayWebhookResponse(true, true, SepayWebhookOutcome.FULFILLED,
 			result.paymentId(), result.orderId(), result.status());
+	}
+
+	private SepayWebhookResponse processCourseSepayWebhook(UUID coursePaymentId, SepayWebhookRequest request,
+			String normalizedReference, String payloadSha256) {
+		Map<String, Object> row = coursePaymentForUpdate(coursePaymentId);
+		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))
+				|| !"HELD".equals(string(row, "reservation_status"))
+				|| !"PENDING".equals(string(row, "payment_status"))
+				|| !"in".equalsIgnoreCase(request.transferType())) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.PAYMENT_NOT_PAYABLE, "Course Payment is not payable");
+		}
+		if (blank(row, "bank_code_snapshot") || blank(row, "bank_account_number_snapshot")
+				|| blank(row, "bank_account_name_snapshot")) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.DESTINATION_SNAPSHOT_MISSING,
+				"Course Payment destination snapshot is missing");
+		}
+		String expectedReference = normalizeReference(string(row, "bank_transfer_content"));
+		if (expectedReference.isBlank() || normalizedReference.isBlank()
+				|| !normalizedReference.equals(expectedReference)
+				|| !normalizeReference(request.content()).contains(expectedReference)) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.REFERENCE_MISMATCH, "Course transfer reference or content does not match");
+		}
+		if (!"VND".equalsIgnoreCase(string(row, "payment_currency"))
+				|| !amount(row, "payment_amount").equals(request.transferAmount())) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.AMOUNT_MISMATCH, "Course transfer amount or currency does not match");
+		}
+		if (request.accountNumber() == null
+				|| !string(row, "bank_account_number_snapshot").equals(request.accountNumber().trim())) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.ACCOUNT_MISMATCH, "Course destination account does not match");
+		}
+		Instant now = clock.instant();
+		Instant deadline = instant(row, "expires_at");
+		Instant reservationExpiry = instant(row, "reservation_expires_at");
+		if (deadline == null || reservationExpiry == null || !now.isBefore(deadline)
+				|| !now.isBefore(reservationExpiry)) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED, "Course payment window is missing or expired");
+		}
+		if (!insertFinalEvent(null, coursePaymentId, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.COURSE_PAYMENT_RECORDED, "Course Payment evidence recorded")) {
+			return replayEvent(null, coursePaymentId, request, payloadSha256, event(request.id().toString()));
+		}
+		return webhookResponse(row, false, SepayWebhookOutcome.COURSE_PAYMENT_RECORDED);
 	}
 
 	@Transactional
@@ -221,18 +272,32 @@ class PaymentFulfillmentService {
 
 	private boolean insertFinalEvent(UUID paymentId, SepayWebhookRequest request, String normalizedReference,
 			String payloadSha256, SepayWebhookOutcome outcome, String detail) {
+		return insertFinalEvent(paymentId, null, request, normalizedReference, payloadSha256, outcome, detail);
+	}
+
+	private boolean insertFinalEvent(UUID paymentId, UUID coursePaymentId, SepayWebhookRequest request,
+			String normalizedReference, String payloadSha256, SepayWebhookOutcome outcome, String detail) {
 		return db.update("""
-			insert into payment_provider_events(id,provider,provider_transaction_id,payment_id,transfer_amount,
-				payment_reference,account_number_last4,payload_sha256,outcome,detail)
-			values(?,'SEPAY',?,?,?,?,?,?,?,?)
+			insert into payment_provider_events(id,provider,provider_transaction_id,payment_id,course_payment_id,
+				transfer_amount,payment_reference,account_number_last4,payload_sha256,outcome,detail)
+			values(?,'SEPAY',?,?,?,?,?,?,?,?,?)
 			on conflict (provider,provider_transaction_id) do nothing
-			""", UUID.randomUUID(), request.id().toString(), paymentId, request.transferAmount(),
+			""", UUID.randomUUID(), request.id().toString(), paymentId, coursePaymentId, request.transferAmount(),
 			normalizedReference, last4(request.accountNumber()), payloadSha256, outcome.name(), detail) == 1;
+	}
+
+	private SepayWebhookResponse finishCourseEvent(Map<String, Object> row, SepayWebhookRequest request,
+			String normalizedReference, String payloadSha256, SepayWebhookOutcome outcome, String detail) {
+		UUID coursePaymentId = uuid(row, "payment_id");
+		if (!insertFinalEvent(null, coursePaymentId, request, normalizedReference, payloadSha256, outcome, detail)) {
+			return replayEvent(null, coursePaymentId, request, payloadSha256, event(request.id().toString()));
+		}
+		return webhookResponse(row, false, outcome);
 	}
 
 	private Map<String, Object> event(String transactionId) {
 		List<Map<String, Object>> events = db.queryForList("""
-			select id,payment_id,payload_sha256,outcome from payment_provider_events
+			select id,payment_id,course_payment_id,payload_sha256,outcome from payment_provider_events
 			where provider='SEPAY' and provider_transaction_id=?
 			""", transactionId);
 		return events.isEmpty() ? null : events.getFirst();
@@ -240,20 +305,59 @@ class PaymentFulfillmentService {
 
 	private SepayWebhookResponse replayEvent(UUID requestedPaymentId, SepayWebhookRequest request,
 			String payloadSha256, Map<String, Object> event) {
+		return replayEvent(requestedPaymentId, null, request, payloadSha256, event);
+	}
+
+	private SepayWebhookResponse replayEvent(UUID requestedPaymentId, UUID requestedCoursePaymentId,
+			SepayWebhookRequest request, String payloadSha256, Map<String, Object> event) {
 		UUID existingPaymentId = uuid(event, "payment_id");
+		UUID existingCoursePaymentId = uuid(event, "course_payment_id");
 		boolean samePayload = payloadSha256.equals(string(event, "payload_sha256"));
-		boolean samePayment = Objects.equals(existingPaymentId, requestedPaymentId);
+		boolean samePayment = Objects.equals(existingPaymentId, requestedPaymentId)
+			&& Objects.equals(existingCoursePaymentId, requestedCoursePaymentId);
 		if (!samePayload) {
 			log.warn("Rejected duplicate SePay transaction with changed canonical payload; transactionId={}, eventId={}",
 				request.id(), event.get("id"));
 		}
-		Map<String, Object> row = existingPaymentId == null ? null : payment(existingPaymentId);
+		Map<String, Object> row = existingPaymentId != null ? payment(existingPaymentId)
+			: existingCoursePaymentId == null ? null : coursePayment(existingCoursePaymentId);
 		String storedOutcome = string(event, "outcome");
 		boolean processed = samePayload && samePayment && row != null && "PAID".equals(string(row, "payment_status"))
 			&& request.id().toString().equals(string(row, "provider_transaction_id"))
 			&& (SepayWebhookOutcome.FULFILLED.name().equals(storedOutcome)
 				|| SepayWebhookOutcome.ALREADY_PROCESSED.name().equals(storedOutcome));
 		return webhookResponse(row, processed, SepayWebhookOutcome.ALREADY_PROCESSED);
+	}
+
+	private Map<String, Object> coursePaymentForUpdate(UUID coursePaymentId) {
+		try {
+			return db.queryForMap(coursePaymentSql() + " for update of orders,reservation,payment", coursePaymentId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Course Payment was not found");
+		}
+	}
+
+	private Map<String, Object> coursePayment(UUID coursePaymentId) {
+		try {
+			return db.queryForMap(coursePaymentSql(), coursePaymentId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Course Payment was not found");
+		}
+	}
+
+	private String coursePaymentSql() {
+		return """
+			select payment.id payment_id,payment.course_order_id order_id,payment.status payment_status,
+				payment.amount payment_amount,payment.currency_code payment_currency,
+				payment.payment_reference bank_transfer_content,payment.bank_code_snapshot,
+				payment.bank_account_number_snapshot,payment.bank_account_name_snapshot,
+				payment.deadline_at expires_at,orders.status order_status,
+				reservation.status reservation_status,reservation.expires_at reservation_expires_at
+			from course_payments payment
+			join course_orders orders on orders.id=payment.course_order_id
+			join course_reservations reservation on reservation.id=payment.course_reservation_id
+			where payment.id=?
+			""";
 	}
 
 	private SepayWebhookResponse webhookResponse(Map<String, Object> row, boolean processed,
