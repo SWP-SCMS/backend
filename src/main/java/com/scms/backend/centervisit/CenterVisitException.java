@@ -41,6 +41,11 @@ public class CenterVisitException extends RuntimeException {
 		return new CenterVisitException("MEMBERSHIP_FROZEN", "Center check-in is unavailable while the Membership is frozen.");
 	}
 
+	static CenterVisitException courseCheckInNotEligible() {
+		return new CenterVisitException("COURSE_CHECK_IN_NOT_ELIGIBLE",
+			"An enrolled Course session within the check-in window is required.");
+	}
+
 	static CenterVisitException invalidIdempotencyKey() {
 		return new CenterVisitException(HttpStatus.BAD_REQUEST, "INVALID_IDEMPOTENCY_KEY",
 			"Idempotency-Key must be nonblank and at most 100 characters.");

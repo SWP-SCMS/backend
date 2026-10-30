@@ -49,30 +49,39 @@ class CenterVisitService {
 		}
 		String key = normalizeKey(idempotencyKey);
 		ReceptionMemberSearchResponse member = members.search(receptionistId, request.memberId(), request.phone());
-		var replay = findReplay(receptionistId, key, member);
+		var replay = findReplay(receptionistId, key, member, request.courseSessionId());
 		if (replay.isPresent()) return replay.get();
 		if (member.status() != AccountStatus.ACTIVE) throw CenterVisitException.memberNotActive();
 		if (member.profileImageUrl() == null || member.profileImageUrl().isBlank()) {
 			throw CenterVisitException.profileImageRequired();
 		}
 		Account lockedMember = lockMember(member.accountId());
-		replay = findReplay(receptionistId, key, member);
+		replay = findReplay(receptionistId, key, member, request.courseSessionId());
 		if (replay.isPresent()) return replay.get();
 		if (lockedMember.getStatus() != AccountStatus.ACTIVE) {
 			throw CenterVisitException.memberNotActive();
 		}
-		if (visits.hasActiveMembershipFreeze(member.accountId())) throw CenterVisitException.membershipFrozen();
-
 		Instant now = clock.instant();
-		UUID membershipId = visits.findCurrentMembership(member.accountId(), now)
-			.orElseThrow(CenterVisitException::membershipRequired);
+		UUID membershipId = null;
+		UUID courseEnrollmentId = null;
+		if (request.courseSessionId() == null) {
+			if (visits.hasActiveMembershipFreeze(member.accountId())) throw CenterVisitException.membershipFrozen();
+			membershipId = visits.findCurrentMembership(member.accountId(), now)
+				.orElseThrow(CenterVisitException::membershipRequired);
+		}
+		else {
+			courseEnrollmentId = visits.findEligibleCourseEnrollmentId(member.accountId(), request.courseSessionId(), now)
+				.orElseThrow(CenterVisitException::courseCheckInNotEligible);
+		}
 		visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId())
 			.ifPresent(open -> {
 				close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now);
 				visits.flush();
 			});
-		CenterVisit visit = new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId,
-			receptionistId, now, key);
+		CenterVisit visit = request.courseSessionId() == null
+			? new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId, receptionistId, now, key)
+			: CenterVisit.forCourse(UUID.randomUUID(), member.accountId(), courseEnrollmentId,
+				request.courseSessionId(), receptionistId, now, key);
 		try {
 			visits.saveAndFlush(visit);
 		}
@@ -80,17 +89,25 @@ class CenterVisitService {
 			if (key != null) throw CenterVisitException.idempotencyKeyReused();
 			throw exception;
 		}
+		Map<String, Object> audit = new java.util.HashMap<>();
+		audit.put("identityVerified", true);
+		audit.put("memberId", member.accountId().toString());
+		audit.put("visitId", visit.getId().toString());
+		audit.put("source", visit.getSource().name());
+		if (membershipId != null) audit.put("membershipId", membershipId.toString());
+		if (courseEnrollmentId != null) audit.put("courseEnrollmentId", courseEnrollmentId.toString());
+		if (request.courseSessionId() != null) audit.put("courseSessionId", request.courseSessionId().toString());
 		audits.save(new AuditEvent(UUID.randomUUID(), receptionistId, "CENTER_VISIT_CREATED", "CENTER_VISIT",
-			visit.getId(), Map.of("identityVerified", true, "memberId", member.accountId().toString(),
-				"membershipId", membershipId.toString(), "visitId", visit.getId().toString())));
+			visit.getId(), audit));
 		return CenterVisitResponse.from(visit, member.memberId(), member.fullName(), true);
 	}
 
 	private Optional<CenterVisitResponse> findReplay(UUID receptionistId, String key,
-			ReceptionMemberSearchResponse member) {
+			ReceptionMemberSearchResponse member, UUID courseSessionId) {
 		if (key == null) return Optional.empty();
 		return visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, key).map(visit -> {
-			if (!visit.getMemberAccountId().equals(member.accountId())) {
+			if (!visit.getMemberAccountId().equals(member.accountId())
+					|| !java.util.Objects.equals(visit.getCourseSessionId(), courseSessionId)) {
 				throw CenterVisitException.idempotencyKeyReused();
 			}
 			return CenterVisitResponse.from(visit, member.memberId(), member.fullName(), false);

@@ -1192,8 +1192,12 @@ class GeneratedOpenApiTests {
 		JsonNode schema = generatedDocument().at("/components/schemas/CenterVisitResponse");
 
 		assertThat(schema.path("properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("memberName");
-		assertThat(schema.path("required").toString()).contains("memberName");
+			.map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source",
+				"courseEnrollmentId", "courseSessionId");
+		assertThat(schema.path("required").toString()).contains("memberName", "source",
+			"courseEnrollmentId", "courseSessionId");
+		assertThat(generatedDocument().at("/components/schemas/CenterVisitRequest/properties/courseSessionId")
+			.path("format").asText()).isEqualTo("uuid");
 	}
 
 	@Test
@@ -1205,8 +1209,12 @@ class GeneratedOpenApiTests {
 		JsonNode schema = document.at("/components/schemas/CenterVisitResponse");
 
 		assertThat(schema.path("properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("memberName");
-		assertThat(schema.path("required").toString()).contains("memberName");
+			.map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source",
+				"courseEnrollmentId", "courseSessionId");
+		assertThat(schema.path("required").toString()).contains("memberName", "source",
+			"courseEnrollmentId", "courseSessionId");
+		assertThat(document.at("/components/schemas/CenterVisitRequest/properties/courseSessionId/format")
+			.asText()).isEqualTo("uuid");
 	}
 
 	@Test

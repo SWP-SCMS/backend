@@ -155,11 +155,15 @@ components:
           type: [string, 'null']
         identityVerified:
           type: boolean
+        courseSessionId:
+          type: [string, 'null']
+          format: uuid
+          description: Required only for Course-based center access; omitted for Membership access.
     CenterVisitResponse:
       type: object
       additionalProperties: false
-      required: [id, memberId, memberCode, memberName, membershipId, checkedInBy, checkedInAt,
-        checkedOutAt, checkoutSource, created]
+      required: [id, memberId, memberCode, memberName, membershipId, source, courseEnrollmentId,
+        courseSessionId, checkedInBy, checkedInAt, checkedOutAt, checkoutSource, created]
       properties:
         id:
           type: string
@@ -173,7 +177,16 @@ components:
           type: string
           description: Current Account full name at response time
         membershipId:
+          type: [string, 'null']
+          format: uuid
+        source:
           type: string
+          enum: [MEMBERSHIP, COURSE]
+        courseEnrollmentId:
+          type: [string, 'null']
+          format: uuid
+        courseSessionId:
+          type: [string, 'null']
           format: uuid
         checkedInBy:
           type: string

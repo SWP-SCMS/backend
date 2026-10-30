@@ -342,6 +342,44 @@ class CenterVisitServiceTests {
 	}
 
 	@Test
+	void courseEnrollmentAllowsCheckInWithoutMembershipAndKeepsCourseLinkage() {
+		UUID courseSessionId = UUID.randomUUID();
+		UUID enrollmentId = UUID.randomUUID();
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
+		when(visits.findEligibleCourseEnrollmentId(memberId, courseSessionId, now))
+			.thenReturn(Optional.of(enrollmentId));
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
+			.thenReturn(Optional.empty());
+		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+		CenterVisitResponse response = service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true, courseSessionId), "course-entry");
+
+		assertThat(response.membershipId()).isNull();
+		assertThat(response.source()).isEqualTo(CenterVisitSource.COURSE);
+		assertThat(response.courseEnrollmentId()).isEqualTo(enrollmentId);
+		assertThat(response.courseSessionId()).isEqualTo(courseSessionId);
+		verify(visits, never()).findCurrentMembership(any(), any());
+		verify(visits, never()).hasActiveMembershipFreeze(any());
+	}
+
+	@Test
+	void courseCheckInOutsideWindowIsRejectedWithoutFallingBackToMembership() {
+		UUID courseSessionId = UUID.randomUUID();
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
+		when(visits.findEligibleCourseEnrollmentId(memberId, courseSessionId, now)).thenReturn(Optional.empty());
+
+		assertCode(() -> service.checkIn(receptionistId,
+			new CenterVisitRequest("MB-100001", null, true, courseSessionId), null),
+			"COURSE_CHECK_IN_NOT_ELIGIBLE");
+
+		verify(visits, never()).findCurrentMembership(any(), any());
+		verify(visits, never()).saveAndFlush(any());
+	}
+
+	@Test
 	void activeFreezeBlocksCheckInBeforeMembershipLookup() {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
