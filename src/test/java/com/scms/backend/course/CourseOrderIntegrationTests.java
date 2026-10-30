@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -13,9 +14,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,6 +69,7 @@ class CourseOrderIntegrationTests {
 	@Autowired JwtEncoder jwtEncoder;
 	@Autowired ObjectMapper objectMapper;
 	@MockitoBean Clock clock;
+	@MockitoBean CourseOrderCreationRendezvous creationRendezvous;
 
 	@BeforeEach
 	void setUpClock() {
@@ -81,7 +85,7 @@ class CourseOrderIntegrationTests {
 			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(10800));
 
 		MvcResult created = createSelf(member, first.runId(), "same-key").andExpect(status().isCreated())
-			.andExpect(jsonPath("$.memberId").value(member.getMemberCode()))
+			.andExpect(jsonPath("$.memberId").value(member.getAccountId().toString()))
 			.andExpect(jsonPath("$.courseRunId").value(first.runId().toString()))
 			.andExpect(jsonPath("$.orderReference").value(org.hamcrest.Matchers.matchesPattern("COR-[0-9A-F]{32}")))
 			.andExpect(jsonPath("$.tuitionVnd").value(500000))
@@ -209,7 +213,52 @@ class CourseOrderIntegrationTests {
 		getReception(receptionist, other, orderId).andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.code").value("COURSE_ORDER_NOT_FOUND"));
 		getReception(receptionist, owner, orderId).andExpect(status().isOk())
-			.andExpect(jsonPath("$.memberId").value(owner.getMemberCode()));
+			.andExpect(jsonPath("$.memberId").value(owner.getAccountId().toString()));
+	}
+
+	@Test
+	void receptionistStoresDistinctActorAndIdempotencyKeysAreScopedPerActor() throws Exception {
+		Account firstReceptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		Account secondReceptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile firstMember = member(AccountStatus.ACTIVE);
+		MemberProfile secondMember = member(AccountStatus.ACTIVE);
+		RunFixture firstRun = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		RunFixture mismatchRun = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(10800));
+		RunFixture secondActorRun = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(14400));
+
+		JsonNode created = json(createReception(firstReceptionist, firstMember, firstRun.runId(), "shared-key")
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.memberId").value(firstMember.getAccountId().toString()))
+			.andReturn());
+		UUID orderId = UUID.fromString(created.path("orderId").asText());
+		assertThat(db.queryForObject("select actor_account_id from course_orders where id=?", UUID.class, orderId))
+			.isEqualTo(firstReceptionist.getId()).isNotEqualTo(firstMember.getAccountId());
+
+		createReception(firstReceptionist, firstMember, firstRun.runId(), "shared-key")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.orderId").value(orderId.toString()));
+		createReception(firstReceptionist, firstMember, mismatchRun.runId(), "shared-key")
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("COURSE_IDEMPOTENCY_KEY_REUSED"));
+		createReception(secondReceptionist, secondMember, secondActorRun.runId(), "shared-key")
+			.andExpect(status().isCreated());
+
+		assertThat(db.queryForObject("select count(*) from course_orders where idempotency_key='shared-key'",
+			Long.class)).isEqualTo(2);
+	}
+
+	@Test
+	void rejectsOverlapWithARealBookedGymSession() throws Exception {
+		MemberProfile member = member(AccountStatus.ACTIVE);
+		Instant courseStart = NOW.plusSeconds(7200);
+		RunFixture fixture = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", courseStart);
+		bookGymSession(member, courseStart.plusSeconds(900), courseStart.plusSeconds(2700));
+
+		createSelf(member, fixture.runId(), "booked-overlap").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("COURSE_SCHEDULE_CONFLICT"));
 	}
 
 	@Test
@@ -226,19 +275,7 @@ class CourseOrderIntegrationTests {
 			.isEqualTo(replayResults.get(1).getResponse().getContentAsString());
 		assertThat(count("course_orders", sameMember.getAccountId())).isOne();
 
-		MemberProfile first = member(AccountStatus.ACTIVE);
-		MemberProfile second = member(AccountStatus.ACTIVE);
-		RunFixture lastSeat = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
-			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(14400));
-		List<MvcResult> seatResults = concurrent(
-			() -> createSelf(first, lastSeat.runId(), "final-1").andReturn(),
-			() -> createSelf(second, lastSeat.runId(), "final-2").andReturn());
-		assertThat(seatResults).extracting(result -> result.getResponse().getStatus())
-			.containsExactlyInAnyOrder(201, 409);
-		assertThat(db.queryForObject("""
-			select count(*) from course_reservations
-			where course_run_id=? and status='HELD' and expires_at>?
-			""", Long.class, lastSeat.runId(), Timestamp.from(NOW))).isOne();
+		assertFinalSeatSerializesBehindCourseRunLock();
 	}
 
 	@Test
@@ -291,6 +328,132 @@ class CourseOrderIntegrationTests {
 			.andExpect(status().isUnauthorized());
 	}
 
+	private void assertFinalSeatSerializesBehindCourseRunLock() throws Exception {
+		MemberProfile first = member(AccountStatus.ACTIVE);
+		MemberProfile second = member(AccountStatus.ACTIVE);
+		RunFixture lastSeat = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(14400));
+		CountDownLatch firstLocked = new CountDownLatch(1), secondAtLock = new CountDownLatch(1),
+			releaseFirst = new CountDownLatch(1);
+		AtomicInteger firstPid = new AtomicInteger(), secondPid = new AtomicInteger();
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("course-order-first-seat")) {
+				firstPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+			}
+			else if (Thread.currentThread().getName().equals("course-order-second-seat")) {
+				secondPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				secondAtLock.countDown();
+			}
+			return null;
+		}).when(creationRendezvous).beforeRunLock();
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("course-order-first-seat")) {
+				firstLocked.countDown();
+				await(releaseFirst);
+			}
+			return null;
+		}).when(creationRendezvous).afterRunLock();
+
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var firstRequest = executor.submit(() -> {
+				Thread.currentThread().setName("course-order-first-seat");
+				return createSelf(first, lastSeat.runId(), "final-1").andReturn();
+			});
+			assertThat(firstLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var secondRequest = executor.submit(() -> {
+				Thread.currentThread().setName("course-order-second-seat");
+				return createSelf(second, lastSeat.runId(), "final-2").andReturn();
+			});
+			assertThat(secondAtLock.await(10, TimeUnit.SECONDS)).isTrue();
+			awaitDatabaseLock(secondPid.get(), firstPid.get());
+			releaseFirst.countDown();
+
+			List<MvcResult> results = List.of(firstRequest.get(10, TimeUnit.SECONDS),
+				secondRequest.get(10, TimeUnit.SECONDS));
+			assertThat(results).extracting(result -> result.getResponse().getStatus())
+				.containsExactlyInAnyOrder(201, 409);
+			assertThat(db.queryForObject("""
+				select count(*) from course_reservations
+				where course_run_id=? and status='HELD' and expires_at>?
+				""", Long.class, lastSeat.runId(), Timestamp.from(NOW))).isOne();
+		}
+		finally {
+			releaseFirst.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	private void bookGymSession(MemberProfile member, Instant start, Instant end) {
+		Account manager = account(AccountRole.MANAGER, AccountStatus.ACTIVE);
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
+		UUID offerId = UUID.randomUUID(), orderId = UUID.randomUUID(), membershipId = UUID.randomUUID();
+		UUID disciplineId = UUID.randomUUID(), classId = UUID.randomUUID(), roomId = UUID.randomUUID();
+		UUID sessionId = UUID.randomUUID();
+		db.update("""
+			insert into membership_offers(id,plan_code,name,description,price_amount,duration_days,status,
+				created_by_account_id)
+			values(?,'PLUS',?,'Course order overlap',12000,30,'ACTIVE',?)
+			""", offerId, "Overlap " + offerId, manager.getId());
+		db.update("""
+			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
+				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
+				duration_days_snapshot,payment_method,status,paid_at)
+			values(?,?,?,?,?,'Overlap','PLUS',12000,'VND',30,'CASH','PAID',?)
+			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), member.getAccountId(),
+			manager.getId(), offerId, Timestamp.from(NOW));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,
+				processed_by_account_id)
+			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId, Timestamp.from(NOW), manager.getId());
+		db.update("""
+			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
+				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
+			values(?,?,?,?,'PLUS','Overlap',12000,'VND',30,'ACTIVE',?,?)
+			""", membershipId, member.getAccountId(), orderId, offerId, Timestamp.from(NOW.minusSeconds(60)),
+			Timestamp.from(NOW.plusSeconds(86400 * 30L)));
+		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')", disciplineId,
+			"Booked overlap " + disciplineId);
+		db.update("insert into sport_classes(id,discipline_id,name,class_type,status) values(?,?,?,'GROUP','ACTIVE')",
+			classId, disciplineId, "Booked overlap " + classId);
+		db.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')", roomId,
+			"Booked overlap " + roomId);
+		db.update("""
+			insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,
+				capacity,status,created_by_account_id)
+			values(?,?,?,?,?,?,10,'SCHEDULED',?)
+			""", sessionId, classId, coach.getId(), roomId, Timestamp.from(start), Timestamp.from(end),
+			manager.getId());
+		db.update("""
+			insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id)
+			values(?,?,?,?,'BOOKED',?)
+			""", UUID.randomUUID(), sessionId, member.getAccountId(), membershipId, member.getAccountId());
+	}
+
+	private static void await(CountDownLatch latch) {
+		try {
+			if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("latch timeout");
+		}
+		catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private void awaitDatabaseLock(int waiterPid, int blockerPid) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiting = db.queryForObject("""
+				select count(*) from pg_stat_activity
+				where pid=? and wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))
+				""", Long.class, waiterPid, blockerPid);
+			if (waiting != null && waiting == 1) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for the second CourseOrder transaction to block on CourseRun");
+	}
+
 	private org.springframework.test.web.servlet.ResultActions createSelf(MemberProfile member, UUID runId,
 			String key) throws Exception {
 		var request = post("/api/v1/members/me/course-orders").contextPath("/api/v1")
@@ -303,7 +466,7 @@ class CourseOrderIntegrationTests {
 
 	private org.springframework.test.web.servlet.ResultActions createReception(Account receptionist,
 			MemberProfile member, UUID runId, String key) throws Exception {
-		return mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders", member.getMemberCode())
+		return mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders", member.getAccountId())
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
 			.header("Idempotency-Key", key).contentType(MediaType.APPLICATION_JSON)
 			.content("{\"courseRunId\":\"" + runId + "\"}"));
@@ -318,7 +481,7 @@ class CourseOrderIntegrationTests {
 	private org.springframework.test.web.servlet.ResultActions getReception(Account receptionist,
 			MemberProfile member, UUID orderId) throws Exception {
 		return mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-orders/{orderId}",
-			member.getMemberCode(), orderId).contextPath("/api/v1")
+			member.getAccountId(), orderId).contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)));
 	}
 

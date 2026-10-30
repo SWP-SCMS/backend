@@ -16,7 +16,7 @@ paths:
         '200': { $ref: '#/components/responses/Order' }
         '201': { $ref: '#/components/responses/Order' }
         '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -28,7 +28,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Order' }
         '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
   /reception/members/{memberId}/course-orders:
@@ -43,7 +43,7 @@ paths:
         '200': { $ref: '#/components/responses/Order' }
         '201': { $ref: '#/components/responses/Order' }
         '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
@@ -57,7 +57,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Order' }
         '400': { $ref: '#/components/responses/Problem' }
-        '401': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
 components:
@@ -73,7 +73,7 @@ components:
       name: memberId
       in: path
       required: true
-      schema: { type: string, pattern: '^MB-[0-9]+$' }
+      schema: { type: string, format: uuid }
     OrderId:
       name: orderId
       in: path
@@ -95,7 +95,12 @@ components:
       description: Stable RFC 9457 Problem Details response.
       content:
         application/problem+json:
-          schema: { $ref: '#/components/schemas/ProblemDetail' }
+          schema: { $ref: '#/components/schemas/ApiProblem' }
+    Unauthorized:
+      description: Authentication failed.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/UnauthorizedProblem' }
   schemas:
     CourseOrderCreateRequest:
       type: object
@@ -111,26 +116,82 @@ components:
       properties:
         orderId: { type: string, format: uuid }
         orderReference: { type: string, pattern: '^COR-[0-9A-F]{32}$' }
-        memberId: { type: string, pattern: '^MB-[0-9]+$' }
+        memberId: { type: string, format: uuid }
         courseRunId: { type: string, format: uuid }
-        tuitionVnd: { type: integer, minimum: 1 }
+        tuitionVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
         currencyCode: { type: string, enum: [VND] }
         orderStatus: { type: string, enum: [PENDING_PAYMENT, EXPIRED] }
         reservationStatus: { type: string, enum: [HELD, EXPIRED] }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
-    ProblemDetail:
+    ApiProblem:
       type: object
       required: [title, status, detail, instance, code]
       properties:
         title: { type: string }
-        status: { type: integer }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        affectedSessionIds:
+          type: array
+          items: { type: string, format: uuid }
+        requiredBenefitCodes:
+          type: array
+          items: { type: string }
+        missingBenefitCodes:
+          type: array
+          items: { type: string }
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: { type: string, format: uuid }
+              classId: { type: string, format: uuid }
+              className: { type: string }
+              startTime: { type: string, format: date-time }
+              endTime: { type: string, format: date-time }
+        traceId: { type: string }
+    UnauthorizedProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer, format: int32 }
         detail: { type: string }
         instance: { type: string, format: uri-reference }
         code:
           type: string
-          enum: [COURSE_IDEMPOTENCY_KEY_REQUIRED, COURSE_IDEMPOTENCY_KEY_REUSED,
-            COURSE_RUN_NOT_AVAILABLE, MEMBER_NOT_FOUND, MEMBER_NOT_ACTIVE,
-            COURSE_REGISTRATION_NOT_OPEN, COURSE_REGISTRATION_CLOSED, COURSE_RESERVATION_EXISTS,
-            COURSE_CAPACITY_FULL, COURSE_SCHEDULE_CONFLICT, COURSE_ORDER_NOT_FOUND,
-            VALIDATION_ERROR, MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN, FORBIDDEN]
+          enum: [UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN,
+            INVALID_PENDING_SESSION, INVALID_PASSWORD_RESET_SESSION, PAYMENT_UNAUTHORIZED]
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        affectedSessionIds:
+          type: array
+          items: { type: string, format: uuid }
+        requiredBenefitCodes:
+          type: array
+          items: { type: string }
+        missingBenefitCodes:
+          type: array
+          items: { type: string }
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: { type: string, format: uuid }
+              classId: { type: string, format: uuid }
+              className: { type: string }
+              startTime: { type: string, format: date-time }
+              endTime: { type: string, format: date-time }
+        traceId: { type: string }

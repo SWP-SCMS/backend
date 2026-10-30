@@ -39,7 +39,8 @@ class CourseOrderMigrationV52Tests {
 		assertThat(db.queryForList("select table_name from information_schema.tables where table_schema='public'",
 			String.class)).contains("course_orders", "course_reservations");
 		assertThat(db.queryForList("select indexname from pg_indexes where schemaname='public'", String.class))
-			.contains("uq_course_orders_actor_idempotency", "uq_course_reservations_member_run_held",
+			.contains("uq_course_orders_actor_idempotency", "uq_course_orders_reservation_tuple",
+				"uq_course_reservations_member_run_held",
 				"idx_course_reservations_run_capacity", "idx_course_reservations_expiry_cursor");
 		assertThat(db.queryForObject("select count(*) from course_reservations", Long.class)).isOne();
 		assertThatThrownBy(() -> insertOrder(db, fixture, "key-1"))
@@ -78,6 +79,22 @@ class CourseOrderMigrationV52Tests {
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
 			Integer.class)).isEqualTo(52);
 		assertThat(db.queryForObject("select count(*) from course_orders", Long.class)).isZero();
+	}
+
+	@Test
+	void reservationMemberAndRunMustMatchTheReferencedOrderTuple() {
+		flyway().migrate();
+		JdbcTemplate db = db();
+		Fixture owner = fixture(db);
+		Fixture other = fixture(db);
+
+		UUID mismatchedMemberOrder = insertOrder(db, owner, "tuple-member");
+		assertThatThrownBy(() -> insertReservation(db, mismatchedMemberOrder, other.memberId(), owner.runId()))
+			.isInstanceOf(DataIntegrityViolationException.class);
+
+		UUID mismatchedRunOrder = insertOrder(db, owner, "tuple-run");
+		assertThatThrownBy(() -> insertReservation(db, mismatchedRunOrder, owner.memberId(), other.runId()))
+			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	private Fixture fixture(JdbcTemplate db) {
@@ -129,6 +146,14 @@ class CourseOrderMigrationV52Tests {
 			values (?,?,?,?,?,?)
 			""", UUID.randomUUID(), orderId, fixture.memberId(), fixture.runId(), status,
 			Timestamp.from(expiresAt));
+	}
+
+	private void insertReservation(JdbcTemplate db, UUID orderId, UUID memberId, UUID runId) {
+		db.update("""
+			insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at)
+			values (?,?,?,?,'HELD',?)
+			""", UUID.randomUUID(), orderId, memberId, runId,
+			Timestamp.from(Instant.parse("2031-01-01T00:15:00Z")));
 	}
 
 	private Flyway flyway() {

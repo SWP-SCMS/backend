@@ -3,8 +3,11 @@ package com.scms.backend.course;
 import java.util.UUID;
 
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -24,31 +27,38 @@ class CourseOrderController {
 		this.service = service;
 	}
 
-	@PostMapping("/members/me/course-orders")
+	@PostMapping(value = "/members/me/course-orders", consumes = MediaType.APPLICATION_JSON_VALUE,
+		produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<CourseOrderResponse> createForMember(@AuthenticationPrincipal Jwt jwt,
-			@Parameter(required = true)
+			@Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100))
+			@Size(min = 1, max = 100)
 			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
 			@Valid @RequestBody CourseOrderCreateRequest request) {
 		return createdOrReplayed(service.createForMember(accountId(jwt), request, idempotencyKey));
 	}
 
-	@GetMapping("/members/me/course-orders/{orderId}")
-	ResponseEntity<CourseOrderResponse> getForMember(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID orderId) {
+	@GetMapping(value = "/members/me/course-orders/{orderId}", produces = MediaType.APPLICATION_JSON_VALUE)
+	ResponseEntity<CourseOrderResponse> getForMember(@AuthenticationPrincipal Jwt jwt,
+			@Parameter(required = true, schema = @Schema(format = "uuid")) @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.getForMember(accountId(jwt), orderId));
 	}
 
-	@PostMapping("/reception/members/{memberId}/course-orders")
+	@PostMapping(value = "/reception/members/{memberId}/course-orders", consumes = MediaType.APPLICATION_JSON_VALUE,
+		produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<CourseOrderResponse> createForReceptionist(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable String memberId,
-			@Parameter(required = true)
+			@Parameter(required = true, schema = @Schema(format = "uuid")) @PathVariable UUID memberId,
+			@Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100))
+			@Size(min = 1, max = 100)
 			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
 			@Valid @RequestBody CourseOrderCreateRequest request) {
 		return createdOrReplayed(service.createForReceptionist(accountId(jwt), memberId, request, idempotencyKey));
 	}
 
-	@GetMapping("/reception/members/{memberId}/course-orders/{orderId}")
+	@GetMapping(value = "/reception/members/{memberId}/course-orders/{orderId}",
+		produces = MediaType.APPLICATION_JSON_VALUE)
 	ResponseEntity<CourseOrderResponse> getForReceptionist(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable String memberId, @PathVariable UUID orderId) {
+			@Parameter(required = true, schema = @Schema(format = "uuid")) @PathVariable UUID memberId,
+			@Parameter(required = true, schema = @Schema(format = "uuid")) @PathVariable UUID orderId) {
 		return ResponseEntity.ok(service.getForReceptionist(accountId(jwt), memberId, orderId));
 	}
 

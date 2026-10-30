@@ -13,6 +13,7 @@ create table course_orders (
 
     constraint uq_course_orders_reference unique (order_reference),
     constraint uq_course_orders_actor_idempotency unique (actor_account_id, idempotency_key),
+    constraint uq_course_orders_reservation_tuple unique (id, member_account_id, course_run_id),
     constraint chk_course_orders_reference check (order_reference ~ '^COR-[0-9A-F]{32}$'),
     constraint chk_course_orders_tuition check (tuition_vnd_snapshot > 0),
     constraint chk_course_orders_currency check (currency_code = 'VND'),
@@ -34,6 +35,9 @@ create table course_reservations (
     updated_at timestamptz not null default current_timestamp,
 
     constraint uq_course_reservations_order unique (course_order_id),
+	constraint fk_course_reservations_order_tuple
+		foreign key (course_order_id, member_account_id, course_run_id)
+		references course_orders (id, member_account_id, course_run_id),
 	constraint chk_course_reservations_status check (status in ('HELD', 'EXPIRED')),
 	constraint chk_course_reservations_expiry check (expires_at > created_at)
 );

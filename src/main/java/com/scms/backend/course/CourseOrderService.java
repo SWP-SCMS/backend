@@ -8,7 +8,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 import com.scms.backend.account.Account;
@@ -28,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class CourseOrderService {
 
-	private static final Set<AccountStatus> ALL_MEMBER_STATUSES = Set.of(AccountStatus.values());
 	private final AccountRepository accounts;
 	private final MemberProfileRepository profiles;
 	private final CourseRunRepository runs;
@@ -37,11 +35,13 @@ class CourseOrderService {
 	private final JdbcTemplate db;
 	private final AuditEventRepository audits;
 	private final CourseReservationExpiryService expiry;
+	private final CourseOrderCreationRendezvous creationRendezvous;
 	private final Clock clock;
 
 	CourseOrderService(AccountRepository accounts, MemberProfileRepository profiles, CourseRunRepository runs,
 			CourseSessionRepository sessions, BookingRepository bookings, JdbcTemplate db,
-			AuditEventRepository audits, CourseReservationExpiryService expiry, Clock clock) {
+			AuditEventRepository audits, CourseReservationExpiryService expiry,
+			CourseOrderCreationRendezvous creationRendezvous, Clock clock) {
 		this.accounts = accounts;
 		this.profiles = profiles;
 		this.runs = runs;
@@ -50,6 +50,7 @@ class CourseOrderService {
 		this.db = db;
 		this.audits = audits;
 		this.expiry = expiry;
+		this.creationRendezvous = creationRendezvous;
 		this.clock = clock;
 	}
 
@@ -61,10 +62,10 @@ class CourseOrderService {
 	}
 
 	@Transactional
-	CreateResult createForReceptionist(UUID actorId, String memberCode, CourseOrderCreateRequest request,
+	CreateResult createForReceptionist(UUID actorId, UUID memberId, CourseOrderCreateRequest request,
 			String idempotencyKey) {
 		lockActive(actorId, AccountRole.RECEPTIONIST);
-		MemberProfile member = findMember(memberCode);
+		MemberProfile member = findMember(memberId);
 		lockActiveMember(member.getAccountId());
 		return create(actorId, member, request, normalizeKey(idempotencyKey));
 	}
@@ -77,9 +78,9 @@ class CourseOrderService {
 	}
 
 	@Transactional
-	CourseOrderResponse getForReceptionist(UUID actorId, String memberCode, UUID orderId) {
+	CourseOrderResponse getForReceptionist(UUID actorId, UUID memberId, UUID orderId) {
 		lockActive(actorId, AccountRole.RECEPTIONIST);
-		return current(findOrder(orderId, findMember(memberCode).getAccountId()));
+		return current(findOrder(orderId, findMember(memberId).getAccountId()));
 	}
 
 	static Instant holdExpiresAt(Instant now, Instant registrationClosesAt) {
@@ -99,7 +100,9 @@ class CourseOrderService {
 			return new CreateResult(current(replay), false);
 		}
 
+		creationRendezvous.beforeRunLock();
 		CourseRun run = runs.findByIdForUpdate(request.courseRunId()).orElseThrow(CourseOrderException::runUnavailable);
+		creationRendezvous.afterRunLock();
 		Instant now = clock.instant();
 		expiry.expireDueForRun(run.getId(), now);
 		validateRun(run, now);
@@ -194,9 +197,9 @@ class CourseOrderService {
 		if (member.getStatus() != AccountStatus.ACTIVE) throw CourseOrderException.memberNotActive();
 	}
 
-	private MemberProfile findMember(String memberCode) {
-		if (memberCode == null || memberCode.isBlank()) throw CourseOrderException.memberNotFound();
-		return profiles.findVisibleMemberByCode(memberCode.trim(), AccountRole.MEMBER, ALL_MEMBER_STATUSES)
+	private MemberProfile findMember(UUID memberId) {
+		if (memberId == null) throw CourseOrderException.memberNotFound();
+		return profiles.findById(memberId).filter(profile -> profile.getAccount().getRole() == AccountRole.MEMBER)
 			.orElseThrow(CourseOrderException::memberNotFound);
 	}
 
@@ -220,12 +223,11 @@ class CourseOrderService {
 
 	private String orderQuery() {
 		return """
-			select orders.id,orders.order_reference,profile.member_code,orders.member_account_id,
+			select orders.id,orders.order_reference,orders.member_account_id,
 				orders.course_run_id,orders.tuition_vnd_snapshot,orders.currency_code,orders.status order_status,
 				reservation.id reservation_id,reservation.status reservation_status,reservation.expires_at,
 				orders.created_at
 			from course_orders orders
-			join member_profiles profile on profile.account_id=orders.member_account_id
 			join course_reservations reservation on reservation.course_order_id=orders.id
 			""";
 	}
@@ -237,7 +239,7 @@ class CourseOrderService {
 		Instant expiresAt = result.getTimestamp("expires_at").toInstant();
 		String reservationStatus = result.getString("reservation_status");
 		return new StoredOrder(new CourseOrderResponse(orderId, result.getString("order_reference"),
-			result.getString("member_code"), runId, result.getBigDecimal("tuition_vnd_snapshot").toBigIntegerExact(),
+			memberId, runId, result.getBigDecimal("tuition_vnd_snapshot").toBigIntegerExact(),
 			result.getString("currency_code").trim(), result.getString("order_status"), reservationStatus,
 			expiresAt, result.getTimestamp("created_at").toInstant()), result.getObject("reservation_id", UUID.class),
 			memberId, runId, reservationStatus, expiresAt);

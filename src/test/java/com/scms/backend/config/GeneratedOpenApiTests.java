@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -51,6 +52,11 @@ class GeneratedOpenApiTests {
 	private static final Set<String> UNAUTHORIZED_PROBLEM_CODES = Set.of(
 		"UNAUTHENTICATED", "INVALID_TOKEN", "INVALID_CREDENTIALS", "INVALID_REFRESH_TOKEN",
 		"INVALID_PENDING_SESSION", "INVALID_PASSWORD_RESET_SESSION", "PAYMENT_UNAUTHORIZED");
+	private static final Set<String> API_PROBLEM_PROPERTIES = Set.of(
+		"title", "status", "detail", "instance", "code", "errors", "affectedSessionIds",
+		"requiredBenefitCodes", "missingBenefitCodes", "affectedSessions", "traceId");
+	private static final Set<String> API_PROBLEM_REQUIRED = Set.of(
+		"title", "status", "detail", "instance", "code");
 	private static final Set<String> COURSE_PROBLEM_CODES = Set.of(
 		"VALIDATION_ERROR", "MALFORMED_REQUEST", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN",
 		"COURSE_VALIDATION_ERROR", "COURSE_NOT_FOUND", "COURSE_CODE_CONFLICT", "COURSE_INVALID_TRANSITION",
@@ -97,6 +103,40 @@ class GeneratedOpenApiTests {
 			Set.of("200", "201", "400", "401", "403", "404", "409")),
 		new CourseOperationContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
 			Set.of("200", "400", "401", "403", "404"))
+	);
+	private static final List<CourseOrderParameterContract> COURSE_ORDER_PARAMETER_CONTRACTS = List.of(
+		new CourseOrderParameterContract("/members/me/course-orders", "post", "Idempotency-Key", "header",
+			true, Set.of("string"), null, "1", "100", null),
+		new CourseOrderParameterContract("/members/me/course-orders/{orderId}", "get", "orderId", "path",
+			true, Set.of("string"), "uuid", null, null, null),
+		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post", "memberId",
+			"path", true, Set.of("string"), "uuid", null, null, null),
+		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post",
+			"Idempotency-Key", "header", true, Set.of("string"), null, "1", "100", null),
+		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
+			"memberId", "path", true, Set.of("string"), "uuid", null, null, null),
+		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
+			"orderId", "path", true, Set.of("string"), "uuid", null, null, null)
+	);
+	private static final List<CatalogSchemaContract> COURSE_ORDER_SCHEMA_CONTRACTS = List.of(
+		new CatalogSchemaContract("CourseOrderCreateRequest", List.of(
+			new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null)
+		)),
+		new CatalogSchemaContract("CourseOrderResponse", List.of(
+			new CatalogPropertyContract("orderId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("orderReference", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("memberId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
+				Set.of(), null),
+			new CatalogPropertyContract("currencyCode", Set.of("string"), null, null, null, Set.of("VND"), null),
+			new CatalogPropertyContract("orderStatus", Set.of("string"), null, null, null,
+				Set.of("PENDING_PAYMENT", "EXPIRED"), null),
+			new CatalogPropertyContract("reservationStatus", Set.of("string"), null, null, null,
+				Set.of("HELD", "EXPIRED"), null),
+			new CatalogPropertyContract("expiresAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("createdAt", Set.of("string"), "date-time", null, null, Set.of(), null)
+		))
 	);
 	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(
 		new CatalogParameterContract("/courses", "page", "query", false, Set.of("integer"), "int32",
@@ -608,21 +648,11 @@ class GeneratedOpenApiTests {
 				.containsExactlyInAnyOrderElementsOf(contract.statuses());
 			assertThat(responseStatuses(documented, contract)).as("static " + label)
 				.containsExactlyInAnyOrderElementsOf(contract.statuses());
-			if ("post".equals(contract.method())) {
-				assertThat(operation(generated, contract.path(), contract.method()).path("parameters"))
-					.anySatisfy(parameter -> {
-						assertThat(parameter.path("name").asText()).isEqualTo("Idempotency-Key");
-						assertThat(parameter.path("required").asBoolean()).isTrue();
-					});
-			}
 		}
-		assertThat(documented.at("/components/schemas/CourseOrderResponse/required").toString())
-			.contains("orderId", "orderReference", "memberId", "courseRunId", "tuitionVnd", "currencyCode",
-				"orderStatus", "reservationStatus", "expiresAt", "createdAt");
-		assertThat(documented.at("/components/schemas/CourseOrderResponse/properties/orderStatus/enum").toString())
-			.isEqualTo("[\"PENDING_PAYMENT\",\"EXPIRED\"]");
-		assertThat(documented.at("/components/schemas/CourseOrderResponse/properties/reservationStatus/enum").toString())
-			.isEqualTo("[\"HELD\",\"EXPIRED\"]");
+		assertExpectedCourseOrderContract(generated, "generated");
+		assertExpectedCourseOrderContract(documented, "static");
+		assertThat(normalizedCourseOrderContract(documented))
+			.isEqualTo(normalizedCourseOrderContract(generated));
 	}
 
 	@Test
@@ -1415,8 +1445,144 @@ class GeneratedOpenApiTests {
 		}
 	}
 
+	private void assertExpectedCourseOrderContract(JsonNode document, String source) throws Exception {
+		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
+			JsonNode operation = operation(document, contract.path(), contract.method());
+			String label = source + " " + contract.method().toUpperCase() + " " + contract.path();
+			assertThat(effectiveSecurity(document, operation)).as(label + " security")
+				.isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			Set<String> expectedParameters = COURSE_ORDER_PARAMETER_CONTRACTS.stream()
+				.filter(parameter -> parameter.path().equals(contract.path())
+					&& parameter.method().equals(contract.method()))
+				.map(parameter -> parameter.location() + ":" + parameter.name())
+				.collect(java.util.stream.Collectors.toSet());
+			assertThat(normalizedParameters(document, operation.path("parameters")).values())
+				.as(label + " parameters").toIterable()
+				.extracting(parameter -> parameter.path("in").asText() + ":" + parameter.path("name").asText())
+				.containsExactlyInAnyOrderElementsOf(expectedParameters);
+
+			if ("post".equals(contract.method())) {
+				JsonNode requestBody = resolve(document, operation.path("requestBody"));
+				assertThat(requestBody.path("required").asBoolean(false)).as(label + " request required").isTrue();
+				assertThat(requestBody.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList())
+					.as(label + " request media types").containsExactly("application/json");
+				assertThat(normalizedSchema(document, requestBody.at("/content/application~1json/schema")))
+					.as(label + " request schema")
+					.isEqualTo(normalizedSchema(document,
+						document.at("/components/schemas/CourseOrderCreateRequest")));
+			}
+			else {
+				assertThat(operation.has("requestBody")).as(label + " request body").isFalse();
+			}
+
+			for (String status : contract.statuses()) {
+				JsonNode response = resolve(document, response(document, contract.path(), contract.method(), status));
+				String mediaType = status.startsWith("2") ? "application/json" : "application/problem+json";
+				String schema = status.startsWith("2") ? "CourseOrderResponse"
+					: "401".equals(status) ? "UnauthorizedProblem" : "ApiProblem";
+				assertThat(response.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList())
+					.as(label + " " + status + " media types").containsExactly(mediaType);
+				assertThat(normalizedSchema(document, response.path("content").path(mediaType).path("schema")))
+					.as(label + " " + status + " schema")
+					.isEqualTo(normalizedSchema(document, document.at("/components/schemas/" + schema)));
+			}
+		}
+
+		for (CourseOrderParameterContract contract : COURSE_ORDER_PARAMETER_CONTRACTS) {
+			JsonNode parameter = parameter(document, contract.path(), contract.method(), contract.name());
+			String label = source + " " + contract.method().toUpperCase() + " " + contract.path()
+				+ " parameter " + contract.name();
+			assertThat(parameter.path("in").asText()).as(label + " location").isEqualTo(contract.location());
+			assertThat(parameter.path("required").asBoolean(false)).as(label + " required")
+				.isEqualTo(contract.required());
+			JsonNode schema = resolve(document, parameter.path("schema"));
+			Set<String> actualTypes = schema.path("type").isArray()
+				? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false)
+					.map(JsonNode::asText).collect(java.util.stream.Collectors.toSet())
+				: Set.of(schema.path("type").asText());
+			assertThat(actualTypes).as(label + " type").containsExactlyInAnyOrderElementsOf(contract.types());
+			assertThat(textOrNull(schema, "format")).as(label + " format").isEqualTo(contract.format());
+			assertThat(textOrNull(schema, "minLength")).as(label + " minLength").isEqualTo(contract.minLength());
+			assertThat(textOrNull(schema, "maxLength")).as(label + " maxLength").isEqualTo(contract.maxLength());
+			assertThat(textOrNull(schema, "pattern")).as(label + " pattern").isEqualTo(contract.pattern());
+		}
+
+		for (CatalogSchemaContract contract : COURSE_ORDER_SCHEMA_CONTRACTS) {
+			JsonNode schema = document.at("/components/schemas/" + contract.name());
+			String label = source + " schema " + contract.name();
+			Set<String> expectedProperties = contract.properties().stream()
+				.map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
+			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("required").values()).as(label + " required").toIterable()
+				.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("additionalProperties").asBoolean(true)).as(label + " additional properties")
+				.isFalse();
+			for (CatalogPropertyContract property : contract.properties()) {
+				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(),
+					property.format(), null, property.minimum(), property.maximum(), property.enumValues(),
+					property.itemSchema(), label + " property " + property.name());
+			}
+		}
+		assertThat(document.at("/components/schemas/CourseOrderResponse/properties/orderReference/pattern").asText())
+			.as(source + " CourseOrderResponse orderReference pattern").isEqualTo("^COR-[0-9A-F]{32}$");
+
+		assertProblemSchema(document, "ApiProblem", Set.of(), source);
+		assertProblemSchema(document, "UnauthorizedProblem", UNAUTHORIZED_PROBLEM_CODES, source);
+	}
+
+	private void assertProblemSchema(JsonNode document, String name, Set<String> codes, String source)
+			throws Exception {
+		JsonNode schema = document.at("/components/schemas/" + name);
+		String label = source + " schema " + name;
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.as(label + " properties").containsExactlyInAnyOrderElementsOf(API_PROBLEM_PROPERTIES);
+		assertThat(schema.path("required").values()).as(label + " required").toIterable()
+			.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(API_PROBLEM_REQUIRED);
+		assertThat(schema.has("additionalProperties")).as(label + " additionalProperties").isFalse();
+		assertSchemaMetadata(document, schema.at("/properties/title"), Set.of("string"), null, null, null, null,
+			Set.of(), null, label + " title");
+		assertSchemaMetadata(document, schema.at("/properties/status"), Set.of("integer"), "int32", null, null,
+			null, Set.of(), null, label + " status");
+		assertSchemaMetadata(document, schema.at("/properties/detail"), Set.of("string"), null, null, null, null,
+			Set.of(), null, label + " detail");
+		assertSchemaMetadata(document, schema.at("/properties/instance"), Set.of("string"), "uri-reference", null,
+			null, null, Set.of(), null, label + " instance");
+		assertSchemaMetadata(document, schema.at("/properties/code"), Set.of("string"), null, null, null, null,
+			codes, null, label + " code");
+		assertThat(normalizedSchema(document, schema.at("/properties/errors"))).as(label + " errors")
+			.isEqualTo(objectMapper.readTree("""
+				{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}}
+				"""));
+		for (String field : List.of("affectedSessionIds", "requiredBenefitCodes", "missingBenefitCodes")) {
+			String format = "affectedSessionIds".equals(field) ? "uuid" : null;
+			assertThat(schema.path("properties").path(field).path("type").asText())
+				.as(label + " " + field + " type").isEqualTo("array");
+			assertSchemaMetadata(document, schema.path("properties").path(field).path("items"), Set.of("string"),
+				format, null, null, null, Set.of(), null, label + " " + field + " items");
+		}
+		assertSchemaMetadata(document, schema.at("/properties/traceId"), Set.of("string"), null, null, null, null,
+			Set.of(), null, label + " traceId");
+		JsonNode affected = schema.at("/properties/affectedSessions/items");
+		assertThat(schema.at("/properties/affectedSessions/type").asText()).isEqualTo("array");
+		assertThat(affected.path("type").asText()).isEqualTo("object");
+		assertThat(affected.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.as(label + " affectedSessions properties")
+			.containsExactlyInAnyOrder("sessionId", "classId", "className", "startTime", "endTime");
+		assertThat(affected.at("/properties/sessionId/format").asText()).isEqualTo("uuid");
+		assertThat(affected.at("/properties/classId/format").asText()).isEqualTo("uuid");
+		assertThat(affected.at("/properties/startTime/format").asText()).isEqualTo("date-time");
+		assertThat(affected.at("/properties/endTime/format").asText()).isEqualTo("date-time");
+	}
+
 	private JsonNode parameter(JsonNode document, String path, String name) {
 		return java.util.stream.StreamSupport.stream(operation(document, path, "get").path("parameters").spliterator(),
+			false).map(parameter -> resolve(document, parameter))
+			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
+	}
+
+	private JsonNode parameter(JsonNode document, String path, String method, String name) {
+		return java.util.stream.StreamSupport.stream(operation(document, path, method).path("parameters").spliterator(),
 			false).map(parameter -> resolve(document, parameter))
 			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
 	}
@@ -1463,6 +1629,52 @@ class GeneratedOpenApiTests {
 			operation.set("responses", responses);
 			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
 		}
+		return normalized;
+	}
+
+	private ObjectNode normalizedCourseOrderContract(JsonNode document) {
+		ObjectNode normalized = objectMapper.createObjectNode();
+		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
+			ObjectNode operation = objectMapper.createObjectNode();
+			JsonNode source = operation(document, contract.path(), contract.method());
+			operation.set("security", effectiveSecurity(document, source));
+			operation.set("parameters", normalizedParameters(document, source.path("parameters")));
+			if (source.has("requestBody")) {
+				JsonNode requestBody = resolve(document, source.path("requestBody"));
+				ObjectNode normalizedRequest = objectMapper.createObjectNode();
+				normalizedRequest.put("required", requestBody.path("required").asBoolean(false));
+				ObjectNode content = objectMapper.createObjectNode();
+				requestBody.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
+					.forEach(entry -> content.set(entry.getKey(),
+						normalizedSchema(document, entry.getValue().path("schema"))));
+				normalizedRequest.set("content", content);
+				operation.set("requestBody", normalizedRequest);
+			}
+			ObjectNode responses = objectMapper.createObjectNode();
+			new TreeSet<>(responseStatuses(document, contract)).forEach(status ->
+				responses.set(status, normalizedResponse(document,
+					response(document, contract.path(), contract.method(), status))));
+			operation.set("responses", responses);
+			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
+		}
+		return normalized;
+	}
+
+	private ArrayNode effectiveSecurity(JsonNode document, JsonNode operation) {
+		JsonNode source = operation.has("security") ? operation.path("security") : document.path("security");
+		ArrayNode normalized = objectMapper.createArrayNode();
+		List<ObjectNode> requirements = new ArrayList<>();
+		source.forEach(requirement -> {
+			ObjectNode value = objectMapper.createObjectNode();
+			requirement.properties().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> {
+				ArrayNode scopes = objectMapper.createArrayNode();
+				java.util.stream.StreamSupport.stream(entry.getValue().spliterator(), false)
+					.sorted(Comparator.comparing(JsonNode::asText)).forEach(scopes::add);
+				value.set(entry.getKey(), scopes);
+			});
+			requirements.add(value);
+		});
+		requirements.stream().sorted(Comparator.comparing(JsonNode::toString)).forEach(normalized::add);
 		return normalized;
 	}
 
@@ -1627,4 +1839,7 @@ class GeneratedOpenApiTests {
 
 	private record CatalogPropertyContract(String name, Set<String> types, String format, String minimum,
 		String maximum, Set<String> enumValues, String itemSchema) { }
+
+	private record CourseOrderParameterContract(String path, String method, String name, String location,
+		boolean required, Set<String> types, String format, String minLength, String maxLength, String pattern) { }
 }
