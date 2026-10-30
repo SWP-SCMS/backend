@@ -230,7 +230,7 @@ public class CourseWaitlistService {
 		return """
 			select waitlist.*,
 				case when waitlist.status='WAITING' then (
-					select count(*)+1 from course_waitlists earlier
+					select count(*)::integer+1 from course_waitlists earlier
 					where earlier.course_run_id=waitlist.course_run_id and earlier.status='WAITING'
 					  and (earlier.created_at,earlier.id)<(waitlist.created_at,waitlist.id)
 				) end as queue_position
