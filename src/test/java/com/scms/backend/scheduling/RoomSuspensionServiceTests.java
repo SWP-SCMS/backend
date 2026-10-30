@@ -371,7 +371,7 @@ class RoomSuspensionServiceTests {
 			new RoomSuspensionExtensionRequest(currentEndTime, newEndTime, "Repair", List.of())))
 			.isInstanceOf(RoomException.class)
 			.extracting("code").isEqualTo("ROOM_SUSPENSION_CONFLICT");
-		org.mockito.Mockito.verifyNoInteractions(sessions, audits);
+		org.mockito.Mockito.verifyNoInteractions(audits);
 	}
 
 	@Test

@@ -18,6 +18,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseSessionRepository;
 import com.scms.backend.training.CoachAssignmentRepository;
 import com.scms.backend.training.CoachAssignmentStatus;
 import com.scms.backend.notification.NotificationWriter;
@@ -43,10 +44,21 @@ public class ClassSessionService {
 	private final NotificationWriter notifications;
 	private final BookingRepository bookings;
 	private final SessionWaitlistRepository waitlists;
+	private final CourseSessionRepository courseSessions;
+	private final SharedResourceLockService resourceLocks;
 
 	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock) {
-		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null, null, null);
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, null, null, null, null, null, null, null, null);
+	}
+
+	ClassSessionService(ClassSessionRepository sessions, SportClassRepository classes, RoomRepository rooms,
+			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
+			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
+			CoachAssignmentRepository coachAssignments, NotificationWriter notifications,
+			BookingRepository bookings, SessionWaitlistRepository waitlists) {
+		this(sessions, classes, rooms, accounts, audits, lifecycle, clock, lockRendezvous, coachLeaves,
+			coachAssignments, notifications, bookings, waitlists, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
@@ -54,7 +66,8 @@ public class ClassSessionService {
 			AccountRepository accounts, AuditEventRepository audits, SessionLifecycleService lifecycle, Clock clock,
 			RoomImpactLockRendezvous lockRendezvous, CoachLeaveRepository coachLeaves,
 			CoachAssignmentRepository coachAssignments, NotificationWriter notifications,
-			BookingRepository bookings, SessionWaitlistRepository waitlists) {
+			BookingRepository bookings, SessionWaitlistRepository waitlists,
+			CourseSessionRepository courseSessions, SharedResourceLockService resourceLocks) {
 		this.sessions = sessions;
 		this.classes = classes;
 		this.rooms = rooms;
@@ -68,6 +81,8 @@ public class ClassSessionService {
 		this.notifications = notifications;
 		this.bookings = bookings;
 		this.waitlists = waitlists;
+		this.courseSessions = courseSessions;
+		this.resourceLocks = resourceLocks;
 	}
 
 	@Transactional
@@ -271,23 +286,42 @@ public class ClassSessionService {
 			throw RecurringScheduleException.validation("request", "coachId or roomId is required");
 		}
 		advanceStatuses();
-		UUID sourceRoomId = sessions.findRoomIdById(sessionId)
-			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
-		lockAssignmentRooms(sourceRoomId, request.roomId());
+		UUID sourceRoomId;
+		UUID sourceCoachId = null;
+		if (resourceLocks == null) {
+			sourceRoomId = sessions.findRoomIdById(sessionId)
+				.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+			lockAssignmentRooms(sourceRoomId, request.roomId());
+		}
+		else {
+			ClassSession resourceSnapshot = sessions.findById(sessionId)
+				.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+			sourceRoomId = resourceSnapshot.getRoom() == null ? null : resourceSnapshot.getRoom().getId();
+			sourceCoachId = resourceSnapshot.getTeachingCoach().getId();
+			resourceLocks.lock(request.coachId() == null ? List.of(sourceCoachId)
+				: List.of(sourceCoachId, request.coachId()), request.roomId() == null
+					? (sourceRoomId == null ? List.of() : List.of(sourceRoomId))
+					: (sourceRoomId == null ? List.of(request.roomId()) : List.of(sourceRoomId, request.roomId())));
+		}
 		if (lockRendezvous != null) lockRendezvous.await();
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (resourceLocks != null && (!session.getTeachingCoach().getId().equals(sourceCoachId)
+				|| !java.util.Objects.equals(session.getRoom() == null ? null : session.getRoom().getId(), sourceRoomId))) {
+			throw RecurringScheduleException.sessionConflict();
+		}
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) {
 			throw RecurringScheduleException.sessionNotScheduled();
 		}
-		if (request.roomId() == null && !session.getRoom().getId().equals(sourceRoomId)) {
+		if (request.roomId() == null && !java.util.Objects.equals(
+				session.getRoom() == null ? null : session.getRoom().getId(), sourceRoomId)) {
 			throw RecurringScheduleException.sessionConflict();
 		}
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
 		UUID roomId = request.roomId() == null ? sourceRoomId : request.roomId();
 		UUID beforeCoachId = session.getTeachingCoach().getId();
-		UUID beforeRoomId = session.getRoom().getId();
-		if (coachId.equals(beforeCoachId) && roomId.equals(beforeRoomId)) {
+		UUID beforeRoomId = session.getRoom() == null ? null : session.getRoom().getId();
+		if (coachId.equals(beforeCoachId) && java.util.Objects.equals(roomId, beforeRoomId)) {
 			return ClassSessionDetailResponse.from(session);
 		}
 		Resources resources = validateResources(session.getSportClass().getId(), coachId, roomId,
@@ -301,10 +335,11 @@ public class ClassSessionService {
 		catch (DataIntegrityViolationException exception) {
 			throw RecurringScheduleException.sessionConflict();
 		}
+		Map<String, Object> before = new java.util.HashMap<>(), after = new java.util.HashMap<>();
+		before.put("coachId", beforeCoachId.toString()); before.put("roomId", beforeRoomId == null ? null : beforeRoomId.toString());
+		after.put("coachId", coachId.toString()); after.put("roomId", roomId == null ? null : roomId.toString());
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_ASSIGNMENT_CHANGED", "CLASS_SESSION",
-			sessionId, "Manager changed session assignment",
-			Map.of("coachId", beforeCoachId.toString(), "roomId", beforeRoomId.toString()),
-			Map.of("coachId", coachId.toString(), "roomId", roomId.toString())));
+			sessionId, "Manager changed session assignment", before, after));
 		return ClassSessionDetailResponse.from(session);
 	}
 
@@ -383,6 +418,7 @@ public class ClassSessionService {
 		if (capacity == null || capacity <= 0) {
 			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
 		}
+		if (resourceLocks != null) resourceLocks.lock(List.of(coachId), roomId == null ? List.of() : List.of(roomId));
 		Optional<SportClass> classResult = classes.findByIdForUpdate(classId);
 		if (classResult == null || classResult.isEmpty()) classResult = classes.findById(classId);
 		SportClass sportClass = classResult.orElseThrow(() -> RecurringScheduleException.notFound("class"));
@@ -419,15 +455,15 @@ public class ClassSessionService {
 		java.util.Set<UUID> roomIds = new java.util.TreeSet<>(java.util.Comparator.comparing(UUID::toString));
 		roomIds.add(sourceRoomId);
 		if (requestedRoomId != null) roomIds.add(requestedRoomId);
-		for (UUID roomId : roomIds) {
-			rooms.findByIdForUpdate(roomId)
-				.orElseThrow(() -> RecurringScheduleException.notFound("room"));
-		}
+		for (UUID roomId : roomIds) rooms.findByIdForUpdate(roomId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("room"));
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime, int requestedCapacity,
 			UUID excludeSessionId) {
 		UUID roomId = resources.room() == null ? null : resources.room().getId();
+		if (courseSessions != null && courseSessions.existsResourceOverlap(resources.coach().getId(), roomId,
+				startTime, endTime)) throw RecurringScheduleException.sessionConflict();
 		boolean coachConflict = excludeSessionId == null
 			? sessions.existsCoachOverlap(resources.coach().getId(), startTime, endTime)
 			: sessions.existsCoachOverlapExcluding(excludeSessionId, resources.coach().getId(), startTime, endTime);
@@ -465,8 +501,20 @@ public class ClassSessionService {
 		if (reason.isEmpty()) throw RecurringScheduleException.validation("reason", "is required");
 		if (reason.length() > 1000) throw RecurringScheduleException.validation("reason", "must be at most 1000 characters");
 		advanceStatuses();
+		ClassSession resourceSnapshot = resourceLocks == null ? null : sessions.findById(sessionId)
+			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		UUID currentRoomLockId = resourceSnapshot == null || resourceSnapshot.getRoom() == null
+			? null : resourceSnapshot.getRoom().getId();
+		UUID currentCoachLockId = resourceSnapshot == null ? null : resourceSnapshot.getTeachingCoach().getId();
+		if (resourceLocks != null) resourceLocks.lock(request.coachId() == null ? List.of(currentCoachLockId)
+			: List.of(currentCoachLockId, request.coachId()), request.roomId() == null
+				? (currentRoomLockId == null ? List.of() : List.of(currentRoomLockId))
+				: (currentRoomLockId == null ? List.of(request.roomId()) : List.of(currentRoomLockId, request.roomId())));
 		ClassSession session = sessions.findByIdForUpdate(sessionId)
 			.orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		if (resourceLocks != null && (!session.getTeachingCoach().getId().equals(currentCoachLockId)
+				|| !java.util.Objects.equals(session.getRoom() == null ? null : session.getRoom().getId(),
+					currentRoomLockId))) throw RecurringScheduleException.sessionConflict();
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED) throw RecurringScheduleException.sessionNotScheduled();
 		if (!request.expectedVersion().equals(session.getVersion())) throw RecurringScheduleException.versionConflict();
 		if (clock.instant().isAfter(session.getStartTime().minus(Duration.ofHours(24)))) {

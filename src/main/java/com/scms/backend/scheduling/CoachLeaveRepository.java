@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-interface CoachLeaveRepository extends JpaRepository<CoachLeaveRequest, UUID> {
+public interface CoachLeaveRepository extends JpaRepository<CoachLeaveRequest, UUID> {
 	@Override
 	@EntityGraph(attributePaths = "coach")
 	List<CoachLeaveRequest> findAll();

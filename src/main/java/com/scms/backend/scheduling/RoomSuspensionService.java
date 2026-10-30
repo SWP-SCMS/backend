@@ -20,6 +20,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseSessionRepository;
 import com.scms.backend.notification.NotificationWriter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,10 +43,21 @@ public class RoomSuspensionService {
 	private final JdbcTemplate jdbc;
 	private final NotificationWriter notifications;
 	private final RoomImpactLockRendezvous lockRendezvous;
+	private final CourseSessionRepository courseSessions;
+	private final SharedResourceLockService resourceLocks;
 
 	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
 			AuditEventRepository audits, Clock clock) {
-		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null, null, null, null);
+		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null, null, null, null, null, null);
+	}
+
+	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
+			AuditEventRepository audits, Clock clock, ClassSessionRepository sessions,
+			ClassSessionService sessionService, ClassSessionCancellationService cancellationService,
+			RoomService roomService, SessionLifecycleService lifecycle, JdbcTemplate jdbc,
+			NotificationWriter notifications, RoomImpactLockRendezvous lockRendezvous) {
+		this(suspensions, rooms, accounts, audits, clock, sessions, sessionService, cancellationService,
+			roomService, lifecycle, jdbc, notifications, lockRendezvous, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
@@ -53,7 +65,8 @@ public class RoomSuspensionService {
 			AuditEventRepository audits, Clock clock, ClassSessionRepository sessions,
 			ClassSessionService sessionService, ClassSessionCancellationService cancellationService,
 			RoomService roomService, SessionLifecycleService lifecycle, JdbcTemplate jdbc,
-			NotificationWriter notifications, RoomImpactLockRendezvous lockRendezvous) {
+			NotificationWriter notifications, RoomImpactLockRendezvous lockRendezvous,
+			CourseSessionRepository courseSessions, SharedResourceLockService resourceLocks) {
 		this.suspensions = suspensions;
 		this.rooms = rooms;
 		this.accounts = accounts;
@@ -67,6 +80,8 @@ public class RoomSuspensionService {
 		this.jdbc = jdbc;
 		this.notifications = notifications;
 		this.lockRendezvous = lockRendezvous;
+		this.courseSessions = courseSessions;
+		this.resourceLocks = resourceLocks;
 	}
 
 	@Transactional(readOnly = true)
@@ -103,6 +118,8 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
 		}
 		String reason = normalizeReason(request.reason(), true);
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpactCoachIds(roomId,
+			suspension.getEndTime(), request.endTime(), false, clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
 			throw RoomException.suspensionConflict();
@@ -112,6 +129,8 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(now);
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, currentEndTime, request.endTime(),
 			false, now);
+		ensureLockedCoaches(affected, lockedCoachIds);
+		ensureNoCourseImpacts(roomId, currentEndTime, request.endTime(), false, now);
 		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
 		validateOperation(affected, resolutions, lockedRooms,
@@ -139,9 +158,11 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpacts(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
+		List<UUID> courseImpacts = courseImpactIds(roomId, impact.startTime(), impact.endTime(),
+			impact.permanentDisable(), clock.instant());
 		TargetRoomAvailability availability = targetRoomAvailability(roomId, affected);
 		return RoomImpactPreviewResponse.from(affected, bookingCounts(affected), availability.bySession(),
-			availability.bulk());
+			availability.bulk(), courseImpacts);
 	}
 
 	private TargetRoomAvailability targetRoomAvailability(UUID sourceRoomId, List<ClassSession> affected) {
@@ -257,11 +278,15 @@ public class RoomSuspensionService {
 		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
 			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpactCoachIds(roomId,
+			impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		Room sourceRoom = lockedRooms.get(roomId);
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
+		ensureLockedCoaches(affected, lockedCoachIds);
+		ensureNoCourseImpacts(roomId, impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant());
 		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
 		validateOperation(affected, resolutions, lockedRooms, impact);
@@ -313,7 +338,8 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("reason", "must be at most 1000 characters");
 		}
 		if (suspensions.existsOverlap(room.getId(), request.startTime(), request.endTime())
-				|| (!resolvedImpacts && rooms.existsActiveSessionOverlap(room.getId(), request.startTime(), request.endTime()))) {
+				|| (!resolvedImpacts && (rooms.existsActiveSessionOverlap(room.getId(), request.startTime(), request.endTime())
+				|| !courseImpactIds(room.getId(), request.startTime(), request.endTime(), false, now).isEmpty()))) {
 			throw RoomException.suspensionConflict();
 		}
 		RoomSuspension suspension = new RoomSuspension(UUID.randomUUID(), room, request.startTime(),
@@ -332,6 +358,19 @@ public class RoomSuspensionService {
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "ROOM_SUSPENDED", "ROOM_SUSPENSION",
 			suspension.getId(), reason, null, after));
 		return RoomSuspensionResponse.from(suspension);
+	}
+
+	private List<UUID> courseImpactIds(UUID roomId, Instant startTime, Instant endTime,
+			boolean permanentDisable, Instant now) {
+		return courseSessions == null ? List.of()
+			: courseSessions.findRoomImpactIds(roomId, startTime, endTime, permanentDisable, now);
+	}
+
+	private void ensureNoCourseImpacts(UUID roomId, Instant startTime, Instant endTime,
+			boolean permanentDisable, Instant now) {
+		if (!courseImpactIds(roomId, startTime, endTime, permanentDisable, now).isEmpty()) {
+			throw RoomException.suspensionConflict();
+		}
 	}
 
 	private Impact validateImpact(RoomImpactPreviewRequest request) {
@@ -429,6 +468,29 @@ public class RoomSuspensionService {
 	}
 
 	private Map<UUID, Room> lockRooms(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests) {
+		Set<UUID> targetIds = impactRoomIds(sourceRoomId, requests);
+		Map<UUID, Room> result = new HashMap<>();
+		for (UUID roomId : targetIds) {
+			result.put(roomId, rooms.findByIdForUpdate(roomId).orElseThrow(RoomException::notFound));
+		}
+		return result;
+	}
+
+	private Set<UUID> lockImpactResources(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests,
+			Collection<UUID> affectedCoachIds) {
+		if (resourceLocks == null) return Set.of();
+		Set<UUID> coachIds = Set.copyOf(affectedCoachIds);
+		resourceLocks.lock(coachIds, impactRoomIds(sourceRoomId, requests));
+		return coachIds;
+	}
+
+	private void ensureLockedCoaches(List<ClassSession> affected, Set<UUID> lockedCoachIds) {
+		if (resourceLocks == null) return;
+		if (affected.stream().map(session -> session.getTeachingCoach().getId())
+			.anyMatch(coachId -> !lockedCoachIds.contains(coachId))) throw RoomException.suspensionConflict();
+	}
+
+	private Set<UUID> impactRoomIds(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests) {
 		Set<UUID> targetIds = new TreeSet<>(Comparator.comparing(UUID::toString));
 		requests.stream().filter(request -> request != null && "MOVE".equals(request.action())
 			&& request.targetRoomId() != null)
@@ -436,11 +498,7 @@ public class RoomSuspensionService {
 		if (targetIds.contains(sourceRoomId)) throw RoomException.validation("resolutions.targetRoomId",
 			"must differ from the source room");
 		targetIds.add(sourceRoomId);
-		Map<UUID, Room> result = new HashMap<>();
-		for (UUID roomId : targetIds) {
-			result.put(roomId, rooms.findByIdForUpdate(roomId).orElseThrow(RoomException::notFound));
-		}
-		return result;
+		return targetIds;
 	}
 
 	private void validateOperation(List<ClassSession> affected, Map<UUID, RoomSessionResolutionRequest> resolutions,

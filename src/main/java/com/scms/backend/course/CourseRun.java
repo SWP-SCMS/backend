@@ -150,6 +150,10 @@ public class CourseRun {
 		return minimumEnrollment;
 	}
 
+	int getCapacity() {
+		return capacity;
+	}
+
 	private boolean hasValidOpeningDetails(String policyVersion) {
 		return tuitionVnd != null && tuitionVnd.signum() > 0 && tuitionVnd.toString().length() <= 19
 			&& capacity > 0 && minimumEnrollment > 0 && minimumEnrollment <= capacity

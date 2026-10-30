@@ -387,7 +387,7 @@ components:
         reason: {type: [string, 'null'], maxLength: 1000}
     RoomImpactPreviewResponse:
       type: object
-      required: [count, sessions, bulkAvailableTargetRooms]
+      required: [count, sessions, bulkAvailableTargetRooms, courseSessionIds]
       properties:
         count: {type: integer, minimum: 0}
         sessions:
@@ -397,6 +397,10 @@ components:
           type: array
           description: Rooms that can accept every impacted Session in one bulk MOVE.
           items: {$ref: '#/components/schemas/RoomImpactTargetRoom'}
+        courseSessionIds:
+          type: array
+          description: Course Sessions affected by the room impact. They must be rescheduled through the Course workflow before apply.
+          items: {type: string, format: uuid}
     RoomImpactSession:
       type: object
       required: [sessionId, classId, className, coachId, roomId, roomName, startTime, endTime, status, bookingCount, availableTargetRooms]

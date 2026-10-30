@@ -90,4 +90,25 @@ public class CourseSession {
 		this.allocationVnd = allocationVnd;
 		this.status = CourseSessionStatus.SCHEDULED;
 	}
+
+	public UUID getId() { return id; }
+	CourseRun getCourseRun() { return courseRun; }
+	int getUnitNumber() { return unitNumber; }
+	Room getRoom() { return room; }
+	Account getCoach() { return coach; }
+	Instant getStartAt() { return startAt; }
+	Instant getEndAt() { return endAt; }
+	Instant getOriginalStartAt() { return originalStartAt; }
+	Instant getOriginalEndAt() { return originalEndAt; }
+	CourseSessionStatus getStatus() { return status; }
+
+	void reschedule(Instant startAt, Instant endAt) {
+		this.startAt = startAt;
+		this.endAt = endAt;
+	}
+
+	void updateAssignment(Room room, Account coach) {
+		this.room = room;
+		this.coach = coach;
+	}
 }

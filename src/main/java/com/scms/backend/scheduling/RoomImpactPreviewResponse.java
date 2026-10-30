@@ -5,7 +5,11 @@ import java.util.List;
 import java.util.UUID;
 
 public record RoomImpactPreviewResponse(int count, List<SessionImpact> sessions,
-		List<TargetRoom> bulkAvailableTargetRooms) {
+		List<TargetRoom> bulkAvailableTargetRooms, List<UUID> courseSessionIds) {
+	public RoomImpactPreviewResponse(int count, List<SessionImpact> sessions,
+			List<TargetRoom> bulkAvailableTargetRooms) {
+		this(count, sessions, bulkAvailableTargetRooms, List.of());
+	}
 
 	static RoomImpactPreviewResponse from(List<ClassSession> sessions, java.util.Map<UUID, Long> bookingCounts,
 			java.util.Map<UUID, List<TargetRoom>> availableTargetRooms, List<TargetRoom> bulkAvailableTargetRooms) {
@@ -15,7 +19,15 @@ public record RoomImpactPreviewResponse(int count, List<SessionImpact> sessions,
 			session.getStartTime(), session.getEndTime(), session.getStatus(),
 			bookingCounts.getOrDefault(session.getId(), 0L),
 			availableTargetRooms.getOrDefault(session.getId(), List.of()))).toList();
-		return new RoomImpactPreviewResponse(impacts.size(), impacts, bulkAvailableTargetRooms);
+		return new RoomImpactPreviewResponse(impacts.size(), impacts, bulkAvailableTargetRooms, List.of());
+	}
+
+	static RoomImpactPreviewResponse from(List<ClassSession> sessions, java.util.Map<UUID, Long> bookingCounts,
+			java.util.Map<UUID, List<TargetRoom>> availableTargetRooms, List<TargetRoom> bulkAvailableTargetRooms,
+			List<UUID> courseSessionIds) {
+		RoomImpactPreviewResponse gym = from(sessions, bookingCounts, availableTargetRooms, bulkAvailableTargetRooms);
+		return new RoomImpactPreviewResponse(gym.count() + courseSessionIds.size(), gym.sessions(),
+			gym.bulkAvailableTargetRooms(), List.copyOf(courseSessionIds));
 	}
 
 	public record SessionImpact(UUID sessionId, UUID classId, String className, UUID coachId,

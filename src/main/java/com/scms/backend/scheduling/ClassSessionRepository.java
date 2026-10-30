@@ -68,6 +68,9 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 	@Query("select session.room.id from ClassSession session where session.id = :id")
 	java.util.Optional<UUID> findRoomIdById(@Param("id") UUID id);
 
+	@Query("select session.teachingCoach.id from ClassSession session where session.id = :id")
+	java.util.Optional<UUID> findCoachIdById(@Param("id") UUID id);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select session from ClassSession session
@@ -262,6 +265,13 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 			  and conflict.startTime < :endTime and conflict.endTime > :startTime
 		  )
 		  and not exists (
+			select courseConflict.id from com.scms.backend.course.CourseSession courseConflict
+			where courseConflict.coach.id = coach.id
+			  and courseConflict.status in (com.scms.backend.course.CourseSessionStatus.SCHEDULED,
+				com.scms.backend.course.CourseSessionStatus.MAKEUP_SCHEDULED)
+			  and courseConflict.startAt < :endTime and courseConflict.endAt > :startTime
+		  )
+		  and not exists (
 			select leave.id from CoachLeaveRequest leave
 			where leave.coach.id = coach.id
 			  and leave.status = com.scms.backend.scheduling.CoachLeaveStatus.APPROVED
@@ -283,6 +293,13 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 			  and conflict.status in (com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED,
 				com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS)
 			  and conflict.startTime < :endTime and conflict.endTime > :startTime
+		  )
+		  and not exists (
+			select courseConflict.id from com.scms.backend.course.CourseSession courseConflict
+			where courseConflict.coach.id = coach.id
+			  and courseConflict.status in (com.scms.backend.course.CourseSessionStatus.SCHEDULED,
+				com.scms.backend.course.CourseSessionStatus.MAKEUP_SCHEDULED)
+			  and courseConflict.startAt < :endTime and courseConflict.endAt > :startTime
 		  )
 		  and not exists (
 			select leave.id from CoachLeaveRequest leave
@@ -332,6 +349,19 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 		order by session.id
 		""")
 	List<ClassSession> findRoomImpacts(@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
+			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
+			@Param("now") Instant now);
+
+	@Query(value = """
+		select distinct teaching_coach_account_id from class_sessions
+		where room_id = :roomId
+		  and ((:permanentDisable = true and (status = 'IN_PROGRESS'
+			or (status = 'SCHEDULED' and start_time > :now)))
+		  or (:permanentDisable = false and status in ('SCHEDULED', 'IN_PROGRESS')
+			and start_time < :endTime and end_time > :startTime))
+		order by teaching_coach_account_id
+		""", nativeQuery = true)
+	List<UUID> findRoomImpactCoachIds(@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
 			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
 			@Param("now") Instant now);
 
