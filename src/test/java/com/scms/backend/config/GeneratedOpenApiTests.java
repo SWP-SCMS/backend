@@ -187,6 +187,23 @@ class GeneratedOpenApiTests {
 		"POST /manager/disciplines",
 		"GET /manager/disciplines/{disciplineId}",
 		"PATCH /manager/disciplines/{disciplineId}",
+		"GET /manager/courses",
+		"POST /manager/courses",
+		"GET /manager/courses/{courseId}",
+		"PATCH /manager/courses/{courseId}",
+		"POST /manager/courses/{courseId}/publish",
+		"POST /manager/courses/{courseId}/deactivate",
+		"POST /manager/courses/{courseId}/archive",
+		"GET /manager/course-runs",
+		"POST /manager/course-runs",
+		"GET /manager/course-runs/{runId}",
+		"PATCH /manager/course-runs/{runId}",
+		"POST /manager/course-runs/{runId}/open-registration",
+		"POST /manager/course-runs/{runId}/cancel",
+		"GET /manager/course-runs/{runId}/sessions",
+		"POST /manager/course-runs/{runId}/sessions",
+		"GET /manager/course-runs/{runId}/sessions/{sessionId}",
+		"PATCH /manager/course-runs/{runId}/sessions/{sessionId}",
 		"GET /manager/rooms",
 		"GET /manager/rooms/availability",
 		"POST /manager/rooms",
@@ -346,6 +363,24 @@ class GeneratedOpenApiTests {
 			String path = operation.substring(separator + 1);
 			assertThat(response(document, path, method, "204").isMissingNode()).as(operation).isFalse();
 		});
+	}
+
+	@Test
+	void generatedCourseContractDocumentsManagerSecurityValidationEnumsAndProblems() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode create = operation(document, "/manager/courses", "post");
+		assertThat(create.path("description").asText()).isEqualTo("Requires MANAGER role.");
+		assertThat(create.at("/responses/400/$ref").asText()).isEqualTo("#/components/responses/BadRequest");
+		assertThat(create.at("/responses/409/$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		JsonNode request = document.at("/components/schemas/CourseCreateRequest");
+		assertThat(request.path("required").toString()).contains("code", "name", "disciplineId");
+		assertThat(request.at("/properties/code/maxLength").asInt()).isEqualTo(50);
+		assertThat(document.at("/components/schemas/CourseResponse/properties/status/enum").toString())
+			.contains("DRAFT", "PUBLISHED", "INACTIVE", "ARCHIVED");
+		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/enum").toString())
+			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
+		assertThat(document.at("/components/schemas/CourseResponse/properties/createdAt/format").asText())
+			.isEqualTo("date-time");
 	}
 
 	@Test

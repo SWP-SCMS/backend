@@ -16,6 +16,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 @Entity
 @Table(name = "course_sessions")
@@ -64,9 +66,11 @@ public class CourseSession {
 	private CourseSession replacementSession;
 
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant createdAt;
 
 	@Column(name = "updated_at", nullable = false, insertable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant updatedAt;
 
 	@Version
@@ -92,19 +96,24 @@ public class CourseSession {
 	}
 
 	public UUID getId() { return id; }
-	CourseRun getCourseRun() { return courseRun; }
-	int getUnitNumber() { return unitNumber; }
-	Room getRoom() { return room; }
-	Account getCoach() { return coach; }
-	Instant getStartAt() { return startAt; }
-	Instant getEndAt() { return endAt; }
-	Instant getOriginalStartAt() { return originalStartAt; }
-	Instant getOriginalEndAt() { return originalEndAt; }
-	CourseSessionStatus getStatus() { return status; }
+	public CourseRun getCourseRun() { return courseRun; }
+	public int getUnitNumber() { return unitNumber; }
+	public Room getRoom() { return room; }
+	public Account getCoach() { return coach; }
+	public Instant getStartAt() { return startAt; }
+	public Instant getEndAt() { return endAt; }
+	public Instant getOriginalStartAt() { return originalStartAt; }
+	public Instant getOriginalEndAt() { return originalEndAt; }
+	public BigInteger getAllocationVnd() { return allocationVnd; }
+	public CourseSessionStatus getStatus() { return status; }
+	public Instant getCreatedAt() { return createdAt; }
+	public Instant getUpdatedAt() { return updatedAt; }
+	public Long getVersion() { return version; }
 
 	void reschedule(Instant startAt, Instant endAt) {
 		this.startAt = startAt;
 		this.endAt = endAt;
+		this.updatedAt = Instant.now();
 	}
 
 	void updateAssignment(Room room, Account coach) {

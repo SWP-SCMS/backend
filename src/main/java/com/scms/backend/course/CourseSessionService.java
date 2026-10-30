@@ -44,10 +44,12 @@ public class CourseSessionService {
 	public CourseSession create(UUID runId, int unitNumber, UUID coachId, UUID roomId, Instant startAt,
 			Instant endAt, BigInteger allocationVnd) {
 		if (runId == null || unitNumber <= 0 || coachId == null || roomId == null || startAt == null
-				|| endAt == null || !startAt.isBefore(endAt) || allocationVnd == null || allocationVnd.signum() <= 0) {
+				|| endAt == null || !startAt.isBefore(endAt) || allocationVnd == null || allocationVnd.signum() <= 0
+				|| allocationVnd.toString().length() > 19) {
 			throw CourseException.invalidSession();
 		}
 		CourseRun run = runs.findById(runId).orElseThrow(CourseException::invalidSession);
+		if (unitNumber > run.getTotalUnits()) throw CourseException.invalidSession();
 		resourceLocks.lock(List.of(coachId), List.of(roomId));
 		Account coach = accounts.findById(coachId).orElseThrow(CourseException::resourceConflict);
 		Room room = rooms.findById(roomId).orElseThrow(CourseException::resourceConflict);
@@ -64,12 +66,21 @@ public class CourseSessionService {
 
 	@Transactional
 	public CourseSession reschedule(UUID sessionId, UUID roomId, UUID coachId, Instant startAt, Instant endAt) {
+		return reschedule(sessionId, roomId, coachId, startAt, endAt, null);
+	}
+
+	@Transactional
+	public CourseSession reschedule(UUID sessionId, UUID roomId, UUID coachId, Instant startAt, Instant endAt,
+			Long expectedVersion) {
 		UUID currentRoomId = sessions.findRoomIdById(sessionId).orElseThrow(CourseException::invalidSession);
 		UUID currentCoachId = sessions.findCoachIdById(sessionId).orElseThrow(CourseException::invalidSession);
 		UUID requestedRoomId = roomId == null ? currentRoomId : roomId;
 		UUID requestedCoachId = coachId == null ? currentCoachId : coachId;
 		resourceLocks.lock(List.of(currentCoachId, requestedCoachId), List.of(currentRoomId, requestedRoomId));
 		CourseSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(CourseException::invalidSession);
+		if (expectedVersion != null && !expectedVersion.equals(session.getVersion())) {
+			throw CourseException.sessionChanged();
+		}
 		if (!session.getRoom().getId().equals(currentRoomId) || !session.getCoach().getId().equals(currentCoachId)) {
 			throw CourseException.resourceConflict();
 		}
@@ -88,6 +99,8 @@ public class CourseSessionService {
 	private void validateResources(CourseRun run, Account coach, Room room, Instant startAt, Instant endAt,
 			UUID excludeSessionId) {
 		if (startAt == null || endAt == null || !startAt.isBefore(endAt)) throw CourseException.invalidSession();
+		if (run.getPlannedStartAt() != null && (startAt.isBefore(run.getPlannedStartAt())
+				|| endAt.isAfter(run.getPlannedEndAt()))) throw CourseException.invalidSession();
 		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE
 				|| room.getStatus() != RoomStatus.ACTIVE) throw CourseException.resourceConflict();
 		if (run.getCapacity() > room.getCapacity()) throw CourseException.roomCapacityConflict();

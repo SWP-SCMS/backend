@@ -69,11 +69,11 @@ public class Discipline {
 		this.updatedAt = Instant.now();
 	}
 
-	UUID getId() {
+	public UUID getId() {
 		return id;
 	}
 
-	String getName() {
+	public String getName() {
 		return name;
 	}
 
@@ -81,7 +81,7 @@ public class Discipline {
 		return description;
 	}
 
-	DisciplineStatus getStatus() {
+	public DisciplineStatus getStatus() {
 		return status;
 	}
 

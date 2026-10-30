@@ -14,6 +14,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 @Entity
 @Table(name = "courses")
@@ -47,9 +49,11 @@ public class Course {
 	private CourseStatus status;
 
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant createdAt;
 
 	@Column(name = "updated_at", nullable = false, insertable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant updatedAt;
 
 	@Version
@@ -70,4 +74,46 @@ public class Course {
 		this.defaultMinimumEnrollment = defaultMinimumEnrollment;
 		this.status = CourseStatus.DRAFT;
 	}
+
+	void update(String name, String description, String imageUrl, Integer defaultMinimumEnrollment) {
+		this.name = name;
+		this.description = description;
+		this.imageUrl = imageUrl;
+		this.defaultMinimumEnrollment = defaultMinimumEnrollment;
+		this.updatedAt = Instant.now();
+	}
+
+	void publish() {
+		if (status != CourseStatus.DRAFT && status != CourseStatus.INACTIVE) {
+			throw CourseException.invalidCourseTransition();
+		}
+		status = CourseStatus.PUBLISHED;
+		updatedAt = Instant.now();
+	}
+
+	void deactivate() {
+		if (status != CourseStatus.PUBLISHED) throw CourseException.invalidCourseTransition();
+		status = CourseStatus.INACTIVE;
+		updatedAt = Instant.now();
+	}
+
+	void archive() {
+		if (status != CourseStatus.DRAFT && status != CourseStatus.INACTIVE) {
+			throw CourseException.invalidCourseTransition();
+		}
+		status = CourseStatus.ARCHIVED;
+		updatedAt = Instant.now();
+	}
+
+	public UUID getId() { return id; }
+	public String getCode() { return code; }
+	public String getName() { return name; }
+	public String getDescription() { return description; }
+	public Discipline getDiscipline() { return discipline; }
+	public String getImageUrl() { return imageUrl; }
+	public Integer getDefaultMinimumEnrollment() { return defaultMinimumEnrollment; }
+	public CourseStatus getStatus() { return status; }
+	public Instant getCreatedAt() { return createdAt; }
+	public Instant getUpdatedAt() { return updatedAt; }
+	public Long getVersion() { return version; }
 }

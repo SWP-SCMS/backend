@@ -47,6 +47,7 @@ class CourseSessionServiceTests {
 		when(accounts.findById(coachId)).thenReturn(Optional.of(coach));
 		when(rooms.findById(roomId)).thenReturn(Optional.of(room));
 		when(run.getCapacity()).thenReturn(20);
+		when(run.getTotalUnits()).thenReturn(12);
 		when(coach.getId()).thenReturn(coachId);
 		when(coach.getRole()).thenReturn(AccountRole.COACH);
 		when(coach.getStatus()).thenReturn(AccountStatus.ACTIVE);
@@ -75,5 +76,17 @@ class CourseSessionServiceTests {
 			start.plusSeconds(3600), BigInteger.TEN))
 			.isInstanceOf(CourseException.class)
 			.hasMessageContaining("capacity");
+	}
+
+	@Test
+	void rejectsUnitBeyondRunAndAllocationBeyondVndPrecision() {
+		Instant start = Instant.parse("2035-01-01T02:00:00Z");
+
+		assertThatThrownBy(() -> service.create(runId, 13, coachId, roomId, start,
+			start.plusSeconds(3600), BigInteger.TEN))
+			.isInstanceOf(CourseException.class);
+		assertThatThrownBy(() -> service.create(runId, 1, coachId, roomId, start,
+			start.plusSeconds(3600), new BigInteger("10000000000000000000")))
+			.isInstanceOf(CourseException.class);
 	}
 }

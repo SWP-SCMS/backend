@@ -6,11 +6,65 @@ public class CourseException extends RuntimeException {
 
 	private final HttpStatus status;
 	private final String code;
+	private final String field;
 
 	private CourseException(HttpStatus status, String code, String message) {
+		this(status, code, message, null);
+	}
+
+	private CourseException(HttpStatus status, String code, String message, String field) {
 		super(message);
 		this.status = status;
 		this.code = code;
+		this.field = field;
+	}
+
+	static CourseException validation(String field, String message) {
+		return new CourseException(HttpStatus.BAD_REQUEST, "COURSE_VALIDATION_ERROR", message, field);
+	}
+
+	static CourseException notFound() {
+		return new CourseException(HttpStatus.NOT_FOUND, "COURSE_NOT_FOUND", "The requested course was not found.");
+	}
+
+	static CourseException duplicateCode() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_CODE_CONFLICT",
+			"A course with this code already exists.");
+	}
+
+	static CourseException invalidCourseTransition() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_INVALID_TRANSITION",
+			"The course cannot transition from its current state.");
+	}
+
+	static CourseException changed() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_CHANGED",
+			"The course was changed by another request.");
+	}
+
+	static CourseException runNotFound() {
+		return new CourseException(HttpStatus.NOT_FOUND, "COURSE_RUN_NOT_FOUND",
+			"The requested course run was not found.");
+	}
+
+	static CourseException duplicateRunCode() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_RUN_CODE_CONFLICT",
+			"A course run with this code already exists.");
+	}
+
+	static CourseException runChanged() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_RUN_CHANGED",
+			"The course run was changed by another request.");
+	}
+
+	static CourseException sessionNotFound() {
+		return new CourseException(HttpStatus.NOT_FOUND, "COURSE_SESSION_NOT_FOUND",
+			"The requested course session was not found.");
+	}
+
+	static CourseException sessionChanged() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SESSION_CHANGED",
+			"The course session was changed by another request.");
 	}
 
 	static CourseException invalidTransition() {
@@ -49,5 +103,9 @@ public class CourseException extends RuntimeException {
 
 	public String getCode() {
 		return code;
+	}
+
+	public String getField() {
+		return field;
 	}
 }
