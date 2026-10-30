@@ -129,7 +129,7 @@ class CourseManagementIntegrationTests {
 		long before = courses.count();
 		String constraint = "chk_test_reject_course_audit";
 		jdbc.execute("alter table audit_events add constraint " + constraint
-			+ " check (action <> 'COURSE_CREATED')");
+			+ " check (action <> 'COURSE_CREATED') not valid");
 		try {
 			assertThatThrownBy(() -> service.createCourse(managerId,
 				new CourseCreateRequest("ROLLBACK-101", "Rollback", null, disciplineId, null, 2)))
@@ -149,7 +149,7 @@ class CourseManagementIntegrationTests {
 			new CourseCreateRequest("UPDATE-ROLLBACK-101", "Original", null, disciplineId, null, 2));
 		String constraint = "chk_test_reject_course_update_audit";
 		jdbc.execute("alter table audit_events add constraint " + constraint
-			+ " check (action <> 'COURSE_UPDATED')");
+			+ " check (action <> 'COURSE_UPDATED') not valid");
 		try {
 			assertThatThrownBy(() -> service.patchCourse(managerId, created.id(),
 				patch("{\"expectedVersion\":%d,\"name\":\"Changed\"}".formatted(created.version()))))
@@ -170,7 +170,7 @@ class CourseManagementIntegrationTests {
 		CourseRunResponse created = service.createRun(managerId, runRequest(course.id(), "RUN-ROLLBACK-1"));
 		String constraint = "chk_test_reject_course_run_update_audit";
 		jdbc.execute("alter table audit_events add constraint " + constraint
-			+ " check (action <> 'COURSE_RUN_UPDATED')");
+			+ " check (action <> 'COURSE_RUN_UPDATED') not valid");
 		try {
 			assertThatThrownBy(() -> service.patchRun(managerId, created.id(),
 				new CourseRunPatchRequest(created.version(), 4)))
@@ -199,7 +199,7 @@ class CourseManagementIntegrationTests {
 		Instant changedStart = originalStart.plusSeconds(7200);
 		String constraint = "chk_test_reject_course_session_update_audit";
 		jdbc.execute("alter table audit_events add constraint " + constraint
-			+ " check (action <> 'COURSE_SESSION_RESCHEDULED')");
+			+ " check (action <> 'COURSE_SESSION_RESCHEDULED') not valid");
 		try {
 			assertThatThrownBy(() -> service.patchSession(managerId, run.id(), created.id(),
 				new CourseSessionPatchRequest(created.version(), null, null, changedStart,
