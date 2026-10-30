@@ -21,8 +21,18 @@ class CenterVisit {
 	@Column(name = "member_account_id", nullable = false, updatable = false)
 	private UUID memberAccountId;
 
-	@Column(name = "membership_id", nullable = false, updatable = false)
+	@Column(name = "membership_id", updatable = false)
 	private UUID membershipId;
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "visit_source", nullable = false, updatable = false, length = 20)
+	private CenterVisitSource source = CenterVisitSource.MEMBERSHIP;
+
+	@Column(name = "course_enrollment_id", updatable = false)
+	private UUID courseEnrollmentId;
+
+	@Column(name = "course_session_id", updatable = false)
+	private UUID courseSessionId;
 
 	@Column(name = "checked_in_by_account_id", nullable = false, updatable = false)
 	private UUID checkedInByAccountId;
@@ -60,6 +70,16 @@ class CenterVisit {
 		this.idempotencyKey = idempotencyKey;
 	}
 
+	static CenterVisit forCourse(UUID id, UUID memberAccountId, UUID courseEnrollmentId, UUID courseSessionId,
+			UUID checkedInByAccountId, Instant checkedInAt, String idempotencyKey) {
+		CenterVisit visit = new CenterVisit(id, memberAccountId, null, checkedInByAccountId, checkedInAt,
+			idempotencyKey);
+		visit.source = CenterVisitSource.COURSE;
+		visit.courseEnrollmentId = courseEnrollmentId;
+		visit.courseSessionId = courseSessionId;
+		return visit;
+	}
+
 	void checkout(UUID actorId, CheckoutSource source, Instant at) {
 		if (checkedOutAt != null) return;
 		checkedOutAt = at;
@@ -70,6 +90,9 @@ class CenterVisit {
 	UUID getId() { return id; }
 	UUID getMemberAccountId() { return memberAccountId; }
 	UUID getMembershipId() { return membershipId; }
+	CenterVisitSource getSource() { return source; }
+	UUID getCourseEnrollmentId() { return courseEnrollmentId; }
+	UUID getCourseSessionId() { return courseSessionId; }
 	UUID getCheckedInByAccountId() { return checkedInByAccountId; }
 	Instant getCheckedInAt() { return checkedInAt; }
 	Instant getCheckedOutAt() { return checkedOutAt; }
