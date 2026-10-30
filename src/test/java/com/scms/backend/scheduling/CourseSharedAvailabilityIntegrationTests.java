@@ -26,8 +26,6 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -49,8 +47,6 @@ class CourseSharedAvailabilityIntegrationTests {
 	@Autowired RoomService roomService;
 	@Autowired RoomSuspensionService roomSuspensions;
 	@Autowired JdbcTemplate jdbc;
-	@Autowired SharedResourceLockService resourceLocks;
-	@Autowired PlatformTransactionManager transactionManager;
 	@MockitoBean SharedResourceLockRendezvous lockRendezvous;
 
 	@Test
@@ -135,18 +131,25 @@ class CourseSharedAvailabilityIntegrationTests {
 				gymPid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
 				gymAtLock.countDown();
 			}
+			else if (Thread.currentThread().getName().equals("course-race")) {
+				coursePid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
+			}
 			return null;
 		}).when(lockRendezvous).beforeLock();
-		var executor = Executors.newFixedThreadPool(2);
-		try {
-			var course = executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
-				coursePid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
-				resourceLocks.lock(List.of(courseCoach.getId()), List.of(room.getId()));
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("course-race")) {
 				resourceLocked.countDown();
 				await(releaseCourse);
+			}
+			return null;
+		}).when(lockRendezvous).afterLock();
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var course = executor.submit(() -> {
+				Thread.currentThread().setName("course-race");
 				return courseSessions.create(runId, 1, courseCoach.getId(), room.getId(), start, end,
 					BigInteger.valueOf(100_000));
-			}));
+			});
 			assertThat(resourceLocked.await(10, TimeUnit.SECONDS)).isTrue();
 			var gym = executor.submit(() -> {
 				Thread.currentThread().setName("gym-race");
@@ -188,6 +191,131 @@ class CourseSharedAvailabilityIntegrationTests {
 
 		assertThat(changed.coachId()).isEqualTo(secondCoach.getId());
 		assertThat(changed.roomId()).isNull();
+	}
+
+	@Test
+	void courseRescheduleRejectsGymConflictAndCancelledPendingMakeupReleasesResources() {
+		Account manager = account(AccountRole.MANAGER, "Cross reschedule Manager");
+		Account coach = account(AccountRole.COACH, "Cross reschedule Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Cross reschedule discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Cross reschedule class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room firstRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Cross reschedule room 1", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Room secondRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Cross reschedule room 2", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		UUID runId = insertRun(discipline.getId(), coach.getId());
+		Instant originalStart = Instant.parse("2035-01-15T02:00:00Z");
+		var course = courseSessions.create(runId, 1, coach.getId(), firstRoom.getId(), originalStart,
+			originalStart.plusSeconds(3600), BigInteger.TEN);
+		Instant gymStart = originalStart.plusSeconds(7200);
+		gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(), coach.getId(),
+			secondRoom.getId(), gymStart, gymStart.plusSeconds(3600), 10));
+
+		assertThatThrownBy(() -> courseSessions.reschedule(course.getId(), firstRoom.getId(), coach.getId(),
+			gymStart, gymStart.plusSeconds(3600))).isInstanceOf(com.scms.backend.course.CourseException.class);
+
+		jdbc.update("update course_sessions set status='CANCELLED_PENDING_MAKEUP' where id=?", course.getId());
+		assertThat(gymSessions.create(manager.getId(), new ClassSessionCreateRequest(sportClass.getId(), coach.getId(),
+			firstRoom.getId(), originalStart, originalStart.plusSeconds(3600), 10))).isNotNull();
+	}
+
+	@Test
+	void roomImpactRejectsCourseConflictWithoutPartialGymMutation() {
+		Account manager = account(AccountRole.MANAGER, "Impact rollback Manager");
+		Account coach = account(AccountRole.COACH, "Impact rollback Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Impact rollback discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Impact rollback class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact rollback source", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Room target = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact rollback target", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Instant start = Instant.parse("2035-01-16T02:00:00Z"), end = start.plusSeconds(3600);
+		ClassSession gym = classSessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+			source, start, end, 10, manager.getId()));
+		UUID runId = insertRun(discipline.getId(), coach.getId());
+		courseSessions.create(runId, 1, coach.getId(), source.getId(), start, end, BigInteger.TEN);
+		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(start.minusSeconds(60), end.plusSeconds(60),
+			false, "Maintenance", List.of(), new RoomBulkResolutionRequest("MOVE", target.getId(), "Move"), List.of());
+
+		assertThatThrownBy(() -> roomSuspensions.applyImpact(manager.getId(), source.getId(), request))
+			.isInstanceOf(RoomException.class);
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, gym.getId()))
+			.isEqualTo(source.getId());
+		assertThat(jdbc.queryForObject("select count(*) from room_suspensions where room_id=?", Long.class,
+			source.getId())).isZero();
+	}
+
+	@Test
+	void roomImpactRescheduleAndCourseCreateSerializeOnCoach() throws Exception {
+		Account manager = account(AccountRole.MANAGER, "Impact race Manager");
+		Account coach = account(AccountRole.COACH, "Impact race Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Impact race discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Impact race class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact race source", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Room courseRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact race course", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Instant originalStart = Instant.parse("2035-01-17T02:00:00Z"), originalEnd = originalStart.plusSeconds(3600);
+		Instant newStart = originalStart.plusSeconds(7200), newEnd = newStart.plusSeconds(3600);
+		ClassSession gym = classSessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
+			source, originalStart, originalEnd, 10, manager.getId()));
+		UUID runId = insertRun(discipline.getId(), coach.getId());
+		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(originalStart.minusSeconds(60),
+			originalEnd.plusSeconds(60), false, "Maintenance", List.of(new RoomSessionResolutionRequest(gym.getId(),
+				"RESCHEDULE", null, newStart, newEnd, "Move later")));
+		CountDownLatch impactLocked = new CountDownLatch(1), courseAtLock = new CountDownLatch(1),
+			releaseImpact = new CountDownLatch(1);
+		AtomicInteger impactPid = new AtomicInteger(), coursePid = new AtomicInteger();
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("impact-race")) {
+				impactPid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
+			}
+			else if (Thread.currentThread().getName().equals("course-impact-race")) {
+				coursePid.set(jdbc.queryForObject("select pg_backend_pid()", Integer.class));
+				courseAtLock.countDown();
+			}
+			return null;
+		}).when(lockRendezvous).beforeLock();
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("impact-race")) {
+				impactLocked.countDown();
+				await(releaseImpact);
+			}
+			return null;
+		}).when(lockRendezvous).afterLock();
+		var executor = Executors.newFixedThreadPool(2);
+		try {
+			var impact = executor.submit(() -> {
+				Thread.currentThread().setName("impact-race");
+				return roomSuspensions.applyImpact(manager.getId(), source.getId(), request);
+			});
+			assertThat(impactLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var course = executor.submit(() -> {
+				Thread.currentThread().setName("course-impact-race");
+				try {
+					courseSessions.create(runId, 1, coach.getId(), courseRoom.getId(), newStart, newEnd,
+						BigInteger.TEN);
+					return null;
+				}
+				catch (Throwable failure) { return failure; }
+			});
+			assertThat(courseAtLock.await(10, TimeUnit.SECONDS)).isTrue();
+			awaitDatabaseLock(coursePid.get(), impactPid.get());
+			releaseImpact.countDown();
+
+			assertThat(impact.get(10, TimeUnit.SECONDS)).isNotNull();
+			assertThat(course.get(10, TimeUnit.SECONDS)).isInstanceOf(com.scms.backend.course.CourseException.class);
+		}
+		finally {
+			releaseImpact.countDown();
+			executor.shutdownNow();
+		}
 	}
 
 	@Test

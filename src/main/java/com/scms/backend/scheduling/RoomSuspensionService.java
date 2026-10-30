@@ -44,10 +44,11 @@ public class RoomSuspensionService {
 	private final NotificationWriter notifications;
 	private final RoomImpactLockRendezvous lockRendezvous;
 	private final CourseSessionRepository courseSessions;
+	private final SharedResourceLockService resourceLocks;
 
 	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
 			AuditEventRepository audits, Clock clock) {
-		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null, null, null, null, null);
+		this(suspensions, rooms, accounts, audits, clock, null, null, null, null, null, null, null, null, null, null);
 	}
 
 	RoomSuspensionService(RoomSuspensionRepository suspensions, RoomRepository rooms, AccountRepository accounts,
@@ -56,7 +57,7 @@ public class RoomSuspensionService {
 			RoomService roomService, SessionLifecycleService lifecycle, JdbcTemplate jdbc,
 			NotificationWriter notifications, RoomImpactLockRendezvous lockRendezvous) {
 		this(suspensions, rooms, accounts, audits, clock, sessions, sessionService, cancellationService,
-			roomService, lifecycle, jdbc, notifications, lockRendezvous, null);
+			roomService, lifecycle, jdbc, notifications, lockRendezvous, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
@@ -65,7 +66,7 @@ public class RoomSuspensionService {
 			ClassSessionService sessionService, ClassSessionCancellationService cancellationService,
 			RoomService roomService, SessionLifecycleService lifecycle, JdbcTemplate jdbc,
 			NotificationWriter notifications, RoomImpactLockRendezvous lockRendezvous,
-			CourseSessionRepository courseSessions) {
+			CourseSessionRepository courseSessions, SharedResourceLockService resourceLocks) {
 		this.suspensions = suspensions;
 		this.rooms = rooms;
 		this.accounts = accounts;
@@ -80,6 +81,7 @@ public class RoomSuspensionService {
 		this.notifications = notifications;
 		this.lockRendezvous = lockRendezvous;
 		this.courseSessions = courseSessions;
+		this.resourceLocks = resourceLocks;
 	}
 
 	@Transactional(readOnly = true)
@@ -116,6 +118,8 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
 		}
 		String reason = normalizeReason(request.reason(), true);
+		lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+			suspension.getEndTime(), request.endTime(), false, clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
 			throw RoomException.suspensionConflict();
@@ -273,6 +277,8 @@ public class RoomSuspensionService {
 		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
 			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
+		lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+			impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		Room sourceRoom = lockedRooms.get(roomId);
 		lifecycle.catchUp(clock.instant());
@@ -460,6 +466,21 @@ public class RoomSuspensionService {
 	}
 
 	private Map<UUID, Room> lockRooms(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests) {
+		Set<UUID> targetIds = impactRoomIds(sourceRoomId, requests);
+		Map<UUID, Room> result = new HashMap<>();
+		for (UUID roomId : targetIds) {
+			result.put(roomId, rooms.findByIdForUpdate(roomId).orElseThrow(RoomException::notFound));
+		}
+		return result;
+	}
+
+	private void lockImpactResources(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests,
+			List<ClassSession> affected) {
+		if (resourceLocks != null) resourceLocks.lock(affected.stream()
+			.map(session -> session.getTeachingCoach().getId()).toList(), impactRoomIds(sourceRoomId, requests));
+	}
+
+	private Set<UUID> impactRoomIds(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests) {
 		Set<UUID> targetIds = new TreeSet<>(Comparator.comparing(UUID::toString));
 		requests.stream().filter(request -> request != null && "MOVE".equals(request.action())
 			&& request.targetRoomId() != null)
@@ -467,11 +488,7 @@ public class RoomSuspensionService {
 		if (targetIds.contains(sourceRoomId)) throw RoomException.validation("resolutions.targetRoomId",
 			"must differ from the source room");
 		targetIds.add(sourceRoomId);
-		Map<UUID, Room> result = new HashMap<>();
-		for (UUID roomId : targetIds) {
-			result.put(roomId, rooms.findByIdForUpdate(roomId).orElseThrow(RoomException::notFound));
-		}
-		return result;
+		return targetIds;
 	}
 
 	private void validateOperation(List<ClassSession> affected, Map<UUID, RoomSessionResolutionRequest> resolutions,

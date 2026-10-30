@@ -32,5 +32,6 @@ public class SharedResourceLockService {
 			if (coachIds != null && coachIds.contains(id)) accounts.findByIdForUpdate(id);
 			if (roomIds != null && roomIds.contains(id)) rooms.findByIdForUpdate(id);
 		}
+		rendezvous.afterLock();
 	}
 }

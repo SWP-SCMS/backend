@@ -6,4 +6,7 @@ import org.springframework.stereotype.Component;
 class SharedResourceLockRendezvous {
 	void beforeLock() {
 	}
+
+	void afterLock() {
+	}
 }
