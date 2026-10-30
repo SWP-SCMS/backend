@@ -43,6 +43,61 @@ class PaymentFulfillmentServiceTests {
 	private static final Instant NOW = Instant.parse("2026-10-26T00:00:00Z");
 
 	@Test
+	void validCourseWebhookRecordsEvidenceWithoutCreatingFulfillmentArtifacts() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		AuditEventRepository audits = mock(AuditEventRepository.class);
+		NotificationWriter notifications = mock(NotificationWriter.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		SepayWebhookRequest request = webhookRequest(4000L);
+		when(db.queryForList(anyString(), eq("4000"))).thenReturn(List.of());
+		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(pendingCourseWebhookRow(paymentId, orderId,
+			NOW.plusSeconds(60), NOW.plusSeconds(60)));
+		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
+		PaymentFulfillmentService service = new PaymentFulfillmentService(db, lifecycle, audits, notifications,
+			Clock.fixed(NOW, ZoneOffset.UTC));
+
+		SepayWebhookResponse response = service.processSepayWebhook(null, paymentId, request,
+			"SCMSORDER", "0".repeat(64));
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.COURSE_PAYMENT_RECORDED);
+		assertThat(response.processed()).isFalse();
+		assertThat(response.paymentId()).isEqualTo(paymentId);
+		assertThat(response.orderId()).isEqualTo(orderId);
+		assertThat(response.paymentStatus()).isEqualTo("PENDING");
+		verifyNoInteractions(lifecycle, audits, notifications);
+		verify(db, never()).update(argThat(sql -> sql.startsWith("update course_payments")),
+			any(Object[].class));
+		ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+		verify(db).update(sql.capture(), any(Object[].class));
+		assertThat(sql.getValue()).contains("course_payment_id").doesNotContain("raw", "authorization");
+	}
+
+	@Test
+	void courseWebhookAtReservationExpiryRecordsRejectionWithoutFulfillment() {
+		JdbcTemplate db = mock(JdbcTemplate.class);
+		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+		UUID paymentId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		SepayWebhookRequest request = webhookRequest(4004L);
+		when(db.queryForList(anyString(), eq("4004"))).thenReturn(List.of());
+		when(db.queryForMap(anyString(), eq(paymentId))).thenReturn(pendingCourseWebhookRow(paymentId, orderId,
+			NOW.plusSeconds(60), NOW));
+		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
+		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
+
+		SepayWebhookResponse response = service.processSepayWebhook(null, paymentId, request,
+			"SCMSORDER", "1".repeat(64));
+
+		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
+		assertThat(response.processed()).isFalse();
+		verifyNoInteractions(lifecycle);
+		verify(db, never()).update(argThat(sql -> sql.startsWith("update course_payments")),
+			any(Object[].class));
+	}
+
+	@Test
 	void duplicateWebhookLoadsImmutableEventBeforeLifecycleOrInsert() {
 		JdbcTemplate db = mock(JdbcTemplate.class);
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
@@ -58,7 +113,7 @@ class PaymentFulfillmentServiceTests {
 			"provider_transaction_id", "4001"));
 		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
 
-		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, null, request,
 			"X".repeat(300), "b".repeat(64));
 
 		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.ALREADY_PROCESSED);
@@ -67,7 +122,7 @@ class PaymentFulfillmentServiceTests {
 		verify(db, never()).update(anyString(), any(Object[].class));
 		ArgumentCaptor<String> eventSql = ArgumentCaptor.forClass(String.class);
 		verify(db).queryForList(eventSql.capture(), eq("4001"));
-		assertThat(eventSql.getValue()).contains("id,payment_id,payload_sha256,outcome")
+		assertThat(eventSql.getValue()).contains("id,payment_id,course_payment_id,payload_sha256,outcome")
 			.doesNotContain("transfer_amount", "payment_reference", "account_number_last4");
 	}
 
@@ -84,7 +139,7 @@ class PaymentFulfillmentServiceTests {
 		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
 		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
 
-		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, null, request,
 			"SCMSORDER", "c".repeat(64));
 
 		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED);
@@ -107,7 +162,7 @@ class PaymentFulfillmentServiceTests {
 		when(db.update(anyString(), any(Object[].class))).thenReturn(1);
 		PaymentFulfillmentService service = service(db, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
 
-		SepayWebhookResponse response = service.processSepayWebhook(paymentId, request,
+		SepayWebhookResponse response = service.processSepayWebhook(paymentId, null, request,
 			"SCMSORDER", "d".repeat(64));
 
 		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.FULFILLED);
@@ -317,6 +372,25 @@ class PaymentFulfillmentServiceTests {
 		row.put("member_code", "MB-1");
 		row.put("member_name", "Member");
 		row.put("provider_reference", "SCMS-ORDER");
+		return row;
+	}
+
+	private Map<String, Object> pendingCourseWebhookRow(UUID paymentId, UUID orderId, Instant deadline,
+			Instant reservationExpiry) {
+		Map<String, Object> row = new HashMap<>();
+		row.put("payment_id", paymentId);
+		row.put("order_id", orderId);
+		row.put("payment_status", "PENDING");
+		row.put("order_status", "PENDING_PAYMENT");
+		row.put("reservation_status", "HELD");
+		row.put("bank_code_snapshot", "MB");
+		row.put("bank_account_number_snapshot", "123456789");
+		row.put("bank_account_name_snapshot", "SCMS GYM");
+		row.put("bank_transfer_content", "SCMS-ORDER");
+		row.put("payment_amount", BigDecimal.valueOf(12000));
+		row.put("payment_currency", "VND");
+		row.put("expires_at", Timestamp.from(deadline));
+		row.put("reservation_expires_at", Timestamp.from(reservationExpiry));
 		return row;
 	}
 }

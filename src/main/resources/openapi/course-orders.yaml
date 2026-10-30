@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: SCMS Course Order API
   version: 1.0.0
-  description: Independent CourseOrder and CourseReservation hold foundation; no payment or enrollment.
+  description: Independent CourseOrder and CourseReservation hold API; payment evidence is internal and no enrollment endpoint is exposed.
 servers:
   - url: /api/v1
 paths:

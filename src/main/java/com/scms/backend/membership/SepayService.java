@@ -139,6 +139,7 @@ class SepayService {
 			? request.content().trim() : request.code().trim();
 		String normalizedPaymentReference = normalizeReference(paymentReference);
 		UUID paymentId = null;
+		UUID coursePaymentId = null;
 		try {
 			paymentId = db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?",
 				UUID.class, paymentReference);
@@ -149,7 +150,20 @@ class SepayService {
 					UUID.class, normalizedPaymentReference);
 			} catch (EmptyResultDataAccessException ignored) { }
 		}
-		return fulfillment.processSepayWebhook(paymentId, request, normalizedPaymentReference, payloadSha256(request));
+		if (paymentId == null) {
+			try {
+				coursePaymentId = db.queryForObject("select id from course_payments where payment_reference=?",
+					UUID.class, paymentReference);
+			} catch (EmptyResultDataAccessException exception) {
+				try {
+					coursePaymentId = db.queryForObject(
+						"select id from course_payments where replace(payment_reference, '-', '')=?",
+						UUID.class, normalizedPaymentReference);
+				} catch (EmptyResultDataAccessException ignored) { }
+			}
+		}
+		return fulfillment.processSepayWebhook(paymentId, coursePaymentId, request, normalizedPaymentReference,
+			payloadSha256(request));
 	}
 
 	private static String normalizeReference(String value) {

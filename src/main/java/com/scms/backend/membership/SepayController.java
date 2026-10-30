@@ -61,6 +61,7 @@ class SepayController {
 		Public provider callback authenticated by an API key in the Authorization header using `Apikey <credential>`.
 		A 200 response with `success=true` acknowledges durable handling and does not necessarily mean the Payment is PAID.
 		When `processed=false`, SCMS creates no Membership or Receipt and the event requires manual review.
+		Valid CoursePayment evidence is recorded with `processed=false` and does not create an Enrollment in this task.
 		""")
 	@ApiResponses({
 		@ApiResponse(responseCode = "200", description = "Webhook durably handled or idempotently replayed"),
