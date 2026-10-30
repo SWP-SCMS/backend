@@ -112,9 +112,11 @@ class CourseOrderService {
 			""", member.getAccountId(), run.getId(), Timestamp.from(now)) > 0) {
 			throw CourseOrderException.reservationExists();
 		}
+		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=?",
+				member.getAccountId(), run.getId()) > 0) throw CourseOrderException.alreadyEnrolled();
 		if (count("""
 			select count(*) from course_reservations
-			where course_run_id=? and status='HELD' and expires_at>?
+			where course_run_id=? and (status='ENROLLED' or (status='HELD' and expires_at>?))
 			""", run.getId(), Timestamp.from(now)) >= run.getCapacity()) {
 			throw CourseOrderException.capacityFull();
 		}
@@ -177,7 +179,7 @@ class CourseOrderService {
 				select 1 from course_reservations reservation
 				join course_sessions session on session.course_run_id=reservation.course_run_id
 				where reservation.member_account_id=? and reservation.course_run_id<>?
-				  and reservation.status='HELD' and reservation.expires_at>?
+				  and (reservation.status='ENROLLED' or (reservation.status='HELD' and reservation.expires_at>?))
 				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
 				  and session.start_at<? and session.end_at>?
 			)
@@ -226,9 +228,13 @@ class CourseOrderService {
 			select orders.id,orders.order_reference,orders.member_account_id,
 				orders.course_run_id,orders.tuition_vnd_snapshot,orders.currency_code,orders.status order_status,
 				reservation.id reservation_id,reservation.status reservation_status,reservation.expires_at,
-				orders.created_at
+				orders.created_at,payment.id payment_id,payment.amount payment_amount,
+				payment.currency_code payment_currency,payment.method payment_method,payment.provider,
+				payment.payment_reference,payment.bank_code_snapshot,payment.bank_account_number_snapshot,
+				payment.bank_account_name_snapshot,payment.status payment_status,payment.deadline_at payment_deadline
 			from course_orders orders
 			join course_reservations reservation on reservation.course_order_id=orders.id
+			left join course_payments payment on payment.course_order_id=orders.id
 			""";
 	}
 
@@ -238,10 +244,21 @@ class CourseOrderService {
 		UUID runId = result.getObject("course_run_id", UUID.class);
 		Instant expiresAt = result.getTimestamp("expires_at").toInstant();
 		String reservationStatus = result.getString("reservation_status");
+		UUID paymentId = result.getObject("payment_id", UUID.class);
+		CoursePaymentResponse payment = paymentId == null ? null : new CoursePaymentResponse(paymentId, orderId,
+			result.getBigDecimal("payment_amount").toBigIntegerExact(), result.getString("payment_currency").trim(),
+			result.getString("payment_method"), result.getString("provider"), result.getString("payment_reference"),
+			result.getString("bank_code_snapshot"), result.getString("bank_account_number_snapshot"),
+			result.getString("bank_account_name_snapshot"), "PENDING".equals(result.getString("payment_status"))
+				? CoursePaymentResponse.qrUrl(
+				result.getString("bank_code_snapshot"), result.getString("bank_account_number_snapshot"),
+				result.getString("bank_account_name_snapshot"), result.getBigDecimal("payment_amount").toBigIntegerExact(),
+				result.getString("payment_reference")) : null, result.getTimestamp("payment_deadline").toInstant(),
+			result.getString("payment_status"));
 		return new StoredOrder(new CourseOrderResponse(orderId, result.getString("order_reference"),
 			memberId, runId, result.getBigDecimal("tuition_vnd_snapshot").toBigIntegerExact(),
 			result.getString("currency_code").trim(), result.getString("order_status"), reservationStatus,
-			expiresAt, result.getTimestamp("created_at").toInstant()), result.getObject("reservation_id", UUID.class),
+			expiresAt, result.getTimestamp("created_at").toInstant(), payment), result.getObject("reservation_id", UUID.class),
 			memberId, runId, reservationStatus, expiresAt);
 	}
 

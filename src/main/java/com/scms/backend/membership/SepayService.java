@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -10,6 +11,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +20,8 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.course.CourseEnrollmentResponse;
+import com.scms.backend.course.CoursePaymentResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -86,6 +90,117 @@ class SepayService {
 		return createPayment(actor, memberId, orderId);
 	}
 
+	@Transactional
+	CoursePaymentResponse createCoursePayment(UUID actor, UUID orderId, String idempotencyKey) {
+		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		requireIdempotencyKey(idempotencyKey);
+		return createCoursePayment(actor, actor, orderId);
+	}
+
+	@Transactional
+	CoursePaymentResponse createCoursePaymentForReceptionist(UUID actor, UUID memberId, UUID orderId,
+			String idempotencyKey) {
+		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		requireIdempotencyKey(idempotencyKey);
+		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
+			throw PaymentException.notFound("Active Member was not found");
+		}
+		return createCoursePayment(actor, memberId, orderId);
+	}
+
+	@Transactional
+	CourseEnrollmentResponse fulfillCourseCash(UUID actor, UUID memberId, UUID orderId, String idempotencyKey) {
+		if (!accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		requireIdempotencyKey(idempotencyKey);
+		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)) {
+			throw PaymentException.notFound("Active Member was not found");
+		}
+		return fulfillment.fulfillCourseCash(memberId, orderId, actor);
+	}
+
+	private CoursePaymentResponse createCoursePayment(UUID actor, UUID memberId, UUID orderId) {
+		Map<String, Object> order;
+		try {
+			UUID runId = db.queryForObject("select course_run_id from course_orders where id=? and member_account_id=?",
+				UUID.class, orderId, memberId);
+			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+			db.queryForObject("select id from course_orders where id=? and member_account_id=? for update",
+				UUID.class, orderId, memberId);
+			db.queryForObject("select id from course_reservations where course_order_id=? for update",
+				UUID.class, orderId);
+			order = db.queryForMap("""
+				select o.id order_id,o.order_reference,o.actor_account_id,o.tuition_vnd_snapshot,o.currency_code,
+					o.status order_status,r.id reservation_id,r.status reservation_status,r.expires_at,
+					r.course_run_id,run.status run_status
+				from course_orders o join course_reservations r on r.course_order_id=o.id
+				join course_runs run on run.id=r.course_run_id
+				where o.id=? and o.member_account_id=?
+				""", orderId, memberId);
+		} catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Course Order was not found");
+		}
+		Instant now = clock.instant();
+		Instant expiresAt = instant(order.get("expires_at"));
+		if (!"PENDING_PAYMENT".equals(order.get("order_status")) || !"HELD".equals(order.get("reservation_status"))
+				|| !courseRunPayable(order.get("run_status"))
+				|| expiresAt == null || !now.isBefore(expiresAt)) {
+			throw PaymentException.conflict("Course Order or Reservation is not payable");
+		}
+		List<Map<String, Object>> rows = db.queryForList(
+			"select * from course_payments where course_order_id=? for update", orderId);
+		if (!rows.isEmpty()) {
+			Map<String, Object> payment = rows.getFirst();
+			if (!"PENDING".equals(payment.get("status"))) throw PaymentException.conflict("Course Payment is terminal");
+			if (missingSnapshot(payment, "bank_code_snapshot") || missingSnapshot(payment, "bank_account_number_snapshot")
+					|| missingSnapshot(payment, "bank_account_name_snapshot")) {
+				throw new PaymentException(HttpStatus.CONFLICT, "PAYMENT_DESTINATION_SNAPSHOT_MISSING",
+					"Course Payment destination snapshot is missing");
+			}
+			return coursePaymentResponse(payment);
+		}
+		requireBankConfiguration();
+		UUID paymentId = UUID.randomUUID();
+		String reference = (String) order.get("order_reference");
+		db.update("""
+			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,
+				payment_reference,amount,currency_code,status,deadline_at,bank_code_snapshot,
+				bank_account_number_snapshot,bank_account_name_snapshot,method,provider,created_at,updated_at)
+			values(?,?,?,?,?,?,?,'VND','PENDING',?,?,?,?,'SEPAY','SEPAY',?,?)
+			""", paymentId, orderId, order.get("reservation_id"), memberId, order.get("actor_account_id"),
+			reference, order.get("tuition_vnd_snapshot"), Timestamp.from(expiresAt), bankCode, bankAccount,
+			bankAccountName, Timestamp.from(now), Timestamp.from(now));
+		return coursePaymentResponse(db.queryForMap("select * from course_payments where id=?", paymentId));
+	}
+
+	private CoursePaymentResponse coursePaymentResponse(Map<String, Object> payment) {
+		String code = (String) payment.get("bank_code_snapshot");
+		String account = (String) payment.get("bank_account_number_snapshot");
+		String name = (String) payment.get("bank_account_name_snapshot");
+		BigInteger amount = new BigDecimal(payment.get("amount").toString()).toBigIntegerExact();
+		String reference = (String) payment.get("payment_reference");
+		return new CoursePaymentResponse((UUID) payment.get("id"), (UUID) payment.get("course_order_id"), amount,
+			payment.get("currency_code").toString().trim(), payment.get("method").toString(),
+			(String) payment.get("provider"), reference, code, account, name,
+			CoursePaymentResponse.qrUrl(code, account, name, amount, reference),
+			instant(payment.get("deadline_at")), payment.get("status").toString());
+	}
+
+	private void requireIdempotencyKey(String key) {
+		if (key == null || key.trim().isEmpty() || key.trim().length() > 100) {
+			throw PaymentException.validation("Idempotency-Key must be nonblank and at most 100 characters");
+		}
+	}
+
+	private boolean courseRunPayable(Object status) {
+		return "OPEN_FOR_REGISTRATION".equals(status) || "CONFIRMED".equals(status) || "IN_PROGRESS".equals(status);
+	}
+
 	private SepayPaymentResponse createPayment(UUID actor, UUID memberId, UUID orderId) {
 		Map<String, Object> order;
 		try {
@@ -135,6 +250,7 @@ class SepayService {
 		if (request == null || request.id() == null || request.content() == null || request.content().isBlank()
 				|| request.transferAmount() == null || request.transferType() == null || request.transferType().isBlank())
 			throw PaymentException.validation("SePay webhook body is malformed");
+		Instant receivedAt = clock.instant();
 		String paymentReference = request.code() == null || request.code().isBlank()
 			? request.content().trim() : request.code().trim();
 		String normalizedPaymentReference = normalizeReference(paymentReference);
@@ -163,7 +279,7 @@ class SepayService {
 			}
 		}
 		return fulfillment.processSepayWebhook(paymentId, coursePaymentId, request, normalizedPaymentReference,
-			payloadSha256(request));
+			payloadSha256(request), receivedAt);
 	}
 
 	private static String normalizeReference(String value) {

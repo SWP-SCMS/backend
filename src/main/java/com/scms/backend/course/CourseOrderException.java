@@ -53,6 +53,11 @@ public class CourseOrderException extends RuntimeException {
 			"The member already has an effective reservation for this course run.");
 	}
 
+	static CourseOrderException alreadyEnrolled() {
+		return new CourseOrderException(HttpStatus.CONFLICT, "COURSE_MEMBER_ALREADY_ENROLLED",
+			"The member is already enrolled in this course run.");
+	}
+
 	static CourseOrderException capacityFull() {
 		return new CourseOrderException(HttpStatus.CONFLICT, "COURSE_CAPACITY_FULL",
 			"The course run has no remaining reservation capacity.");

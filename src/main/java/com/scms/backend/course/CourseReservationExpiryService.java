@@ -33,16 +33,23 @@ class CourseReservationExpiryService {
 
 	@Transactional
 	boolean expireReservation(UUID reservationId, Instant now) {
-		List<ExpiredReservation> expired = db.query("""
+		List<Map<String, Object>> rows = db.queryForList("""
+			select course_order_id,member_account_id,course_run_id
+			from course_reservations where id=?
+			""", reservationId);
+		if (rows.isEmpty()) return false;
+		Map<String, Object> row = rows.getFirst();
+		ExpiredReservation reservation = new ExpiredReservation((UUID) row.get("course_order_id"),
+			(UUID) row.get("member_account_id"), (UUID) row.get("course_run_id"));
+		db.queryForObject("select id from course_runs where id=? for update", UUID.class, reservation.runId());
+		db.queryForObject("select id from course_orders where id=? for update", UUID.class, reservation.orderId());
+		db.queryForObject("select id from course_reservations where id=? for update", UUID.class, reservationId);
+		int expired = db.update("""
 			update course_reservations
 			set status='EXPIRED',updated_at=?
 			where id=? and status='HELD' and expires_at<=?
-			returning course_order_id,member_account_id,course_run_id
-			""", (result, row) -> new ExpiredReservation(result.getObject(1, UUID.class),
-			result.getObject(2, UUID.class), result.getObject(3, UUID.class)),
-			Timestamp.from(now), reservationId, Timestamp.from(now));
-		if (expired.isEmpty()) return false;
-		ExpiredReservation reservation = expired.getFirst();
+			""", Timestamp.from(now), reservationId, Timestamp.from(now));
+		if (expired == 0) return false;
 		db.update("""
 			update course_orders set status='EXPIRED',updated_at=?
 			where id=? and status='PENDING_PAYMENT'

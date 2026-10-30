@@ -15,10 +15,11 @@ public record CourseOrderResponse(
 	@Schema(minimum = "1", maximum = "9999999999999999999", requiredMode = Schema.RequiredMode.REQUIRED)
 	BigInteger tuitionVnd,
 	@Schema(allowableValues = "VND", requiredMode = Schema.RequiredMode.REQUIRED) String currencyCode,
-	@Schema(allowableValues = { "PENDING_PAYMENT", "EXPIRED" }, requiredMode = Schema.RequiredMode.REQUIRED)
+	@Schema(allowableValues = { "PENDING_PAYMENT", "EXPIRED", "PAID" }, requiredMode = Schema.RequiredMode.REQUIRED)
 	String orderStatus,
-	@Schema(allowableValues = { "HELD", "EXPIRED" }, requiredMode = Schema.RequiredMode.REQUIRED)
+	@Schema(allowableValues = { "HELD", "EXPIRED", "ENROLLED" }, requiredMode = Schema.RequiredMode.REQUIRED)
 	String reservationStatus,
 	@Schema(format = "date-time", requiredMode = Schema.RequiredMode.REQUIRED) Instant expiresAt,
-	@Schema(format = "date-time", requiredMode = Schema.RequiredMode.REQUIRED) Instant createdAt) {
+	@Schema(format = "date-time", requiredMode = Schema.RequiredMode.REQUIRED) Instant createdAt,
+	@Schema(nullable = true, requiredMode = Schema.RequiredMode.REQUIRED) CoursePaymentResponse payment) {
 }

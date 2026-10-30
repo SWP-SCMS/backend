@@ -131,11 +131,12 @@ class GeneratedOpenApiTests {
 				Set.of(), null),
 			new CatalogPropertyContract("currencyCode", Set.of("string"), null, null, null, Set.of("VND"), null),
 			new CatalogPropertyContract("orderStatus", Set.of("string"), null, null, null,
-				Set.of("PENDING_PAYMENT", "EXPIRED"), null),
+				Set.of("PENDING_PAYMENT", "EXPIRED", "PAID"), null),
 			new CatalogPropertyContract("reservationStatus", Set.of("string"), null, null, null,
-				Set.of("HELD", "EXPIRED"), null),
+				Set.of("HELD", "EXPIRED", "ENROLLED"), null),
 			new CatalogPropertyContract("expiresAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("createdAt", Set.of("string"), "date-time", null, null, Set.of(), null)
+			new CatalogPropertyContract("createdAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("payment", Set.of("object"), null, null, null, Set.of(), null)
 		))
 	);
 	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(
@@ -343,8 +344,11 @@ class GeneratedOpenApiTests {
 		"GET /reception/members/{memberId}/membership-orders/pending",
 		"POST /members/me/course-orders",
 		"GET /members/me/course-orders/{orderId}",
+		"POST /members/me/course-orders/{orderId}/payments/sepay",
 		"POST /reception/members/{memberId}/course-orders",
 		"GET /reception/members/{memberId}/course-orders/{orderId}",
+		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay",
+		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash",
 		"POST /reception/members/{memberId}/cash-payments",
 		"POST /reception/membership-orders/{orderId}/cash",
 		"POST /payments/{paymentId}/reconcile",
@@ -653,6 +657,51 @@ class GeneratedOpenApiTests {
 		assertExpectedCourseOrderContract(documented, "static");
 		assertThat(normalizedCourseOrderContract(documented))
 			.isEqualTo(normalizedCourseOrderContract(generated));
+		for (JsonNode document : List.of(generated, documented)) {
+			JsonNode provider = document.at("/components/schemas/CoursePaymentResponse/properties/provider");
+			assertThat(provider.path("type").toString()).contains("null");
+			assertThat(provider.path("enum").get(0).asText()).isEqualTo("SEPAY");
+			assertThat(provider.path("enum").get(1).isNull()).isTrue();
+		}
+	}
+
+	@Test
+	void staticAndGeneratedCoursePaymentOperationsRequireIdempotencyAndMatchResponses() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
+		Map<String, String> operations = Map.of(
+			"POST /members/me/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse",
+			"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse",
+			"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash", "CourseEnrollmentResponse");
+		for (Map.Entry<String, String> contract : operations.entrySet()) {
+			String[] key = contract.getKey().split(" ", 2);
+			String path = key[1];
+			String method = key[0].toLowerCase();
+			JsonNode runtimeOperation = operation(generated, path, method);
+			JsonNode staticOperation = operation(documented, path, method);
+			assertThat(effectiveSecurity(generated, runtimeOperation)).isEqualTo(
+				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			assertThat(normalizedParameters(generated, runtimeOperation.path("parameters")))
+				.isEqualTo(normalizedParameters(documented, staticOperation.path("parameters")));
+			assertThat(operationHasRequiredParameter(generated, runtimeOperation, "Idempotency-Key", "header")).isTrue();
+			assertThat(operationHasRequiredParameter(documented, staticOperation, "Idempotency-Key", "header")).isTrue();
+			assertThat(runtimeOperation.has("requestBody")).isFalse();
+			assertThat(staticOperation.has("requestBody")).isFalse();
+			for (JsonNode document : List.of(generated, documented)) {
+				JsonNode success = resolve(document, response(document, path, method, "200"));
+				assertThat(normalizedSchema(document,
+					success.at("/content/application~1json/schema"))).isEqualTo(
+					normalizedSchema(document, document.at("/components/schemas/" + contract.getValue())));
+			}
+		}
+	}
+
+	private boolean operationHasRequiredParameter(JsonNode document, JsonNode operation, String name, String location) {
+		return java.util.stream.StreamSupport.stream(operation.path("parameters").spliterator(), false)
+			.map(parameter -> resolve(document, parameter))
+			.anyMatch(parameter -> name.equals(parameter.path("name").asText())
+				&& location.equals(parameter.path("in").asText()) && parameter.path("required").asBoolean(false));
 	}
 
 	@Test
@@ -742,7 +791,7 @@ class GeneratedOpenApiTests {
 		assertThat(resolve(document, schema.at("/properties/outcome")).path("enum").values()).toIterable()
 			.extracting(JsonNode::asText).contains("COURSE_PAYMENT_RECORDED");
 		assertThat(operation(document, "/payments/sepay/webhook", "post").path("description").asText())
-			.contains("CoursePayment", "does not create an Enrollment");
+			.contains("Course transfer fulfills", "Enrollment", "unit allocations atomically");
 	}
 
 	@Test
@@ -1523,6 +1572,7 @@ class GeneratedOpenApiTests {
 			assertThat(schema.path("additionalProperties").asBoolean(true)).as(label + " additional properties")
 				.isFalse();
 			for (CatalogPropertyContract property : contract.properties()) {
+				if ("payment".equals(property.name())) continue;
 				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(),
 					property.format(), null, property.minimum(), property.maximum(), property.enumValues(),
 					property.itemSchema(), label + " property " + property.name());
@@ -1636,6 +1686,21 @@ class GeneratedOpenApiTests {
 		return normalized;
 	}
 
+	private void normalizeNullableCourseOrderPayment(ObjectNode response) {
+		JsonNode schema = response.at("/content/application~1json");
+		if (!schema.isObject() || !schema.path("properties").has("payment")) return;
+		ObjectNode objectSchema = (ObjectNode) schema;
+		JsonNode payment = objectSchema.path("properties").path("payment");
+		if (payment.has("oneOf")) {
+			for (JsonNode option : payment.path("oneOf")) {
+				if ("object".equals(option.path("type").asText())) {
+					((ObjectNode) objectSchema.path("properties")).set("payment", option.deepCopy());
+					return;
+				}
+			}
+		}
+	}
+
 	private ObjectNode normalizedCourseOrderContract(JsonNode document) {
 		ObjectNode normalized = objectMapper.createObjectNode();
 		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
@@ -1655,9 +1720,12 @@ class GeneratedOpenApiTests {
 				operation.set("requestBody", normalizedRequest);
 			}
 			ObjectNode responses = objectMapper.createObjectNode();
-			new TreeSet<>(responseStatuses(document, contract)).forEach(status ->
-				responses.set(status, normalizedResponse(document,
-					response(document, contract.path(), contract.method(), status))));
+			new TreeSet<>(responseStatuses(document, contract)).forEach(status -> {
+				ObjectNode response = normalizedResponse(document,
+					response(document, contract.path(), contract.method(), status));
+				normalizeNullableCourseOrderPayment(response);
+				responses.set(status, response);
+			});
 			operation.set("responses", responses);
 			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
 		}

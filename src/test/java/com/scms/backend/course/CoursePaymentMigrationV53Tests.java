@@ -131,7 +131,7 @@ class CoursePaymentMigrationV53Tests {
 		assertThat(db.queryForObject("select course_payment_id from payment_provider_events where id=?",
 			UUID.class, event)).isNull();
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(53);
+			Integer.class)).isEqualTo(54);
 	}
 
 	private Fixture fixture(JdbcTemplate db) {

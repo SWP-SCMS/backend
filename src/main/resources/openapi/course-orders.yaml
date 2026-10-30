@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: SCMS Course Order API
   version: 1.0.0
-  description: Independent CourseOrder and CourseReservation hold API; payment evidence is internal and no enrollment endpoint is exposed.
+  description: Course orders, SePay payment instructions, receptionist cash fulfillment, and paid enrollment.
 servers:
   - url: /api/v1
 paths:
@@ -60,6 +60,52 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
+  /members/me/course-orders/{orderId}/payments/sepay:
+    post:
+      summary: Create or resume the authenticated Member's Course QR payment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200': { $ref: '#/components/responses/CoursePayment' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /reception/members/{memberId}/course-orders/{orderId}/payments/sepay:
+    post:
+      summary: Create or resume a target Member's Course QR payment
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+        - { $ref: '#/components/parameters/OrderId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200': { $ref: '#/components/responses/CoursePayment' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /reception/members/{memberId}/course-orders/{orderId}/payments/cash:
+    post:
+      summary: Fulfill a target Member's Course order by cash and enroll atomically
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+        - { $ref: '#/components/parameters/OrderId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200': { $ref: '#/components/responses/CourseEnrollment' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -91,6 +137,16 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/CourseOrderResponse' }
+    CoursePayment:
+      description: Stable Course payment reference and SePay QR instruction.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CoursePaymentResponse' }
+    CourseEnrollment:
+      description: Paid Course enrollment created atomically with its unit allocations.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CourseEnrollmentResponse' }
     Problem:
       description: Stable RFC 9457 Problem Details response.
       content:
@@ -112,7 +168,7 @@ components:
       type: object
       additionalProperties: false
       required: [orderId, orderReference, memberId, courseRunId, tuitionVnd, currencyCode,
-        orderStatus, reservationStatus, expiresAt, createdAt]
+        orderStatus, reservationStatus, expiresAt, createdAt, payment]
       properties:
         orderId: { type: string, format: uuid }
         orderReference: { type: string, pattern: '^COR-[0-9A-F]{32}$' }
@@ -120,10 +176,42 @@ components:
         courseRunId: { type: string, format: uuid }
         tuitionVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
         currencyCode: { type: string, enum: [VND] }
-        orderStatus: { type: string, enum: [PENDING_PAYMENT, EXPIRED] }
-        reservationStatus: { type: string, enum: [HELD, EXPIRED] }
+        orderStatus: { type: string, enum: [PENDING_PAYMENT, EXPIRED, PAID] }
+        reservationStatus: { type: string, enum: [HELD, EXPIRED, ENROLLED] }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
+        payment: { oneOf: [{ $ref: '#/components/schemas/CoursePaymentResponse' }, { type: 'null' }] }
+    CoursePaymentResponse:
+      type: object
+      additionalProperties: false
+      required: [paymentId, orderId, amount, currencyCode, method, paymentReference, bankCode,
+        provider, bankAccountNumber, bankAccountName, qrUrl, expiresAt, status]
+      properties:
+        paymentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        amount: { type: integer, minimum: 1, maximum: 9999999999999999999 }
+        currencyCode: { type: string, enum: [VND] }
+        method: { type: string, enum: [SEPAY, CASH] }
+        provider: { type: [string, 'null'], enum: [SEPAY, null] }
+        paymentReference: { type: string, pattern: '^COR-[0-9A-F]{32}$' }
+        bankCode: { type: [string, 'null'] }
+        bankAccountNumber: { type: [string, 'null'] }
+        bankAccountName: { type: [string, 'null'] }
+        qrUrl: { type: [string, 'null'], format: uri }
+        expiresAt: { type: string, format: date-time }
+        status: { type: string, enum: [PENDING, PAID, FAILED] }
+    CourseEnrollmentResponse:
+      type: object
+      additionalProperties: false
+      required: [enrollmentId, orderId, memberId, courseRunId, amountPaidVnd, totalUnits, enrolledAt]
+      properties:
+        enrollmentId: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        memberId: { type: string, format: uuid }
+        courseRunId: { type: string, format: uuid }
+        amountPaidVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
+        totalUnits: { type: integer, minimum: 1 }
+        enrolledAt: { type: string, format: date-time }
     ApiProblem:
       type: object
       required: [title, status, detail, instance, code]
