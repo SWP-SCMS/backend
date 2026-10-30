@@ -1,0 +1,210 @@
+openapi: 3.1.0
+info:
+  title: SCMS Course Catalog API
+  version: v1
+paths:
+  /courses:
+    get:
+      operationId: listCatalogCourses
+      description: Public catalog of PUBLISHED courses.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Published courses ordered by name and id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogCoursePage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /courses/{courseId}:
+    get:
+      operationId: getCatalogCourse
+      description: Public detail for a PUBLISHED course; hidden states use the same 404 as a missing course.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+      responses:
+        '200':
+          description: Published course detail.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogCourse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /course-runs:
+    get:
+      operationId: listCatalogCourseRuns
+      description: Public catalog of OPEN_FOR_REGISTRATION runs whose parent Course is PUBLISHED.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Visible course runs ordered by planned start and id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogCourseRunPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /course-runs/{runId}:
+    get:
+      operationId: getCatalogCourseRun
+      description: Public run detail with an ordered schedule; registration status does not imply seat availability.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Visible course run and sessions ordered by startAt and id.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CatalogCourseRunDetail'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, format: int32, default: 0, minimum: 0}
+    Size:
+      name: size
+      in: query
+      schema: {type: integer, format: int32, default: 20, minimum: 1, maximum: 100}
+    CourseId:
+      name: courseId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    CatalogCourse:
+      type: object
+      required: [id, code, name, disciplineId, disciplineName]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        description: {type: [string, 'null']}
+        disciplineId: {type: string, format: uuid}
+        disciplineName: {type: string}
+        imageUrl: {type: [string, 'null']}
+    CatalogCoursePage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourse'}
+        page: {type: integer, format: int32}
+        size: {type: integer, format: int32}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer, format: int32}
+    RegistrationStatus:
+      type: string
+      description: Derived from the half-open registration window [registrationOpensAt, registrationClosesAt); not seat availability.
+      enum: [UPCOMING, OPEN, CLOSED]
+    CatalogCourseRun:
+      type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
+        plannedStartAt, plannedEndAt, totalUnits, status]
+      properties:
+        id: {type: string, format: uuid}
+        runCode: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        primaryCoachId: {type: string, format: uuid}
+        primaryCoachName: {type: string}
+        tuitionVnd: {type: integer, format: int64, minimum: 1}
+        capacity: {type: integer, format: int32, minimum: 1, description: Total configured capacity; not remaining seats.}
+        registrationOpensAt: {type: string, format: date-time}
+        registrationClosesAt: {type: string, format: date-time}
+        registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
+        plannedStartAt: {type: string, format: date-time}
+        plannedEndAt: {type: string, format: date-time}
+        totalUnits: {type: integer, format: int32, minimum: 1}
+        status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
+    CatalogCourseRunPage:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourseRun'}
+        page: {type: integer, format: int32}
+        size: {type: integer, format: int32}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer, format: int32}
+    CatalogCourseSession:
+      type: object
+      required: [id, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
+        originalStartAt, originalEndAt, allocationVnd, status]
+      properties:
+        id: {type: string, format: uuid}
+        unitNumber: {type: integer, format: int32, minimum: 1}
+        roomId: {type: string, format: uuid}
+        roomName: {type: string}
+        coachId: {type: string, format: uuid}
+        coachName: {type: string}
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        originalStartAt: {type: string, format: date-time}
+        originalEndAt: {type: string, format: date-time}
+        allocationVnd: {type: integer, format: int64, minimum: 1}
+        status:
+          type: string
+          enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
+    CatalogCourseRunDetail:
+      allOf:
+        - $ref: '#/components/schemas/CatalogCourseRun'
+        - type: object
+          required: [sessions]
+          properties:
+            sessions:
+              type: array
+              items: {$ref: '#/components/schemas/CatalogCourseSession'}
+    CatalogProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: {type: string}
+        status: {type: integer, format: int32}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code:
+          type: string
+          enum: [COURSE_VALIDATION_ERROR, COURSE_NOT_FOUND, COURSE_RUN_NOT_FOUND,
+            MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN]
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+  responses:
+    BadRequest:
+      description: Invalid pagination or malformed request (COURSE_VALIDATION_ERROR or MALFORMED_REQUEST).
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CatalogProblem'}
+    Unauthorized:
+      description: An invalid supplied bearer token is rejected (UNAUTHENTICATED or INVALID_TOKEN); authentication is not required.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CatalogProblem'}
+    NotFound:
+      description: Missing or hidden course/run (COURSE_NOT_FOUND or COURSE_RUN_NOT_FOUND).
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/CatalogProblem'}

@@ -19,6 +19,22 @@ public interface CourseRunRepository extends JpaRepository<CourseRun, UUID> {
 	Page<CourseRun> findAll(Pageable pageable);
 
 	@EntityGraph(attributePaths = { "course", "course.discipline", "primaryCoach" })
+	@Query("""
+		select run from CourseRun run
+		where run.status = :status and run.course.status = :courseStatus
+		""")
+	Page<CourseRun> findCatalogByStatusAndCourseStatus(@Param("status") CourseRunStatus status,
+		@Param("courseStatus") CourseStatus courseStatus, Pageable pageable);
+
+	@EntityGraph(attributePaths = { "course", "course.discipline", "primaryCoach" })
+	@Query("""
+		select run from CourseRun run
+		where run.id = :id and run.status = :status and run.course.status = :courseStatus
+		""")
+	java.util.Optional<CourseRun> findCatalogByIdAndStatusAndCourseStatus(@Param("id") UUID id,
+		@Param("status") CourseRunStatus status, @Param("courseStatus") CourseStatus courseStatus);
+
+	@EntityGraph(attributePaths = { "course", "course.discipline", "primaryCoach" })
 	@Query("select run from CourseRun run where run.id = :id")
 	java.util.Optional<CourseRun> findDetailedById(@Param("id") UUID id);
 

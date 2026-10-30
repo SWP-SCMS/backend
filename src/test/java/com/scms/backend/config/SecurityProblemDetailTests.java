@@ -72,6 +72,16 @@ class SecurityProblemDetailTests {
 	}
 
 	@Test
+	void courseCatalogIsPublic() throws Exception {
+		for (String path : new String[] {
+			"/courses", "/courses/00000000-0000-0000-0000-000000000001",
+			"/course-runs", "/course-runs/00000000-0000-0000-0000-000000000001"
+		}) {
+			mockMvc.perform(get(path)).andExpect(status().isOk());
+		}
+	}
+
+	@Test
 	void bookingViewsAreRoleScoped() throws Exception {
 		mockMvc.perform(get("/members/me/bookings").with(user("receptionist").roles("RECEPTIONIST")))
 			.andExpect(status().isForbidden());
@@ -166,6 +176,10 @@ class SecurityProblemDetailTests {
 
 		@GetMapping("/membership-offers/{offerId}")
 		void publicOfferDetail() {
+		}
+
+		@GetMapping({ "/courses", "/courses/{courseId}", "/course-runs", "/course-runs/{runId}" })
+		void publicCourseCatalog() {
 		}
 
 		@GetMapping("/members/me/bookings")

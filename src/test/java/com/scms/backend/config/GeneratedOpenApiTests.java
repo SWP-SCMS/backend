@@ -79,6 +79,12 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES)
 	);
+	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(
+		new CourseOperationContract("/courses", "get", Set.of("200", "400", "401")),
+		new CourseOperationContract("/courses/{courseId}", "get", Set.of("200", "400", "401", "404")),
+		new CourseOperationContract("/course-runs", "get", Set.of("200", "400", "401")),
+		new CourseOperationContract("/course-runs/{runId}", "get", Set.of("200", "400", "401", "404"))
+	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
 		"POST /auth/login",
@@ -129,6 +135,10 @@ class GeneratedOpenApiTests {
 		"DELETE /accounts/me/email-change",
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
+		"GET /courses",
+		"GET /courses/{courseId}",
+		"GET /course-runs",
+		"GET /course-runs/{runId}",
 		"GET /manager/membership-offers",
 		"GET /manager/membership-offers/{offerId}",
 		"POST /manager/membership-offers",
@@ -423,6 +433,47 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedCourseCatalogIsPublicAndDocumentsOnlyVisibleRunState() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String path : List.of("/courses", "/courses/{courseId}", "/course-runs", "/course-runs/{runId}")) {
+			JsonNode operation = operation(document, path, "get");
+			assertThat(operation.path("security").isArray()).as(path).isTrue();
+			assertThat(operation.path("security")).as(path).isEmpty();
+			assertThat(operation.path("description").asText()).contains("Public course catalog");
+			assertThat(operation.path("responses").has("403")).as(path).isFalse();
+		}
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/status/enum").toString())
+			.isEqualTo("[\"OPEN_FOR_REGISTRATION\"]");
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/registrationStatus/enum")
+			.toString())
+			.isEqualTo("[\"UPCOMING\",\"OPEN\",\"CLOSED\"]");
+		JsonNode detail = document.at("/components/schemas/CatalogCourseRunDetailResponse");
+		assertThat(detail.at("/properties/sessions/items/$ref").asText())
+			.isEqualTo("#/components/schemas/CatalogCourseSessionResponse");
+		assertThat(detail.toString()).doesNotContain("capacityRemaining", "policyVersionSnapshot", "version");
+	}
+
+	@Test
+	void staticAndGeneratedCourseCatalogResponsesHaveParity() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-catalog.yaml"));
+
+		for (CourseOperationContract contract : COURSE_CATALOG_OPERATION_CONTRACTS) {
+			String label = contract.method().toUpperCase() + " " + contract.path();
+			assertThat(responseStatuses(generated, contract)).as("generated " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			contract.statuses().stream().filter(status -> !status.startsWith("2")).forEach(status -> {
+				assertProblemResponse(generated, contract, status, "generated " + label,
+					"401".equals(status) ? "UnauthorizedProblem" : "ApiProblem");
+				assertProblemResponse(documented, contract, status, "static " + label, "CatalogProblem");
+			});
+		}
+	}
+
+	@Test
 	void staticAndGeneratedCourseContractsHaveTableDrivenResponseAndProblemParity() throws Exception {
 		JsonNode generated = generatedDocument();
 		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
@@ -536,6 +587,8 @@ class GeneratedOpenApiTests {
 			"/paths/~1auth~1email-verification~1resend/post",
 			"/paths/~1auth~1email-verification~1change-email/post",
 			"/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get",
+			"/paths/~1courses/get", "/paths/~1courses~1{courseId}/get",
+			"/paths/~1course-runs/get", "/paths/~1course-runs~1{runId}/get",
 			"/paths/~1payments~1sepay~1webhook/post")) {
 			assertThat(document.at(publicOperation + "/security").isArray()).as(publicOperation).isTrue();
 			assertThat(document.at(publicOperation + "/security")).as(publicOperation).isEmpty();

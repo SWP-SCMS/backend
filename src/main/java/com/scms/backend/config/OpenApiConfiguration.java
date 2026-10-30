@@ -215,6 +215,9 @@ public class OpenApiConfiguration {
 
 	private String constraint(String path, boolean publicOperation) {
 		if (publicOperation) {
+			if (path.startsWith("/courses") || path.startsWith("/course-runs")) {
+				return "Public course catalog; only PUBLISHED courses and OPEN_FOR_REGISTRATION runs are returned.";
+			}
 			return path.equals("/payments/sepay/webhook")
 				? "Public SePay provider webhook; authenticated by the configured provider API key."
 				: "Public authentication operation.";
