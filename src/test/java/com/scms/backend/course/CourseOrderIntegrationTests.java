@@ -252,10 +252,11 @@ class CourseOrderIntegrationTests {
 	@Test
 	void rejectsOverlapWithARealBookedGymSession() throws Exception {
 		MemberProfile member = member(AccountStatus.ACTIVE);
-		Instant courseStart = NOW.plusSeconds(7200);
+		GymSessionWindow gymSession = bookGymSession(member);
 		RunFixture fixture = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
-			"OPEN_FOR_REGISTRATION", courseStart);
-		bookGymSession(member, courseStart.plusSeconds(900), courseStart.plusSeconds(2700));
+			"OPEN_FOR_REGISTRATION", gymSession.startAt());
+		assertThat(fixture.sessionStart()).isEqualTo(gymSession.startAt());
+		assertThat(fixture.sessionStart().plusSeconds(3600)).isEqualTo(gymSession.endAt());
 
 		createSelf(member, fixture.runId(), "booked-overlap").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("COURSE_SCHEDULE_CONFLICT"));
@@ -384,12 +385,17 @@ class CourseOrderIntegrationTests {
 		}
 	}
 
-	private void bookGymSession(MemberProfile member, Instant start, Instant end) {
+	private GymSessionWindow bookGymSession(MemberProfile member) {
 		Account manager = account(AccountRole.MANAGER, AccountStatus.ACTIVE);
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
 		UUID offerId = UUID.randomUUID(), orderId = UUID.randomUUID(), membershipId = UUID.randomUUID();
 		UUID disciplineId = UUID.randomUUID(), classId = UUID.randomUUID(), roomId = UUID.randomUUID();
 		UUID sessionId = UUID.randomUUID();
+		GymSessionWindow session = db.queryForObject("""
+			select current_timestamp + interval '1 day' as start_at,
+				current_timestamp + interval '1 day 1 hour' as end_at
+			""", (result, row) -> new GymSessionWindow(
+				result.getTimestamp("start_at").toInstant(), result.getTimestamp("end_at").toInstant()));
 		db.update("""
 			insert into membership_offers(id,plan_code,name,description,price_amount,duration_days,status,
 				created_by_account_id)
@@ -401,18 +407,20 @@ class CourseOrderIntegrationTests {
 				duration_days_snapshot,payment_method,status,paid_at)
 			values(?,?,?,?,?,'Overlap','PLUS',12000,'VND',30,'CASH','PAID',?)
 			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), member.getAccountId(),
-			manager.getId(), offerId, Timestamp.from(NOW));
+			manager.getId(), offerId, Timestamp.from(session.startAt().minusSeconds(86400)));
 		db.update("""
 			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,
 				processed_by_account_id)
 			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
-			""", UUID.randomUUID(), orderId, "CASH-" + orderId, Timestamp.from(NOW), manager.getId());
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId,
+			Timestamp.from(session.startAt().minusSeconds(86400)), manager.getId());
 		db.update("""
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
 				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
 			values(?,?,?,?,'PLUS','Overlap',12000,'VND',30,'ACTIVE',?,?)
-			""", membershipId, member.getAccountId(), orderId, offerId, Timestamp.from(NOW.minusSeconds(60)),
-			Timestamp.from(NOW.plusSeconds(86400 * 30L)));
+			""", membershipId, member.getAccountId(), orderId, offerId,
+			Timestamp.from(session.startAt().minusSeconds(60)),
+			Timestamp.from(session.endAt().plusSeconds(86400 * 30L)));
 		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')", disciplineId,
 			"Booked overlap " + disciplineId);
 		db.update("insert into sport_classes(id,discipline_id,name,class_type,status) values(?,?,?,'GROUP','ACTIVE')",
@@ -423,12 +431,13 @@ class CourseOrderIntegrationTests {
 			insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,
 				capacity,status,created_by_account_id)
 			values(?,?,?,?,?,?,10,'SCHEDULED',?)
-			""", sessionId, classId, coach.getId(), roomId, Timestamp.from(start), Timestamp.from(end),
-			manager.getId());
+			""", sessionId, classId, coach.getId(), roomId, Timestamp.from(session.startAt()),
+			Timestamp.from(session.endAt()), manager.getId());
 		db.update("""
 			insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id)
 			values(?,?,?,?,'BOOKED',?)
 			""", UUID.randomUUID(), sessionId, member.getAccountId(), membershipId, member.getAccountId());
+		return session;
 	}
 
 	private static void await(CountDownLatch latch) {
@@ -561,4 +570,6 @@ class CourseOrderIntegrationTests {
 	}
 
 	private record RunFixture(UUID runId, Instant sessionStart) { }
+
+	private record GymSessionWindow(Instant startAt, Instant endAt) { }
 }
