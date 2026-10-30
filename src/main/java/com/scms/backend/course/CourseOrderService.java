@@ -58,7 +58,7 @@ class CourseOrderService {
 	CreateResult createForMember(UUID actorId, CourseOrderCreateRequest request, String idempotencyKey) {
 		Account actor = lockActive(actorId, AccountRole.MEMBER);
 		MemberProfile member = profiles.findById(actor.getId()).orElseThrow(InvalidAuthenticatedAccountException::new);
-		return create(actorId, member, request, normalizeKey(idempotencyKey));
+		return create(actorId, member, request, normalizeKey(idempotencyKey), false);
 	}
 
 	@Transactional
@@ -67,7 +67,13 @@ class CourseOrderService {
 		lockActive(actorId, AccountRole.RECEPTIONIST);
 		MemberProfile member = findMember(memberId);
 		lockActiveMember(member.getAccountId());
-		return create(actorId, member, request, normalizeKey(idempotencyKey));
+		return create(actorId, member, request, normalizeKey(idempotencyKey), false);
+	}
+
+	CreateResult createFromWaitlist(UUID memberId, UUID runId, String idempotencyKey) {
+		Account actor = lockActive(memberId, AccountRole.MEMBER);
+		MemberProfile member = profiles.findById(actor.getId()).orElseThrow(InvalidAuthenticatedAccountException::new);
+		return create(memberId, member, new CourseOrderCreateRequest(runId), normalizeKey(idempotencyKey), true);
 	}
 
 	@Transactional
@@ -88,7 +94,8 @@ class CourseOrderService {
 		return fifteenMinutes.isBefore(registrationClosesAt) ? fifteenMinutes : registrationClosesAt;
 	}
 
-	private CreateResult create(UUID actorId, MemberProfile member, CourseOrderCreateRequest request, String key) {
+	private CreateResult create(UUID actorId, MemberProfile member, CourseOrderCreateRequest request, String key,
+			boolean invitedSeat) {
 		if (request == null || request.courseRunId() == null) {
 			throw CourseOrderException.runUnavailable();
 		}
@@ -114,10 +121,14 @@ class CourseOrderService {
 		}
 		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=?",
 				member.getAccountId(), run.getId()) > 0) throw CourseOrderException.alreadyEnrolled();
-		if (count("""
+		long usedSeats = count("""
 			select count(*) from course_reservations
 			where course_run_id=? and (status='ENROLLED' or (status='HELD' and expires_at>?))
-			""", run.getId(), Timestamp.from(now)) >= run.getCapacity()) {
+			""", run.getId(), Timestamp.from(now)) + count("""
+			select count(*) from course_waitlists
+			where course_run_id=? and status='INVITED' and invitation_expires_at>?
+			""", run.getId(), Timestamp.from(now));
+		if (usedSeats - (invitedSeat ? 1 : 0) >= run.getCapacity()) {
 			throw CourseOrderException.capacityFull();
 		}
 		validateSchedule(member.getAccountId(), run.getId(), now);
