@@ -72,11 +72,11 @@ components:
     Page:
       name: page
       in: query
-      schema: {type: integer, format: int32, default: 0}
+      schema: {type: integer, format: int32, minimum: 0, default: 0}
     Size:
       name: size
       in: query
-      schema: {type: integer, format: int32, default: 20}
+      schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}
     CourseId:
       name: courseId
       in: path
@@ -90,30 +90,35 @@ components:
   schemas:
     CatalogCourseResponse:
       type: object
+      required: [id, code, name, description, disciplineId, disciplineName, imageUrl]
       properties:
         id: {type: string, format: uuid}
         code: {type: string}
         name: {type: string}
-        description: {type: string}
+        description: {type: [string, 'null']}
         disciplineId: {type: string, format: uuid}
         disciplineName: {type: string}
-        imageUrl: {type: string}
+        imageUrl: {type: [string, 'null']}
     CatalogCoursePageResponse:
       type: object
+      required: [content, page, size, totalElements, totalPages]
       properties:
         content:
           type: array
           items: {$ref: '#/components/schemas/CatalogCourseResponse'}
-        page: {type: integer, format: int32}
-        size: {type: integer, format: int32}
-        totalElements: {type: integer, format: int64}
-        totalPages: {type: integer, format: int32}
+        page: {type: integer, format: int32, minimum: 0}
+        size: {type: integer, format: int32, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, format: int32, minimum: 0}
     RegistrationStatus:
       type: string
       description: Derived from the half-open registration window [registrationOpensAt, registrationClosesAt); not seat availability.
       enum: [UPCOMING, OPEN, CLOSED]
     CatalogCourseRunResponse:
       type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
+        plannedStartAt, plannedEndAt, totalUnits, status]
       properties:
         id: {type: string, format: uuid}
         runCode: {type: string}
@@ -122,30 +127,33 @@ components:
         courseName: {type: string}
         primaryCoachId: {type: string, format: uuid}
         primaryCoachName: {type: string}
-        tuitionVnd: {type: integer}
-        capacity: {type: integer, format: int32}
+        tuitionVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
+        capacity: {type: integer, format: int32, minimum: 1}
         registrationOpensAt: {type: string, format: date-time}
         registrationClosesAt: {type: string, format: date-time}
         registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
         plannedStartAt: {type: string, format: date-time}
         plannedEndAt: {type: string, format: date-time}
-        totalUnits: {type: integer, format: int32}
+        totalUnits: {type: integer, format: int32, minimum: 1}
         status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
     CatalogCourseRunPageResponse:
       type: object
+      required: [content, page, size, totalElements, totalPages]
       properties:
         content:
           type: array
           items: {$ref: '#/components/schemas/CatalogCourseRunResponse'}
-        page: {type: integer, format: int32}
-        size: {type: integer, format: int32}
-        totalElements: {type: integer, format: int64}
-        totalPages: {type: integer, format: int32}
+        page: {type: integer, format: int32, minimum: 0}
+        size: {type: integer, format: int32, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, format: int32, minimum: 0}
     CatalogCourseSessionResponse:
       type: object
+      required: [id, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
+        originalStartAt, originalEndAt, allocationVnd, status]
       properties:
         id: {type: string, format: uuid}
-        unitNumber: {type: integer, format: int32}
+        unitNumber: {type: integer, format: int32, minimum: 1}
         roomId: {type: string, format: uuid}
         roomName: {type: string}
         coachId: {type: string, format: uuid}
@@ -154,12 +162,15 @@ components:
         endAt: {type: string, format: date-time}
         originalStartAt: {type: string, format: date-time}
         originalEndAt: {type: string, format: date-time}
-        allocationVnd: {type: integer}
+        allocationVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
         status:
           type: string
           enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
     CatalogCourseRunDetailResponse:
       type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
+        plannedStartAt, plannedEndAt, totalUnits, status, sessions]
       properties:
         id: {type: string, format: uuid}
         runCode: {type: string}
@@ -168,14 +179,14 @@ components:
         courseName: {type: string}
         primaryCoachId: {type: string, format: uuid}
         primaryCoachName: {type: string}
-        tuitionVnd: {type: integer}
-        capacity: {type: integer, format: int32}
+        tuitionVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
+        capacity: {type: integer, format: int32, minimum: 1}
         registrationOpensAt: {type: string, format: date-time}
         registrationClosesAt: {type: string, format: date-time}
         registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
         plannedStartAt: {type: string, format: date-time}
         plannedEndAt: {type: string, format: date-time}
-        totalUnits: {type: integer, format: int32}
+        totalUnits: {type: integer, format: int32, minimum: 1}
         status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
         sessions:
           type: array

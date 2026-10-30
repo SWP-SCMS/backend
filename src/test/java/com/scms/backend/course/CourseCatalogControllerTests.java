@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -85,6 +86,18 @@ class CourseCatalogControllerTests {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
 		verifyNoInteractions(service);
+	}
+
+	@Test
+	void courseDetailSerializesRequiredNullableFieldsAsNull() throws Exception {
+		UUID courseId = UUID.randomUUID();
+		when(service.getCourse(courseId)).thenReturn(new CatalogCourseResponse(courseId, "SWIM-101",
+			"Beginner Swim", null, UUID.randomUUID(), "Swimming", null));
+
+		mockMvc.perform(get("/api/v1/courses/{courseId}", courseId).contextPath("/api/v1"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.description").value(nullValue()))
+			.andExpect(jsonPath("$.imageUrl").value(nullValue()));
 	}
 
 	@Test

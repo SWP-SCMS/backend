@@ -469,6 +469,8 @@ class GeneratedOpenApiTests {
 			assertThat(responseStatuses(documented, contract)).as("static " + label)
 				.containsExactlyInAnyOrderElementsOf(contract.statuses());
 		}
+		assertPreciseCatalogSchemas(generated);
+		assertPreciseCatalogSchemas(documented);
 		assertThat(normalizedCatalogContract(documented)).isEqualTo(normalizedCatalogContract(generated));
 	}
 
@@ -1232,6 +1234,87 @@ class GeneratedOpenApiTests {
 	private Set<String> responseStatuses(JsonNode document, CourseOperationContract contract) {
 		return operation(document, contract.path(), contract.method()).path("responses").properties().stream()
 			.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+	}
+
+	private void assertPreciseCatalogSchemas(JsonNode document) {
+		for (String path : List.of("/courses", "/course-runs")) {
+			assertThat(parameter(document, path, "page").at("/schema/minimum").asInt())
+				.as(path + " page minimum").isZero();
+			assertThat(parameter(document, path, "size").at("/schema/minimum").asInt())
+				.as(path + " size minimum").isEqualTo(1);
+			assertThat(parameter(document, path, "size").at("/schema/maximum").asInt())
+				.as(path + " size maximum").isEqualTo(100);
+		}
+
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCourseResponse"),
+			"id", "code", "name", "description", "disciplineId", "disciplineName", "imageUrl");
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCoursePageResponse"),
+			"content", "page", "size", "totalElements", "totalPages");
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCourseRunPageResponse"),
+			"content", "page", "size", "totalElements", "totalPages");
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCourseRunResponse"),
+			"id", "runCode", "courseId", "courseCode", "courseName", "primaryCoachId", "primaryCoachName",
+			"tuitionVnd", "capacity", "registrationOpensAt", "registrationClosesAt", "registrationStatus",
+			"plannedStartAt", "plannedEndAt", "totalUnits", "status");
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCourseSessionResponse"),
+			"id", "unitNumber", "roomId", "roomName", "coachId", "coachName", "startAt", "endAt",
+			"originalStartAt", "originalEndAt", "allocationVnd", "status");
+		assertRequiredExactly(document.path("components").path("schemas").path("CatalogCourseRunDetailResponse"),
+			"id", "runCode", "courseId", "courseCode", "courseName", "primaryCoachId", "primaryCoachName",
+			"tuitionVnd", "capacity", "registrationOpensAt", "registrationClosesAt", "registrationStatus",
+			"plannedStartAt", "plannedEndAt", "totalUnits", "status", "sessions");
+
+		for (String field : List.of("description", "imageUrl")) {
+			assertThat(document.at("/components/schemas/CatalogCourseResponse/properties/" + field + "/type")
+				.values()).as(field + " nullable union").toIterable().extracting(JsonNode::asText)
+				.containsExactlyInAnyOrder("string", "null");
+		}
+
+		assertNumericBounds(document, "CatalogCoursePageResponse", "page", "0", null);
+		assertNumericBounds(document, "CatalogCoursePageResponse", "size", "1", "100");
+		assertNumericBounds(document, "CatalogCoursePageResponse", "totalElements", "0", null);
+		assertNumericBounds(document, "CatalogCoursePageResponse", "totalPages", "0", null);
+		assertNumericBounds(document, "CatalogCourseRunPageResponse", "page", "0", null);
+		assertNumericBounds(document, "CatalogCourseRunPageResponse", "size", "1", "100");
+		assertNumericBounds(document, "CatalogCourseRunPageResponse", "totalElements", "0", null);
+		assertNumericBounds(document, "CatalogCourseRunPageResponse", "totalPages", "0", null);
+		for (String schema : List.of("CatalogCourseRunResponse", "CatalogCourseRunDetailResponse")) {
+			assertNumericBounds(document, schema, "tuitionVnd", "1", "9999999999999999999");
+			assertNumericBounds(document, schema, "capacity", "1", null);
+			assertNumericBounds(document, schema, "totalUnits", "1", null);
+		}
+		assertNumericBounds(document, "CatalogCourseSessionResponse", "unitNumber", "1", null);
+		assertNumericBounds(document, "CatalogCourseSessionResponse", "allocationVnd", "1",
+			"9999999999999999999");
+		assertThat(document.at("/components/schemas/CatalogCourseResponse/properties/id/format").asText())
+			.isEqualTo("uuid");
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/plannedStartAt/format")
+			.asText()).isEqualTo("date-time");
+		assertThat(document.at("/components/schemas/CatalogCoursePageResponse/properties/totalElements/format")
+			.asText()).isEqualTo("int64");
+	}
+
+	private JsonNode parameter(JsonNode document, String path, String name) {
+		return java.util.stream.StreamSupport.stream(operation(document, path, "get").path("parameters").spliterator(),
+			false).map(parameter -> resolve(document, parameter))
+			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
+	}
+
+	private void assertRequiredExactly(JsonNode schema, String... fields) {
+		assertThat(schema.path("required").values()).toIterable().extracting(JsonNode::asText)
+			.containsExactlyInAnyOrder(fields);
+	}
+
+	private void assertNumericBounds(JsonNode document, String schema, String field, String minimum,
+			String maximum) {
+		JsonNode property = document.at("/components/schemas/" + schema + "/properties/" + field);
+		assertThat(property.path("minimum").asText()).as(schema + "." + field + " minimum").isEqualTo(minimum);
+		if (maximum == null) {
+			assertThat(property.has("maximum")).as(schema + "." + field + " maximum").isFalse();
+		}
+		else {
+			assertThat(property.path("maximum").asText()).as(schema + "." + field + " maximum").isEqualTo(maximum);
+		}
 	}
 
 	private ObjectNode normalizedCatalogContract(JsonNode document) {

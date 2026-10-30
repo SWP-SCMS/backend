@@ -18,8 +18,14 @@ enum RegistrationStatus {
 	}
 }
 
-record CatalogCourseResponse(UUID id, String code, String name, String description, UUID disciplineId,
-	String disciplineName, String imageUrl) {
+record CatalogCourseResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID id,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String code,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String name,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) String description,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID disciplineId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String disciplineName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) String imageUrl) {
 
 	static CatalogCourseResponse from(Course course) {
 		return new CatalogCourseResponse(course.getId(), course.getCode(), course.getName(), course.getDescription(),
@@ -27,8 +33,12 @@ record CatalogCourseResponse(UUID id, String code, String name, String descripti
 	}
 }
 
-record CatalogCoursePageResponse(List<CatalogCourseResponse> content, int page, int size, long totalElements,
-	int totalPages) {
+record CatalogCoursePageResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<CatalogCourseResponse> content,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") int page,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "100") int size,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") long totalElements,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") int totalPages) {
 
 	static CatalogCoursePageResponse from(org.springframework.data.domain.Page<Course> page) {
 		return new CatalogCoursePageResponse(page.getContent().stream().map(CatalogCourseResponse::from).toList(),
@@ -36,11 +46,25 @@ record CatalogCoursePageResponse(List<CatalogCourseResponse> content, int page, 
 	}
 }
 
-record CatalogCourseRunResponse(UUID id, String runCode, UUID courseId, String courseCode, String courseName,
-	UUID primaryCoachId, String primaryCoachName, BigInteger tuitionVnd, int capacity,
-	Instant registrationOpensAt, Instant registrationClosesAt, RegistrationStatus registrationStatus,
-	Instant plannedStartAt, Instant plannedEndAt, int totalUnits,
-	@Schema(allowableValues = "OPEN_FOR_REGISTRATION") CourseRunStatus status) {
+record CatalogCourseRunResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID id,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String runCode,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID courseId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String courseCode,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String courseName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID primaryCoachId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String primaryCoachName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "9999999999999999999")
+	BigInteger tuitionVnd,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1") int capacity,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant registrationOpensAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant registrationClosesAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) RegistrationStatus registrationStatus,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant plannedStartAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant plannedEndAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1") int totalUnits,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = "OPEN_FOR_REGISTRATION")
+	CourseRunStatus status) {
 
 	static CatalogCourseRunResponse from(CourseRun run, Instant now) {
 		return new CatalogCourseRunResponse(run.getId(), run.getRunCode(), run.getCourse().getId(),
@@ -52,8 +76,12 @@ record CatalogCourseRunResponse(UUID id, String runCode, UUID courseId, String c
 	}
 }
 
-record CatalogCourseRunPageResponse(List<CatalogCourseRunResponse> content, int page, int size,
-	long totalElements, int totalPages) {
+record CatalogCourseRunPageResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<CatalogCourseRunResponse> content,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") int page,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "100") int size,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") long totalElements,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") int totalPages) {
 
 	static CatalogCourseRunPageResponse from(org.springframework.data.domain.Page<CourseRun> page, Instant now) {
 		return new CatalogCourseRunPageResponse(
@@ -62,9 +90,20 @@ record CatalogCourseRunPageResponse(List<CatalogCourseRunResponse> content, int 
 	}
 }
 
-record CatalogCourseSessionResponse(UUID id, int unitNumber, UUID roomId, String roomName, UUID coachId,
-	String coachName, Instant startAt, Instant endAt, Instant originalStartAt, Instant originalEndAt,
-	BigInteger allocationVnd, CourseSessionStatus status) {
+record CatalogCourseSessionResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID id,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1") int unitNumber,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID roomId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String roomName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID coachId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String coachName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant startAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant endAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant originalStartAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant originalEndAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "9999999999999999999")
+	BigInteger allocationVnd,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseSessionStatus status) {
 
 	static CatalogCourseSessionResponse from(CourseSession session) {
 		return new CatalogCourseSessionResponse(session.getId(), session.getUnitNumber(), session.getRoom().getId(),
@@ -74,12 +113,26 @@ record CatalogCourseSessionResponse(UUID id, int unitNumber, UUID roomId, String
 	}
 }
 
-record CatalogCourseRunDetailResponse(UUID id, String runCode, UUID courseId, String courseCode, String courseName,
-	UUID primaryCoachId, String primaryCoachName, BigInteger tuitionVnd, int capacity,
-	Instant registrationOpensAt, Instant registrationClosesAt, RegistrationStatus registrationStatus,
-	Instant plannedStartAt, Instant plannedEndAt, int totalUnits,
-	@Schema(allowableValues = "OPEN_FOR_REGISTRATION") CourseRunStatus status,
-	List<CatalogCourseSessionResponse> sessions) {
+record CatalogCourseRunDetailResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID id,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String runCode,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID courseId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String courseCode,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String courseName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID primaryCoachId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String primaryCoachName,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "9999999999999999999")
+	BigInteger tuitionVnd,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1") int capacity,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant registrationOpensAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant registrationClosesAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) RegistrationStatus registrationStatus,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant plannedStartAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant plannedEndAt,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1") int totalUnits,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = "OPEN_FOR_REGISTRATION")
+	CourseRunStatus status,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<CatalogCourseSessionResponse> sessions) {
 
 	CatalogCourseRunDetailResponse(CatalogCourseRunResponse run, List<CatalogCourseSessionResponse> sessions) {
 		this(run.id(), run.runCode(), run.courseId(), run.courseCode(), run.courseName(), run.primaryCoachId(),

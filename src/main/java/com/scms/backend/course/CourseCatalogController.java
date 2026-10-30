@@ -2,6 +2,8 @@ package com.scms.backend.course;
 
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -24,7 +26,11 @@ class CourseCatalogController {
 
 	@GetMapping("/courses")
 	@SecurityRequirements
-	ResponseEntity<CatalogCoursePageResponse> listCourses(@RequestParam(defaultValue = "0") int page,
+	ResponseEntity<CatalogCoursePageResponse> listCourses(
+			@Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "0", defaultValue = "0"))
+			@RequestParam(defaultValue = "0") int page,
+			@Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100",
+				defaultValue = "20"))
 			@RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.listCourses(page(page, size, "name")));
 	}
@@ -37,7 +43,11 @@ class CourseCatalogController {
 
 	@GetMapping("/course-runs")
 	@SecurityRequirements
-	ResponseEntity<CatalogCourseRunPageResponse> listRuns(@RequestParam(defaultValue = "0") int page,
+	ResponseEntity<CatalogCourseRunPageResponse> listRuns(
+			@Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "0", defaultValue = "0"))
+			@RequestParam(defaultValue = "0") int page,
+			@Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100",
+				defaultValue = "20"))
 			@RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.listRuns(page(page, size, "plannedStartAt")));
 	}
