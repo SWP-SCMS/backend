@@ -118,7 +118,7 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
 		}
 		String reason = normalizeReason(request.reason(), true);
-		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpactCoachIds(roomId,
 			suspension.getEndTime(), request.endTime(), false, clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
@@ -278,7 +278,7 @@ public class RoomSuspensionService {
 		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
 			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
-		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpactCoachIds(roomId,
 			impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		Room sourceRoom = lockedRooms.get(roomId);
@@ -477,10 +477,10 @@ public class RoomSuspensionService {
 	}
 
 	private Set<UUID> lockImpactResources(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests,
-			List<ClassSession> affected) {
-		Set<UUID> coachIds = affected.stream().map(session -> session.getTeachingCoach().getId())
-			.collect(java.util.stream.Collectors.toSet());
-		if (resourceLocks != null) resourceLocks.lock(coachIds, impactRoomIds(sourceRoomId, requests));
+			Collection<UUID> affectedCoachIds) {
+		if (resourceLocks == null) return Set.of();
+		Set<UUID> coachIds = Set.copyOf(affectedCoachIds);
+		resourceLocks.lock(coachIds, impactRoomIds(sourceRoomId, requests));
 		return coachIds;
 	}
 

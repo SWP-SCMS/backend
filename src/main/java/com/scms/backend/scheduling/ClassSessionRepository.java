@@ -352,6 +352,19 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, UUID
 			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
 			@Param("now") Instant now);
 
+	@Query(value = """
+		select distinct teaching_coach_account_id from class_sessions
+		where room_id = :roomId
+		  and ((:permanentDisable = true and (status = 'IN_PROGRESS'
+			or (status = 'SCHEDULED' and start_time > :now)))
+		  or (:permanentDisable = false and status in ('SCHEDULED', 'IN_PROGRESS')
+			and start_time < :endTime and end_time > :startTime))
+		order by teaching_coach_account_id
+		""", nativeQuery = true)
+	List<UUID> findRoomImpactCoachIds(@Param("roomId") UUID roomId, @Param("startTime") Instant startTime,
+			@Param("endTime") Instant endTime, @Param("permanentDisable") boolean permanentDisable,
+			@Param("now") Instant now);
+
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
 	@Query("""
 		select session from ClassSession session
