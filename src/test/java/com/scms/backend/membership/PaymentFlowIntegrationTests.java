@@ -711,7 +711,7 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isOne();
 		assertThat(count("select count(*) from audit_events where target_type='COURSE_ENROLLMENT' and target_id in "
 			+ "(select id from course_enrollments where course_order_id=?)", course.orderId())).isOne();
-		assertThat(count("select count(*) from notifications where target_type='COURSE_ENROLLMENT' and target_id in "
+		assertThat(count("select count(*) from notification_outbox where target_type='COURSE_ENROLLMENT' and target_id in "
 			+ "(select id from course_enrollments where course_order_id=?)", course.orderId())).isOne();
 	}
 
@@ -1037,6 +1037,12 @@ class PaymentFlowIntegrationTests {
 				course.reference(), "PAY " + course.reference(), 500000, "in", "123456789")).andReturn());
 			try {
 				awaitCourseRunWaiters(blockerPid.get());
+				new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+					db.queryForObject("select id from course_orders where id=? for update nowait", UUID.class,
+						course.orderId());
+					db.queryForObject("select id from course_reservations where course_order_id=? for update nowait",
+						UUID.class, course.orderId());
+				});
 				allowCommit.countDown();
 				assertThat(read.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
 				assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
@@ -2141,7 +2147,7 @@ class PaymentFlowIntegrationTests {
 		do {
 			Map<String, Object> waiters = db.queryForMap("""
 				select
-					count(*) filter (where query ilike '%select id from course_runs where id=%for update%') run_waiters,
+					count(*) filter (where query ~* 'select\\s+id\\s+from\\s+course_runs\\s+where\\s+id\\s*=.*for\\s+update') run_waiters,
 					count(*) filter (where query ilike '%course_orders%for update%'
 						or query ilike '%course_reservations%for update%') downstream_waiters
 				from pg_stat_activity
