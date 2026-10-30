@@ -118,7 +118,7 @@ public class RoomSuspensionService {
 			throw RoomException.suspensionValidation("endTime", "must be later than expectedEndTime and current endTime");
 		}
 		String reason = normalizeReason(request.reason(), true);
-		lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
 			suspension.getEndTime(), request.endTime(), false, clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		if (suspensions.existsOverlapExcluding(roomId, suspensionId, suspension.getStartTime(), request.endTime())) {
@@ -129,6 +129,7 @@ public class RoomSuspensionService {
 		lifecycle.catchUp(now);
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, currentEndTime, request.endTime(),
 			false, now);
+		ensureLockedCoaches(affected, lockedCoachIds);
 		ensureNoCourseImpacts(roomId, currentEndTime, request.endTime(), false, now);
 		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
@@ -277,13 +278,14 @@ public class RoomSuspensionService {
 		ResolutionInputs inputs = resolutionInputs(request.resolutions(), request.bulkResolution(),
 			request.resolutionOverrides());
 		if (lockRendezvous != null) lockRendezvous.await();
-		lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
+		Set<UUID> lockedCoachIds = lockImpactResources(roomId, inputs.lockCandidates(), sessions.findRoomImpacts(roomId,
 			impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant()));
 		Map<UUID, Room> lockedRooms = lockRooms(roomId, inputs.lockCandidates());
 		Room sourceRoom = lockedRooms.get(roomId);
 		lifecycle.catchUp(clock.instant());
 		List<ClassSession> affected = sessions.findRoomImpactsForUpdate(roomId, impact.startTime(), impact.endTime(),
 			impact.permanentDisable(), clock.instant());
+		ensureLockedCoaches(affected, lockedCoachIds);
 		ensureNoCourseImpacts(roomId, impact.startTime(), impact.endTime(), impact.permanentDisable(), clock.instant());
 		Map<UUID, RoomSessionResolutionRequest> resolutions = effectiveResolutions(affected, inputs);
 		validateResolutionSet(affected, resolutions);
@@ -474,10 +476,18 @@ public class RoomSuspensionService {
 		return result;
 	}
 
-	private void lockImpactResources(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests,
+	private Set<UUID> lockImpactResources(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests,
 			List<ClassSession> affected) {
-		if (resourceLocks != null) resourceLocks.lock(affected.stream()
-			.map(session -> session.getTeachingCoach().getId()).toList(), impactRoomIds(sourceRoomId, requests));
+		Set<UUID> coachIds = affected.stream().map(session -> session.getTeachingCoach().getId())
+			.collect(java.util.stream.Collectors.toSet());
+		if (resourceLocks != null) resourceLocks.lock(coachIds, impactRoomIds(sourceRoomId, requests));
+		return coachIds;
+	}
+
+	private void ensureLockedCoaches(List<ClassSession> affected, Set<UUID> lockedCoachIds) {
+		if (resourceLocks == null) return;
+		if (affected.stream().map(session -> session.getTeachingCoach().getId())
+			.anyMatch(coachId -> !lockedCoachIds.contains(coachId))) throw RoomException.suspensionConflict();
 	}
 
 	private Set<UUID> impactRoomIds(UUID sourceRoomId, Collection<RoomSessionResolutionRequest> requests) {

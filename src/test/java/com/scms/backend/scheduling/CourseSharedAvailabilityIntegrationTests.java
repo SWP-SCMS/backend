@@ -237,8 +237,9 @@ class CourseSharedAvailabilityIntegrationTests {
 		ClassSession gym = classSessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach,
 			source, start, end, 10, manager.getId()));
 		UUID runId = insertRun(discipline.getId(), coach.getId());
-		courseSessions.create(runId, 1, coach.getId(), source.getId(), start, end, BigInteger.TEN);
-		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(start.minusSeconds(60), end.plusSeconds(60),
+		Instant courseStart = end.plusSeconds(3600), courseEnd = courseStart.plusSeconds(3600);
+		courseSessions.create(runId, 1, coach.getId(), source.getId(), courseStart, courseEnd, BigInteger.TEN);
+		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(start.minusSeconds(60), courseEnd.plusSeconds(60),
 			false, "Maintenance", List.of(), new RoomBulkResolutionRequest("MOVE", target.getId(), "Move"), List.of());
 
 		assertThatThrownBy(() -> roomSuspensions.applyImpact(manager.getId(), source.getId(), request))
@@ -314,6 +315,59 @@ class CourseSharedAvailabilityIntegrationTests {
 		}
 		finally {
 			releaseImpact.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void roomImpactRejectsWhenAssignmentChangesDiscoveredCoach() throws Exception {
+		Account manager = account(AccountRole.MANAGER, "Impact stale Manager");
+		Account firstCoach = account(AccountRole.COACH, "Impact stale Coach One");
+		Account secondCoach = account(AccountRole.COACH, "Impact stale Coach Two");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Impact stale discipline",
+			null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline,
+			"Impact stale class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact stale source", 20,
+			RoomStatus.ACTIVE, RoomUsageMode.EXCLUSIVE));
+		Instant start = Instant.parse("2035-01-18T02:00:00Z"), end = start.plusSeconds(3600);
+		Instant newStart = start.plusSeconds(7200), newEnd = newStart.plusSeconds(3600);
+		ClassSession gym = classSessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, firstCoach,
+			source, start, end, 10, manager.getId()));
+		RoomImpactPreviewRequest request = new RoomImpactPreviewRequest(start.minusSeconds(60), end.plusSeconds(60),
+			false, "Maintenance", List.of(new RoomSessionResolutionRequest(gym.getId(), "RESCHEDULE", null,
+				newStart, newEnd, "Move later")));
+		CountDownLatch impactAtLock = new CountDownLatch(1), releaseImpactLock = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("impact-stale")) {
+				impactAtLock.countDown();
+				await(releaseImpactLock);
+			}
+			return null;
+		}).when(lockRendezvous).beforeLock();
+		var executor = Executors.newSingleThreadExecutor();
+		try {
+			var impact = executor.submit(() -> {
+				Thread.currentThread().setName("impact-stale");
+				try {
+					roomSuspensions.applyImpact(manager.getId(), source.getId(), request);
+					return null;
+				}
+				catch (Throwable failure) { return failure; }
+			});
+			assertThat(impactAtLock.await(10, TimeUnit.SECONDS)).isTrue();
+			gymSessions.updateAssignment(manager.getId(), gym.getId(),
+				new ClassSessionAssignmentRequest(secondCoach.getId(), source.getId()));
+			releaseImpactLock.countDown();
+
+			assertThat(impact.get(10, TimeUnit.SECONDS)).isInstanceOf(RoomException.class);
+			assertThat(jdbc.queryForObject("select teaching_coach_account_id from class_sessions where id=?",
+				UUID.class, gym.getId())).isEqualTo(secondCoach.getId());
+			assertThat(jdbc.queryForObject("select start_time from class_sessions where id=?", Instant.class,
+				gym.getId())).isEqualTo(start);
+		}
+		finally {
+			releaseImpactLock.countDown();
 			executor.shutdownNow();
 		}
 	}
