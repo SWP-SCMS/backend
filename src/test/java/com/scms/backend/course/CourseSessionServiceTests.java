@@ -33,6 +33,7 @@ class CourseSessionServiceTests {
 	private final CoachLeaveRepository leaves = mock(CoachLeaveRepository.class);
 	private final ClassSessionRepository gymSessions = mock(ClassSessionRepository.class);
 	private final SharedResourceLockService locks = mock(SharedResourceLockService.class);
+	private final CourseScheduleChangeService scheduleChanges = mock(CourseScheduleChangeService.class);
 	private CourseSessionService service;
 	private CourseRun run;
 	private Account coach;
@@ -43,7 +44,7 @@ class CourseSessionServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new CourseSessionService(runs, sessions, accounts, rooms, leaves, gymSessions, locks);
+		service = new CourseSessionService(runs, sessions, accounts, rooms, leaves, gymSessions, locks, scheduleChanges);
 		runId = UUID.randomUUID(); coachId = UUID.randomUUID(); roomId = UUID.randomUUID();
 		run = mock(CourseRun.class); coach = mock(Account.class); room = mock(Room.class);
 		when(runs.findById(runId)).thenReturn(Optional.of(run));

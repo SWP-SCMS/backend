@@ -33,6 +33,7 @@ class CourseEnrollmentServiceTests {
 	@Mock JdbcTemplate db;
 	@Mock AccountRepository accounts;
 	@Mock AuditEventRepository audits;
+	@Mock CourseScheduleChangeService scheduleChanges;
 	UUID coach = UUID.randomUUID();
 	UUID session = UUID.randomUUID();
 	UUID row = UUID.randomUUID();
@@ -40,7 +41,7 @@ class CourseEnrollmentServiceTests {
 	CourseEnrollmentService service;
 
 	@BeforeEach void setUp() {
-		service = new CourseEnrollmentService(db, accounts, audits, Clock.fixed(now, ZoneOffset.UTC));
+		service = new CourseEnrollmentService(db, accounts, audits, Clock.fixed(now, ZoneOffset.UTC), scheduleChanges);
 		when(accounts.existsByIdAndRoleAndStatus(coach, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
 	}
 

@@ -11,6 +11,31 @@ paths:
           content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MemberEnrollment'}}}}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
+  /members/me/course-schedule-changes:
+    get:
+      operationId: listMyCourseScheduleChanges
+      responses:
+        '200':
+          description: Schedule changes and response state for the authenticated Member's enrollments.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ScheduleChange'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /members/me/course-schedule-changes/{responseId}/response:
+    post:
+      operationId: respondToCourseScheduleChange
+      parameters: [{name: responseId, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ScheduleChangeResponse'}}}
+      responses:
+        '200':
+          description: Recorded or idempotently returned the Member's response.
+          content: {application/json: {schema: {$ref: '#/components/schemas/ScheduleChange'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /coach/course-sessions/{sessionId}/roster:
     get:
       operationId: getCourseSessionRoster
@@ -45,6 +70,27 @@ components:
     SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
     AttendanceStatus: {type: string, enum: [NOT_RECORDED, PRESENT, ABSENT]}
+    ScheduleChangeResponse:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties: {response: {type: string, enum: [CONTINUE, REQUEST_WITHDRAWAL, REQUEST_TRANSFER]}}
+    ScheduleChange:
+      type: object
+      additionalProperties: false
+      required: [id, enrollmentSessionId, oldStartAt, oldEndAt, newStartAt, newEndAt, notificationSentAt, responseDeadline, status]
+      properties:
+        id: {type: string, format: uuid}
+        enrollmentSessionId: {type: string, format: uuid}
+        oldStartAt: {type: string, format: date-time}
+        oldEndAt: {type: string, format: date-time}
+        newStartAt: {type: string, format: date-time}
+        newEndAt: {type: string, format: date-time}
+        notificationSentAt: {type: string, format: date-time}
+        responseDeadline: {type: string, format: date-time}
+        status: {type: string, enum: [PENDING, RESPONDED, SUPERSEDED]}
+        response: {type: [string, 'null'], enum: [CONTINUE, REQUEST_WITHDRAWAL, REQUEST_TRANSFER, null]}
+        respondedAt: {type: [string, 'null'], format: date-time}
     AttendanceUpdate:
       type: object
       additionalProperties: false

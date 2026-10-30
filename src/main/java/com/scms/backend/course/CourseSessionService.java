@@ -27,10 +27,12 @@ public class CourseSessionService {
 	private final CoachLeaveRepository leaves;
 	private final com.scms.backend.scheduling.ClassSessionRepository gymSessions;
 	private final SharedResourceLockService resourceLocks;
+	private final CourseScheduleChangeService scheduleChanges;
 
 	CourseSessionService(CourseRunRepository runs, CourseSessionRepository sessions, AccountRepository accounts,
 			RoomRepository rooms, CoachLeaveRepository leaves,
-			com.scms.backend.scheduling.ClassSessionRepository gymSessions, SharedResourceLockService resourceLocks) {
+			com.scms.backend.scheduling.ClassSessionRepository gymSessions, SharedResourceLockService resourceLocks,
+			CourseScheduleChangeService scheduleChanges) {
 		this.runs = runs;
 		this.sessions = sessions;
 		this.accounts = accounts;
@@ -38,6 +40,7 @@ public class CourseSessionService {
 		this.leaves = leaves;
 		this.gymSessions = gymSessions;
 		this.resourceLocks = resourceLocks;
+		this.scheduleChanges = scheduleChanges;
 	}
 
 	@Transactional
@@ -91,6 +94,7 @@ public class CourseSessionService {
 				&& session.getStatus() != CourseSessionStatus.MAKEUP_SCHEDULED) {
 			throw CourseException.invalidSession();
 		}
+		scheduleChanges.notifyReschedule(session, session.getStartAt(), session.getEndAt(), startAt, endAt);
 		session.reschedule(startAt, endAt);
 		session.updateAssignment(room, coach);
 		return sessions.saveAndFlush(session);

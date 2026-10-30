@@ -97,6 +97,31 @@ public class CourseException extends RuntimeException {
 			"The course run capacity cannot exceed the assigned room capacity.");
 	}
 
+	static CourseException responseDeadline() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE",
+			"The schedule change leaves no time for Members to respond.");
+	}
+
+	static CourseException invalidResponse() {
+		return new CourseException(HttpStatus.BAD_REQUEST, "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
+			"The requested schedule-change response is invalid.");
+	}
+
+	static CourseException responseNotFound() {
+		return new CourseException(HttpStatus.NOT_FOUND, "COURSE_SCHEDULE_CHANGE_NOT_FOUND",
+			"The requested schedule-change response was not found.");
+	}
+
+	static CourseException responseConflict() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT",
+			"A different response was already recorded.");
+	}
+
+	static CourseException responseClosed() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED",
+			"The schedule-change response is no longer pending or its deadline has passed.");
+	}
+
 	public HttpStatus getStatus() {
 		return status;
 	}

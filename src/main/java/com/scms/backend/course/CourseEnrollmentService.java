@@ -19,6 +19,8 @@ import com.scms.backend.course.CourseEnrollmentApiModels.AttendanceUpdate;
 import com.scms.backend.course.CourseEnrollmentApiModels.MemberEnrollment;
 import com.scms.backend.course.CourseEnrollmentApiModels.MemberSession;
 import com.scms.backend.course.CourseEnrollmentApiModels.RosterEntry;
+import com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChange;
+import com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,9 +31,16 @@ class CourseEnrollmentService {
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final Clock clock;
+	private final CourseScheduleChangeService scheduleChanges;
 
-	CourseEnrollmentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits, Clock clock) {
-		this.db = db; this.accounts = accounts; this.audits = audits; this.clock = clock;
+	CourseEnrollmentService(JdbcTemplate db, AccountRepository accounts, AuditEventRepository audits, Clock clock,
+			CourseScheduleChangeService scheduleChanges) {
+		this.db = db; this.accounts = accounts; this.audits = audits; this.clock = clock; this.scheduleChanges = scheduleChanges;
+	}
+
+	List<ScheduleChange> scheduleChanges(UUID memberId) { return scheduleChanges.list(memberId); }
+	ScheduleChange respondToScheduleChange(UUID memberId, UUID responseId, ScheduleChangeResponse request) {
+		return scheduleChanges.respond(memberId, responseId, request == null ? null : request.response());
 	}
 
 	@Transactional(readOnly = true)
