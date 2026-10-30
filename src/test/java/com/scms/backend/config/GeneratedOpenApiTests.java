@@ -88,6 +88,16 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/course-runs", "get", Set.of("200", "400", "401")),
 		new CourseOperationContract("/course-runs/{runId}", "get", Set.of("200", "400", "401", "404"))
 	);
+	private static final List<CourseOperationContract> COURSE_ORDER_OPERATION_CONTRACTS = List.of(
+		new CourseOperationContract("/members/me/course-orders", "post",
+			Set.of("200", "201", "400", "401", "403", "404", "409")),
+		new CourseOperationContract("/members/me/course-orders/{orderId}", "get",
+			Set.of("200", "400", "401", "403", "404")),
+		new CourseOperationContract("/reception/members/{memberId}/course-orders", "post",
+			Set.of("200", "201", "400", "401", "403", "404", "409")),
+		new CourseOperationContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
+			Set.of("200", "400", "401", "403", "404"))
+	);
 	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(
 		new CatalogParameterContract("/courses", "page", "query", false, Set.of("integer"), "int32",
 			"0", "0", null, Set.of()),
@@ -291,6 +301,10 @@ class GeneratedOpenApiTests {
 		"GET /members/me/membership-orders/pending",
 		"POST /reception/members/{memberId}/membership-orders",
 		"GET /reception/members/{memberId}/membership-orders/pending",
+		"POST /members/me/course-orders",
+		"GET /members/me/course-orders/{orderId}",
+		"POST /reception/members/{memberId}/course-orders",
+		"GET /reception/members/{memberId}/course-orders/{orderId}",
 		"POST /reception/members/{memberId}/cash-payments",
 		"POST /reception/membership-orders/{orderId}/cash",
 		"POST /payments/{paymentId}/reconcile",
@@ -580,6 +594,35 @@ class GeneratedOpenApiTests {
 		assertExpectedCatalogContract(generated, "generated");
 		assertExpectedCatalogContract(documented, "static");
 		assertThat(normalizedCatalogContract(documented)).isEqualTo(normalizedCatalogContract(generated));
+	}
+
+	@Test
+	void staticAndGeneratedCourseOrderContractsHaveParity() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
+
+		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
+			String label = contract.method().toUpperCase() + " " + contract.path();
+			assertThat(responseStatuses(generated, contract)).as("generated " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			if ("post".equals(contract.method())) {
+				assertThat(operation(generated, contract.path(), contract.method()).path("parameters"))
+					.anySatisfy(parameter -> {
+						assertThat(parameter.path("name").asText()).isEqualTo("Idempotency-Key");
+						assertThat(parameter.path("required").asBoolean()).isTrue();
+					});
+			}
+		}
+		assertThat(documented.at("/components/schemas/CourseOrderResponse/required").toString())
+			.contains("orderId", "orderReference", "memberId", "courseRunId", "tuitionVnd", "currencyCode",
+				"orderStatus", "reservationStatus", "expiresAt", "createdAt");
+		assertThat(documented.at("/components/schemas/CourseOrderResponse/properties/orderStatus/enum").toString())
+			.isEqualTo("[\"PENDING_PAYMENT\",\"EXPIRED\"]");
+		assertThat(documented.at("/components/schemas/CourseOrderResponse/properties/reservationStatus/enum").toString())
+			.isEqualTo("[\"HELD\",\"EXPIRED\"]");
 	}
 
 	@Test

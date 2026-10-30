@@ -1,0 +1,136 @@
+openapi: 3.1.0
+info:
+  title: SCMS Course Order API
+  version: 1.0.0
+  description: Independent CourseOrder and CourseReservation hold foundation; no payment or enrollment.
+servers:
+  - url: /api/v1
+paths:
+  /members/me/course-orders:
+    post:
+      summary: Create or replay the authenticated Member's course hold
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { $ref: '#/components/requestBodies/CreateCourseOrder' }
+      responses:
+        '200': { $ref: '#/components/responses/Order' }
+        '201': { $ref: '#/components/responses/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /members/me/course-orders/{orderId}:
+    get:
+      summary: Resume one CourseOrder owned by the authenticated Member
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /reception/members/{memberId}/course-orders:
+    post:
+      summary: Create or replay a course hold for an explicit Member
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody: { $ref: '#/components/requestBodies/CreateCourseOrder' }
+      responses:
+        '200': { $ref: '#/components/responses/Order' }
+        '201': { $ref: '#/components/responses/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /reception/members/{memberId}/course-orders/{orderId}:
+    get:
+      summary: Resume a target Member's CourseOrder at reception
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MemberId' }
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200': { $ref: '#/components/responses/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^MB-[0-9]+$' }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  requestBodies:
+    CreateCourseOrder:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CourseOrderCreateRequest' }
+  responses:
+    Order:
+      description: Current stored order and reservation state; replay never extends expiry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CourseOrderResponse' }
+    Problem:
+      description: Stable RFC 9457 Problem Details response.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ProblemDetail' }
+  schemas:
+    CourseOrderCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [courseRunId]
+      properties:
+        courseRunId: { type: string, format: uuid }
+    CourseOrderResponse:
+      type: object
+      additionalProperties: false
+      required: [orderId, orderReference, memberId, courseRunId, tuitionVnd, currencyCode,
+        orderStatus, reservationStatus, expiresAt, createdAt]
+      properties:
+        orderId: { type: string, format: uuid }
+        orderReference: { type: string, pattern: '^COR-[0-9A-F]{32}$' }
+        memberId: { type: string, pattern: '^MB-[0-9]+$' }
+        courseRunId: { type: string, format: uuid }
+        tuitionVnd: { type: integer, minimum: 1 }
+        currencyCode: { type: string, enum: [VND] }
+        orderStatus: { type: string, enum: [PENDING_PAYMENT, EXPIRED] }
+        reservationStatus: { type: string, enum: [HELD, EXPIRED] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+    ProblemDetail:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        code:
+          type: string
+          enum: [COURSE_IDEMPOTENCY_KEY_REQUIRED, COURSE_IDEMPOTENCY_KEY_REUSED,
+            COURSE_RUN_NOT_AVAILABLE, MEMBER_NOT_FOUND, MEMBER_NOT_ACTIVE,
+            COURSE_REGISTRATION_NOT_OPEN, COURSE_REGISTRATION_CLOSED, COURSE_RESERVATION_EXISTS,
+            COURSE_CAPACITY_FULL, COURSE_SCHEDULE_CONFLICT, COURSE_ORDER_NOT_FOUND,
+            VALIDATION_ERROR, MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN, FORBIDDEN]

@@ -121,6 +121,13 @@ public class OpenApiConfiguration {
 				|| path.equals("/reception/members/{memberId}/cash-payments"))) {
 			operation.getResponses().addApiResponse("409", reference("MembershipOrderConflict"));
 		}
+		if (method == HttpMethod.POST && (path.equals("/members/me/course-orders")
+				|| path.equals("/reception/members/{memberId}/course-orders"))) {
+			ApiResponse ok = operation.getResponses().get("200");
+			operation.getResponses().addApiResponse("201",
+				new ApiResponse().description("Created").content(ok.getContent()));
+			operation.getResponses().addApiResponse("404", reference("NotFound"));
+		}
 		if (method == HttpMethod.GET && path.equals("/manager/members/{memberId}/coach-assignment")) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No active Coach assignment found."));
 		}
