@@ -425,9 +425,11 @@ class CourseSharedAvailabilityIntegrationTests {
 			 capacity, minimum_enrollment, registration_opens_at, registration_closes_at,
 			 planned_start_at, planned_end_at, total_units, named_coach_commitment, status)
 			values (?, ?, ?, ?, 100000, 10, 1, ?, ?, ?, ?, 3, false, 'DRAFT')
-			""", runId, "RUN-" + runId, courseId, coachId, Instant.parse("2034-12-01T00:00:00Z"),
-			Instant.parse("2035-01-01T00:00:00Z"), Instant.parse("2035-01-10T00:00:00Z"),
-			Instant.parse("2035-02-01T00:00:00Z"));
+			""", runId, "RUN-" + runId, courseId, coachId,
+			java.sql.Timestamp.from(Instant.parse("2034-12-01T00:00:00Z")),
+			java.sql.Timestamp.from(Instant.parse("2035-01-01T00:00:00Z")),
+			java.sql.Timestamp.from(Instant.parse("2035-01-10T00:00:00Z")),
+			java.sql.Timestamp.from(Instant.parse("2035-02-01T00:00:00Z")));
 		return runId;
 	}
 

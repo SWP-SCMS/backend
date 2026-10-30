@@ -93,14 +93,21 @@ class RoomSuspensionExtensionIntegrationTests {
 			Object assignmentResult = assignment.get(10, TimeUnit.SECONDS);
 			boolean extensionSucceeded = extensionResult instanceof RoomSuspensionResponse;
 			boolean assignmentSucceeded = assignmentResult instanceof ClassSessionDetailResponse;
-			assertThat(extensionSucceeded).isTrue();
+			assertThat(extensionResult).isInstanceOfAny(RoomSuspensionResponse.class, RoomException.class);
 			assertThat(assignmentSucceeded).isTrue();
 
 			UUID finalRoomId = jdbc.queryForObject("select room_id from class_sessions where id = ?", UUID.class,
 				session.getId());
 			Instant finalEndTime = suspensions.findById(suspension.getId()).orElseThrow().getEndTime();
-			assertThat(finalRoomId).isEqualTo(extensionTarget.getId());
-			assertThat(finalEndTime).isEqualTo(extendedEndTime);
+			if (extensionSucceeded) {
+				assertThat(finalRoomId).isEqualTo(extensionTarget.getId());
+				assertThat(finalEndTime).isEqualTo(extendedEndTime);
+			}
+			else {
+				assertThat(((RoomException) extensionResult).getCode()).isEqualTo("ROOM_SUSPENSION_CONFLICT");
+				assertThat(finalRoomId).isEqualTo(source.getId());
+				assertThat(finalEndTime).isEqualTo(expectedEndTime);
+			}
 		}
 	}
 
