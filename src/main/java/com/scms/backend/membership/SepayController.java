@@ -2,6 +2,8 @@ package com.scms.backend.membership;
 
 import java.util.UUID;
 
+import com.scms.backend.course.CourseEnrollmentResponse;
+import com.scms.backend.course.CoursePaymentResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -11,6 +13,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -55,13 +58,55 @@ class SepayController {
 		return ResponseEntity.ok(service.createForReceptionist(UUID.fromString(jwt.getSubject()), memberId, orderId));
 	}
 
+	@PostMapping("/members/me/course-orders/{orderId}/payments/sepay")
+	@ApiResponse(responseCode = "200", description = "OK",
+		content = @Content(mediaType = "application/json",
+			schema = @Schema(implementation = CoursePaymentResponse.class)))
+	@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+		content = @Content(mediaType = "application/problem+json",
+			schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	ResponseEntity<CoursePaymentResponse> createCoursePayment(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID orderId,
+			@Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100)) @Size(min = 1, max = 100)
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+		return ResponseEntity.ok(service.createCoursePayment(UUID.fromString(jwt.getSubject()), orderId,
+			idempotencyKey));
+	}
+
+	@PostMapping("/reception/members/{memberId}/course-orders/{orderId}/payments/sepay")
+	@ApiResponse(responseCode = "200", description = "OK",
+		content = @Content(mediaType = "application/json",
+			schema = @Schema(implementation = CoursePaymentResponse.class)))
+	@ApiResponse(responseCode = "503", description = "SePay destination configuration is invalid",
+		content = @Content(mediaType = "application/problem+json",
+			schema = @Schema(ref = "#/components/schemas/ApiProblem")))
+	ResponseEntity<CoursePaymentResponse> createCoursePaymentForReceptionist(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID orderId,
+			@Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100)) @Size(min = 1, max = 100)
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+		return ResponseEntity.ok(service.createCoursePaymentForReceptionist(UUID.fromString(jwt.getSubject()),
+			memberId, orderId, idempotencyKey));
+	}
+
+	@PostMapping("/reception/members/{memberId}/course-orders/{orderId}/payments/cash")
+	@ApiResponse(responseCode = "200", description = "OK",
+		content = @Content(mediaType = "application/json",
+			schema = @Schema(implementation = CourseEnrollmentResponse.class)))
+	ResponseEntity<CourseEnrollmentResponse> fulfillCourseCash(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID orderId,
+			@Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100)) @Size(min = 1, max = 100)
+			@RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+		return ResponseEntity.ok(service.fulfillCourseCash(UUID.fromString(jwt.getSubject()), memberId, orderId,
+			idempotencyKey));
+	}
+
 	@PostMapping("/payments/sepay/webhook")
 	@SecurityRequirements
 	@Operation(summary = "Receive a SePay transfer webhook", description = """
 		Public provider callback authenticated by an API key in the Authorization header using `Apikey <credential>`.
 		A 200 response with `success=true` acknowledges durable handling and does not necessarily mean the Payment is PAID.
 		When `processed=false`, SCMS creates no Membership or Receipt and the event requires manual review.
-		Valid CoursePayment evidence is recorded with `processed=false` and does not create an Enrollment in this task.
+		A verified Course transfer fulfills its CourseOrder and creates Enrollment plus unit allocations atomically.
 		""")
 	@ApiResponses({
 		@ApiResponse(responseCode = "200", description = "Webhook durably handled or idempotently replayed"),

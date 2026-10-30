@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.course.CourseEnrollmentResponse;
 import com.scms.backend.notification.NotificationWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,10 +57,8 @@ class PaymentFulfillmentService {
 		}
 		String provider = string(row, "provider");
 		if (provider == null) provider = "SEPAY";
-		Integer duplicate = db.queryForObject(
-			"select count(*) from payments where provider=? and provider_transaction_id=? and id<>?",
-			Integer.class, provider, providerTransactionId, paymentId);
-		if (duplicate != null && duplicate > 0) {
+		lockProviderTransaction(provider, providerTransactionId);
+		if (providerTransactionClaimed(provider, providerTransactionId, paymentId, null)) {
 			throw PaymentException.conflict("Provider transaction was already used");
 		}
 		ensureMembershipCanFulfill(row);
@@ -68,11 +67,11 @@ class PaymentFulfillmentService {
 
 	@Transactional
 	SepayWebhookResponse processSepayWebhook(UUID paymentId, UUID coursePaymentId, SepayWebhookRequest request,
-			String normalizedReference, String payloadSha256) {
+			String normalizedReference, String payloadSha256, Instant receivedAt) {
 		Map<String, Object> existingEvent = event(request.id().toString());
 		if (existingEvent != null) return replayEvent(paymentId, coursePaymentId, request, payloadSha256, existingEvent);
 		if (paymentId == null && coursePaymentId != null) {
-			return processCourseSepayWebhook(coursePaymentId, request, normalizedReference, payloadSha256);
+			return processCourseSepayWebhook(coursePaymentId, request, normalizedReference, payloadSha256, receivedAt);
 		}
 		if (paymentId == null) return finishEvent(null, request, normalizedReference, payloadSha256,
 			SepayWebhookOutcome.REFERENCE_MISMATCH, "Payment reference was not found", false);
@@ -80,6 +79,13 @@ class PaymentFulfillmentService {
 		lifecycle.reconcile(memberIdForPayment(paymentId), clock.instant());
 		Map<String, Object> row = paymentForUpdate(paymentId);
 		String transactionId = request.id().toString();
+		lockProviderTransaction("SEPAY", transactionId);
+		existingEvent = event(transactionId);
+		if (existingEvent != null) return replayEvent(paymentId, coursePaymentId, request, payloadSha256, existingEvent);
+		if (providerTransactionClaimed("SEPAY", transactionId, paymentId, null)) {
+			return finishEvent(null, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.ALREADY_PROCESSED, "Provider transaction was already used", false);
+		}
 		if ("PAID".equals(string(row, "payment_status"))
 				&& transactionId.equals(string(row, "provider_transaction_id"))) {
 			return finishEvent(row, request, normalizedReference, payloadSha256,
@@ -137,11 +143,20 @@ class PaymentFulfillmentService {
 	}
 
 	private SepayWebhookResponse processCourseSepayWebhook(UUID coursePaymentId, SepayWebhookRequest request,
-			String normalizedReference, String payloadSha256) {
+			String normalizedReference, String payloadSha256, Instant receivedAt) {
 		Map<String, Object> row = coursePaymentForUpdate(coursePaymentId);
+		String transactionId = request.id().toString();
+		lockProviderTransaction("SEPAY", transactionId);
+		Map<String, Object> existingEvent = event(transactionId);
+		if (existingEvent != null) return replayEvent(null, coursePaymentId, request, payloadSha256, existingEvent);
+		if (providerTransactionClaimed("SEPAY", transactionId, null, coursePaymentId)) {
+			return finishEvent(null, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.ALREADY_PROCESSED, "Provider transaction was already used", false);
+		}
 		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))
 				|| !"HELD".equals(string(row, "reservation_status"))
 				|| !"PENDING".equals(string(row, "payment_status"))
+				|| !courseRunPayable(string(row, "run_status"))
 				|| !"in".equalsIgnoreCase(request.transferType())) {
 			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
 				SepayWebhookOutcome.PAYMENT_NOT_PAYABLE, "Course Payment is not payable");
@@ -172,16 +187,151 @@ class PaymentFulfillmentService {
 		Instant now = clock.instant();
 		Instant deadline = instant(row, "expires_at");
 		Instant reservationExpiry = instant(row, "reservation_expires_at");
-		if (deadline == null || reservationExpiry == null || !now.isBefore(deadline)
-				|| !now.isBefore(reservationExpiry)) {
+		if (deadline == null || reservationExpiry == null || !receivedAt.isBefore(deadline)
+				|| !receivedAt.isBefore(reservationExpiry)) {
 			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
 				SepayWebhookOutcome.PAYMENT_WINDOW_EXPIRED, "Course payment window is missing or expired");
 		}
+		List<CourseUnit> units;
+		try {
+			units = courseUnits(row, now);
+		}
+		catch (PaymentException exception) {
+			return finishCourseEvent(row, request, normalizedReference, payloadSha256,
+				SepayWebhookOutcome.PAYMENT_NOT_PAYABLE, "Course enrollment is no longer available");
+		}
 		if (!insertFinalEvent(null, coursePaymentId, request, normalizedReference, payloadSha256,
-				SepayWebhookOutcome.COURSE_PAYMENT_RECORDED, "Course Payment evidence recorded")) {
+				SepayWebhookOutcome.FULFILLED, "Course payment fulfilled")) {
 			return replayEvent(null, coursePaymentId, request, payloadSha256, event(request.id().toString()));
 		}
-		return webhookResponse(row, false, SepayWebhookOutcome.COURSE_PAYMENT_RECORDED);
+		fulfillCourse(row, "SEPAY", null, request.id().toString(), now, units);
+		row.put("payment_status", "PAID");
+		row.put("order_status", "PAID");
+		row.put("reservation_status", "ENROLLED");
+		return webhookResponse(row, true, SepayWebhookOutcome.FULFILLED);
+	}
+
+	@Transactional
+	CourseEnrollmentResponse fulfillCourseCash(UUID memberId, UUID orderId, UUID actorId) {
+		Map<String, Object> row = courseOrderForUpdate(memberId, orderId);
+		if ("PAID".equals(string(row, "order_status"))) return courseEnrollment(orderId, memberId);
+		if (!"PENDING_PAYMENT".equals(string(row, "order_status"))
+				|| !"HELD".equals(string(row, "reservation_status"))
+				|| !courseRunPayable(string(row, "run_status"))
+				|| !instant(row, "reservation_expires_at").isAfter(clock.instant())) {
+			throw PaymentException.conflict("Course Order or Reservation is not payable");
+		}
+		Instant now = clock.instant();
+		return fulfillCourse(row, "CASH", actorId, null, now, courseUnits(row, now));
+	}
+
+	private CourseEnrollmentResponse fulfillCourse(Map<String, Object> row, String method, UUID actorId,
+			String providerTransactionId, Instant now, List<CourseUnit> units) {
+		BigInteger paidAmount = amount(row, "payment_amount");
+		BigInteger[] split = paidAmount.divideAndRemainder(BigInteger.valueOf(units.size()));
+		UUID paymentId = uuid(row, "payment_id");
+		if (paymentId == null) {
+			paymentId = UUID.randomUUID();
+			db.update("""
+				insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,
+					actor_account_id,payment_reference,amount,currency_code,status,deadline_at,method,
+					processed_by_account_id,paid_at)
+				values(?,?,?,?,?,?,?,'VND','PAID',?,'CASH',?,?)
+				""", paymentId, uuid(row, "order_id"), uuid(row, "reservation_id"), uuid(row, "member_account_id"),
+				uuid(row, "actor_account_id"), string(row, "order_reference"), row.get("payment_amount"),
+				Timestamp.from(instant(row, "reservation_expires_at")), actorId, Timestamp.from(now));
+		}
+		else {
+			db.update("""
+				update course_payments set status='PAID',method=?,provider=?,provider_transaction_id=?,
+					processed_by_account_id=?,paid_at=?,updated_at=current_timestamp where id=? and status='PENDING'
+				""", method, "SEPAY".equals(method) ? "SEPAY" : null, providerTransactionId, actorId,
+				Timestamp.from(now), paymentId);
+		}
+		db.update("update course_orders set status='PAID',updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'",
+			uuid(row, "order_id"));
+		db.update("update course_reservations set status='ENROLLED',updated_at=current_timestamp where id=? and status='HELD'",
+			uuid(row, "reservation_id"));
+		UUID enrollmentId = UUID.randomUUID();
+		db.update("""
+			insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,
+				member_account_id,actor_account_id,processed_by_account_id,course_run_id,
+				amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at)
+			values(?,?,?,?,?,?,?,?,?,?,?)
+			""", enrollmentId, uuid(row, "order_id"), uuid(row, "reservation_id"), paymentId,
+			uuid(row, "member_account_id"), uuid(row, "actor_account_id"), actorId,
+			uuid(row, "course_run_id"), paidAmount, units.size(), Timestamp.from(now));
+		for (int index = 0; index < units.size(); index++) {
+			CourseUnit unit = units.get(index);
+			BigInteger allocation = index == units.size() - 1 ? split[0].add(split[1]) : split[0];
+			String disposition = unit.startAt().isBefore(now) ? "NOT_ENROLLED" : "ENROLLED";
+			db.update("""
+				insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,
+					unit_number,allocation_vnd,disposition) values(?,?,?,?,?,?,?)
+			""", UUID.randomUUID(), enrollmentId, unit.id(), uuid(row, "course_run_id"), unit.unitNumber(),
+			allocation, disposition);
+		}
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_PAYMENT_PAID", "COURSE_ENROLLMENT",
+			enrollmentId, Map.of("orderId", uuid(row, "order_id").toString(), "paymentId", paymentId.toString(),
+				"memberAccountId", uuid(row, "member_account_id").toString(), "amountPaidVnd", paidAmount.toString())));
+		notifications.write("COURSE_ENROLLMENT_CREATED:" + enrollmentId, uuid(row, "member_account_id"),
+			"COURSE_ENROLLMENT_CREATED", "COURSE_ENROLLMENT", enrollmentId,
+			Map.of("orderId", uuid(row, "order_id").toString(), "courseRunId", uuid(row, "course_run_id").toString()));
+		return new CourseEnrollmentResponse(enrollmentId, uuid(row, "order_id"), uuid(row, "member_account_id"),
+			uuid(row, "course_run_id"), paidAmount, units.size(), now);
+	}
+
+	private List<CourseUnit> courseUnits(Map<String, Object> row, Instant now) {
+		List<CourseUnit> units = db.query("""
+			select id,unit_number,start_at from course_sessions where course_run_id=? order by unit_number,id
+			""", (result, index) -> new CourseUnit(result.getObject("id", UUID.class),
+			result.getInt("unit_number"), result.getTimestamp("start_at").toInstant()), uuid(row, "course_run_id"));
+		int totalUnits = ((Number) row.get("total_units")).intValue();
+		if (units.size() != totalUnits || units.stream().map(CourseUnit::unitNumber).distinct().count() != totalUnits) {
+			throw PaymentException.conflict("Course schedule does not match the published unit count");
+		}
+		long remainingUnits = units.stream().filter(unit -> !unit.startAt().isBefore(now)).count();
+		if (remainingUnits * 10 <= (long) totalUnits * 7) {
+			throw PaymentException.conflict("Course enrollment is no longer available");
+		}
+		return units;
+	}
+
+	private static boolean courseRunPayable(String status) {
+		return "OPEN_FOR_REGISTRATION".equals(status) || "CONFIRMED".equals(status) || "IN_PROGRESS".equals(status);
+	}
+
+	private CourseEnrollmentResponse courseEnrollment(UUID orderId, UUID memberId) {
+		try {
+			Map<String, Object> row = db.queryForMap("""
+				select id,course_order_id,member_account_id,course_run_id,amount_paid_vnd_snapshot,
+					total_units_snapshot,enrolled_at from course_enrollments where course_order_id=? and member_account_id=?
+				""", orderId, memberId);
+			return new CourseEnrollmentResponse(uuid(row, "id"), uuid(row, "course_order_id"),
+				uuid(row, "member_account_id"), uuid(row, "course_run_id"),
+				new BigDecimal(row.get("amount_paid_vnd_snapshot").toString()).toBigIntegerExact(),
+				((Number) row.get("total_units_snapshot")).intValue(), instant(row, "enrolled_at"));
+		}
+		catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.conflict("Paid Course Order has incomplete enrollment data");
+		}
+	}
+
+	private Map<String, Object> courseOrderForUpdate(UUID memberId, UUID orderId) {
+		try {
+			UUID runId = db.queryForObject("select course_run_id from course_orders where id=? and member_account_id=?",
+				UUID.class, orderId, memberId);
+			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+			db.queryForObject("select id from course_orders where id=? and member_account_id=? for update",
+				UUID.class, orderId, memberId);
+			db.queryForObject("select id from course_reservations where course_order_id=? for update", UUID.class, orderId);
+			db.queryForList("select id from course_payments where course_order_id=? for update", orderId);
+			return db.queryForMap(coursePaymentSql() + " and orders.id=? and orders.member_account_id=?",
+				orderId, memberId);
+		}
+		catch (EmptyResultDataAccessException exception) {
+			throw PaymentException.notFound("Course Order was not found");
+		}
 	}
 
 	@Transactional
@@ -303,6 +453,31 @@ class PaymentFulfillmentService {
 		return events.isEmpty() ? null : events.getFirst();
 	}
 
+	private void lockProviderTransaction(String provider, String transactionId) {
+		db.queryForObject("""
+			select true from (select pg_advisory_xact_lock(hashtextextended(?, 0))) locked
+			""", Boolean.class, provider + '\u001f' + transactionId);
+	}
+
+	private boolean providerTransactionClaimed(String provider, String transactionId,
+			UUID paymentId, UUID coursePaymentId) {
+		return Boolean.TRUE.equals(db.queryForObject("""
+			select exists (
+				select 1 from payment_provider_events
+				where provider=? and provider_transaction_id=?
+					and (payment_id is distinct from ?::uuid or course_payment_id is distinct from ?::uuid)
+				union all
+				select 1 from payments
+				where provider=? and provider_transaction_id=? and id is distinct from ?::uuid
+				union all
+				select 1 from course_payments
+				where provider=? and provider_transaction_id=? and id is distinct from ?::uuid
+			)
+			""", Boolean.class, provider, transactionId, paymentId, coursePaymentId,
+			provider, transactionId, paymentId,
+			provider, transactionId, coursePaymentId));
+	}
+
 	private SepayWebhookResponse replayEvent(UUID requestedPaymentId, SepayWebhookRequest request,
 			String payloadSha256, Map<String, Object> event) {
 		return replayEvent(requestedPaymentId, null, request, payloadSha256, event);
@@ -331,7 +506,18 @@ class PaymentFulfillmentService {
 
 	private Map<String, Object> coursePaymentForUpdate(UUID coursePaymentId) {
 		try {
-			return db.queryForMap(coursePaymentSql() + " for update of orders,reservation,payment", coursePaymentId);
+			UUID runId = db.queryForObject("""
+				select orders.course_run_id from course_payments payment
+				join course_orders orders on orders.id=payment.course_order_id where payment.id=?
+				""", UUID.class, coursePaymentId);
+			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+			UUID orderId = db.queryForObject("select course_order_id from course_payments where id=?",
+				UUID.class, coursePaymentId);
+			db.queryForObject("select id from course_orders where id=? for update", UUID.class, orderId);
+			db.queryForObject("select id from course_reservations where course_order_id=? for update",
+				UUID.class, orderId);
+			db.queryForObject("select id from course_payments where id=? for update", UUID.class, coursePaymentId);
+			return db.queryForMap(coursePaymentSql() + " and payment.id=?", coursePaymentId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Course Payment was not found");
 		}
@@ -339,7 +525,7 @@ class PaymentFulfillmentService {
 
 	private Map<String, Object> coursePayment(UUID coursePaymentId) {
 		try {
-			return db.queryForMap(coursePaymentSql(), coursePaymentId);
+			return db.queryForMap(coursePaymentSql() + " and payment.id=?", coursePaymentId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Course Payment was not found");
 		}
@@ -347,16 +533,22 @@ class PaymentFulfillmentService {
 
 	private String coursePaymentSql() {
 		return """
-			select payment.id payment_id,payment.course_order_id order_id,payment.status payment_status,
-				payment.amount payment_amount,payment.currency_code payment_currency,
+			select payment.id payment_id,orders.id order_id,orders.order_reference,orders.actor_account_id,
+				orders.member_account_id,orders.course_run_id,orders.tuition_vnd_snapshot,
+				payment.status payment_status,coalesce(payment.amount,orders.tuition_vnd_snapshot) payment_amount,
+				coalesce(payment.currency_code,orders.currency_code) payment_currency,
 				payment.payment_reference bank_transfer_content,payment.bank_code_snapshot,
 				payment.bank_account_number_snapshot,payment.bank_account_name_snapshot,
-				payment.deadline_at expires_at,orders.status order_status,
-				reservation.status reservation_status,reservation.expires_at reservation_expires_at
-			from course_payments payment
-			join course_orders orders on orders.id=payment.course_order_id
-			join course_reservations reservation on reservation.id=payment.course_reservation_id
-			where payment.id=?
+				payment.deadline_at expires_at,payment.method payment_method,payment.provider,
+				payment.provider_transaction_id,payment.processed_by_account_id,payment.paid_at,
+				orders.status order_status,reservation.id reservation_id,
+				reservation.status reservation_status,reservation.expires_at reservation_expires_at,
+				run.status run_status,run.total_units
+			from course_orders orders
+			join course_reservations reservation on reservation.course_order_id=orders.id
+			join course_runs run on run.id=orders.course_run_id
+			left join course_payments payment on payment.course_order_id=orders.id
+			where 1=1
 			""";
 	}
 
@@ -474,4 +666,6 @@ class PaymentFulfillmentService {
 	static Instant instant(Map<String, Object> row, String key) {
 		Object value=row.get(key); return value instanceof Timestamp timestamp ? timestamp.toInstant() : (Instant) value;
 	}
+
+	private record CourseUnit(UUID id, int unitNumber, Instant startAt) { }
 }

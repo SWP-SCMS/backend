@@ -43,6 +43,9 @@ public class OpenApiConfiguration {
 			components.addSchemas("UnauthorizedProblem", unauthorizedProblemSchema());
 			components.addSchemas("OrdinaryBookingConflictProblem", ordinaryBookingConflictProblemSchema());
 			components.addSchemas("MembershipBenefitRequiredProblem", membershipBenefitRequiredProblemSchema());
+			Schema<?> coursePaymentProvider = (Schema<?>) components.getSchemas()
+				.get("CoursePaymentResponse").getProperties().get("provider");
+			((Schema) coursePaymentProvider).setEnum(java.util.Arrays.asList("SEPAY", null));
 			addErrorResponse(components, "BadRequest", "The request is invalid.");
 			addErrorResponse(components, "Unauthorized",
 				"Authentication failed (UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS, "

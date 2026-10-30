@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -99,7 +100,7 @@ class PaymentFlowIntegrationTests {
 	@Autowired SepayService sepayService;
 	@Autowired PaymentFulfillmentService fulfillment;
 	@Autowired NotificationOutboxDispatcher notificationOutboxDispatcher;
-	@Autowired Clock clock;
+	@MockitoSpyBean Clock clock;
 	@Autowired PlatformTransactionManager transactionManager;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -650,7 +651,7 @@ class PaymentFlowIntegrationTests {
 			.andExpect(jsonPath("$.processed").value(false))
 			.andExpect(jsonPath("$.outcome").value("PAYMENT_WINDOW_EXPIRED"));
 
-		reconcile(receptionist, payment, paidReconciliation(12000, reference, "manual-expired-" + order))
+		reconcile(receptionist, payment, paidReconciliation(12000, reference, "10501"))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
 
 		assertThat(db.queryForObject("select status from payments where id=?", String.class, payment))
@@ -662,7 +663,7 @@ class PaymentFlowIntegrationTests {
 	}
 
 	@Test
-	void courseWebhookPersistsRedactedEvidenceWithoutFulfillmentAndCannotReplayIntoMembership() throws Exception {
+	void courseWebhookTransactionCannotBeReusedByManualMembershipReconciliation() throws Exception {
 		MemberProfile courseMember = member();
 		CoursePaymentFixture course = coursePayment(courseMember, clock.instant().plusSeconds(300));
 		String body = webhookBody(10550, course.reference(), "PAY " + course.reference(), 500000, "in",
@@ -670,28 +671,27 @@ class PaymentFlowIntegrationTests {
 
 		webhook("hook-secret", body)
 			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.processed").value(false))
-			.andExpect(jsonPath("$.outcome").value("COURSE_PAYMENT_RECORDED"))
+			.andExpect(jsonPath("$.processed").value(true))
+			.andExpect(jsonPath("$.outcome").value("FULFILLED"))
 			.andExpect(jsonPath("$.paymentId").value(course.paymentId().toString()))
 			.andExpect(jsonPath("$.orderId").value(course.orderId().toString()))
-			.andExpect(jsonPath("$.paymentStatus").value("PENDING"));
+			.andExpect(jsonPath("$.paymentStatus").value("PAID"));
 		webhook("hook-secret", body)
-			.andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(false))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(true))
 			.andExpect(jsonPath("$.outcome").value("ALREADY_PROCESSED"))
 			.andExpect(jsonPath("$.paymentId").value(course.paymentId().toString()));
 
 		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
 		MemberProfile membershipMember = member();
 		UUID offer = offer(manager, "BASIC", 12000, false);
 		UUID membershipOrder = order(membershipMember.getAccountId(), membershipMember.getAccountId(), offer,
 			12000, false, clock.instant().plusSeconds(300));
 		String membershipReference = "CROSS-DOMAIN-" + membershipOrder;
 		UUID membershipPayment = pendingPaymentWithDestinationSnapshot(membershipOrder, 12000, membershipReference);
-		webhook("hook-secret", webhookBody(10550, membershipReference, membershipReference, 12000, "in",
-			"123456789"))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(false))
-			.andExpect(jsonPath("$.outcome").value("ALREADY_PROCESSED"))
-			.andExpect(jsonPath("$.paymentId").value(course.paymentId().toString()));
+		reconcile(receptionist, membershipPayment,
+			paidReconciliation(12000, membershipReference, "10550"))
+			.andExpect(status().isConflict());
 
 		Map<String, Object> event = db.queryForMap("""
 			select payment_id,course_payment_id,account_number_last4,detail
@@ -703,13 +703,403 @@ class PaymentFlowIntegrationTests {
 		assertThat(event.get("detail").toString()).doesNotContain(
 			"hook-secret", "Apikey", "123456789", body, course.reference());
 		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
-			course.paymentId())).isEqualTo("PENDING");
+			course.paymentId())).isEqualTo("PAID");
 		assertThat(db.queryForObject("select status from payments where id=?", String.class,
 			membershipPayment)).isEqualTo("PENDING");
 		assertThat(count("select count(*) from memberships where order_id=?", membershipOrder)).isZero();
 		assertThat(count("select count(*) from receipts where payment_id=?", membershipPayment)).isZero();
-		assertThat(count("select count(*) from audit_events where target_id=?", course.paymentId())).isZero();
-		assertThat(count("select count(*) from notifications where target_id=?", course.paymentId())).isZero();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isOne();
+		assertThat(count("select count(*) from audit_events where target_type='COURSE_ENROLLMENT' and target_id in "
+			+ "(select id from course_enrollments where course_order_id=?)", course.orderId())).isOne();
+		assertThat(count("select count(*) from notifications where target_type='COURSE_ENROLLMENT' and target_id in "
+			+ "(select id from course_enrollments where course_order_id=?)", course.orderId())).isOne();
+	}
+
+	@Test
+	void manualMembershipReconciliationTransactionCannotFulfillCourse() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile membershipMember = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID membershipOrder = order(membershipMember.getAccountId(), membershipMember.getAccountId(), offer,
+			12000, false, clock.instant().plusSeconds(300));
+		String membershipReference = "MANUAL-CROSS-DOMAIN-" + membershipOrder;
+		UUID membershipPayment = pendingPaymentWithDestinationSnapshot(membershipOrder, 12000, membershipReference);
+		reconcile(receptionist, membershipPayment,
+			paidReconciliation(12000, membershipReference, "10551"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("PAID"));
+
+		MemberProfile courseMember = member();
+		CoursePaymentFixture course = coursePayment(courseMember, clock.instant().plusSeconds(300));
+		String body = webhookBody(10551, course.reference(), "PAY " + course.reference(), 500000, "in",
+			"123456789");
+		webhook("hook-secret", body)
+			.andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("ALREADY_PROCESSED"));
+
+		assertThat(db.queryForObject("select status from payments where id=?", String.class, membershipPayment))
+			.isEqualTo("PAID");
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			course.paymentId())).isEqualTo("PENDING");
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+		assertThat(db.queryForObject("select count(*) from payment_provider_events where provider_transaction_id='10551' "
+			+ "and course_payment_id=?", Long.class, course.paymentId())).isZero();
+		Map<String, Object> event = db.queryForMap("""
+			select payment_id,course_payment_id,account_number_last4,detail
+			from payment_provider_events where provider='SEPAY' and provider_transaction_id='10551'
+			""");
+		assertThat(event.get("payment_id")).isNull();
+		assertThat(event.get("course_payment_id")).isNull();
+		assertThat(event.get("detail").toString()).doesNotContain(
+			"hook-secret", "bank statement", "123456789", body, course.reference());
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void concurrentMembershipReconciliationAndCourseWebhookShareProviderClaim() throws Exception {
+		Account manager = account(AccountRole.MANAGER);
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile membershipMember = member();
+		UUID offer = offer(manager, "BASIC", 12000, false);
+		UUID membershipOrder = order(membershipMember.getAccountId(), membershipMember.getAccountId(), offer,
+			12000, false, clock.instant().plusSeconds(300));
+		String membershipReference = "CONCURRENT-CLAIM-" + membershipOrder;
+		UUID membershipPayment = pendingPaymentWithDestinationSnapshot(membershipOrder, 12000, membershipReference);
+		CoursePaymentFixture course = coursePayment(member(), clock.instant().plusSeconds(300));
+		String transactionId = "10552";
+		CountDownLatch claimLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+		AtomicReference<Integer> blockerPid = new AtomicReference<>();
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					db.queryForObject("""
+						select true from (select pg_advisory_xact_lock(hashtextextended(?, 0))) locked
+						""", Boolean.class, "SEPAY" + '\u001f' + transactionId);
+					claimLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(claimLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> reconciliation = executor.submit(() -> reconcile(receptionist, membershipPayment,
+				paidReconciliation(12000, membershipReference, transactionId)).andReturn());
+			Future<MvcResult> courseWebhook = executor.submit(() -> webhook("hook-secret", webhookBody(10552,
+				course.reference(), "PAY " + course.reference(), 500000, "in", "123456789")).andReturn());
+			try {
+				awaitProviderTransactionWaiters(blockerPid.get());
+				allowCommit.countDown();
+				reconciliation.get(10, TimeUnit.SECONDS);
+				courseWebhook.get(10, TimeUnit.SECONDS);
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				allowCommit.countDown();
+			}
+		}
+
+		boolean membershipPaid = "PAID".equals(db.queryForObject("select status from payments where id=?",
+			String.class, membershipPayment));
+		boolean coursePaid = "PAID".equals(db.queryForObject("select status from course_payments where id=?",
+			String.class, course.paymentId()));
+		assertThat(membershipPaid ^ coursePaid).isTrue();
+		assertThat(count("select count(*) from memberships where order_id=?", membershipOrder)
+			+ count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isOne();
+		assertThat(count("select count(*) from payment_provider_events where provider='SEPAY' "
+			+ "and provider_transaction_id=?", transactionId)).isOne();
+	}
+
+	@Test
+	void courseQrCreationAndOrderReadReturnTheSamePaymentSnapshot() throws Exception {
+		MemberProfile member = member();
+		CoursePaymentFixture course = courseOrder(member, clock.instant().plusSeconds(300), false);
+
+		JsonNode first = objectMapper.readTree(courseSepay(member.getAccount(), course.orderId(), "course-qr")
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		JsonNode retry = objectMapper.readTree(courseSepay(member.getAccount(), course.orderId(), "course-qr")
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		JsonNode order = objectMapper.readTree(mockMvc.perform(get("/api/v1/members/me/course-orders/{id}",
+			course.orderId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(member.getAccount())))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+		assertThat(retry.path("paymentId").asText()).isEqualTo(first.path("paymentId").asText());
+		assertThat(retry.path("paymentReference").asText()).isEqualTo(first.path("paymentReference").asText());
+		assertThat(order.at("/payment/paymentReference").asText()).isEqualTo(first.path("paymentReference").asText());
+		assertThat(order.at("/payment/qrUrl").asText()).isEqualTo(first.path("qrUrl").asText());
+		assertThat(count("select count(*) from course_reservations where course_order_id=?", course.orderId())).isOne();
+		assertThat(count("select count(*) from course_payments where course_order_id=?", course.orderId())).isOne();
+	}
+
+	@Test
+	void coursePaymentAndCashMutationsRejectMissingIdempotencyKey() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		CoursePaymentFixture course = courseOrder(member, clock.instant().plusSeconds(300), false);
+
+		mockMvc.perform(post("/api/v1/members/me/course-orders/{id}/payments/sepay", course.orderId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(member.getAccount())))
+			.andExpect(status().isBadRequest());
+		mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders/{id}/payments/cash",
+			member.getAccountId(), course.orderId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(receptionist)))
+			.andExpect(status().isBadRequest());
+
+		assertThat(count("select count(*) from course_payments where course_order_id=?", course.orderId())).isZero();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+	}
+
+	@Test
+	void receptionistCashRetryCreatesOneEnrollmentWithExactVndAllocations() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		CoursePaymentFixture course = courseOrder(member, clock.instant().plusSeconds(300), false);
+
+		String path = "/api/v1/reception/members/" + member.getAccountId() + "/course-orders/"
+			+ course.orderId() + "/payments/cash";
+		String first = mockMvc.perform(post(path).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(receptionist)).header("Idempotency-Key", "cash-once"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.amountPaidVnd").value(500000))
+			.andReturn().getResponse().getContentAsString();
+		String retry = mockMvc.perform(post(path).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, bearer(receptionist)).header("Idempotency-Key", "cash-once"))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(JsonPath.read(retry, "$.enrollmentId").toString())
+			.isEqualTo(JsonPath.read(first, "$.enrollmentId").toString());
+		assertThat(db.queryForObject("select processed_by_account_id from course_payments where course_order_id=?",
+			UUID.class, course.orderId())).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select member_account_id from course_enrollments where course_order_id=?",
+			UUID.class, course.orderId())).isEqualTo(member.getAccountId());
+		assertThat(count("select count(*) from course_payments where course_order_id=? and status='PAID'",
+			course.orderId())).isOne();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isOne();
+		assertThat(db.queryForList("select allocation_vnd from course_enrollment_sessions where course_enrollment_id=? "
+			+ "order by unit_number", java.math.BigDecimal.class,
+			UUID.fromString(JsonPath.read(first, "$.enrollmentId"))).stream()
+			.map(value -> value.toBigIntegerExact()).toList()).containsExactly(
+			BigInteger.valueOf(166666), BigInteger.valueOf(166666), BigInteger.valueOf(166668));
+		assertThat(count("select count(*) from audit_events where target_id=?", UUID.fromString(
+			JsonPath.read(first, "$.enrollmentId")))).isOne();
+		assertThat(count("select count(*) from notification_outbox where event_key=?",
+			"COURSE_ENROLLMENT_CREATED:" + JsonPath.read(first, "$.enrollmentId"))).isOne();
+		JsonNode paidOrder = objectMapper.readTree(getAuthorized(member.getAccount(),
+			"/api/v1/members/me/course-orders/" + course.orderId()).andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString());
+		assertThat(paidOrder.at("/payment/method").asText()).isEqualTo("CASH");
+		assertThat(paidOrder.at("/payment/provider").isNull()).isTrue();
+	}
+
+	@Test
+	void courseLateEnrollmentRequiresMoreThanSeventyPercentUnitsRemaining() throws Exception {
+		MemberProfile belowMember = member();
+		CoursePaymentFixture below = courseOrder(belowMember, clock.instant().plusSeconds(300), true, 10);
+		beginCourseUnits(below, 4);
+		webhook("hook-secret", webhookBody(10570, below.reference(), "PAY " + below.reference(), 500000, "in",
+			"123456789")).andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("PAYMENT_NOT_PAYABLE"));
+
+		MemberProfile boundaryMember = member();
+		CoursePaymentFixture boundary = courseOrder(boundaryMember, clock.instant().plusSeconds(300), true, 10);
+		beginCourseUnits(boundary, 3);
+		webhook("hook-secret", webhookBody(10571, boundary.reference(), "PAY " + boundary.reference(), 500000, "in",
+			"123456789")).andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(false))
+			.andExpect(jsonPath("$.outcome").value("PAYMENT_NOT_PAYABLE"));
+		assertThat(db.queryForObject("select outcome from payment_provider_events where provider_transaction_id='10571'",
+			String.class)).isEqualTo("PAYMENT_NOT_PAYABLE");
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			boundary.paymentId())).isEqualTo("PENDING");
+
+		MemberProfile aboveMember = member();
+		CoursePaymentFixture above = courseOrder(aboveMember, clock.instant().plusSeconds(300), true, 10);
+		beginCourseUnits(above, 2);
+		webhook("hook-secret", webhookBody(10572, above.reference(), "PAY " + above.reference(), 500000, "in",
+			"123456789")).andExpect(status().isOk()).andExpect(jsonPath("$.processed").value(true))
+			.andExpect(jsonPath("$.outcome").value("FULFILLED"));
+		assertThat(db.queryForList("select disposition from course_enrollment_sessions where course_enrollment_id="
+			+ "(select id from course_enrollments where course_order_id=?) order by unit_number", String.class,
+			above.orderId())).containsExactly("NOT_ENROLLED", "NOT_ENROLLED", "ENROLLED", "ENROLLED", "ENROLLED",
+			"ENROLLED", "ENROLLED", "ENROLLED", "ENROLLED", "ENROLLED");
+	}
+
+	@Test
+	void courseCashAllocationFailureRollsBackPaymentOrderReservationAndArtifacts() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		MemberProfile member = member();
+		CoursePaymentFixture course = courseOrder(member, clock.instant().plusSeconds(300), false);
+		String path = "/api/v1/reception/members/" + member.getAccountId() + "/course-orders/"
+			+ course.orderId() + "/payments/cash";
+		try {
+			doThrow(new DataAccessResourceFailureException("forced allocation failure")).when(db)
+				.update(argThat(sql -> sql.contains("insert into course_enrollment_sessions")),
+					org.mockito.ArgumentMatchers.any(Object[].class));
+			mockMvc.perform(post(path).contextPath("/api/v1")
+				.header(HttpHeaders.AUTHORIZATION, bearer(receptionist)).header("Idempotency-Key", "cash-rollback"))
+				.andExpect(status().isInternalServerError());
+		}
+		finally {
+			reset(db);
+		}
+		assertThat(db.queryForObject("select status from course_orders where id=?", String.class, course.orderId()))
+			.isEqualTo("PENDING_PAYMENT");
+		assertThat(db.queryForObject("select status from course_reservations where course_order_id=?",
+			String.class, course.orderId())).isEqualTo("HELD");
+		assertThat(count("select count(*) from course_payments where course_order_id=?", course.orderId())).isZero();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+	}
+
+	@Test
+	void courseWebhookAllocationFailureRollsBackEventAndEveryFulfillmentArtifact() throws Exception {
+		MemberProfile member = member();
+		CoursePaymentFixture course = coursePayment(member, clock.instant().plusSeconds(300));
+		try {
+			doThrow(new DataAccessResourceFailureException("forced allocation failure")).when(db)
+				.update(argThat(sql -> sql.contains("insert into course_enrollment_sessions")),
+					org.mockito.ArgumentMatchers.any(Object[].class));
+			webhook("hook-secret", webhookBody(10573, course.reference(), "PAY " + course.reference(), 500000, "in",
+				"123456789")).andExpect(status().isInternalServerError());
+		}
+		finally {
+			reset(db);
+		}
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			course.paymentId())).isEqualTo("PENDING");
+		assertThat(db.queryForObject("select status from course_orders where id=?", String.class,
+			course.orderId())).isEqualTo("PENDING_PAYMENT");
+		assertThat(db.queryForObject("select status from course_reservations where course_order_id=?", String.class,
+			course.orderId())).isEqualTo("HELD");
+		assertThat(count("select count(*) from payment_provider_events where provider_transaction_id='10573'")).isZero();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+		assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_PAID' and target_id in "
+			+ "(select id from course_enrollments where course_order_id=?)", course.orderId())).isZero();
+		assertThat(count("select count(*) from notification_outbox where event_key like 'COURSE_ENROLLMENT_CREATED:%' "
+			+ "and target_id in (select id from course_enrollments where course_order_id=?)", course.orderId())).isZero();
+	}
+
+	@Test
+	void courseWebhookAuditFailureRollsBackEventAndEveryFulfillmentArtifact() throws Exception {
+		MemberProfile member = member();
+		CoursePaymentFixture course = coursePayment(member, clock.instant().plusSeconds(300));
+		String constraint = "chk_test_reject_course_payment_audit";
+		db.execute("alter table audit_events add constraint " + constraint
+			+ " check (action <> 'COURSE_PAYMENT_PAID') not valid");
+		try {
+			webhook("hook-secret", webhookBody(10574, course.reference(), "PAY " + course.reference(), 500000, "in",
+				"123456789")).andExpect(status().isInternalServerError());
+		}
+		finally {
+			db.execute("alter table audit_events drop constraint " + constraint);
+		}
+		assertCourseFulfillmentRolledBack(course, "10574");
+	}
+
+	@Test
+	void courseWebhookOutboxFailureRollsBackEventAndEveryFulfillmentArtifact() throws Exception {
+		MemberProfile member = member();
+		CoursePaymentFixture course = coursePayment(member, clock.instant().plusSeconds(300));
+		String constraint = "chk_test_reject_course_payment_outbox";
+		db.execute("alter table notification_outbox add constraint " + constraint
+			+ " check (notification_type <> 'COURSE_ENROLLMENT_CREATED') not valid");
+		try {
+			webhook("hook-secret", webhookBody(10575, course.reference(), "PAY " + course.reference(), 500000, "in",
+				"123456789")).andExpect(status().isInternalServerError());
+		}
+		finally {
+			db.execute("alter table notification_outbox drop constraint " + constraint);
+		}
+		assertCourseFulfillmentRolledBack(course, "10575");
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void readTriggeredExpiryAndWebhookBothWaitForCourseRunBeforeOrderOrReservation() throws Exception {
+		MemberProfile member = member();
+		CoursePaymentFixture course = coursePayment(member, clock.instant().minusSeconds(1));
+		UUID runId = db.queryForObject("select course_run_id from course_orders where id=?", UUID.class,
+			course.orderId());
+		CountDownLatch runLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+		AtomicReference<Integer> blockerPid = new AtomicReference<>();
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(3)) {
+			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+					runLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(runLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> read = executor.submit(() -> mockMvc.perform(get(
+				"/api/v1/members/me/course-orders/{id}", course.orderId()).contextPath("/api/v1")
+				.header(HttpHeaders.AUTHORIZATION, bearer(member.getAccount()))).andReturn());
+			Future<MvcResult> webhook = executor.submit(() -> webhook("hook-secret", webhookBody(10576,
+				course.reference(), "PAY " + course.reference(), 500000, "in", "123456789")).andReturn());
+			try {
+				awaitCourseRunWaiters(blockerPid.get());
+				allowCommit.countDown();
+				assertThat(read.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+				assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				allowCommit.countDown();
+			}
+		}
+
+		assertThat(db.queryForObject("select status from course_orders where id=?", String.class, course.orderId()))
+			.isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select status from course_reservations where course_order_id=?", String.class,
+			course.orderId())).isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			course.paymentId())).isEqualTo("PENDING");
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void courseWebhookReceivedBeforeExpiryFulfillsAfterWaitingPastExpiry() throws Exception {
+		Instant receivedAt = clock.instant();
+		Instant expiresAt = receivedAt.plusSeconds(30);
+		CoursePaymentFixture course = coursePayment(member(), expiresAt);
+		UUID runId = db.queryForObject("select course_run_id from course_orders where id=?", UUID.class,
+			course.orderId());
+		CountDownLatch runLocked = new CountDownLatch(1);
+		CountDownLatch allowCommit = new CountDownLatch(1);
+		AtomicReference<Integer> blockerPid = new AtomicReference<>();
+		AtomicReference<Instant> testNow = new AtomicReference<>(receivedAt);
+		reset(clock);
+		doAnswer(invocation -> testNow.get()).when(clock).instant();
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<?> blocker = executor.submit(() -> new TransactionTemplate(transactionManager)
+				.executeWithoutResult(status -> {
+					blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+					runLocked.countDown();
+					await(allowCommit);
+				}));
+			assertThat(runLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			Future<MvcResult> webhook = executor.submit(() -> webhook("hook-secret", webhookBody(10577,
+				course.reference(), "PAY " + course.reference(), 500000, "in", "123456789")).andReturn());
+			try {
+				awaitCourseRunWaiters(blockerPid.get(), 1);
+				testNow.set(expiresAt.plusNanos(1));
+				allowCommit.countDown();
+				assertThat(webhook.get(10, TimeUnit.SECONDS).getResponse().getStatus()).isEqualTo(200);
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				allowCommit.countDown();
+			}
+		}
+		finally {
+			reset(clock);
+		}
+
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			course.paymentId())).isEqualTo("PAID");
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isOne();
 	}
 
 	@Test
@@ -1446,6 +1836,15 @@ class PaymentFlowIntegrationTests {
 	}
 
 	private CoursePaymentFixture coursePayment(MemberProfile member, Instant deadline) {
+		return courseOrder(member, deadline, true);
+	}
+
+	private CoursePaymentFixture courseOrder(MemberProfile member, Instant deadline, boolean createPayment) {
+		return courseOrder(member, deadline, createPayment, 3);
+	}
+
+	private CoursePaymentFixture courseOrder(MemberProfile member, Instant deadline, boolean createPayment,
+			int totalUnits) {
 		Account coach = account(AccountRole.COACH);
 		UUID discipline = UUID.randomUUID();
 		UUID course = UUID.randomUUID();
@@ -1453,20 +1852,23 @@ class PaymentFlowIntegrationTests {
 		UUID order = UUID.randomUUID();
 		UUID reservation = UUID.randomUUID();
 		UUID payment = UUID.randomUUID();
+		UUID room = UUID.randomUUID();
 		String reference = "COR-" + order.toString().replace("-", "").toUpperCase();
 		Instant createdAt = deadline.minusSeconds(60);
 		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')", discipline,
 			"D-" + discipline);
 		db.update("insert into courses(id,code,name,discipline_id,status) values(?,?,?,?,'PUBLISHED')",
 			course, "C-" + course, "Course", discipline);
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values(?,?,2,'EXCLUSIVE','ACTIVE')",
+			room, "Room " + room);
 		db.update("""
 			insert into course_runs(id,run_code,course_id,primary_coach_account_id,tuition_vnd,capacity,
 				minimum_enrollment,registration_opens_at,registration_closes_at,planned_start_at,
 				planned_end_at,total_units,named_coach_commitment,policy_version_snapshot,status)
-			values(?,?,?,?,500000,2,1,?,?,?,?,1,true,'P1','OPEN_FOR_REGISTRATION')
+			values(?,?,?,?,500000,2,1,?,?,?,?,?,true,'P1','OPEN_FOR_REGISTRATION')
 			""", run, "R-" + run, course, coach.getId(), java.sql.Timestamp.from(createdAt.minusSeconds(3600)),
 			java.sql.Timestamp.from(deadline.plusSeconds(3600)), java.sql.Timestamp.from(deadline.plusSeconds(7200)),
-			java.sql.Timestamp.from(deadline.plusSeconds(10800)));
+			java.sql.Timestamp.from(deadline.plusSeconds(3600L * (totalUnits + 2))), totalUnits);
 		db.update("""
 			insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,
 				tuition_vnd_snapshot,currency_code,status,idempotency_key,created_at,updated_at)
@@ -1478,14 +1880,30 @@ class PaymentFlowIntegrationTests {
 				created_at,updated_at) values(?,?,?,?,'HELD',?,?,?)
 			""", reservation, order, member.getAccountId(), run, java.sql.Timestamp.from(deadline),
 			java.sql.Timestamp.from(createdAt), java.sql.Timestamp.from(createdAt));
-		db.update("""
+		if (createPayment) db.update("""
 			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,
 				actor_account_id,payment_reference,amount,currency_code,status,deadline_at,bank_code_snapshot,
 				bank_account_number_snapshot,bank_account_name_snapshot,created_at)
 			values(?,?,?,?,?,?,500000,'VND','PENDING',?,'MB','123456789','SCMS GYM',?)
 			""", payment, order, reservation, member.getAccountId(), member.getAccountId(), reference,
 			java.sql.Timestamp.from(deadline), java.sql.Timestamp.from(createdAt));
-		return new CoursePaymentFixture(payment, order, reference);
+		for (int unit = 1; unit <= totalUnits; unit++) {
+			Instant startAt = deadline.plusSeconds(7200L + (unit - 1L) * 3600L);
+			Instant endAt = startAt.plusSeconds(3600);
+			db.update("""
+				insert into course_sessions(id,course_run_id,unit_number,room_id,coach_account_id,start_at,end_at,
+					original_start_at,original_end_at,allocation_vnd,status)
+				values(?,?,?,?,?,?,?,?,?,500000,'SCHEDULED')
+				""", UUID.randomUUID(), run, unit, room, coach.getId(), java.sql.Timestamp.from(startAt),
+				java.sql.Timestamp.from(endAt), java.sql.Timestamp.from(startAt), java.sql.Timestamp.from(endAt));
+		}
+		return new CoursePaymentFixture(createPayment ? payment : null, order, reference);
+	}
+
+	private void beginCourseUnits(CoursePaymentFixture course, int count) {
+		db.update("update course_sessions set start_at=? where course_run_id=(select course_run_id from course_orders "
+			+ "where id=?) and unit_number<=?", java.sql.Timestamp.from(clock.instant().minusSeconds(1)),
+			course.orderId(), count);
 	}
 
 	private void paidHistory(UUID member, UUID offer, long amount, Instant paidAt, boolean testData,
@@ -1563,6 +1981,13 @@ class PaymentFlowIntegrationTests {
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(member)));
 	}
 
+	private org.springframework.test.web.servlet.ResultActions courseSepay(Account member, UUID order, String key)
+			throws Exception {
+		return mockMvc.perform(post("/api/v1/members/me/course-orders/{id}/payments/sepay", order)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, bearer(member))
+			.header("Idempotency-Key", key));
+	}
+
 	private org.springframework.test.web.servlet.ResultActions webhook(String key, String body) throws Exception {
 		var request = post("/api/v1/payments/sepay/webhook").contextPath("/api/v1")
 			.contentType(MediaType.APPLICATION_JSON).content(body);
@@ -1614,6 +2039,18 @@ class PaymentFlowIntegrationTests {
 
 	private long count(String sql, Object... args) {
 		return db.queryForObject(sql, Long.class, args);
+	}
+
+	private void assertCourseFulfillmentRolledBack(CoursePaymentFixture course, String transactionId) {
+		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
+			course.paymentId())).isEqualTo("PENDING");
+		assertThat(db.queryForObject("select status from course_orders where id=?", String.class, course.orderId()))
+			.isEqualTo("PENDING_PAYMENT");
+		assertThat(db.queryForObject("select status from course_reservations where course_order_id=?", String.class,
+			course.orderId())).isEqualTo("HELD");
+		assertThat(count("select count(*) from payment_provider_events where provider_transaction_id=?",
+			transactionId)).isZero();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
 	}
 
 	private void awaitPlanStatusLock() throws InterruptedException {
@@ -1693,6 +2130,48 @@ class PaymentFlowIntegrationTests {
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
 		throw new AssertionError("Timed out waiting for webhook to request the Order lock");
+	}
+
+	private void awaitCourseRunWaiters(int blockerPid) {
+		awaitCourseRunWaiters(blockerPid, 2);
+	}
+
+	private void awaitCourseRunWaiters(int blockerPid, int expectedRunWaiters) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Map<String, Object> waiters = db.queryForMap("""
+				select
+					count(*) filter (where query ilike '%select id from course_runs where id=%for update%') run_waiters,
+					count(*) filter (where query ilike '%course_orders%for update%'
+						or query ilike '%course_reservations%for update%') downstream_waiters
+				from pg_stat_activity
+				where wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))
+				""", blockerPid);
+			if (((Number) waiters.get("run_waiters")).longValue() == expectedRunWaiters
+					&& ((Number) waiters.get("downstream_waiters")).longValue() == 0) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for expiry and fulfillment at the CourseRun lock");
+	}
+
+	private void awaitProviderTransactionWaiters(int blockerPid) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiters = db.queryForObject("""
+				with recursive claim_waiters(pid,query) as (
+					select activity.pid,activity.query from pg_stat_activity activity
+					where activity.wait_event_type='Lock' and ?=any(pg_blocking_pids(activity.pid))
+					union
+					select activity.pid,activity.query from pg_stat_activity activity
+					join claim_waiters waiter on waiter.pid=any(pg_blocking_pids(activity.pid))
+					where activity.wait_event_type='Lock'
+				)
+				select count(*) from claim_waiters where query ilike '%pg_advisory_xact_lock%'
+				""", Long.class, blockerPid);
+			if (waiters != null && waiters == 2) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for both domains at the provider transaction claim");
 	}
 
 	private void assertNoCommerceArtifacts(UUID memberAccountId) {
