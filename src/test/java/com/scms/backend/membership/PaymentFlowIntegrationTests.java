@@ -1000,7 +1000,8 @@ class PaymentFlowIntegrationTests {
 		CoursePaymentFixture course = coursePayment(member, clock.instant().plusSeconds(300));
 		String constraint = "chk_test_reject_course_payment_outbox";
 		db.execute("alter table notification_outbox add constraint " + constraint
-			+ " check (notification_type <> 'COURSE_ENROLLMENT_CREATED') not valid");
+			+ " check (notification_type <> 'COURSE_ENROLLMENT_CREATED' or payload->>'orderId' <> '"
+			+ course.orderId() + "') not valid");
 		try {
 			webhook("hook-secret", webhookBody(10575, course.reference(), "PAY " + course.reference(), 500000, "in",
 				"123456789")).andExpect(status().isInternalServerError());
