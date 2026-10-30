@@ -83,7 +83,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 	"sepay.bank-account=123456789",
 	"sepay.bank-account-name=SCMS GYM",
 	"sepay.bank-destination-sha256=7128318f4501a30f6c5648627306786fb6e7a26a15da6850a959c5b35a0a6859",
-	"sepay.webhook-api-key=hook-secret"
+	"sepay.webhook-api-key=hook-secret",
+	"scms.course-reservation-expiry-initial-delay-ms=86400000"
 })
 class PaymentFlowIntegrationTests {
 	@Container
@@ -2146,12 +2147,19 @@ class PaymentFlowIntegrationTests {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		do {
 			Map<String, Object> waiters = db.queryForMap("""
+				with recursive lock_waiters(pid,query) as (
+					select activity.pid,activity.query from pg_stat_activity activity
+					where activity.wait_event_type='Lock' and ?=any(pg_blocking_pids(activity.pid))
+					union
+					select activity.pid,activity.query from pg_stat_activity activity
+					join lock_waiters waiter on waiter.pid=any(pg_blocking_pids(activity.pid))
+					where activity.wait_event_type='Lock'
+				)
 				select
-					count(*) filter (where query ~* 'select\\s+id\\s+from\\s+course_runs\\s+where\\s+id\\s*=.*for\\s+update') run_waiters,
+					count(*) run_waiters,
 					count(*) filter (where query ilike '%course_orders%for update%'
 						or query ilike '%course_reservations%for update%') downstream_waiters
-				from pg_stat_activity
-				where wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))
+				from lock_waiters
 				""", blockerPid);
 			if (((Number) waiters.get("run_waiters")).longValue() == expectedRunWaiters
 					&& ((Number) waiters.get("downstream_waiters")).longValue() == 0) return;
