@@ -100,8 +100,9 @@ class CourseSharedAvailabilityIntegrationTests {
 		var session = courseSessions.create(runId, 1, coach.getId(), room.getId(),
 			Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z"), BigInteger.TEN);
 		Instant now = Instant.now();
-		jdbc.update("update course_sessions set start_at=?, end_at=? where id=?", now.minusSeconds(1800),
-			now.plusSeconds(1800), session.getId());
+		jdbc.update("update course_sessions set start_at=?, end_at=? where id=?",
+			java.sql.Timestamp.from(now.minusSeconds(1800)), java.sql.Timestamp.from(now.plusSeconds(1800)),
+			session.getId());
 
 		assertThatThrownBy(() -> roomService.update(manager.getId(), room.getId(),
 			new RoomPatchRequest(null, null, RoomStatus.INACTIVE))).isInstanceOf(RoomException.class);
