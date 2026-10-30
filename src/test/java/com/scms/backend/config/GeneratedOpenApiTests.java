@@ -45,6 +45,40 @@ import org.springframework.web.bind.annotation.RestController;
 	SpringDocSecurityConfiguration.class, SpringDocWebMvcConfiguration.class,
 	GeneratedOpenApiTests.ControllerDependencyMockConfiguration.class })
 class GeneratedOpenApiTests {
+	private static final Set<String> UNAUTHORIZED_PROBLEM_CODES = Set.of(
+		"UNAUTHENTICATED", "INVALID_TOKEN", "INVALID_CREDENTIALS", "INVALID_REFRESH_TOKEN",
+		"INVALID_PENDING_SESSION", "INVALID_PASSWORD_RESET_SESSION", "PAYMENT_UNAUTHORIZED");
+	private static final Set<String> COURSE_PROBLEM_CODES = Set.of(
+		"VALIDATION_ERROR", "MALFORMED_REQUEST", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN",
+		"COURSE_VALIDATION_ERROR", "COURSE_NOT_FOUND", "COURSE_CODE_CONFLICT", "COURSE_INVALID_TRANSITION",
+		"COURSE_CHANGED", "COURSE_RUN_NOT_FOUND", "COURSE_RUN_CODE_CONFLICT", "COURSE_RUN_INVALID_OPENING",
+		"COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED",
+		"COURSE_SESSION_NOT_FOUND", "COURSE_SESSION_INVALID", "COURSE_SESSION_RESOURCE_CONFLICT",
+		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED");
+	private static final Set<String> READ_COLLECTION_RESPONSES = Set.of("200", "400", "401", "403");
+	private static final Set<String> CREATE_RESPONSES = Set.of("201", "400", "401", "403", "409");
+	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
+	private static final Set<String> MUTATE_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404", "409");
+	private static final List<CourseOperationContract> COURSE_OPERATION_CONTRACTS = List.of(
+		new CourseOperationContract("/manager/courses", "get", READ_COLLECTION_RESPONSES),
+		new CourseOperationContract("/manager/courses", "post", CREATE_RESPONSES),
+		new CourseOperationContract("/manager/courses/{courseId}", "get", READ_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/courses/{courseId}", "patch", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/courses/{courseId}/publish", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/courses/{courseId}/deactivate", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/courses/{courseId}/archive", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs", "get", READ_COLLECTION_RESPONSES),
+		new CourseOperationContract("/manager/course-runs", "post", Set.of("201", "400", "401", "403", "404", "409")),
+		new CourseOperationContract("/manager/course-runs/{runId}", "get", READ_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}", "patch", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/open-registration", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/cancel", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "get", READ_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post",
+			Set.of("201", "400", "401", "403", "404", "409")),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES)
+	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
 		"POST /auth/login",
@@ -187,6 +221,23 @@ class GeneratedOpenApiTests {
 		"POST /manager/disciplines",
 		"GET /manager/disciplines/{disciplineId}",
 		"PATCH /manager/disciplines/{disciplineId}",
+		"GET /manager/courses",
+		"POST /manager/courses",
+		"GET /manager/courses/{courseId}",
+		"PATCH /manager/courses/{courseId}",
+		"POST /manager/courses/{courseId}/publish",
+		"POST /manager/courses/{courseId}/deactivate",
+		"POST /manager/courses/{courseId}/archive",
+		"GET /manager/course-runs",
+		"POST /manager/course-runs",
+		"GET /manager/course-runs/{runId}",
+		"PATCH /manager/course-runs/{runId}",
+		"POST /manager/course-runs/{runId}/open-registration",
+		"POST /manager/course-runs/{runId}/cancel",
+		"GET /manager/course-runs/{runId}/sessions",
+		"POST /manager/course-runs/{runId}/sessions",
+		"GET /manager/course-runs/{runId}/sessions/{sessionId}",
+		"PATCH /manager/course-runs/{runId}/sessions/{sessionId}",
 		"GET /manager/rooms",
 		"GET /manager/rooms/availability",
 		"POST /manager/rooms",
@@ -346,6 +397,76 @@ class GeneratedOpenApiTests {
 			String path = operation.substring(separator + 1);
 			assertThat(response(document, path, method, "204").isMissingNode()).as(operation).isFalse();
 		});
+	}
+
+	@Test
+	void generatedCourseContractDocumentsManagerSecurityValidationEnumsAndProblems() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode create = operation(document, "/manager/courses", "post");
+		assertThat(create.path("description").asText()).isEqualTo("Requires MANAGER role.");
+		assertThat(create.at("/responses/400/$ref").asText()).isEqualTo("#/components/responses/BadRequest");
+		assertThat(create.at("/responses/409/$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		JsonNode request = document.at("/components/schemas/CourseCreateRequest");
+		assertThat(request.path("required").toString()).contains("code", "name", "disciplineId");
+		assertThat(request.at("/properties/code/maxLength").asInt()).isEqualTo(50);
+		assertThat(request.at("/properties/description/maxLength").asInt()).isEqualTo(2000);
+		assertThat(request.at("/properties/imageUrl/maxLength").asInt()).isEqualTo(500);
+		JsonNode patch = document.at("/components/schemas/CoursePatchRequest");
+		assertThat(patch.at("/properties/description/maxLength").asInt()).isEqualTo(2000);
+		assertThat(patch.at("/properties/imageUrl/maxLength").asInt()).isEqualTo(500);
+		assertThat(document.at("/components/schemas/CourseResponse/properties/status/enum").toString())
+			.contains("DRAFT", "PUBLISHED", "INACTIVE", "ARCHIVED");
+		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/enum").toString())
+			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
+		assertThat(document.at("/components/schemas/CourseResponse/properties/createdAt/format").asText())
+			.isEqualTo("date-time");
+	}
+
+	@Test
+	void staticAndGeneratedCourseContractsHaveTableDrivenResponseAndProblemParity() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-manager.yaml"));
+
+		for (CourseOperationContract contract : COURSE_OPERATION_CONTRACTS) {
+			String label = contract.method().toUpperCase() + " " + contract.path();
+			assertThat(responseStatuses(generated, contract)).as("generated " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			contract.statuses().stream().filter(status -> !status.startsWith("2")).forEach(status -> {
+				assertProblemResponse(generated, contract, status, "generated " + label,
+					"401".equals(status) ? "UnauthorizedProblem" : "ApiProblem");
+				assertProblemResponse(documented, contract, status, "static " + label, "CourseProblem");
+			});
+		}
+
+		assertThat(documented.at("/components/schemas/CourseProblem/required").toString())
+			.contains("title", "status", "detail", "instance", "code");
+		assertThat(documented.at("/components/responses/Unauthorized/description").asText())
+			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
+		assertThat(documented.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
+		assertThat(generated.at("/components/responses/Unauthorized/description").asText())
+			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
+		assertThat(generated.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
+		assertThat(documented.at("/components/schemas/CourseProblem/properties/code/enum").values())
+			.toIterable().extracting(JsonNode::asText)
+			.containsExactlyInAnyOrderElementsOf(COURSE_PROBLEM_CODES);
+	}
+
+	@Test
+	void generatedUnauthorizedComponentEnumeratesEveryActualStable401Code() throws Exception {
+		JsonNode document = generatedDocument();
+
+		assertThat(response(document, "/auth/login", "post", "401").path("$ref").asText())
+			.isEqualTo("#/components/responses/Unauthorized");
+		assertThat(response(document, "/auth/refresh", "post", "401").path("$ref").asText())
+			.isEqualTo("#/components/responses/Unauthorized");
+		assertThat(document.at("/components/responses/Unauthorized/content/application~1problem+json/schema/$ref")
+			.asText()).isEqualTo("#/components/schemas/UnauthorizedProblem");
+		assertThat(document.at("/components/schemas/UnauthorizedProblem/properties/code/enum").values())
+			.toIterable().extracting(JsonNode::asText)
+			.containsExactlyInAnyOrderElementsOf(UNAUTHORIZED_PROBLEM_CODES);
 	}
 
 	@Test
@@ -1056,6 +1177,21 @@ class GeneratedOpenApiTests {
 		return operation(document, path, method).path("responses").path(status);
 	}
 
+	private Set<String> responseStatuses(JsonNode document, CourseOperationContract contract) {
+		return operation(document, contract.path(), contract.method()).path("responses").properties().stream()
+			.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+	}
+
+	private void assertProblemResponse(JsonNode document, CourseOperationContract contract, String status,
+			String label, String expectedSchema) {
+		String responseRef = response(document, contract.path(), contract.method(), status).path("$ref").asText();
+		assertThat(responseRef).as(label + " " + status).startsWith("#/components/responses/");
+		String component = responseRef.substring(responseRef.lastIndexOf('/') + 1);
+		assertThat(document.at("/components/responses/" + component
+			+ "/content/application~1problem+json/schema/$ref").asText())
+			.as(label + " " + status).isEqualTo("#/components/schemas/" + expectedSchema);
+	}
+
 	private void assertConcreteSchema(JsonNode response, String label) {
 		JsonNode content = response.path("content");
 		boolean hasSchema = content.isObject() && content.properties().stream()
@@ -1111,4 +1247,6 @@ class GeneratedOpenApiTests {
 			}
 		}
 	}
+
+	private record CourseOperationContract(String path, String method, Set<String> statuses) { }
 }

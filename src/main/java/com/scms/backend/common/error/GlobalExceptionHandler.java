@@ -37,6 +37,7 @@ import com.scms.backend.membership.RefundException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberNotFoundException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberValidationException;
 import com.scms.backend.centervisit.CenterVisitException;
+import com.scms.backend.course.CourseException;
 import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
@@ -368,6 +369,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		if (!exception.getAffectedSessionIds().isEmpty()) {
 			problem.setProperty("affectedSessionIds", exception.getAffectedSessionIds().stream()
 				.map(UUID::toString).toList());
+		}
+		return problem;
+	}
+
+	@ExceptionHandler(CourseException.class)
+	ProblemDetail handleCourse(CourseException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Course request failed");
+		problem.setProperty("code", exception.getCode());
+		if (exception.getField() != null) {
+			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
 		}
 		return problem;
 	}

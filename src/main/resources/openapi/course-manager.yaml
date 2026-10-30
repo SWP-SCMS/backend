@@ -1,0 +1,562 @@
+openapi: 3.1.0
+info:
+  title: SCMS Manager Course API
+  version: v1
+security:
+  - bearerAuth: []
+paths:
+  /manager/courses:
+    get:
+      summary: List courses
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated course catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoursePageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a draft course
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseCreateRequest' }
+      responses:
+        '201':
+          description: Course created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/courses/{courseId}:
+    parameters:
+      - $ref: '#/components/parameters/CourseId'
+    get:
+      summary: Get course details
+      responses:
+        '200':
+          description: Course details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Patch mutable course catalog fields
+      description: Code and discipline are immutable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CoursePatchRequest' }
+      responses:
+        '200':
+          description: Course updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/courses/{courseId}/publish:
+    post:
+      summary: Publish a draft or inactive course
+      parameters: [{ $ref: '#/components/parameters/CourseId' }]
+      requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/courses/{courseId}/deactivate:
+    post:
+      summary: Deactivate a published course
+      parameters: [{ $ref: '#/components/parameters/CourseId' }]
+      requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/courses/{courseId}/archive:
+    post:
+      summary: Archive a draft or inactive course
+      parameters: [{ $ref: '#/components/parameters/CourseId' }]
+      requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs:
+    get:
+      summary: List course runs
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated course runs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunPageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      summary: Create a draft course run
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseRunCreateRequest' }
+      responses:
+        '201':
+          description: Course run created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      summary: Get course run details
+      responses:
+        '200':
+          description: Course run details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Patch draft minimum enrollment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseRunPatchRequest' }
+      responses:
+        '200':
+          description: Course run updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/open-registration:
+    post:
+      summary: Open a draft run for registration
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseRunOpenRequest' }
+      responses:
+        '200':
+          description: Registration opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/cancel:
+    post:
+      summary: Cancel a cancellable course run
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
+      responses:
+        '200':
+          description: Course run cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/sessions:
+    get:
+      summary: List sessions for a course run
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      responses:
+        '200':
+          description: Ordered sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/CourseSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Create a course session
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseSessionCreateRequest' }
+      responses:
+        '201':
+          description: Course session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/sessions/{sessionId}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      summary: Get course session details
+      responses:
+        '200':
+          description: Course session details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Reschedule or reassign a course session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseSessionPatchRequest' }
+      responses:
+        '200':
+          description: Course session changed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    CourseId:
+      name: courseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  requestBodies:
+    VersionRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/VersionRequest' }
+  responses:
+    Course:
+      description: Course changed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CourseResponse' }
+    BadRequest:
+      description: Validation or malformed request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/CourseProblem' }
+    Unauthorized:
+      description: Authentication is required (UNAUTHENTICATED) or the authenticated account is inactive (INVALID_TOKEN).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/CourseProblem' }
+    Forbidden:
+      description: MANAGER role required (FORBIDDEN).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/CourseProblem' }
+    NotFound:
+      description: Course resource not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/CourseProblem' }
+    Conflict:
+      description: Duplicate code, stale version, invalid transition, or schedule conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/CourseProblem' }
+  schemas:
+    CourseStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, INACTIVE, ARCHIVED]
+    CourseRunStatus:
+      type: string
+      enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]
+    CourseSessionStatus:
+      type: string
+      enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
+    VersionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    CourseCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [code, name, disciplineId]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 50 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        disciplineId: { type: string, format: uuid }
+        imageUrl: { type: [string, 'null'], maxLength: 500 }
+        defaultMinimumEnrollment: { type: [integer, 'null'], minimum: 1 }
+    CoursePatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        imageUrl: { type: [string, 'null'], maxLength: 500 }
+        defaultMinimumEnrollment: { type: [integer, 'null'], minimum: 1 }
+    CourseResponse:
+      type: object
+      required: [id, code, name, disciplineId, disciplineName, status, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        disciplineId: { type: string, format: uuid }
+        disciplineName: { type: string }
+        imageUrl: { type: [string, 'null'] }
+        defaultMinimumEnrollment: { type: [integer, 'null'] }
+        status: { $ref: '#/components/schemas/CourseStatus' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    CoursePageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/CourseResponse' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    CourseRunCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [runCode, courseId, primaryCoachId, tuitionVnd, capacity, minimumEnrollment,
+        registrationOpensAt, registrationClosesAt, plannedStartAt, plannedEndAt, totalUnits,
+        namedCoachCommitment]
+      properties:
+        runCode: { type: string, minLength: 1, maxLength: 50 }
+        courseId: { type: string, format: uuid }
+        primaryCoachId: { type: string, format: uuid }
+        tuitionVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
+        capacity: { type: integer, minimum: 1 }
+        minimumEnrollment: { type: integer, minimum: 1 }
+        registrationOpensAt: { type: string, format: date-time }
+        registrationClosesAt: { type: string, format: date-time }
+        plannedStartAt: { type: string, format: date-time }
+        plannedEndAt: { type: string, format: date-time }
+        totalUnits: { type: integer, minimum: 1 }
+        namedCoachCommitment: { type: boolean }
+    CourseRunPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, minimumEnrollment]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        minimumEnrollment: { type: integer, minimum: 1 }
+    CourseRunOpenRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, policyVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        policyVersion: { type: string, minLength: 1, maxLength: 100 }
+    CourseRunResponse:
+      type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, minimumEnrollment, registrationOpensAt, registrationClosesAt,
+        plannedStartAt, plannedEndAt, totalUnits, namedCoachCommitment, status, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        runCode: { type: string }
+        courseId: { type: string, format: uuid }
+        courseCode: { type: string }
+        courseName: { type: string }
+        primaryCoachId: { type: string, format: uuid }
+        primaryCoachName: { type: string }
+        tuitionVnd: { type: integer }
+        capacity: { type: integer }
+        minimumEnrollment: { type: integer }
+        registrationOpensAt: { type: string, format: date-time }
+        registrationClosesAt: { type: string, format: date-time }
+        plannedStartAt: { type: string, format: date-time }
+        plannedEndAt: { type: string, format: date-time }
+        totalUnits: { type: integer }
+        namedCoachCommitment: { type: boolean }
+        policyVersionSnapshot: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/CourseRunStatus' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    CourseRunPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/CourseRunResponse' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    CourseSessionCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [unitNumber, roomId, coachId, startAt, endAt, allocationVnd]
+      properties:
+        unitNumber: { type: integer, minimum: 1 }
+        roomId: { type: string, format: uuid }
+        coachId: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        allocationVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
+    CourseSessionPatchRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, startAt, endAt]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        roomId: { type: [string, 'null'], format: uuid }
+        coachId: { type: [string, 'null'], format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+    CourseSessionResponse:
+      type: object
+      required: [id, runId, runCode, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
+        originalStartAt, originalEndAt, allocationVnd, status, createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        runId: { type: string, format: uuid }
+        runCode: { type: string }
+        unitNumber: { type: integer }
+        roomId: { type: string, format: uuid }
+        roomName: { type: string }
+        coachId: { type: string, format: uuid }
+        coachName: { type: string }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        originalStartAt: { type: string, format: date-time }
+        originalEndAt: { type: string, format: date-time }
+        allocationVnd: { type: integer }
+        status: { $ref: '#/components/schemas/CourseSessionStatus' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    CourseProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN, FORBIDDEN,
+            COURSE_VALIDATION_ERROR, COURSE_NOT_FOUND, COURSE_CODE_CONFLICT, COURSE_INVALID_TRANSITION,
+            COURSE_CHANGED, COURSE_RUN_NOT_FOUND, COURSE_RUN_CODE_CONFLICT, COURSE_RUN_INVALID_OPENING,
+            COURSE_RUN_INVALID_TRANSITION, COURSE_RUN_IMMUTABLE, COURSE_RUN_CHANGED,
+            COURSE_SESSION_NOT_FOUND, COURSE_SESSION_INVALID, COURSE_SESSION_RESOURCE_CONFLICT,
+            COURSE_SESSION_ROOM_CAPACITY_CONFLICT, COURSE_SESSION_CHANGED]
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        affectedSessionIds:
+          type: array
+          items: { type: string, format: uuid }
+        requiredBenefitCodes:
+          type: array
+          items: { type: string }
+        missingBenefitCodes:
+          type: array
+          items: { type: string }
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: { type: string, format: uuid }
+              classId: { type: string, format: uuid }
+              className: { type: string }
+              startTime: { type: string, format: date-time }
+              endTime: { type: string, format: date-time }
+        traceId: { type: string }

@@ -29,6 +29,10 @@ import java.util.List;
 public class OpenApiConfiguration {
 
 	private static final String PROBLEM_SCHEMA = "#/components/schemas/ApiProblem";
+	private static final String UNAUTHORIZED_PROBLEM_SCHEMA = "#/components/schemas/UnauthorizedProblem";
+	private static final List<String> UNAUTHORIZED_CODES = List.of(
+		"UNAUTHENTICATED", "INVALID_TOKEN", "INVALID_CREDENTIALS", "INVALID_REFRESH_TOKEN",
+		"INVALID_PENDING_SESSION", "INVALID_PASSWORD_RESET_SESSION", "PAYMENT_UNAUTHORIZED");
 
 	@Bean
 	OpenApiCustomizer apiContractCustomizer() {
@@ -36,11 +40,17 @@ public class OpenApiConfiguration {
 			Components components = openApi.getComponents() == null ? new Components() : openApi.getComponents();
 			openApi.setComponents(components);
 			components.addSchemas("ApiProblem", problemSchema());
+			components.addSchemas("UnauthorizedProblem", unauthorizedProblemSchema());
 			components.addSchemas("OrdinaryBookingConflictProblem", ordinaryBookingConflictProblemSchema());
 			components.addSchemas("MembershipBenefitRequiredProblem", membershipBenefitRequiredProblemSchema());
 			addErrorResponse(components, "BadRequest", "The request is invalid.");
-			addErrorResponse(components, "Unauthorized", "Authentication failed or is required.");
-			addErrorResponse(components, "Forbidden", "The authenticated account is not allowed to perform this operation.");
+			addErrorResponse(components, "Unauthorized",
+				"Authentication failed (UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS, "
+					+ "INVALID_REFRESH_TOKEN, INVALID_PENDING_SESSION, INVALID_PASSWORD_RESET_SESSION, "
+					+ "or PAYMENT_UNAUTHORIZED).",
+				UNAUTHORIZED_PROBLEM_SCHEMA);
+			addErrorResponse(components, "Forbidden",
+				"The authenticated account is not allowed to perform this operation (FORBIDDEN).");
 			addErrorResponse(components, "NotFound", "The requested resource was not found.");
 			addErrorResponse(components, "Conflict", "The request conflicts with current resource state.");
 			addBookingConflictResponse(components);
@@ -80,6 +90,17 @@ public class OpenApiConfiguration {
 	}
 
 	private void applyKnownResponseVariants(String path, HttpMethod method, Operation operation) {
+		if (method == HttpMethod.POST && (path.equals("/manager/courses")
+				|| path.equals("/manager/course-runs")
+				|| path.equals("/manager/course-runs/{runId}/sessions"))) {
+			ApiResponse ok = operation.getResponses().get("200");
+			operation.getResponses().remove("200");
+			operation.getResponses().addApiResponse("201",
+				new ApiResponse().description("Created").content(ok.getContent()));
+		}
+		if (method == HttpMethod.POST && path.equals("/manager/course-runs")) {
+			operation.getResponses().addApiResponse("404", reference("NotFound"));
+		}
 		if (method == HttpMethod.GET && path.equals("/reception/members/search")) {
 			operation.getResponses().addApiResponse("404", reference("NotFound"));
 		}
@@ -155,6 +176,12 @@ public class OpenApiConfiguration {
 		return schema;
 	}
 
+	private Schema<?> unauthorizedProblemSchema() {
+		Schema<?> schema = problemSchema();
+		schema.addProperty("code", new StringSchema()._enum(UNAUTHORIZED_CODES));
+		return schema;
+	}
+
 	private Schema<?> ordinaryBookingConflictProblemSchema() {
 		Schema<?> schema = problemSchema();
 		schema.addProperty("code", new StringSchema()
@@ -173,9 +200,13 @@ public class OpenApiConfiguration {
 	}
 
 	private void addErrorResponse(Components components, String name, String description) {
+		addErrorResponse(components, name, description, PROBLEM_SCHEMA);
+	}
+
+	private void addErrorResponse(Components components, String name, String description, String schemaRef) {
 		components.addResponses(name, new ApiResponse().description(description)
 			.content(new Content().addMediaType("application/problem+json",
-				new io.swagger.v3.oas.models.media.MediaType().schema(new Schema<>().$ref(PROBLEM_SCHEMA)))));
+				new io.swagger.v3.oas.models.media.MediaType().schema(new Schema<>().$ref(schemaRef)))));
 	}
 
 	private ApiResponse reference(String name) {

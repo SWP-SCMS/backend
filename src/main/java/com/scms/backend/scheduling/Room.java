@@ -70,7 +70,7 @@ public class Room {
 	}
 
 	public UUID getId() { return id; }
-	String getName() { return name; }
+	public String getName() { return name; }
 	public int getCapacity() { return capacity; }
 	public RoomStatus getStatus() { return status; }
 	RoomUsageMode getUsageMode() { return usageMode; }

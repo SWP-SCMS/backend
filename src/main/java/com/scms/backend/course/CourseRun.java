@@ -15,6 +15,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 @Entity
 @Table(name = "course_runs")
@@ -70,9 +72,11 @@ public class CourseRun {
 	private CourseRunStatus status;
 
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant createdAt;
 
 	@Column(name = "updated_at", nullable = false, insertable = false)
+	@Generated(event = EventType.INSERT)
 	private Instant updatedAt;
 
 	@Version
@@ -106,6 +110,7 @@ public class CourseRun {
 		if (!hasValidOpeningDetails(policyVersion)) throw CourseException.invalidOpening();
 		policyVersionSnapshot = policyVersion;
 		status = CourseRunStatus.OPEN_FOR_REGISTRATION;
+		updatedAt = Instant.now();
 	}
 
 	void confirm() {
@@ -130,27 +135,29 @@ public class CourseRun {
 			throw CourseException.invalidTransition();
 		}
 		status = CourseRunStatus.CANCELLED;
+		updatedAt = Instant.now();
 	}
 
 	void changeMinimumEnrollment(int minimumEnrollment) {
 		if (status != CourseRunStatus.DRAFT) throw CourseException.immutableRun();
 		if (minimumEnrollment <= 0 || minimumEnrollment > capacity) throw CourseException.invalidOpening();
 		this.minimumEnrollment = minimumEnrollment;
+		updatedAt = Instant.now();
 	}
 
-	CourseRunStatus getStatus() {
+	public CourseRunStatus getStatus() {
 		return status;
 	}
 
-	String getPolicyVersionSnapshot() {
+	public String getPolicyVersionSnapshot() {
 		return policyVersionSnapshot;
 	}
 
-	int getMinimumEnrollment() {
+	public int getMinimumEnrollment() {
 		return minimumEnrollment;
 	}
 
-	int getCapacity() {
+	public int getCapacity() {
 		return capacity;
 	}
 
@@ -168,5 +175,21 @@ public class CourseRun {
 	private void transition(CourseRunStatus required, CourseRunStatus next) {
 		if (status != required) throw CourseException.invalidTransition();
 		status = next;
+		updatedAt = Instant.now();
 	}
+
+	public UUID getId() { return id; }
+	public String getRunCode() { return runCode; }
+	public Course getCourse() { return course; }
+	public Account getPrimaryCoach() { return primaryCoach; }
+	public BigInteger getTuitionVnd() { return tuitionVnd; }
+	public Instant getRegistrationOpensAt() { return registrationOpensAt; }
+	public Instant getRegistrationClosesAt() { return registrationClosesAt; }
+	public Instant getPlannedStartAt() { return plannedStartAt; }
+	public Instant getPlannedEndAt() { return plannedEndAt; }
+	public int getTotalUnits() { return totalUnits; }
+	public boolean isNamedCoachCommitment() { return namedCoachCommitment; }
+	public Instant getCreatedAt() { return createdAt; }
+	public Instant getUpdatedAt() { return updatedAt; }
+	public Long getVersion() { return version; }
 }

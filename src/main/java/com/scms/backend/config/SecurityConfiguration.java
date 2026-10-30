@@ -134,6 +134,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/disciplines", "/manager/disciplines/**").hasRole("MANAGER")
 				.requestMatchers("/manager/classes", "/manager/classes/**").hasRole("MANAGER")
 				.requestMatchers("/manager/rooms", "/manager/rooms/**").hasRole("MANAGER")
+				.requestMatchers("/manager/courses", "/manager/courses/**",
+					"/manager/course-runs", "/manager/course-runs/**").hasRole("MANAGER")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
