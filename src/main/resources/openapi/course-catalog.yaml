@@ -1,0 +1,280 @@
+openapi: 3.1.0
+info:
+  title: SCMS Course Catalog API
+  version: v1
+paths:
+  /courses:
+    get:
+      operationId: listCatalogCourses
+      description: Public catalog of PUBLISHED courses.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Published courses ordered by name and id.
+          content:
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCoursePageResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /courses/{courseId}:
+    get:
+      operationId: getCatalogCourse
+      description: Public detail for a PUBLISHED course; hidden states use the same 404 as a missing course.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CourseId'
+      responses:
+        '200':
+          description: Published course detail.
+          content:
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /course-runs:
+    get:
+      operationId: listCatalogCourseRuns
+      description: Public catalog of OPEN_FOR_REGISTRATION runs whose parent Course is PUBLISHED.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Visible course runs ordered by planned start and id.
+          content:
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseRunPageResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /course-runs/{runId}:
+    get:
+      operationId: getCatalogCourseRun
+      description: Public run detail with an ordered schedule; registration status does not imply seat availability.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Visible course run and sessions ordered by startAt and id.
+          content:
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseRunDetailResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: {type: integer, format: int32, minimum: 0, default: 0}
+    Size:
+      name: size
+      in: query
+      schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}
+    CourseId:
+      name: courseId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  schemas:
+    CatalogCourseResponse:
+      type: object
+      required: [id, code, name, description, disciplineId, disciplineName, imageUrl]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        name: {type: string}
+        description: {type: [string, 'null']}
+        disciplineId: {type: string, format: uuid}
+        disciplineName: {type: string}
+        imageUrl: {type: [string, 'null']}
+    CatalogCoursePageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourseResponse'}
+        page: {type: integer, format: int32, minimum: 0}
+        size: {type: integer, format: int32, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, format: int32, minimum: 0}
+    RegistrationStatus:
+      type: string
+      description: Derived from the half-open registration window [registrationOpensAt, registrationClosesAt); not seat availability.
+      enum: [UPCOMING, OPEN, CLOSED]
+    CatalogCourseRunResponse:
+      type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
+        plannedStartAt, plannedEndAt, totalUnits, status]
+      properties:
+        id: {type: string, format: uuid}
+        runCode: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        primaryCoachId: {type: string, format: uuid}
+        primaryCoachName: {type: string}
+        tuitionVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
+        capacity: {type: integer, format: int32, minimum: 1}
+        registrationOpensAt: {type: string, format: date-time}
+        registrationClosesAt: {type: string, format: date-time}
+        registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
+        plannedStartAt: {type: string, format: date-time}
+        plannedEndAt: {type: string, format: date-time}
+        totalUnits: {type: integer, format: int32, minimum: 1}
+        status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
+    CatalogCourseRunPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourseRunResponse'}
+        page: {type: integer, format: int32, minimum: 0}
+        size: {type: integer, format: int32, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, format: int32, minimum: 0}
+    CatalogCourseSessionResponse:
+      type: object
+      required: [id, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
+        originalStartAt, originalEndAt, allocationVnd, status]
+      properties:
+        id: {type: string, format: uuid}
+        unitNumber: {type: integer, format: int32, minimum: 1}
+        roomId: {type: string, format: uuid}
+        roomName: {type: string}
+        coachId: {type: string, format: uuid}
+        coachName: {type: string}
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        originalStartAt: {type: string, format: date-time}
+        originalEndAt: {type: string, format: date-time}
+        allocationVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
+        status:
+          type: string
+          enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
+    CatalogCourseRunDetailResponse:
+      type: object
+      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
+        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
+        plannedStartAt, plannedEndAt, totalUnits, status, sessions]
+      properties:
+        id: {type: string, format: uuid}
+        runCode: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        primaryCoachId: {type: string, format: uuid}
+        primaryCoachName: {type: string}
+        tuitionVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
+        capacity: {type: integer, format: int32, minimum: 1}
+        registrationOpensAt: {type: string, format: date-time}
+        registrationClosesAt: {type: string, format: date-time}
+        registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
+        plannedStartAt: {type: string, format: date-time}
+        plannedEndAt: {type: string, format: date-time}
+        totalUnits: {type: integer, format: int32, minimum: 1}
+        status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
+        sessions:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourseSessionResponse'}
+    ApiProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: {type: string}
+        status: {type: integer, format: int32}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code: {type: string}
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+        affectedSessionIds:
+          type: array
+          items: {type: string, format: uuid}
+        requiredBenefitCodes:
+          type: array
+          items: {type: string}
+        missingBenefitCodes:
+          type: array
+          items: {type: string}
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: {type: string, format: uuid}
+              classId: {type: string, format: uuid}
+              className: {type: string}
+              startTime: {type: string, format: date-time}
+              endTime: {type: string, format: date-time}
+        traceId: {type: string}
+    UnauthorizedProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: {type: string}
+        status: {type: integer, format: int32}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code:
+          type: string
+          enum: [UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN,
+            INVALID_PENDING_SESSION, INVALID_PASSWORD_RESET_SESSION, PAYMENT_UNAUTHORIZED]
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+        affectedSessionIds:
+          type: array
+          items: {type: string, format: uuid}
+        requiredBenefitCodes:
+          type: array
+          items: {type: string}
+        missingBenefitCodes:
+          type: array
+          items: {type: string}
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: {type: string, format: uuid}
+              classId: {type: string, format: uuid}
+              className: {type: string}
+              startTime: {type: string, format: date-time}
+              endTime: {type: string, format: date-time}
+        traceId: {type: string}
+  responses:
+    BadRequest:
+      description: The request is invalid.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ApiProblem'}
+    Unauthorized:
+      description: Authentication failed.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/UnauthorizedProblem'}
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/ApiProblem'}

@@ -77,6 +77,8 @@ public class SecurityConfiguration {
 					"/auth/email-verification/resend", "/auth/email-verification/change-email").permitAll()
 				.requestMatchers("/docs", "/docs/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
 				.requestMatchers(HttpMethod.GET, "/membership-offers", "/membership-offers/*").permitAll()
+				.requestMatchers(HttpMethod.GET, "/courses", "/courses/*", "/course-runs", "/course-runs/*")
+					.permitAll()
 				.requestMatchers(HttpMethod.GET, "/members/me/membership-termination-requests")
 					.hasRole("MEMBER")
 				.requestMatchers(HttpMethod.POST, "/members/me/membership-termination-requests")

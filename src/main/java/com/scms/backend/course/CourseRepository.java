@@ -20,6 +20,14 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
 	Page<Course> findAll(Pageable pageable);
 
 	@EntityGraph(attributePaths = "discipline")
+	@Query("select course from Course course where course.status = :status")
+	Page<Course> findCatalogByStatus(@Param("status") CourseStatus status, Pageable pageable);
+
+	@EntityGraph(attributePaths = "discipline")
+	@Query("select course from Course course where course.id = :id and course.status = :status")
+	Optional<Course> findCatalogByIdAndStatus(@Param("id") UUID id, @Param("status") CourseStatus status);
+
+	@EntityGraph(attributePaths = "discipline")
 	@Query("select course from Course course where course.id = :id")
 	Optional<Course> findDetailedById(@Param("id") UUID id);
 

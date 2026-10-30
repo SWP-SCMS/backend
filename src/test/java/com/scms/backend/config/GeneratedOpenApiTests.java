@@ -13,9 +13,12 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import org.junit.jupiter.api.Test;
@@ -79,6 +82,120 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES)
 	);
+	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(
+		new CourseOperationContract("/courses", "get", Set.of("200", "400", "401")),
+		new CourseOperationContract("/courses/{courseId}", "get", Set.of("200", "400", "401", "404")),
+		new CourseOperationContract("/course-runs", "get", Set.of("200", "400", "401")),
+		new CourseOperationContract("/course-runs/{runId}", "get", Set.of("200", "400", "401", "404"))
+	);
+	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(
+		new CatalogParameterContract("/courses", "page", "query", false, Set.of("integer"), "int32",
+			"0", "0", null, Set.of()),
+		new CatalogParameterContract("/courses", "size", "query", false, Set.of("integer"), "int32",
+			"20", "1", "100", Set.of()),
+		new CatalogParameterContract("/courses/{courseId}", "courseId", "path", true, Set.of("string"),
+			"uuid", null, null, null, Set.of()),
+		new CatalogParameterContract("/course-runs", "page", "query", false, Set.of("integer"), "int32",
+			"0", "0", null, Set.of()),
+		new CatalogParameterContract("/course-runs", "size", "query", false, Set.of("integer"), "int32",
+			"20", "1", "100", Set.of()),
+		new CatalogParameterContract("/course-runs/{runId}", "runId", "path", true, Set.of("string"),
+			"uuid", null, null, null, Set.of())
+	);
+	private static final List<CatalogSchemaContract> COURSE_CATALOG_SCHEMA_CONTRACTS = List.of(
+		new CatalogSchemaContract("CatalogCourseResponse", List.of(
+			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("code", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("name", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("description", Set.of("string", "null"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("disciplineId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("disciplineName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("imageUrl", Set.of("string", "null"), null, null, null, Set.of(), null)
+		)),
+		new CatalogSchemaContract("CatalogCoursePageResponse", List.of(
+			new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(),
+				"CatalogCourseResponse"),
+			new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null),
+			new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null),
+			new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null),
+			new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null)
+		)),
+		new CatalogSchemaContract("CatalogCourseRunResponse", List.of(
+			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
+				Set.of(), null),
+			new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null),
+			new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null,
+				Set.of("UPCOMING", "OPEN", "CLOSED"), null),
+			new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null),
+			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
+				Set.of("OPEN_FOR_REGISTRATION"), null)
+		)),
+		new CatalogSchemaContract("CatalogCourseRunPageResponse", List.of(
+			new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(),
+				"CatalogCourseRunResponse"),
+			new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null),
+			new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null),
+			new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null),
+			new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null)
+		)),
+		new CatalogSchemaContract("CatalogCourseSessionResponse", List.of(
+			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("unitNumber", Set.of("integer"), "int32", "1", null, Set.of(), null),
+			new CatalogPropertyContract("roomId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("roomName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("coachId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("coachName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("startAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("endAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("originalStartAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("originalEndAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("allocationVnd", Set.of("integer"), null, "1", "9999999999999999999",
+				Set.of(), null),
+			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
+				Set.of("SCHEDULED", "CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED",
+					"RESOLVED_BY_REFUND"), null)
+		)),
+		new CatalogSchemaContract("CatalogCourseRunDetailResponse", List.of(
+			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null),
+			new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null),
+			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
+				Set.of(), null),
+			new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null),
+			new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null,
+				Set.of(), null),
+			new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null,
+				Set.of("UPCOMING", "OPEN", "CLOSED"), null),
+			new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null),
+			new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null),
+			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
+				Set.of("OPEN_FOR_REGISTRATION"), null),
+			new CatalogPropertyContract("sessions", Set.of("array"), null, null, null, Set.of(),
+				"CatalogCourseSessionResponse")
+		))
+	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
 		"POST /auth/login",
@@ -129,6 +246,10 @@ class GeneratedOpenApiTests {
 		"DELETE /accounts/me/email-change",
 		"GET /membership-offers",
 		"GET /membership-offers/{offerId}",
+		"GET /courses",
+		"GET /courses/{courseId}",
+		"GET /course-runs",
+		"GET /course-runs/{runId}",
 		"GET /manager/membership-offers",
 		"GET /manager/membership-offers/{offerId}",
 		"POST /manager/membership-offers",
@@ -423,6 +544,45 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedCourseCatalogIsPublicAndDocumentsOnlyVisibleRunState() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String path : List.of("/courses", "/courses/{courseId}", "/course-runs", "/course-runs/{runId}")) {
+			JsonNode operation = operation(document, path, "get");
+			assertThat(operation.path("security").isArray()).as(path).isTrue();
+			assertThat(operation.path("security")).as(path).isEmpty();
+			assertThat(operation.path("description").asText()).contains("Public course catalog");
+			assertThat(operation.path("responses").has("403")).as(path).isFalse();
+		}
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/status/enum").toString())
+			.isEqualTo("[\"OPEN_FOR_REGISTRATION\"]");
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/registrationStatus/enum")
+			.toString())
+			.isEqualTo("[\"UPCOMING\",\"OPEN\",\"CLOSED\"]");
+		JsonNode detail = document.at("/components/schemas/CatalogCourseRunDetailResponse");
+		assertThat(detail.at("/properties/sessions/items/$ref").asText())
+			.isEqualTo("#/components/schemas/CatalogCourseSessionResponse");
+		assertThat(detail.toString()).doesNotContain("capacityRemaining", "policyVersionSnapshot", "version");
+	}
+
+	@Test
+	void staticAndGeneratedCourseCatalogContractsHaveNormalizedParity() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-catalog.yaml"));
+
+		for (CourseOperationContract contract : COURSE_CATALOG_OPERATION_CONTRACTS) {
+			String label = contract.method().toUpperCase() + " " + contract.path();
+			assertThat(responseStatuses(generated, contract)).as("generated " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label)
+				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+		}
+		assertExpectedCatalogContract(generated, "generated");
+		assertExpectedCatalogContract(documented, "static");
+		assertThat(normalizedCatalogContract(documented)).isEqualTo(normalizedCatalogContract(generated));
+	}
+
+	@Test
 	void staticAndGeneratedCourseContractsHaveTableDrivenResponseAndProblemParity() throws Exception {
 		JsonNode generated = generatedDocument();
 		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
@@ -536,6 +696,8 @@ class GeneratedOpenApiTests {
 			"/paths/~1auth~1email-verification~1resend/post",
 			"/paths/~1auth~1email-verification~1change-email/post",
 			"/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get",
+			"/paths/~1courses/get", "/paths/~1courses~1{courseId}/get",
+			"/paths/~1course-runs/get", "/paths/~1course-runs~1{runId}/get",
 			"/paths/~1payments~1sepay~1webhook/post")) {
 			assertThat(document.at(publicOperation + "/security").isArray()).as(publicOperation).isTrue();
 			assertThat(document.at(publicOperation + "/security")).as(publicOperation).isEmpty();
@@ -1182,6 +1344,170 @@ class GeneratedOpenApiTests {
 			.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
 	}
 
+	private void assertExpectedCatalogContract(JsonNode document, String source) {
+		for (CatalogParameterContract contract : COURSE_CATALOG_PARAMETER_CONTRACTS) {
+			JsonNode parameter = parameter(document, contract.path(), contract.name());
+			String label = source + " GET " + contract.path() + " parameter " + contract.name();
+			assertThat(parameter.path("in").asText()).as(label + " location").isEqualTo(contract.location());
+			assertThat(parameter.path("required").asBoolean(false)).as(label + " required")
+				.isEqualTo(contract.required());
+			assertSchemaMetadata(document, parameter.path("schema"), contract.types(), contract.format(),
+				contract.defaultValue(), contract.minimum(), contract.maximum(), contract.enumValues(), null, label);
+		}
+
+		for (CatalogSchemaContract contract : COURSE_CATALOG_SCHEMA_CONTRACTS) {
+			JsonNode schema = document.at("/components/schemas/" + contract.name());
+			String label = source + " schema " + contract.name();
+			Set<String> expectedProperties = contract.properties().stream()
+				.map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
+			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+				.as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("required").values()).as(label + " required").toIterable()
+				.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
+			for (CatalogPropertyContract property : contract.properties()) {
+				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(),
+					property.format(), null, property.minimum(), property.maximum(), property.enumValues(),
+					property.itemSchema(), label + " property " + property.name());
+			}
+		}
+	}
+
+	private JsonNode parameter(JsonNode document, String path, String name) {
+		return java.util.stream.StreamSupport.stream(operation(document, path, "get").path("parameters").spliterator(),
+			false).map(parameter -> resolve(document, parameter))
+			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
+	}
+
+	private void assertSchemaMetadata(JsonNode document, JsonNode rawSchema, Set<String> expectedTypes,
+			String expectedFormat, String expectedDefault, String expectedMinimum, String expectedMaximum,
+			Set<String> expectedEnum, String expectedItemSchema, String label) {
+		JsonNode schema = resolve(document, rawSchema);
+		Set<String> actualTypes = schema.path("type").isArray()
+			? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false)
+				.map(JsonNode::asText).collect(java.util.stream.Collectors.toSet())
+			: Set.of(schema.path("type").asText());
+		assertThat(actualTypes).as(label + " type").containsExactlyInAnyOrderElementsOf(expectedTypes);
+		assertThat(textOrNull(schema, "format")).as(label + " format").isEqualTo(expectedFormat);
+		assertThat(textOrNull(schema, "default")).as(label + " default").isEqualTo(expectedDefault);
+		assertThat(textOrNull(schema, "minimum")).as(label + " minimum").isEqualTo(expectedMinimum);
+		assertThat(textOrNull(schema, "maximum")).as(label + " maximum").isEqualTo(expectedMaximum);
+		assertThat(schema.path("enum").values()).as(label + " enum").toIterable().extracting(JsonNode::asText)
+			.containsExactlyInAnyOrderElementsOf(expectedEnum);
+		if (expectedItemSchema == null) {
+			assertThat(schema.has("items")).as(label + " items").isFalse();
+		}
+		else {
+			assertThat(schema.at("/items/$ref").asText()).as(label + " items")
+				.isEqualTo("#/components/schemas/" + expectedItemSchema);
+		}
+	}
+
+	private String textOrNull(JsonNode node, String field) {
+		return node.has(field) ? node.path(field).asText() : null;
+	}
+
+	private ObjectNode normalizedCatalogContract(JsonNode document) {
+		ObjectNode normalized = objectMapper.createObjectNode();
+		for (CourseOperationContract contract : COURSE_CATALOG_OPERATION_CONTRACTS) {
+			ObjectNode operation = objectMapper.createObjectNode();
+			JsonNode source = operation(document, contract.path(), contract.method());
+			operation.set("security", source.path("security").deepCopy());
+			operation.set("parameters", normalizedParameters(document, source.path("parameters")));
+			ObjectNode responses = objectMapper.createObjectNode();
+			new TreeSet<>(responseStatuses(document, contract)).forEach(status ->
+				responses.set(status, normalizedResponse(document,
+					response(document, contract.path(), contract.method(), status))));
+			operation.set("responses", responses);
+			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
+		}
+		return normalized;
+	}
+
+	private ArrayNode normalizedParameters(JsonNode document, JsonNode parameters) {
+		ArrayNode normalized = objectMapper.createArrayNode();
+		List<ObjectNode> values = new ArrayList<>();
+		parameters.forEach(parameter -> {
+			JsonNode source = resolve(document, parameter);
+			ObjectNode value = objectMapper.createObjectNode();
+			value.put("name", source.path("name").asText());
+			value.put("in", source.path("in").asText());
+			value.put("required", source.path("required").asBoolean(false));
+			value.set("schema", normalizedSchema(document, source.path("schema")));
+			values.add(value);
+		});
+		values.stream().sorted(Comparator.comparing(value ->
+			value.path("in").asText() + ":" + value.path("name").asText())).forEach(normalized::add);
+		return normalized;
+	}
+
+	private ObjectNode normalizedResponse(JsonNode document, JsonNode response) {
+		JsonNode source = resolve(document, response);
+		ObjectNode normalized = objectMapper.createObjectNode();
+		ObjectNode content = objectMapper.createObjectNode();
+		source.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
+			.forEach(entry -> content.set(entry.getKey(),
+				normalizedSchema(document, entry.getValue().path("schema"))));
+		normalized.set("content", content);
+		return normalized;
+	}
+
+	private ObjectNode normalizedSchema(JsonNode document, JsonNode schema) {
+		JsonNode source = resolve(document, schema);
+		ObjectNode normalized = objectMapper.createObjectNode();
+		copy(source, normalized, "type", "format", "default", "minimum", "maximum", "exclusiveMinimum",
+			"exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties",
+			"maxProperties", "pattern", "multipleOf", "nullable");
+		copySortedArray(source, normalized, "required");
+		copySortedArray(source, normalized, "enum");
+		if (source.has("properties")) {
+			ObjectNode properties = objectMapper.createObjectNode();
+			source.path("properties").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
+				.forEach(entry -> properties.set(entry.getKey(), normalizedSchema(document, entry.getValue())));
+			normalized.set("properties", properties);
+		}
+		if (source.has("items")) normalized.set("items", normalizedSchema(document, source.path("items")));
+		if (source.has("additionalProperties")) {
+			JsonNode additional = source.path("additionalProperties");
+			normalized.set("additionalProperties", additional.isObject()
+				? normalizedSchema(document, additional) : additional.deepCopy());
+		}
+		for (String composition : List.of("allOf", "oneOf", "anyOf")) {
+			if (source.has(composition)) {
+				ArrayNode alternatives = objectMapper.createArrayNode();
+				source.path(composition).forEach(item -> alternatives.add(normalizedSchema(document, item)));
+				normalized.set(composition, alternatives);
+			}
+		}
+		return normalized;
+	}
+
+	private JsonNode resolve(JsonNode document, JsonNode node) {
+		JsonNode resolved = node;
+		Set<String> visited = new HashSet<>();
+		while (resolved.has("$ref")) {
+			String reference = resolved.path("$ref").asText();
+			if (!reference.startsWith("#/") || !visited.add(reference)) {
+				throw new IllegalArgumentException("Unsupported OpenAPI reference " + reference);
+			}
+			resolved = document.at(reference.substring(1));
+		}
+		return resolved;
+	}
+
+	private void copy(JsonNode source, ObjectNode target, String... fields) {
+		for (String field : fields) {
+			if (source.has(field)) target.set(field, source.path(field).deepCopy());
+		}
+	}
+
+	private void copySortedArray(JsonNode source, ObjectNode target, String field) {
+		if (!source.has(field)) return;
+		ArrayNode values = objectMapper.createArrayNode();
+		java.util.stream.StreamSupport.stream(source.path(field).spliterator(), false)
+			.sorted(Comparator.comparing(JsonNode::toString)).forEach(values::add);
+		target.set(field, values);
+	}
+
 	private void assertProblemResponse(JsonNode document, CourseOperationContract contract, String status,
 			String label, String expectedSchema) {
 		String responseRef = response(document, contract.path(), contract.method(), status).path("$ref").asText();
@@ -1249,4 +1575,13 @@ class GeneratedOpenApiTests {
 	}
 
 	private record CourseOperationContract(String path, String method, Set<String> statuses) { }
+
+	private record CatalogParameterContract(String path, String name, String location, boolean required,
+		Set<String> types, String format, String defaultValue, String minimum, String maximum,
+		Set<String> enumValues) { }
+
+	private record CatalogSchemaContract(String name, List<CatalogPropertyContract> properties) { }
+
+	private record CatalogPropertyContract(String name, Set<String> types, String format, String minimum,
+		String maximum, Set<String> enumValues, String itemSchema) { }
 }
