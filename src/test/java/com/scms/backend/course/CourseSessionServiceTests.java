@@ -1,7 +1,9 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -21,6 +23,7 @@ import com.scms.backend.scheduling.RoomStatus;
 import com.scms.backend.scheduling.SharedResourceLockService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CourseSessionServiceTests {
 	private final CourseRunRepository runs = mock(CourseRunRepository.class);
@@ -88,5 +91,22 @@ class CourseSessionServiceTests {
 		assertThatThrownBy(() -> service.create(runId, 1, coachId, roomId, start,
 			start.plusSeconds(3600), new BigInteger("10000000000000000000")))
 			.isInstanceOf(CourseException.class);
+	}
+
+	@Test
+	void rejectsStaleSessionVersionBeforeLoadingReplacementResources() {
+		Instant start = Instant.parse("2035-01-01T02:00:00Z");
+		CourseSession session = new CourseSession(UUID.randomUUID(), run, 1, room, coach, start,
+			start.plusSeconds(3600), BigInteger.TEN);
+		ReflectionTestUtils.setField(session, "version", 3L);
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(roomId));
+		when(sessions.findCoachIdById(session.getId())).thenReturn(Optional.of(coachId));
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+
+		assertThatThrownBy(() -> service.reschedule(session.getId(), null, null, start.plusSeconds(60),
+			start.plusSeconds(3660), 2L))
+			.isInstanceOfSatisfying(CourseException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("COURSE_SESSION_CHANGED"));
+		verifyNoInteractions(rooms, accounts);
 	}
 }

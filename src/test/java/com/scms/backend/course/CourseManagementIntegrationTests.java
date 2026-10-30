@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -55,7 +56,7 @@ class CourseManagementIntegrationTests {
 	void rejectsStaleUpdatesAndDuplicateCourseAndRunCodes() {
 		CourseResponse course = createPublishedCourse("CAT-101");
 		assertThatThrownBy(() -> service.patchCourse(managerId, course.id(),
-			new CoursePatchRequest(course.version() - 1, "Stale", null, null, null)))
+			patch("{\"expectedVersion\":%d,\"name\":\"Stale\"}".formatted(course.version() - 1))))
 			.isInstanceOfSatisfying(CourseException.class,
 				exception -> assertThat(exception.getCode()).isEqualTo("COURSE_CHANGED"));
 		assertThatThrownBy(() -> service.createCourse(managerId,
@@ -68,6 +69,40 @@ class CourseManagementIntegrationTests {
 		assertThatThrownBy(() -> service.createRun(managerId, run))
 			.isInstanceOfSatisfying(CourseException.class,
 				exception -> assertThat(exception.getCode()).isEqualTo("COURSE_RUN_CODE_CONFLICT"));
+	}
+
+	@Test
+	void sameValueCoursePatchLeavesStoredVersionAndAuditCountUnchanged() {
+		CourseResponse created = service.createCourse(managerId,
+			new CourseCreateRequest("NOOP-101", "No-op course", "Description", disciplineId,
+				"https://example.test/noop.png", 2));
+		long auditCount = auditCount("COURSE_UPDATED", created.id());
+
+		CourseResponse response = service.patchCourse(managerId, created.id(), patch("""
+			{"expectedVersion":%d,"name":" No-op course ","description":" Description ",
+			 "imageUrl":" https://example.test/noop.png ","defaultMinimumEnrollment":2}
+			""".formatted(created.version())));
+		Course stored = courses.findById(created.id()).orElseThrow();
+
+		assertThat(response.version()).isEqualTo(created.version());
+		assertThat(stored.getVersion()).isEqualTo(created.version());
+		assertThat(auditCount("COURSE_UPDATED", created.id())).isEqualTo(auditCount);
+	}
+
+	@Test
+	void explicitNullCoursePatchClearsStoredNullableValues() {
+		CourseResponse created = service.createCourse(managerId,
+			new CourseCreateRequest("CLEAR-101", "Clear course", "Description", disciplineId,
+				"https://example.test/clear.png", 2));
+
+		service.patchCourse(managerId, created.id(), patch("""
+			{"expectedVersion":%d,"description":null,"imageUrl":null,"defaultMinimumEnrollment":null}
+			""".formatted(created.version())));
+		Course stored = courses.findById(created.id()).orElseThrow();
+
+		assertThat(stored.getDescription()).isNull();
+		assertThat(stored.getImageUrl()).isNull();
+		assertThat(stored.getDefaultMinimumEnrollment()).isNull();
 	}
 
 	@Test
@@ -107,6 +142,27 @@ class CourseManagementIntegrationTests {
 		}
 	}
 
+	@Test
+	void auditFailureRollsBackCourseUpdateAtomically() {
+		CourseResponse created = service.createCourse(managerId,
+			new CourseCreateRequest("UPDATE-ROLLBACK-101", "Original", null, disciplineId, null, 2));
+		String constraint = "chk_test_reject_course_update_audit";
+		jdbc.execute("alter table audit_events add constraint " + constraint
+			+ " check (action <> 'COURSE_UPDATED')");
+		try {
+			assertThatThrownBy(() -> service.patchCourse(managerId, created.id(),
+				patch("{\"expectedVersion\":%d,\"name\":\"Changed\"}".formatted(created.version()))))
+				.rootCause().hasMessageContaining(constraint);
+			Course stored = courses.findById(created.id()).orElseThrow();
+			assertThat(stored.getName()).isEqualTo("Original");
+			assertThat(stored.getVersion()).isEqualTo(created.version());
+			assertThat(auditCount("COURSE_UPDATED", created.id())).isZero();
+		}
+		finally {
+			jdbc.execute("alter table audit_events drop constraint " + constraint);
+		}
+	}
+
 	private CourseResponse createPublishedCourse(String code) {
 		CourseResponse created = service.createCourse(managerId,
 			new CourseCreateRequest(code, "Course " + code, null, disciplineId, null, 2));
@@ -124,5 +180,19 @@ class CourseManagementIntegrationTests {
 		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name,
 			"09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test",
 			LocalDate.of(1990, 1, 1), "{noop}password"));
+	}
+
+	private CoursePatchRequest patch(String json) {
+		try {
+			return new ObjectMapper().readValue(json, CoursePatchRequest.class);
+		}
+		catch (Exception exception) {
+			throw new AssertionError(exception);
+		}
+	}
+
+	private long auditCount(String action, UUID targetId) {
+		return jdbc.queryForObject("select count(*) from audit_events where action=? and target_id=?",
+			Long.class, action, targetId);
 	}
 }

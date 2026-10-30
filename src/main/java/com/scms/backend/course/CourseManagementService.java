@@ -72,8 +72,9 @@ class CourseManagementService {
 			throw CourseException.validation("disciplineId", "must identify an active discipline");
 		}
 		if (courses.existsByCode(code)) throw CourseException.duplicateCode();
-		Course course = new Course(UUID.randomUUID(), code, name, optional(request.description()), discipline,
-			optional(request.imageUrl()), request.defaultMinimumEnrollment());
+		Course course = new Course(UUID.randomUUID(), code, name,
+			optional(request.description(), CourseFieldLimits.DESCRIPTION, "description"), discipline,
+			optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl"), request.defaultMinimumEnrollment());
 		try {
 			courses.saveAndFlush(course);
 		}
@@ -90,23 +91,29 @@ class CourseManagementService {
 		if (request == null || request.expectedVersion() == null) {
 			throw CourseException.validation("expectedVersion", "is required");
 		}
-		if (request.name() == null && request.description() == null && request.imageUrl() == null
-				&& request.defaultMinimumEnrollment() == null) {
+		if (!request.hasMutableField()) {
 			throw CourseException.validation("request", "at least one mutable field is required");
 		}
 		Course course = lockCourse(courseId);
 		checkVersion(course.getVersion(), request.expectedVersion(), CourseException::changed);
-		Map<String, Object> before = snapshot(course);
-		String name = request.name() == null ? course.getName() : required(request.name(), 200, "name");
-		Integer minimum = request.defaultMinimumEnrollment() == null ? course.getDefaultMinimumEnrollment()
-			: request.defaultMinimumEnrollment();
+		String name = request.hasName() ? required(request.name(), 200, "name") : course.getName();
+		String description = request.hasDescription()
+			? optional(request.description(), CourseFieldLimits.DESCRIPTION, "description") : course.getDescription();
+		String imageUrl = request.hasImageUrl()
+			? optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl") : course.getImageUrl();
+		Integer minimum = request.hasDefaultMinimumEnrollment()
+			? request.defaultMinimumEnrollment() : course.getDefaultMinimumEnrollment();
 		if (minimum != null && minimum <= 0) {
 			throw CourseException.validation("defaultMinimumEnrollment", "must be greater than zero");
 		}
-		course.update(name, request.description() == null ? course.getDescription() : optional(request.description()),
-			request.imageUrl() == null ? course.getImageUrl() : optional(request.imageUrl()), minimum);
-		Map<String, Object> after = snapshot(course);
-		if (!before.equals(after)) {
+		boolean changed = !Objects.equals(name, course.getName())
+			|| !Objects.equals(description, course.getDescription())
+			|| !Objects.equals(imageUrl, course.getImageUrl())
+			|| !Objects.equals(minimum, course.getDefaultMinimumEnrollment());
+		if (changed) {
+			Map<String, Object> before = snapshot(course);
+			course.update(name, description, imageUrl, minimum);
+			Map<String, Object> after = snapshot(course);
 			courses.saveAndFlush(course);
 			audit(managerId, "COURSE_UPDATED", "COURSE", courseId, before, after);
 		}
@@ -310,8 +317,12 @@ class CourseManagementService {
 		return value.trim();
 	}
 
-	private String optional(String value) {
-		return value == null || value.trim().isEmpty() ? null : value.trim();
+	private String optional(String value, int max, String field) {
+		if (value == null) return null;
+		if (value.length() > max) {
+			throw CourseException.validation(field, "must be at most " + max + " characters");
+		}
+		return value.trim().isEmpty() ? null : value.trim();
 	}
 
 	private void checkVersion(Long actual, Long expected, java.util.function.Supplier<CourseException> error) {

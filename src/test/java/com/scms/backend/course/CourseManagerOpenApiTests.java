@@ -32,10 +32,21 @@ class CourseManagerOpenApiTests {
 			.contains("code", "name", "disciplineId");
 		assertThat(document.at("/components/schemas/CourseCreateRequest/properties/code/maxLength").asInt())
 			.isEqualTo(50);
+		assertThat(document.at("/components/schemas/CourseCreateRequest/properties/description/maxLength").asInt())
+			.isEqualTo(2000);
+		assertThat(document.at("/components/schemas/CourseCreateRequest/properties/imageUrl/maxLength").asInt())
+			.isEqualTo(500);
+		assertThat(document.at("/components/schemas/CoursePatchRequest/properties/description/maxLength").asInt())
+			.isEqualTo(2000);
+		assertThat(document.at("/components/schemas/CoursePatchRequest/properties/imageUrl/maxLength").asInt())
+			.isEqualTo(500);
 		assertThat(document.at("/paths/~1manager~1courses/post/responses/400/$ref").asText())
 			.isEqualTo("#/components/responses/BadRequest");
-		assertThat(document.at("/components/schemas/CourseProblem/properties/code/enum").toString())
-			.contains("COURSE_CODE_CONFLICT", "COURSE_CHANGED", "COURSE_RUN_INVALID_TRANSITION",
-				"COURSE_SESSION_RESOURCE_CONFLICT");
+		assertThat(document.at("/components/schemas/ApiProblem/required").toString())
+			.contains("title", "status", "detail", "instance", "code");
+		assertThat(document.at("/components/schemas/ApiProblem/properties/code/type").asText()).isEqualTo("string");
+		assertThat(document.at("/components/responses/Unauthorized/description").asText())
+			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
+		assertThat(document.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
 	}
 }
