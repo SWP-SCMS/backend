@@ -42,9 +42,11 @@ class CourseManagerOpenApiTests {
 			.isEqualTo(500);
 		assertThat(document.at("/paths/~1manager~1courses/post/responses/400/$ref").asText())
 			.isEqualTo("#/components/responses/BadRequest");
-		assertThat(document.at("/components/schemas/ApiProblem/required").toString())
+		assertThat(document.at("/components/schemas/CourseProblem/required").toString())
 			.contains("title", "status", "detail", "instance", "code");
-		assertThat(document.at("/components/schemas/ApiProblem/properties/code/type").asText()).isEqualTo("string");
+		assertThat(document.at("/components/schemas/CourseProblem/properties/code/enum").toString())
+			.contains("COURSE_VALIDATION_ERROR", "COURSE_RUN_CHANGED", "COURSE_SESSION_CHANGED",
+				"UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN");
 		assertThat(document.at("/components/responses/Unauthorized/description").asText())
 			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
 		assertThat(document.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");

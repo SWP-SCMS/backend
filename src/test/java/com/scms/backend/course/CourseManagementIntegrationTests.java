@@ -36,6 +36,7 @@ class CourseManagementIntegrationTests {
 	@Autowired CourseManagementService service;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
+	@Autowired CourseSessionRepository sessions;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate jdbc;
 
@@ -157,6 +158,58 @@ class CourseManagementIntegrationTests {
 			assertThat(stored.getName()).isEqualTo("Original");
 			assertThat(stored.getVersion()).isEqualTo(created.version());
 			assertThat(auditCount("COURSE_UPDATED", created.id())).isZero();
+		}
+		finally {
+			jdbc.execute("alter table audit_events drop constraint " + constraint);
+		}
+	}
+
+	@Test
+	void auditFailureRollsBackCourseRunMutationAndVersion() {
+		CourseResponse course = createPublishedCourse("RUN-ROLLBACK-101");
+		CourseRunResponse created = service.createRun(managerId, runRequest(course.id(), "RUN-ROLLBACK-1"));
+		String constraint = "chk_test_reject_course_run_update_audit";
+		jdbc.execute("alter table audit_events add constraint " + constraint
+			+ " check (action <> 'COURSE_RUN_UPDATED')");
+		try {
+			assertThatThrownBy(() -> service.patchRun(managerId, created.id(),
+				new CourseRunPatchRequest(created.version(), 4)))
+				.rootCause().hasMessageContaining(constraint);
+			CourseRun stored = runs.findDetailedById(created.id()).orElseThrow();
+			assertThat(stored.getMinimumEnrollment()).isEqualTo(created.minimumEnrollment());
+			assertThat(stored.getVersion()).isEqualTo(created.version());
+			assertThat(auditCount("COURSE_RUN_UPDATED", created.id())).isZero();
+		}
+		finally {
+			jdbc.execute("alter table audit_events drop constraint " + constraint);
+		}
+	}
+
+	@Test
+	void auditFailureRollsBackCourseSessionMutationAndVersion() {
+		CourseResponse course = createPublishedCourse("SESSION-ROLLBACK-101");
+		CourseRunResponse run = service.createRun(managerId, runRequest(course.id(), "SESSION-ROLLBACK-1"));
+		UUID roomId = UUID.randomUUID();
+		jdbc.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,20,'EXCLUSIVE','ACTIVE')",
+			roomId, "Rollback room " + roomId);
+		Instant originalStart = Instant.parse("2030-02-01T10:00:00Z");
+		CourseSessionResponse created = service.createSession(managerId, run.id(),
+			new CourseSessionCreateRequest(1, roomId, coachId, originalStart,
+				originalStart.plusSeconds(3600), BigInteger.TEN));
+		Instant changedStart = originalStart.plusSeconds(7200);
+		String constraint = "chk_test_reject_course_session_update_audit";
+		jdbc.execute("alter table audit_events add constraint " + constraint
+			+ " check (action <> 'COURSE_SESSION_RESCHEDULED')");
+		try {
+			assertThatThrownBy(() -> service.patchSession(managerId, run.id(), created.id(),
+				new CourseSessionPatchRequest(created.version(), null, null, changedStart,
+					changedStart.plusSeconds(3600))))
+				.rootCause().hasMessageContaining(constraint);
+			CourseSession stored = sessions.findByIdAndCourseRunId(created.id(), run.id()).orElseThrow();
+			assertThat(stored.getStartAt()).isEqualTo(created.startAt());
+			assertThat(stored.getEndAt()).isEqualTo(created.endAt());
+			assertThat(stored.getVersion()).isEqualTo(created.version());
+			assertThat(auditCount("COURSE_SESSION_RESCHEDULED", created.id())).isZero();
 		}
 		finally {
 			jdbc.execute("alter table audit_events drop constraint " + constraint);
