@@ -67,7 +67,7 @@ class CourseOrderIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
 	@Autowired JwtEncoder jwtEncoder;
-	@Autowired ObjectMapper objectMapper;
+	private final ObjectMapper objectMapper = new ObjectMapper();
 	@MockitoBean Clock clock;
 	@MockitoBean CourseOrderCreationRendezvous creationRendezvous;
 
