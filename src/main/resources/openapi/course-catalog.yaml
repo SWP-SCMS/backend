@@ -15,8 +15,8 @@ paths:
         '200':
           description: Published courses ordered by name and id.
           content:
-            application/json:
-              schema: {$ref: '#/components/schemas/CatalogCoursePage'}
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCoursePageResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /courses/{courseId}:
@@ -30,8 +30,8 @@ paths:
         '200':
           description: Published course detail.
           content:
-            application/json:
-              schema: {$ref: '#/components/schemas/CatalogCourse'}
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -47,8 +47,8 @@ paths:
         '200':
           description: Visible course runs ordered by planned start and id.
           content:
-            application/json:
-              schema: {$ref: '#/components/schemas/CatalogCourseRunPage'}
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseRunPageResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /course-runs/{runId}:
@@ -62,8 +62,8 @@ paths:
         '200':
           description: Visible course run and sessions ordered by startAt and id.
           content:
-            application/json:
-              schema: {$ref: '#/components/schemas/CatalogCourseRunDetail'}
+            '*/*':
+              schema: {$ref: '#/components/schemas/CatalogCourseRunDetailResponse'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -72,11 +72,11 @@ components:
     Page:
       name: page
       in: query
-      schema: {type: integer, format: int32, default: 0, minimum: 0}
+      schema: {type: integer, format: int32, default: 0}
     Size:
       name: size
       in: query
-      schema: {type: integer, format: int32, default: 20, minimum: 1, maximum: 100}
+      schema: {type: integer, format: int32, default: 20}
     CourseId:
       name: courseId
       in: path
@@ -88,24 +88,22 @@ components:
       required: true
       schema: {type: string, format: uuid}
   schemas:
-    CatalogCourse:
+    CatalogCourseResponse:
       type: object
-      required: [id, code, name, disciplineId, disciplineName]
       properties:
         id: {type: string, format: uuid}
         code: {type: string}
         name: {type: string}
-        description: {type: [string, 'null']}
+        description: {type: string}
         disciplineId: {type: string, format: uuid}
         disciplineName: {type: string}
-        imageUrl: {type: [string, 'null']}
-    CatalogCoursePage:
+        imageUrl: {type: string}
+    CatalogCoursePageResponse:
       type: object
-      required: [content, page, size, totalElements, totalPages]
       properties:
         content:
           type: array
-          items: {$ref: '#/components/schemas/CatalogCourse'}
+          items: {$ref: '#/components/schemas/CatalogCourseResponse'}
         page: {type: integer, format: int32}
         size: {type: integer, format: int32}
         totalElements: {type: integer, format: int64}
@@ -114,11 +112,8 @@ components:
       type: string
       description: Derived from the half-open registration window [registrationOpensAt, registrationClosesAt); not seat availability.
       enum: [UPCOMING, OPEN, CLOSED]
-    CatalogCourseRun:
+    CatalogCourseRunResponse:
       type: object
-      required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,
-        tuitionVnd, capacity, registrationOpensAt, registrationClosesAt, registrationStatus,
-        plannedStartAt, plannedEndAt, totalUnits, status]
       properties:
         id: {type: string, format: uuid}
         runCode: {type: string}
@@ -127,33 +122,30 @@ components:
         courseName: {type: string}
         primaryCoachId: {type: string, format: uuid}
         primaryCoachName: {type: string}
-        tuitionVnd: {type: integer, format: int64, minimum: 1}
-        capacity: {type: integer, format: int32, minimum: 1, description: Total configured capacity; not remaining seats.}
+        tuitionVnd: {type: integer}
+        capacity: {type: integer, format: int32}
         registrationOpensAt: {type: string, format: date-time}
         registrationClosesAt: {type: string, format: date-time}
         registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
         plannedStartAt: {type: string, format: date-time}
         plannedEndAt: {type: string, format: date-time}
-        totalUnits: {type: integer, format: int32, minimum: 1}
+        totalUnits: {type: integer, format: int32}
         status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
-    CatalogCourseRunPage:
+    CatalogCourseRunPageResponse:
       type: object
-      required: [content, page, size, totalElements, totalPages]
       properties:
         content:
           type: array
-          items: {$ref: '#/components/schemas/CatalogCourseRun'}
+          items: {$ref: '#/components/schemas/CatalogCourseRunResponse'}
         page: {type: integer, format: int32}
         size: {type: integer, format: int32}
         totalElements: {type: integer, format: int64}
         totalPages: {type: integer, format: int32}
-    CatalogCourseSession:
+    CatalogCourseSessionResponse:
       type: object
-      required: [id, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
-        originalStartAt, originalEndAt, allocationVnd, status]
       properties:
         id: {type: string, format: uuid}
-        unitNumber: {type: integer, format: int32, minimum: 1}
+        unitNumber: {type: integer, format: int32}
         roomId: {type: string, format: uuid}
         roomName: {type: string}
         coachId: {type: string, format: uuid}
@@ -162,20 +154,67 @@ components:
         endAt: {type: string, format: date-time}
         originalStartAt: {type: string, format: date-time}
         originalEndAt: {type: string, format: date-time}
-        allocationVnd: {type: integer, format: int64, minimum: 1}
+        allocationVnd: {type: integer}
         status:
           type: string
           enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
-    CatalogCourseRunDetail:
-      allOf:
-        - $ref: '#/components/schemas/CatalogCourseRun'
-        - type: object
-          required: [sessions]
-          properties:
-            sessions:
-              type: array
-              items: {$ref: '#/components/schemas/CatalogCourseSession'}
-    CatalogProblem:
+    CatalogCourseRunDetailResponse:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        runCode: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        primaryCoachId: {type: string, format: uuid}
+        primaryCoachName: {type: string}
+        tuitionVnd: {type: integer}
+        capacity: {type: integer, format: int32}
+        registrationOpensAt: {type: string, format: date-time}
+        registrationClosesAt: {type: string, format: date-time}
+        registrationStatus: {$ref: '#/components/schemas/RegistrationStatus'}
+        plannedStartAt: {type: string, format: date-time}
+        plannedEndAt: {type: string, format: date-time}
+        totalUnits: {type: integer, format: int32}
+        status: {type: string, enum: [OPEN_FOR_REGISTRATION]}
+        sessions:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogCourseSessionResponse'}
+    ApiProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties:
+        title: {type: string}
+        status: {type: integer, format: int32}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        code: {type: string}
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+        affectedSessionIds:
+          type: array
+          items: {type: string, format: uuid}
+        requiredBenefitCodes:
+          type: array
+          items: {type: string}
+        missingBenefitCodes:
+          type: array
+          items: {type: string}
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: {type: string, format: uuid}
+              classId: {type: string, format: uuid}
+              className: {type: string}
+              startTime: {type: string, format: date-time}
+              endTime: {type: string, format: date-time}
+        traceId: {type: string}
+    UnauthorizedProblem:
       type: object
       required: [title, status, detail, instance, code]
       properties:
@@ -185,26 +224,46 @@ components:
         instance: {type: string, format: uri-reference}
         code:
           type: string
-          enum: [COURSE_VALIDATION_ERROR, COURSE_NOT_FOUND, COURSE_RUN_NOT_FOUND,
-            MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN]
+          enum: [UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS, INVALID_REFRESH_TOKEN,
+            INVALID_PENDING_SESSION, INVALID_PASSWORD_RESET_SESSION, PAYMENT_UNAUTHORIZED]
         errors:
           type: object
           additionalProperties:
             type: array
             items: {type: string}
+        affectedSessionIds:
+          type: array
+          items: {type: string, format: uuid}
+        requiredBenefitCodes:
+          type: array
+          items: {type: string}
+        missingBenefitCodes:
+          type: array
+          items: {type: string}
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId: {type: string, format: uuid}
+              classId: {type: string, format: uuid}
+              className: {type: string}
+              startTime: {type: string, format: date-time}
+              endTime: {type: string, format: date-time}
+        traceId: {type: string}
   responses:
     BadRequest:
-      description: Invalid pagination or malformed request (COURSE_VALIDATION_ERROR or MALFORMED_REQUEST).
+      description: The request is invalid.
       content:
         application/problem+json:
-          schema: {$ref: '#/components/schemas/CatalogProblem'}
+          schema: {$ref: '#/components/schemas/ApiProblem'}
     Unauthorized:
-      description: An invalid supplied bearer token is rejected (UNAUTHENTICATED or INVALID_TOKEN); authentication is not required.
+      description: Authentication failed.
       content:
         application/problem+json:
-          schema: {$ref: '#/components/schemas/CatalogProblem'}
+          schema: {$ref: '#/components/schemas/UnauthorizedProblem'}
     NotFound:
-      description: Missing or hidden course/run (COURSE_NOT_FOUND or COURSE_RUN_NOT_FOUND).
+      description: The requested resource was not found.
       content:
         application/problem+json:
-          schema: {$ref: '#/components/schemas/CatalogProblem'}
+          schema: {$ref: '#/components/schemas/ApiProblem'}

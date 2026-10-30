@@ -13,9 +13,12 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import org.junit.jupiter.api.Test;
@@ -454,7 +457,7 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
-	void staticAndGeneratedCourseCatalogResponsesHaveParity() throws Exception {
+	void staticAndGeneratedCourseCatalogContractsHaveNormalizedParity() throws Exception {
 		JsonNode generated = generatedDocument();
 		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
 			getClass().getResourceAsStream("/openapi/course-catalog.yaml"));
@@ -465,12 +468,8 @@ class GeneratedOpenApiTests {
 				.containsExactlyInAnyOrderElementsOf(contract.statuses());
 			assertThat(responseStatuses(documented, contract)).as("static " + label)
 				.containsExactlyInAnyOrderElementsOf(contract.statuses());
-			contract.statuses().stream().filter(status -> !status.startsWith("2")).forEach(status -> {
-				assertProblemResponse(generated, contract, status, "generated " + label,
-					"401".equals(status) ? "UnauthorizedProblem" : "ApiProblem");
-				assertProblemResponse(documented, contract, status, "static " + label, "CatalogProblem");
-			});
 		}
+		assertThat(normalizedCatalogContract(documented)).isEqualTo(normalizedCatalogContract(generated));
 	}
 
 	@Test
@@ -1233,6 +1232,108 @@ class GeneratedOpenApiTests {
 	private Set<String> responseStatuses(JsonNode document, CourseOperationContract contract) {
 		return operation(document, contract.path(), contract.method()).path("responses").properties().stream()
 			.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+	}
+
+	private ObjectNode normalizedCatalogContract(JsonNode document) {
+		ObjectNode normalized = objectMapper.createObjectNode();
+		for (CourseOperationContract contract : COURSE_CATALOG_OPERATION_CONTRACTS) {
+			ObjectNode operation = objectMapper.createObjectNode();
+			JsonNode source = operation(document, contract.path(), contract.method());
+			operation.set("security", source.path("security").deepCopy());
+			operation.set("parameters", normalizedParameters(document, source.path("parameters")));
+			ObjectNode responses = objectMapper.createObjectNode();
+			new TreeSet<>(responseStatuses(document, contract)).forEach(status ->
+				responses.set(status, normalizedResponse(document,
+					response(document, contract.path(), contract.method(), status))));
+			operation.set("responses", responses);
+			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
+		}
+		return normalized;
+	}
+
+	private ArrayNode normalizedParameters(JsonNode document, JsonNode parameters) {
+		ArrayNode normalized = objectMapper.createArrayNode();
+		List<ObjectNode> values = new ArrayList<>();
+		parameters.forEach(parameter -> {
+			JsonNode source = resolve(document, parameter);
+			ObjectNode value = objectMapper.createObjectNode();
+			value.put("name", source.path("name").asText());
+			value.put("in", source.path("in").asText());
+			value.put("required", source.path("required").asBoolean(false));
+			value.set("schema", normalizedSchema(document, source.path("schema")));
+			values.add(value);
+		});
+		values.stream().sorted(Comparator.comparing(value ->
+			value.path("in").asText() + ":" + value.path("name").asText())).forEach(normalized::add);
+		return normalized;
+	}
+
+	private ObjectNode normalizedResponse(JsonNode document, JsonNode response) {
+		JsonNode source = resolve(document, response);
+		ObjectNode normalized = objectMapper.createObjectNode();
+		ObjectNode content = objectMapper.createObjectNode();
+		source.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
+			.forEach(entry -> content.set(entry.getKey(),
+				normalizedSchema(document, entry.getValue().path("schema"))));
+		normalized.set("content", content);
+		return normalized;
+	}
+
+	private ObjectNode normalizedSchema(JsonNode document, JsonNode schema) {
+		JsonNode source = resolve(document, schema);
+		ObjectNode normalized = objectMapper.createObjectNode();
+		copy(source, normalized, "type", "format", "default", "minimum", "maximum", "exclusiveMinimum",
+			"exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties",
+			"maxProperties", "pattern", "multipleOf", "nullable");
+		copySortedArray(source, normalized, "required");
+		copySortedArray(source, normalized, "enum");
+		if (source.has("properties")) {
+			ObjectNode properties = objectMapper.createObjectNode();
+			source.path("properties").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
+				.forEach(entry -> properties.set(entry.getKey(), normalizedSchema(document, entry.getValue())));
+			normalized.set("properties", properties);
+		}
+		if (source.has("items")) normalized.set("items", normalizedSchema(document, source.path("items")));
+		if (source.has("additionalProperties")) {
+			JsonNode additional = source.path("additionalProperties");
+			normalized.set("additionalProperties", additional.isObject()
+				? normalizedSchema(document, additional) : additional.deepCopy());
+		}
+		for (String composition : List.of("allOf", "oneOf", "anyOf")) {
+			if (source.has(composition)) {
+				ArrayNode alternatives = objectMapper.createArrayNode();
+				source.path(composition).forEach(item -> alternatives.add(normalizedSchema(document, item)));
+				normalized.set(composition, alternatives);
+			}
+		}
+		return normalized;
+	}
+
+	private JsonNode resolve(JsonNode document, JsonNode node) {
+		JsonNode resolved = node;
+		Set<String> visited = new HashSet<>();
+		while (resolved.has("$ref")) {
+			String reference = resolved.path("$ref").asText();
+			if (!reference.startsWith("#/") || !visited.add(reference)) {
+				throw new IllegalArgumentException("Unsupported OpenAPI reference " + reference);
+			}
+			resolved = document.at(reference.substring(1));
+		}
+		return resolved;
+	}
+
+	private void copy(JsonNode source, ObjectNode target, String... fields) {
+		for (String field : fields) {
+			if (source.has(field)) target.set(field, source.path(field).deepCopy());
+		}
+	}
+
+	private void copySortedArray(JsonNode source, ObjectNode target, String field) {
+		if (!source.has(field)) return;
+		ArrayNode values = objectMapper.createArrayNode();
+		java.util.stream.StreamSupport.stream(source.path(field).spliterator(), false)
+			.sorted(Comparator.comparing(JsonNode::toString)).forEach(values::add);
+		target.set(field, values);
 	}
 
 	private void assertProblemResponse(JsonNode document, CourseOperationContract contract, String status,
