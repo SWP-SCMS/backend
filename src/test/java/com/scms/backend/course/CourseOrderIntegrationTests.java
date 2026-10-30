@@ -450,7 +450,8 @@ class CourseOrderIntegrationTests {
 			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
 		String constraint = "chk_test_reject_course_order_audit";
 		db.execute("alter table audit_events add constraint " + constraint
-			+ " check (action <> 'COURSE_ORDER_CREATED') not valid");
+			+ " check (action <> 'COURSE_ORDER_CREATED' or after_data->>'courseRunId' <> '"
+			+ fixture.runId() + "') not valid");
 		try {
 			createSelf(member, fixture.runId(), "rollback").andExpect(status().isInternalServerError());
 			assertThat(count("course_orders", member.getAccountId())).isZero();
