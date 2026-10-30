@@ -350,6 +350,10 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay",
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash",
 		"GET /members/me/course-enrollments",
+		"POST /course-runs/{runId}/waitlist",
+		"DELETE /course-runs/{runId}/waitlist",
+		"GET /members/me/course-waitlists",
+		"POST /course-waitlists/{waitlistId}/accept",
 		"GET /coach/course-sessions/{sessionId}/roster",
 		"PATCH /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance",
 		"POST /reception/members/{memberId}/cash-payments",
@@ -665,6 +669,46 @@ class GeneratedOpenApiTests {
 			assertThat(provider.path("type").toString()).contains("null");
 			assertThat(provider.path("enum").get(0).asText()).isEqualTo("SEPAY");
 			assertThat(provider.path("enum").get(1).isNull()).isTrue();
+		}
+	}
+
+	@Test
+	void staticAndGeneratedCourseWaitlistContractsExposeOwnershipAndIdempotency() throws Exception {
+		JsonNode generated = generatedDocument();
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
+			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
+		Map<String, Set<String>> methods = Map.of(
+			"/course-runs/{runId}/waitlist", Set.of("post", "delete"),
+			"/members/me/course-waitlists", Set.of("get"),
+			"/course-waitlists/{waitlistId}/accept", Set.of("post"));
+		for (Map.Entry<String, Set<String>> entry : methods.entrySet()) {
+			String path = entry.getKey();
+			assertThat(generated.path("paths").has(path)).as("generated " + path).isTrue();
+			assertThat(documented.path("paths").has(path)).as("static " + path).isTrue();
+			for (String method : entry.getValue()) {
+				assertThat(operation(generated, path, method).isMissingNode()).as("generated " + method + " " + path)
+					.isFalse();
+				assertThat(operation(documented, path, method).isMissingNode()).as("static " + method + " " + path)
+					.isFalse();
+				assertThat(responseStatuses(generated, new CourseOperationContract(path, method, Set.of())))
+					.as("generated responses " + method + " " + path)
+					.containsExactlyInAnyOrderElementsOf(responseStatuses(documented,
+						new CourseOperationContract(path, method, Set.of())));
+			}
+		}
+		for (JsonNode document : List.of(generated, documented)) {
+			JsonNode join = operation(document, "/course-runs/{runId}/waitlist", "post");
+			assertThat(effectiveSecurity(document, join)).isEqualTo(
+				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			JsonNode accept = operation(document, "/course-waitlists/{waitlistId}/accept", "post");
+			JsonNode key = parameter(document, "/course-waitlists/{waitlistId}/accept", "post", "Idempotency-Key");
+			assertThat(key.path("required").asBoolean()).isTrue();
+			assertThat(key.path("schema").path("maxLength").asInt()).isEqualTo(100);
+			assertThat(effectiveSecurity(document, accept)).isEqualTo(
+				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			assertThat(document.at("/components/schemas/CourseWaitlistResponse/properties").properties()
+				.stream().map(Map.Entry::getKey).toList()).containsExactlyInAnyOrder("id", "courseRunId", "status",
+					"position", "invitedAt", "invitationExpiresAt", "createdAt");
 		}
 	}
 
@@ -1525,7 +1569,7 @@ class GeneratedOpenApiTests {
 				.extracting(parameter -> parameter.path("in").asText() + ":" + parameter.path("name").asText())
 				.containsExactlyInAnyOrderElementsOf(expectedParameters);
 
-			if ("post".equals(contract.method())) {
+			if (operation.has("requestBody")) {
 				JsonNode requestBody = resolve(document, operation.path("requestBody"));
 				assertThat(requestBody.path("required").asBoolean(false)).as(label + " request required").isTrue();
 				assertThat(requestBody.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList())

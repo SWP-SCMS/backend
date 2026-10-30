@@ -39,8 +39,9 @@ class CourseManagementServiceTests {
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final CourseSessionService sessionService = mock(CourseSessionService.class);
+	private final CourseWaitlistService waitlists = mock(CourseWaitlistService.class);
 	private final CourseManagementService service = new CourseManagementService(courses, runs, sessions,
-		disciplines, accounts, audits, sessionService);
+		disciplines, accounts, audits, sessionService, waitlists);
 	private UUID managerId;
 
 	@BeforeEach
@@ -160,6 +161,17 @@ class CourseManagementServiceTests {
 		assertThat(audit.getValue().getAction()).isEqualTo("COURSE_RUN_UPDATED");
 		assertThat(audit.getValue().getBeforeData()).containsEntry("minimumEnrollment", 3);
 		assertThat(audit.getValue().getAfterData()).containsEntry("minimumEnrollment", 5);
+	}
+
+	@Test
+	void cancellingRunClosesItsActiveWaitlistEntriesInTheSameWorkflow() {
+		CourseRun run = run(2L, 3);
+		when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+		when(runs.saveAndFlush(run)).thenReturn(run);
+
+		service.cancelRun(managerId, run.getId(), new VersionRequest(2L));
+
+		verify(waitlists).cancelForRun(managerId, run.getId());
 	}
 
 	@Test

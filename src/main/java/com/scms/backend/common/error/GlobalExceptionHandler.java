@@ -40,6 +40,7 @@ import com.scms.backend.centervisit.CenterVisitException;
 import com.scms.backend.course.CourseException;
 import com.scms.backend.course.CourseAttendanceException;
 import com.scms.backend.course.CourseOrderException;
+import com.scms.backend.course.CourseWaitlistException;
 import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
 import com.scms.backend.manager.MemberAccountNotFoundException;
@@ -390,6 +391,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	ProblemDetail handleCourseOrder(CourseOrderException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Course order request failed");
+		problem.setProperty("code", exception.getCode());
+		return problem;
+	}
+
+	@ExceptionHandler(CourseWaitlistException.class)
+	ProblemDetail handleCourseWaitlist(CourseWaitlistException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Course waitlist request failed");
 		problem.setProperty("code", exception.getCode());
 		return problem;
 	}

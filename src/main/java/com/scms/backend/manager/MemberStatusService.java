@@ -14,6 +14,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.course.CourseWaitlistService;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.WaitlistPromotionService;
 
@@ -29,16 +30,18 @@ public class MemberStatusService {
 	private final NotificationWriter notificationWriter;
 	private final JdbcTemplate jdbcTemplate;
 	private final WaitlistPromotionService waitlistPromotions;
+	private final CourseWaitlistService courseWaitlists;
 	private final Clock clock;
 
 	MemberStatusService(AccountRepository accountRepository, AuditEventRepository auditRepository,
 			NotificationWriter notificationWriter, JdbcTemplate jdbcTemplate,
-			WaitlistPromotionService waitlistPromotions, Clock clock) {
+			WaitlistPromotionService waitlistPromotions, CourseWaitlistService courseWaitlists, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.auditRepository = auditRepository;
 		this.notificationWriter = notificationWriter;
 		this.jdbcTemplate = jdbcTemplate;
 		this.waitlistPromotions = waitlistPromotions;
+		this.courseWaitlists = courseWaitlists;
 		this.clock = clock;
 	}
 
@@ -76,6 +79,7 @@ public class MemberStatusService {
 			.map(CancelledBooking::sessionId).toList());
 		member.changeMemberStatus(request.status());
 		accountRepository.flush();
+		if (request.status() == AccountStatus.SUSPENDED) courseWaitlists.cancelForMember(managerId, memberId);
 
 		String action = request.status() == AccountStatus.SUSPENDED ? "MEMBER_SUSPENDED" : "MEMBER_REACTIVATED";
 		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, action, "ACCOUNT", memberId,

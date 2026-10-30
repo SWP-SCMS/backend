@@ -111,6 +111,24 @@ class CoursePaymentMigrationV53Tests {
 	}
 
 	@Test
+	void acceptedWaitlistOrderMustBelongToTheSameMemberAndRun() {
+		flyway().migrate();
+		JdbcTemplate db = db();
+		Fixture owner = fixture(db);
+		Fixture other = fixture(db);
+		UUID waitlist = UUID.randomUUID();
+		db.update("insert into course_waitlists(id,course_run_id,member_account_id,status) values(?,?,?,'WAITING')",
+			waitlist, owner.runId(), owner.memberId());
+
+		assertThatThrownBy(() -> db.update("""
+			update course_waitlists set status='ACCEPTED',invited_at=?,invitation_expires_at=?,accepted_order_id=?
+			where id=?
+			""", Timestamp.from(Instant.parse("2030-01-01T00:00:00Z")),
+			Timestamp.from(Instant.parse("2030-01-02T00:00:00Z")), other.orderId(), waitlist))
+			.isInstanceOf(DataIntegrityViolationException.class);
+	}
+
+	@Test
 	void v52UpgradePreservesExistingCourseAndProviderEvidenceRows() {
 		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
 			.target("52").load().migrate();
@@ -131,7 +149,7 @@ class CoursePaymentMigrationV53Tests {
 		assertThat(db.queryForObject("select course_payment_id from payment_provider_events where id=?",
 			UUID.class, event)).isNull();
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(56);
+			Integer.class)).isEqualTo(57);
 	}
 
 	private Fixture fixture(JdbcTemplate db) {
@@ -167,7 +185,7 @@ class CoursePaymentMigrationV53Tests {
 			insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at)
 			values (?,?,?,?,'HELD',?)
 			""", reservation, order, member, run, Timestamp.from(expiry));
-		return new Fixture(actor, member, order, reservation, reference, expiry);
+		return new Fixture(actor, member, order, reservation, reference, expiry, run);
 	}
 
 	private UUID account(JdbcTemplate db, String role) {
@@ -250,5 +268,5 @@ class CoursePaymentMigrationV53Tests {
 	}
 
 	private record Fixture(UUID actorId, UUID memberId, UUID orderId, UUID reservationId, String reference,
-		Instant expiresAt) { }
+		Instant expiresAt, UUID runId) { }
 }

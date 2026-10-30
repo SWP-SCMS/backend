@@ -106,6 +106,58 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /course-runs/{runId}/waitlist:
+    post:
+      summary: Join a full CourseRun waitlist
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Waitlist' }
+        '201': { $ref: '#/components/responses/Waitlist' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+    delete:
+      summary: Leave the authenticated Member's active CourseRun waitlist entry
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      responses:
+        '200': { $ref: '#/components/responses/Waitlist' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /members/me/course-waitlists:
+    get:
+      summary: List the authenticated Member's Course waitlist history
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Course waitlist history
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/CourseWaitlistResponse' } }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+  /course-waitlists/{waitlistId}/accept:
+    post:
+      summary: Accept an unexpired Course waitlist invitation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/WaitlistId' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200': { $ref: '#/components/responses/Order' }
+        '201': { $ref: '#/components/responses/Order' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -122,6 +174,16 @@ components:
       schema: { type: string, format: uuid }
     OrderId:
       name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    WaitlistId:
+      name: waitlistId
       in: path
       required: true
       schema: { type: string, format: uuid }
@@ -147,6 +209,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/CourseEnrollmentResponse' }
+    Waitlist:
+      description: Current Course waitlist state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/CourseWaitlistResponse' }
     Problem:
       description: Stable RFC 9457 Problem Details response.
       content:
@@ -212,6 +279,18 @@ components:
         amountPaidVnd: { type: integer, minimum: 1, maximum: 9999999999999999999 }
         totalUnits: { type: integer, minimum: 1 }
         enrolledAt: { type: string, format: date-time }
+    CourseWaitlistResponse:
+      type: object
+      additionalProperties: false
+      required: [id, courseRunId, status, position, invitedAt, invitationExpiresAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        courseRunId: { type: string, format: uuid }
+        status: { type: string, enum: [WAITING, INVITED, ACCEPTED, LEFT, EXPIRED, CANCELLED] }
+        position: { type: [integer, 'null'], minimum: 1 }
+        invitedAt: { type: [string, 'null'], format: date-time }
+        invitationExpiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
     ApiProblem:
       type: object
       required: [title, status, detail, instance, code]

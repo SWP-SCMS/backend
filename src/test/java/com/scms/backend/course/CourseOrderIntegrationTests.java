@@ -5,6 +5,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -66,6 +67,7 @@ class CourseOrderIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
+	@Autowired CourseWaitlistService waitlists;
 	@Autowired JwtEncoder jwtEncoder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	@MockitoBean Clock clock;
@@ -196,6 +198,168 @@ class CourseOrderIntegrationTests {
 			select count(*) from course_reservations
 			where member_account_id=? and course_run_id=? and status='EXPIRED'
 			""", Long.class, member.getAccountId(), fixture.runId())).isOne();
+	}
+
+	@Test
+	void invitedMemberAcceptsOnceAndSameIdempotencyKeyReplaysTheOrder() throws Exception {
+		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "holder").andExpect(status().isCreated());
+		UUID waitlistId = UUID.fromString(json(joinWaitlist(waiting, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?",
+			holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+		waitlists.promote(fixture.runId(), NOW);
+
+		MvcResult accepted = acceptWaitlist(waiting, waitlistId, "accept-once")
+			.andExpect(status().isCreated()).andReturn();
+		String body = accepted.getResponse().getContentAsString();
+		assertThat(acceptWaitlist(waiting, waitlistId, "accept-once").andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString()).isEqualTo(body);
+		assertThat(db.queryForObject("select count(*) from course_orders where member_account_id=? and course_run_id=?",
+			Long.class, waiting.getAccountId(), fixture.runId())).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_WAITLIST_ACCEPTED' and entity_id=?",
+			Long.class, waitlistId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where event_key=?",
+			Long.class, "course-waitlist-invited:" + waitlistId)).isOne();
+	}
+
+	@Test
+	void acceptedInvitationRetryReturnsItsOrderAfterReservationExpiresAndSeatIsTaken() throws Exception {
+		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile acceptedMember = member(AccountStatus.ACTIVE);
+		MemberProfile nextMember = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "expiry-holder").andExpect(status().isCreated());
+		UUID waitlistId = UUID.fromString(json(joinWaitlist(acceptedMember, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?",
+			holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+
+		JsonNode accepted = json(acceptWaitlist(acceptedMember, waitlistId, "accept-original")
+			.andExpect(status().isCreated()).andReturn());
+		UUID acceptedOrderId = UUID.fromString(accepted.path("orderId").asText());
+		when(clock.instant()).thenReturn(NOW.plusSeconds(901));
+		createSelf(nextMember, fixture.runId(), "take-expired-seat").andExpect(status().isCreated());
+
+		acceptWaitlist(acceptedMember, waitlistId, "accept-retry")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.orderId").value(acceptedOrderId.toString()));
+		assertThat(db.queryForObject("select accepted_order_id from course_waitlists where id=?", UUID.class,
+			waitlistId)).isEqualTo(acceptedOrderId);
+		assertThat(db.queryForObject("select count(*) from course_orders where course_run_id=?", Long.class,
+			fixture.runId())).isEqualTo(3L);
+		assertThat(db.queryForObject("""
+			select count(*) from course_reservations
+			where course_run_id=? and (status='ENROLLED' or (status='HELD' and expires_at>?))
+			""", Long.class, fixture.runId(), Timestamp.from(NOW.plusSeconds(901)))).isOne();
+	}
+
+	@Test
+	void leavingWaitlistDefersTheNextInvitationToScheduledPromotion() throws Exception {
+		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile leaving = member(AccountStatus.ACTIVE);
+		MemberProfile next = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "leave-holder").andExpect(status().isCreated());
+		UUID leavingId = UUID.fromString(json(joinWaitlist(leaving, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		UUID nextId = UUID.fromString(json(joinWaitlist(next, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+
+		mockMvc.perform(delete("/api/v1/course-runs/{runId}/waitlist", fixture.runId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(leaving.getAccount())))
+			.andExpect(status().isOk());
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, leavingId))
+			.isEqualTo("LEFT");
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, nextId))
+			.isEqualTo("WAITING");
+
+		waitlists.promote(fixture.runId(), NOW);
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, nextId))
+			.isEqualTo("INVITED");
+	}
+
+	@Test
+	void cancellingCourseRunCancelsAndNotifiesItsActiveWaitlistInvitation() throws Exception {
+		Account manager = account(AccountRole.MANAGER, AccountStatus.ACTIVE);
+		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile invited = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		JsonNode order = json(createSelf(holder, fixture.runId(), "cancel-holder")
+			.andExpect(status().isCreated()).andReturn());
+		UUID orderId = UUID.fromString(order.path("orderId").asText());
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders/{orderId}/payments/cash",
+			holder.getAccountId(), orderId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
+			.header("Idempotency-Key", "cancel-holder-cash"))
+			.andExpect(status().isOk());
+		UUID waitlistId = UUID.fromString(json(joinWaitlist(invited, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		assertThat(db.update("update course_reservations set status='EXPIRED' where course_order_id=?", orderId)).isOne();
+		waitlists.promote(fixture.runId(), NOW);
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("INVITED");
+
+		mockMvc.perform(post("/api/v1/manager/course-runs/{runId}/cancel", fixture.runId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(manager))
+			.contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}"))
+			.andExpect(status().isOk());
+
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("CANCELLED");
+		assertThat(db.queryForObject("select count(*) from notification_outbox where event_key=?",
+			Long.class, "course-waitlist-cancelled:" + waitlistId)).isOne();
+	}
+
+	@Test
+	void invitationIsExpiredAtTheExactBoundaryAndReleasesTheSeat() throws Exception {
+		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "boundary-holder").andExpect(status().isCreated());
+		UUID waitlistId = UUID.fromString(json(joinWaitlist(waiting, fixture.runId())
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?",
+			holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+		Instant expiresAt = db.queryForObject("select invitation_expires_at from course_waitlists where id=?",
+			Timestamp.class, waitlistId).toInstant();
+		when(clock.instant()).thenReturn(expiresAt);
+
+		acceptWaitlist(waiting, waitlistId, "at-expiry").andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("COURSE_WAITLIST_INVITATION_EXPIRED"));
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("EXPIRED");
+	}
+
+	@Test
+	void paidEnrollmentAndItsEnrolledReservationConsumeOnlyOneCourseSeat() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile paidMember = member(AccountStatus.ACTIVE);
+		MemberProfile anotherMember = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		JsonNode order = json(createSelf(paidMember, fixture.runId(), "paid-seat")
+			.andExpect(status().isCreated()).andReturn());
+		UUID orderId = UUID.fromString(order.path("orderId").asText());
+		mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders/{orderId}/payments/cash",
+			paidMember.getAccountId(), orderId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
+			.header("Idempotency-Key", "paid-seat-cash"))
+			.andExpect(status().isOk());
+
+		joinWaitlist(anotherMember, fixture.runId()).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("COURSE_WAITLIST_CAPACITY_AVAILABLE"));
+		createSelf(anotherMember, fixture.runId(), "second-seat").andExpect(status().isCreated());
 	}
 
 	@Test
@@ -471,6 +635,19 @@ class CourseOrderIntegrationTests {
 			.content("{\"courseRunId\":\"" + runId + "\"}");
 		if (key != null) request.header("Idempotency-Key", key);
 		return mockMvc.perform(request);
+	}
+
+	private org.springframework.test.web.servlet.ResultActions joinWaitlist(MemberProfile member, UUID runId)
+			throws Exception {
+		return mockMvc.perform(post("/api/v1/course-runs/{runId}/waitlist", runId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(member.getAccount())));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions acceptWaitlist(MemberProfile member, UUID waitlistId,
+			String key) throws Exception {
+		return mockMvc.perform(post("/api/v1/course-waitlists/{waitlistId}/accept", waitlistId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(member.getAccount()))
+			.header("Idempotency-Key", key));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions createReception(Account receptionist,
