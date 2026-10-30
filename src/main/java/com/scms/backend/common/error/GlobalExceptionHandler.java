@@ -38,6 +38,7 @@ import com.scms.backend.identity.receptionmember.ReceptionMemberNotFoundExceptio
 import com.scms.backend.identity.receptionmember.ReceptionMemberValidationException;
 import com.scms.backend.centervisit.CenterVisitException;
 import com.scms.backend.course.CourseException;
+import com.scms.backend.course.CourseAttendanceException;
 import com.scms.backend.course.CourseOrderException;
 import com.scms.backend.manager.StaffAccountValidationException;
 import com.scms.backend.manager.StaffAccountNotFoundException;
@@ -459,6 +460,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	ProblemDetail handleAttendance(AttendanceException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Attendance request failed"); problem.setProperty("code", exception.getCode()); return problem;
+	}
+
+	@ExceptionHandler(CourseAttendanceException.class)
+	ProblemDetail handleCourseAttendance(CourseAttendanceException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
+		problem.setTitle("Course attendance request failed");
+		problem.setProperty("code", exception.getCode());
+		return problem;
 	}
 
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)

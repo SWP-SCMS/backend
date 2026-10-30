@@ -1,0 +1,100 @@
+openapi: 3.1.0
+info: {title: SCMS Course Enrollment API, version: v1}
+security: [{bearerAuth: []}]
+paths:
+  /members/me/course-enrollments:
+    get:
+      operationId: listMyCourseEnrollments
+      responses:
+        '200':
+          description: The authenticated Member's Course enrollments and ordered schedule.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MemberEnrollment'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /coach/course-sessions/{sessionId}/roster:
+    get:
+      operationId: getCourseSessionRoster
+      parameters: [{$ref: '#/components/parameters/SessionId'}]
+      responses:
+        '200':
+          description: Roster for the CourseSession assigned to the authenticated Coach.
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/RosterEntry'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance:
+    patch:
+      operationId: updateCourseAttendance
+      parameters:
+        - {$ref: '#/components/parameters/SessionId'}
+        - {name: enrollmentSessionId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AttendanceUpdate'}}}
+      responses:
+        '200':
+          description: Updated attendance.
+          content: {application/json: {schema: {$ref: '#/components/schemas/RosterEntry'}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  parameters:
+    SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    AttendanceStatus: {type: string, enum: [NOT_RECORDED, PRESENT, ABSENT]}
+    AttendanceUpdate:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {type: string, enum: [PRESENT, ABSENT]}}
+    MemberSession:
+      type: object
+      additionalProperties: false
+      required: [enrollmentSessionId, courseSessionId, unitNumber, startAt, endAt, disposition, attendanceStatus]
+      properties:
+        enrollmentSessionId: {type: string, format: uuid}
+        courseSessionId: {type: string, format: uuid}
+        unitNumber: {type: integer, minimum: 1}
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        disposition: {type: string, enum: [ENROLLED, NOT_ENROLLED]}
+        attendanceStatus: {$ref: '#/components/schemas/AttendanceStatus'}
+        attendanceRecordedAt: {type: [string, 'null'], format: date-time}
+    MemberEnrollment:
+      type: object
+      additionalProperties: false
+      required: [enrollmentId, courseRunId, courseCode, courseName, runCode, enrolledAt, sessions]
+      properties:
+        enrollmentId: {type: string, format: uuid}
+        courseRunId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        runCode: {type: string}
+        enrolledAt: {type: string, format: date-time}
+        sessions: {type: array, items: {$ref: '#/components/schemas/MemberSession'}}
+    RosterEntry:
+      type: object
+      additionalProperties: false
+      required: [enrollmentSessionId, memberCode, fullName, attendanceStatus]
+      properties:
+        enrollmentSessionId: {type: string, format: uuid}
+        memberCode: {type: string}
+        fullName: {type: string}
+        profileImageUrl: {type: [string, 'null']}
+        attendanceStatus: {$ref: '#/components/schemas/AttendanceStatus'}
+        attendanceRecordedAt: {type: [string, 'null'], format: date-time}
+    ApiProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties: {title: {type: string}, status: {type: integer}, detail: {type: string}, instance: {type: string}, code: {type: string}}
+  responses:
+    BadRequest: {description: Invalid request, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Unauthorized: {description: Authentication required, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Forbidden: {description: Role denied, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    NotFound: {description: Hidden or missing resource, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Conflict: {description: Attendance window closed, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
