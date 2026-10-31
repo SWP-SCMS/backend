@@ -65,6 +65,9 @@ public class CourseSession {
 	@JoinColumn(name = "replacement_session_id")
 	private CourseSession replacementSession;
 
+	@Column(name = "is_makeup", nullable = false)
+	private boolean makeup;
+
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	@Generated(event = EventType.INSERT)
 	private Instant createdAt;
@@ -120,4 +123,22 @@ public class CourseSession {
 		this.room = room;
 		this.coach = coach;
 	}
+
+	void cancelPendingMakeup() {
+		this.status = CourseSessionStatus.CANCELLED_PENDING_MAKEUP;
+		this.updatedAt = Instant.now();
+	}
+
+	void scheduleMakeup() {
+		this.makeup = true;
+		this.status = CourseSessionStatus.MAKEUP_SCHEDULED;
+	}
+
+	void linkReplacement(CourseSession replacement, Instant now) {
+		this.replacementSession = replacement;
+		this.updatedAt = now;
+	}
+
+	CourseSession getReplacementSession() { return replacementSession; }
+	boolean isMakeup() { return makeup; }
 }

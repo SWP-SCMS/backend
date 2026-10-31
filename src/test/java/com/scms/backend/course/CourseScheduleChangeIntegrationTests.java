@@ -58,6 +58,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
+	@Autowired CourseSessionDisruptionService disruptions;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate db;
 	@Autowired TransactionTemplate transactions;
@@ -226,6 +227,126 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type=? "
 			+ "and target_id=? and recipient_account_id=?", Long.class, "COURSE_SCHEDULE_CHANGED", session.id(),
 			newMember.getId())).isOne();
+	}
+
+	@Test
+	void cancellationAndMakeupMoveEnrollmentWithoutChangingUnitOrAllocation() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		assertThat(cancelled.status()).isEqualTo(CourseSessionStatus.CANCELLED_PENDING_MAKEUP);
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type=? "
+			+ "and target_id=? and recipient_account_id=?", Long.class, "COURSE_SESSION_CANCELLED", session.id(), memberId)).isOne();
+
+		UUID roomId = UUID.randomUUID();
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
+			roomId, "Makeup room " + roomId);
+		CourseSessionDisruptionService.CourseMakeupResponse result = disruptions.scheduleMakeup(managerId, runId,
+			session.id(), new CourseMakeupRequest(cancelled.version(), roomId, coachId,
+				Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z")));
+
+		assertThat(result.originalSession().replacementSessionId()).isEqualTo(result.makeupSession().id());
+		assertThat(result.makeupSession().unitNumber()).isEqualTo(session.unitNumber());
+		assertThat(result.makeupSession().allocationVnd()).isEqualTo(session.allocationVnd());
+		assertThat(result.makeupSession().status()).isEqualTo(CourseSessionStatus.MAKEUP_SCHEDULED);
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and is_makeup=false",
+			Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select course_session_id from course_enrollment_sessions where course_run_id=?",
+			UUID.class, runId)).isEqualTo(result.makeupSession().id());
+		assertThat(db.queryForObject("select allocation_vnd from course_enrollment_sessions where course_run_id=?",
+			java.math.BigDecimal.class, runId)).isEqualByComparingTo("100000");
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type=? "
+			+ "and target_id=? and recipient_account_id=?", Long.class, "COURSE_SESSION_MAKEUP_SCHEDULED",
+			result.makeupSession().id(), memberId)).isOne();
+
+		Account lateMember = account(AccountRole.MEMBER, "Late Makeup Member");
+		Account receptionist = account(AccountRole.RECEPTIONIST, "Makeup Receptionist");
+		UUID heldOrderId = seedHeldOrder(lateMember.getId());
+		try {
+			mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders/{orderId}/payments/cash",
+				lateMember.getId(), heldOrderId).contextPath("/api/v1")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
+				.header("Idempotency-Key", "makeup-fulfillment-regression"))
+				.andExpect(status().isOk());
+		}
+		catch (Exception exception) { throw new AssertionError(exception); }
+		assertThat(db.queryForObject("select total_units_snapshot from course_enrollments where course_run_id=? "
+			+ "and member_account_id=?", Integer.class, runId, lateMember.getId())).isOne();
+		assertThat(db.queryForObject("select course_session_id from course_enrollment_sessions es "
+			+ "join course_enrollments e on e.id=es.course_enrollment_id where e.course_run_id=? "
+			+ "and e.member_account_id=?", UUID.class, runId, lateMember.getId())).isEqualTo(result.makeupSession().id());
+
+		assertThatThrownBy(() -> disruptions.scheduleMakeup(managerId, runId, session.id(),
+			new CourseMakeupRequest(cancelled.version(), roomId, coachId,
+				Instant.parse("2035-01-12T02:00:00Z"), Instant.parse("2035-01-12T03:00:00Z"))))
+			.isInstanceOfSatisfying(CourseException.class,
+				exception -> assertThat(exception.getCode()).isEqualTo("COURSE_SESSION_CHANGED"));
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and is_makeup=true",
+			Long.class, runId)).isOne();
+	}
+
+	@Test
+	void outboxFailureRollsBackCancellationAndAudit() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		String constraint = "chk_test_reject_course_session_cancel_notice";
+		db.execute("alter table notification_outbox add constraint " + constraint
+			+ " check (notification_type <> 'COURSE_SESSION_CANCELLED') not valid");
+		try {
+			assertThatThrownBy(() -> disruptions.cancel(managerId, runId, session.id(), session.version()))
+				.rootCause().hasMessageContaining(constraint);
+			assertThat(db.queryForObject("select status from course_sessions where id=?", String.class, session.id()))
+				.isEqualTo("SCHEDULED");
+			assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SESSION_CANCELLED' "
+				+ "and target_id=?", Long.class, session.id())).isZero();
+		}
+		finally { db.execute("alter table notification_outbox drop constraint " + constraint); }
+	}
+
+	@Test
+	void makeupNotificationFailureRollsBackReplacementAndEnrollmentMove() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		UUID roomId = UUID.randomUUID();
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
+			roomId, "Rollback makeup room " + roomId);
+		String constraint = "chk_test_reject_makeup_notice";
+		db.execute("alter table notification_outbox add constraint " + constraint
+			+ " check (notification_type <> 'COURSE_SESSION_MAKEUP_SCHEDULED') not valid");
+		try {
+			assertThatThrownBy(() -> disruptions.scheduleMakeup(managerId, runId, session.id(),
+				new CourseMakeupRequest(cancelled.version(), roomId, coachId,
+					Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z"))))
+				.rootCause().hasMessageContaining(constraint);
+			assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and is_makeup=true",
+				Long.class, runId)).isZero();
+			assertThat(db.queryForObject("select course_session_id from course_enrollment_sessions where course_run_id=?",
+				UUID.class, runId)).isEqualTo(session.id());
+			assertThat(db.queryForObject("select replacement_session_id from course_sessions where id=?",
+				UUID.class, session.id())).isNull();
+		}
+		finally { db.execute("alter table notification_outbox drop constraint " + constraint); }
+	}
+
+	@Test
+	void lastUnresolvedUnitCreatesOneConsolidatedObligationAndMovesRunToSettlement() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		Instant afterEnd = session.endAt().plusSeconds(1);
+
+		assertThat(disruptions.advance(afterEnd)).isEmpty();
+		assertThat(db.queryForObject("select status from course_sessions where id=?", String.class, session.id()))
+			.isEqualTo("UNRESOLVED");
+		assertThat(db.queryForObject("select disposition from course_enrollment_sessions where course_run_id=?",
+			String.class, runId)).isEqualTo("UNRESOLVED");
+		assertThat(db.queryForObject("select amount_vnd from course_refund_obligations where course_run_id=?",
+			java.math.BigDecimal.class, runId)).isEqualByComparingTo("100000");
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId))
+			.isEqualTo("SETTLEMENT_PENDING");
+
+		disruptions.advance(afterEnd.plusSeconds(1));
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?",
+			Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_RUN_SETTLEMENT_PENDING' "
+			+ "and target_id=?", Long.class, runId)).isOne();
 	}
 
 	private void rescheduleAgain() {

@@ -176,7 +176,7 @@ class PaymentFulfillmentServiceTests {
 			"SCMSORDER", "3".repeat(64), NOW.minusNanos(1));
 
 		assertThat(response.outcome()).isEqualTo(SepayWebhookOutcome.PAYMENT_NOT_PAYABLE);
-		verify(db).query(argThat(sql -> sql.contains("select id,unit_number,start_at")),
+		verify(db).query(argThat(sql -> sql.contains("coalesce(replacement.id, original.id)")),
 			any(RowMapper.class), any(Object[].class));
 	}
 

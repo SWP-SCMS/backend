@@ -122,6 +122,11 @@ public class CourseException extends RuntimeException {
 			"The schedule-change response is no longer pending or its deadline has passed.");
 	}
 
+	static CourseException sessionDisruptionConflict() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_SESSION_DISRUPTION_CONFLICT",
+			"The course session cannot be cancelled or replaced in its current state.");
+	}
+
 	public HttpStatus getStatus() {
 		return status;
 	}

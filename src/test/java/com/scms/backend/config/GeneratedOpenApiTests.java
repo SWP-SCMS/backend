@@ -66,7 +66,7 @@ class GeneratedOpenApiTests {
 		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED",
 		"COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
 		"COURSE_SCHEDULE_CHANGE_NOT_FOUND", "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT",
-		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED");
+		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED", "COURSE_SESSION_DISRUPTION_CONFLICT");
 	private static final Set<String> READ_COLLECTION_RESPONSES = Set.of("200", "400", "401", "403");
 	private static final Set<String> CREATE_RESPONSES = Set.of("201", "400", "401", "403", "409");
 	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
@@ -89,7 +89,9 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post",
 			Set.of("201", "400", "401", "403", "404", "409")),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES)
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/makeup", "post", MUTATE_ITEM_RESPONSES)
 	);
 	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(
 		new CourseOperationContract("/courses", "get", Set.of("200", "400", "401")),
@@ -429,6 +431,8 @@ class GeneratedOpenApiTests {
 		"POST /manager/course-runs/{runId}/sessions",
 		"GET /manager/course-runs/{runId}/sessions/{sessionId}",
 		"PATCH /manager/course-runs/{runId}/sessions/{sessionId}",
+		"POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel",
+		"POST /manager/course-runs/{runId}/sessions/{sessionId}/makeup",
 		"GET /manager/rooms",
 		"GET /manager/rooms/availability",
 		"POST /manager/rooms",
