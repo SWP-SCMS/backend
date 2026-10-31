@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigInteger;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -21,17 +22,33 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.when;
+
 @Testcontainers
 @SpringBootTest
 @ActiveProfiles("test")
+@AutoConfigureMockMvc
 class CourseScheduleChangeIntegrationTests {
+	private static final Instant NOW = Instant.parse("2034-11-30T00:00:00Z");
+
 	@Container
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
@@ -44,6 +61,9 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate db;
 	@Autowired TransactionTemplate transactions;
+	@Autowired MockMvc mockMvc;
+	@Autowired JwtEncoder jwtEncoder;
+	@MockitoBean Clock clock;
 
 	private UUID managerId;
 	private UUID coachId;
@@ -55,6 +75,7 @@ class CourseScheduleChangeIntegrationTests {
 
 	@BeforeEach
 	void setUp() {
+		when(clock.instant()).thenReturn(NOW);
 		managerId = account(AccountRole.MANAGER, "Schedule Manager").getId();
 		coachId = account(AccountRole.COACH, "Schedule Coach").getId();
 		memberId = account(AccountRole.MEMBER, "Schedule Member").getId();
@@ -68,6 +89,7 @@ class CourseScheduleChangeIntegrationTests {
 			Instant.parse("2034-12-15T00:00:00Z"), Instant.parse("2035-01-01T00:00:00Z"),
 			Instant.parse("2035-02-01T00:00:00Z"), 1, true));
 		runId = run.id();
+		managers.openRun(managerId, runId, new CourseRunOpenRequest(run.version(), "POLICY-1"));
 		UUID roomId = UUID.randomUUID();
 		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
 			roomId, "Schedule room " + roomId);
@@ -156,6 +178,53 @@ class CourseScheduleChangeIntegrationTests {
 			session.id())).isOne();
 	}
 
+	@Test
+	void rescheduleWaitsForRealPaymentFulfillmentAndNotifiesNewMember() throws Exception {
+		Account newMember = account(AccountRole.MEMBER, "Late Schedule Member");
+		Account receptionist = account(AccountRole.RECEPTIONIST, "Schedule Receptionist");
+		UUID heldOrderId = seedHeldOrder(newMember.getId());
+		CountDownLatch enrollmentCreated = new CountDownLatch(1);
+		CountDownLatch commitFulfillment = new CountDownLatch(1);
+		AtomicInteger fulfillmentPid = new AtomicInteger();
+		AtomicInteger managerPid = new AtomicInteger();
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var payment = executor.submit(() -> transactions.executeWithoutResult(status -> {
+				fulfillmentPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				try {
+					mockMvc.perform(post("/api/v1/reception/members/{memberId}/course-orders/{orderId}/payments/cash",
+						newMember.getId(), heldOrderId).contextPath("/api/v1")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
+						.header("Idempotency-Key", "schedule-race-fulfillment"))
+						.andExpect(status().isOk());
+				}
+				catch (Exception exception) { throw new AssertionError(exception); }
+				enrollmentCreated.countDown();
+				await(commitFulfillment);
+			}));
+			assertThat(enrollmentCreated.await(10, TimeUnit.SECONDS)).isTrue();
+			var reschedule = executor.submit(() -> transactions.execute(status -> {
+				managerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				return managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(
+					session.version(), null, null, session.startAt().plusSeconds(7200),
+					session.endAt().plusSeconds(7200)));
+			}));
+			try {
+				awaitDatabaseLock(managerPid.get(), fulfillmentPid.get());
+				commitFulfillment.countDown();
+				payment.get(10, TimeUnit.SECONDS);
+				assertThat(reschedule.get(10, TimeUnit.SECONDS)).isNotNull();
+			}
+			finally {
+				commitFulfillment.countDown();
+			}
+		}
+		assertThat(db.queryForObject("select count(*) from course_enrollments where course_run_id=? and member_account_id=?",
+			Long.class, runId, newMember.getId())).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type=? "
+			+ "and target_id=? and recipient_account_id=?", Long.class, "COURSE_SCHEDULE_CHANGED", session.id(),
+			newMember.getId())).isOne();
+	}
+
 	private void rescheduleAgain() {
 		managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(session.version(), null,
 			null, session.startAt().plusSeconds(7200), session.endAt().plusSeconds(7200)));
@@ -182,7 +251,7 @@ class CourseScheduleChangeIntegrationTests {
 		UUID enrollmentId = UUID.randomUUID(), enrollmentSessionId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID(), reservationId = UUID.randomUUID(), paymentId = UUID.randomUUID();
 		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase();
-		Instant expiresAt = Instant.parse("2040-01-01T00:00:00Z");
+		Instant expiresAt = Instant.parse("2034-12-15T00:00:00Z");
 		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
 			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key) values(?,?,?,?,?,100000,'VND','PAID',?)",
 			orderId, reference, memberId, memberId, runId, UUID.randomUUID().toString());
@@ -205,6 +274,20 @@ class CourseScheduleChangeIntegrationTests {
 			enrollmentId, session.id(), runId);
 	}
 
+	private UUID seedHeldOrder(UUID heldMemberId) {
+		UUID orderId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase();
+		Instant expiresAt = Instant.parse("2034-12-15T00:00:00Z");
+		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
+			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key) values(?,?,?,?,?,100000,'VND','PENDING_PAYMENT',?)",
+			orderId, reference, heldMemberId, heldMemberId, runId, UUID.randomUUID().toString());
+		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at) "
+			+ "values(?,?,?,?,'HELD',?)", reservationId, orderId, heldMemberId, runId,
+			java.sql.Timestamp.from(expiresAt));
+		return orderId;
+	}
+
 	private Account account(AccountRole role, String name) {
 		UUID id = UUID.randomUUID();
 		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name,
@@ -213,6 +296,14 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	private String shortId() { return UUID.randomUUID().toString().replace("-", "").substring(0, 12); }
+
+	private String token(Account account) {
+		Instant issued = Instant.now();
+		JwtClaimsSet claims = JwtClaimsSet.builder().subject(account.getId().toString()).issuedAt(issued)
+			.expiresAt(issued.plusSeconds(900)).claim("role", account.getRole().name()).build();
+		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+			.getTokenValue();
+	}
 
 	private static void await(CountDownLatch latch) {
 		try { if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Concurrency rendezvous timed out"); }

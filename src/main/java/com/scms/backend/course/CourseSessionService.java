@@ -80,6 +80,8 @@ public class CourseSessionService {
 		UUID requestedRoomId = roomId == null ? currentRoomId : roomId;
 		UUID requestedCoachId = coachId == null ? currentCoachId : coachId;
 		resourceLocks.lock(List.of(currentCoachId, requestedCoachId), List.of(currentRoomId, requestedRoomId));
+		UUID runId = sessions.findCourseRunIdById(sessionId).orElseThrow(CourseException::invalidSession);
+		runs.findByIdForUpdate(runId).orElseThrow(CourseException::invalidSession);
 		CourseSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(CourseException::invalidSession);
 		if (expectedVersion != null && !expectedVersion.equals(session.getVersion())) {
 			throw CourseException.sessionChanged();

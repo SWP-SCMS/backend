@@ -102,6 +102,8 @@ class CourseSessionServiceTests {
 		ReflectionTestUtils.setField(session, "version", 3L);
 		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(roomId));
 		when(sessions.findCoachIdById(session.getId())).thenReturn(Optional.of(coachId));
+		when(sessions.findCourseRunIdById(session.getId())).thenReturn(Optional.of(runId));
+		when(runs.findByIdForUpdate(runId)).thenReturn(Optional.of(run));
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
 		assertThatThrownBy(() -> service.reschedule(session.getId(), null, null, start.plusSeconds(60),

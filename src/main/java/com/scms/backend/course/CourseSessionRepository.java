@@ -28,6 +28,9 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 	@Query("select session.coach.id from CourseSession session where session.id = :id")
 	java.util.Optional<UUID> findCoachIdById(@Param("id") UUID id);
 
+	@Query("select session.courseRun.id from CourseSession session where session.id = :id")
+	java.util.Optional<UUID> findCourseRunIdById(@Param("id") UUID id);
+
 	@Query("""
 		select (count(session) > 0) from CourseSession session
 		where session.status in (com.scms.backend.course.CourseSessionStatus.SCHEDULED,
