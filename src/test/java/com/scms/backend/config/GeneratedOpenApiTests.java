@@ -63,7 +63,10 @@ class GeneratedOpenApiTests {
 		"COURSE_CHANGED", "COURSE_RUN_NOT_FOUND", "COURSE_RUN_CODE_CONFLICT", "COURSE_RUN_INVALID_OPENING",
 		"COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED",
 		"COURSE_SESSION_NOT_FOUND", "COURSE_SESSION_INVALID", "COURSE_SESSION_RESOURCE_CONFLICT",
-		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED");
+		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED",
+		"COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
+		"COURSE_SCHEDULE_CHANGE_NOT_FOUND", "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT",
+		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED");
 	private static final Set<String> READ_COLLECTION_RESPONSES = Set.of("200", "400", "401", "403");
 	private static final Set<String> CREATE_RESPONSES = Set.of("201", "400", "401", "403", "409");
 	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
@@ -350,6 +353,8 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay",
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash",
 		"GET /members/me/course-enrollments",
+		"GET /members/me/course-schedule-changes",
+		"POST /members/me/course-schedule-changes/{responseId}/response",
 		"POST /course-runs/{runId}/waitlist",
 		"DELETE /course-runs/{runId}/waitlist",
 		"GET /members/me/course-waitlists",

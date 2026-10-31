@@ -33,6 +33,7 @@ class CourseSessionServiceTests {
 	private final CoachLeaveRepository leaves = mock(CoachLeaveRepository.class);
 	private final ClassSessionRepository gymSessions = mock(ClassSessionRepository.class);
 	private final SharedResourceLockService locks = mock(SharedResourceLockService.class);
+	private final CourseScheduleChangeService scheduleChanges = mock(CourseScheduleChangeService.class);
 	private CourseSessionService service;
 	private CourseRun run;
 	private Account coach;
@@ -43,7 +44,7 @@ class CourseSessionServiceTests {
 
 	@BeforeEach
 	void setUp() {
-		service = new CourseSessionService(runs, sessions, accounts, rooms, leaves, gymSessions, locks);
+		service = new CourseSessionService(runs, sessions, accounts, rooms, leaves, gymSessions, locks, scheduleChanges);
 		runId = UUID.randomUUID(); coachId = UUID.randomUUID(); roomId = UUID.randomUUID();
 		run = mock(CourseRun.class); coach = mock(Account.class); room = mock(Room.class);
 		when(runs.findById(runId)).thenReturn(Optional.of(run));
@@ -101,6 +102,8 @@ class CourseSessionServiceTests {
 		ReflectionTestUtils.setField(session, "version", 3L);
 		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(roomId));
 		when(sessions.findCoachIdById(session.getId())).thenReturn(Optional.of(coachId));
+		when(sessions.findCourseRunIdById(session.getId())).thenReturn(Optional.of(runId));
+		when(runs.findByIdForUpdate(runId)).thenReturn(Optional.of(run));
 		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
 
 		assertThatThrownBy(() -> service.reschedule(session.getId(), null, null, start.plusSeconds(60),

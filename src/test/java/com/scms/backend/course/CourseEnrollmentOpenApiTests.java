@@ -13,7 +13,8 @@ class CourseEnrollmentOpenApiTests {
 		assertThat(source).isNotNull();
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/coach/course-sessions/{sessionId}/roster",
+			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/members/me/course-schedule-changes",
+				"/members/me/course-schedule-changes/{responseId}/response", "/coach/course-sessions/{sessionId}/roster",
 				"/coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance");
 		assertThat(document.at("/components/schemas/AttendanceUpdate/properties/status/enum").toString())
 			.isEqualTo("[\"PRESENT\",\"ABSENT\"]");
