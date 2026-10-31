@@ -283,7 +283,14 @@ class PaymentFulfillmentService {
 
 	private List<CourseUnit> courseUnits(Map<String, Object> row, Instant now) {
 		List<CourseUnit> units = db.query("""
-			select id,unit_number,start_at from course_sessions where course_run_id=? order by unit_number,id
+			select coalesce(replacement.id, original.id) id,original.unit_number,
+				coalesce(replacement.start_at, original.start_at) start_at
+			from course_sessions original
+			left join course_sessions replacement on replacement.id=original.replacement_session_id
+			where original.course_run_id=? and original.is_makeup=false
+			  and not exists (select 1 from course_sessions replaced_by
+				where replaced_by.replacement_session_id=original.id)
+			order by original.unit_number,original.id
 			""", (result, index) -> new CourseUnit(result.getObject("id", UUID.class),
 			result.getInt("unit_number"), result.getTimestamp("start_at").toInstant()), uuid(row, "course_run_id"));
 		int totalUnits = ((Number) row.get("total_units")).intValue();

@@ -278,6 +278,50 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/sessions/{sessionId}/cancel:
+    post:
+      summary: Cancel a future course session pending a makeup
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseSessionDisruptionRequest' }
+      responses:
+        '200':
+          description: Session cancelled and enrolled members notified
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/sessions/{sessionId}/makeup:
+    post:
+      summary: Schedule one makeup session for a cancelled unit
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseMakeupRequest' }
+      responses:
+        '200':
+          description: Makeup linked without creating an additional enrollment unit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseMakeupResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     bearerAuth:
@@ -500,7 +544,7 @@ components:
     CourseSessionResponse:
       type: object
       required: [id, runId, runCode, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
-        originalStartAt, originalEndAt, allocationVnd, status, createdAt, updatedAt, version]
+        originalStartAt, originalEndAt, allocationVnd, status, replacementSessionId, createdAt, updatedAt, version]
       properties:
         id: { type: string, format: uuid }
         runId: { type: string, format: uuid }
@@ -516,9 +560,32 @@ components:
         originalEndAt: { type: string, format: date-time }
         allocationVnd: { type: integer }
         status: { $ref: '#/components/schemas/CourseSessionStatus' }
+        replacementSessionId: { type: [string, 'null'], format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         version: { type: integer, format: int64 }
+    CourseSessionDisruptionRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+    CourseMakeupRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, roomId, coachId, startAt, endAt]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        roomId: { type: string, format: uuid }
+        coachId: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+    CourseMakeupResponse:
+      type: object
+      required: [originalSession, makeupSession]
+      properties:
+        originalSession: { $ref: '#/components/schemas/CourseSessionResponse' }
+        makeupSession: { $ref: '#/components/schemas/CourseSessionResponse' }
     CourseProblem:
       type: object
       required: [title, status, detail, instance, code]
@@ -535,6 +602,7 @@ components:
             COURSE_RUN_INVALID_TRANSITION, COURSE_RUN_IMMUTABLE, COURSE_RUN_CHANGED,
             COURSE_SESSION_NOT_FOUND, COURSE_SESSION_INVALID, COURSE_SESSION_RESOURCE_CONFLICT,
             COURSE_SESSION_ROOM_CAPACITY_CONFLICT, COURSE_SESSION_CHANGED,
+            COURSE_SESSION_DISRUPTION_CONFLICT,
             COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE, COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID,
             COURSE_SCHEDULE_CHANGE_NOT_FOUND, COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT,
             COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED]

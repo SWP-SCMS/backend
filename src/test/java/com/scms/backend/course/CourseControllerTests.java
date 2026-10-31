@@ -39,6 +39,7 @@ class CourseControllerTests {
 
 	@Autowired MockMvc mockMvc;
 	@MockitoBean CourseManagementService service;
+	@MockitoBean CourseSessionDisruptionService disruptions;
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
 
 	@Test

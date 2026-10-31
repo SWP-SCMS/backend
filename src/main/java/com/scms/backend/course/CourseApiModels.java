@@ -190,13 +190,24 @@ record CourseRunPageResponse(List<CourseRunResponse> content, int page, int size
 
 record CourseSessionResponse(UUID id, UUID runId, String runCode, int unitNumber, UUID roomId, String roomName,
 	UUID coachId, String coachName, Instant startAt, Instant endAt, Instant originalStartAt, Instant originalEndAt,
-	BigInteger allocationVnd, CourseSessionStatus status, Instant createdAt, Instant updatedAt, Long version) {
+	BigInteger allocationVnd, CourseSessionStatus status, UUID replacementSessionId, Instant createdAt,
+	Instant updatedAt, Long version) {
 	static CourseSessionResponse from(CourseSession session) {
 		return new CourseSessionResponse(session.getId(), session.getCourseRun().getId(),
 			session.getCourseRun().getRunCode(), session.getUnitNumber(), session.getRoom().getId(),
 			session.getRoom().getName(), session.getCoach().getId(), session.getCoach().getFullName(),
 			session.getStartAt(), session.getEndAt(), session.getOriginalStartAt(), session.getOriginalEndAt(),
-			session.getAllocationVnd(), session.getStatus(), session.getCreatedAt(), session.getUpdatedAt(),
+			session.getAllocationVnd(), session.getStatus(),
+			session.getReplacementSession() == null ? null : session.getReplacementSession().getId(),
+			session.getCreatedAt(), session.getUpdatedAt(),
 			session.getVersion());
 	}
 }
+
+record CourseSessionDisruptionRequest(@jakarta.validation.constraints.NotNull
+	@jakarta.validation.constraints.PositiveOrZero Long expectedVersion) { }
+
+record CourseMakeupRequest(@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.PositiveOrZero
+	Long expectedVersion, @jakarta.validation.constraints.NotNull UUID roomId,
+	@jakarta.validation.constraints.NotNull UUID coachId, @jakarta.validation.constraints.NotNull Instant startAt,
+	@jakarta.validation.constraints.NotNull Instant endAt) { }

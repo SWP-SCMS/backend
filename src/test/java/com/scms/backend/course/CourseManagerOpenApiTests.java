@@ -22,7 +22,9 @@ class CourseManagerOpenApiTests {
 			"/manager/courses/{courseId}/archive", "/manager/course-runs",
 			"/manager/course-runs/{runId}", "/manager/course-runs/{runId}/open-registration",
 			"/manager/course-runs/{runId}/cancel", "/manager/course-runs/{runId}/sessions",
-			"/manager/course-runs/{runId}/sessions/{sessionId}");
+			"/manager/course-runs/{runId}/sessions/{sessionId}",
+			"/manager/course-runs/{runId}/sessions/{sessionId}/cancel",
+			"/manager/course-runs/{runId}/sessions/{sessionId}/makeup");
 		assertThat(document.at("/security/0/bearerAuth").isArray()).isTrue();
 		assertThat(document.at("/components/schemas/CourseStatus/enum").toString())
 			.isEqualTo("[\"DRAFT\",\"PUBLISHED\",\"INACTIVE\",\"ARCHIVED\"]");

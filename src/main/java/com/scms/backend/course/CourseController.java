@@ -24,9 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourseController {
 
 	private final CourseManagementService service;
+	private final CourseSessionDisruptionService disruptions;
 
-	CourseController(CourseManagementService service) {
+	CourseController(CourseManagementService service, CourseSessionDisruptionService disruptions) {
 		this.service = service;
+		this.disruptions = disruptions;
 	}
 
 	@GetMapping("/courses")
@@ -127,6 +129,20 @@ public class CourseController {
 	ResponseEntity<CourseSessionResponse> patchSession(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
 			@PathVariable UUID sessionId, @Valid @RequestBody CourseSessionPatchRequest request) {
 		return ResponseEntity.ok(service.patchSession(accountId(jwt), runId, sessionId, request));
+	}
+
+	@PostMapping("/course-runs/{runId}/sessions/{sessionId}/cancel")
+	ResponseEntity<CourseSessionResponse> cancelSession(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
+			@PathVariable UUID sessionId, @Valid @RequestBody CourseSessionDisruptionRequest request) {
+		return ResponseEntity.ok(disruptions.cancel(accountId(jwt), runId, sessionId,
+			request == null ? null : request.expectedVersion()));
+	}
+
+	@PostMapping("/course-runs/{runId}/sessions/{sessionId}/makeup")
+	ResponseEntity<CourseSessionDisruptionService.CourseMakeupResponse> scheduleMakeup(
+			@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId, @PathVariable UUID sessionId,
+			@Valid @RequestBody CourseMakeupRequest request) {
+		return ResponseEntity.ok(disruptions.scheduleMakeup(accountId(jwt), runId, sessionId, request));
 	}
 
 	private PageRequest page(int page, int size, String property) {

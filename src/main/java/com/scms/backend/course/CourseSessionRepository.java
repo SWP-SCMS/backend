@@ -12,10 +12,10 @@ import org.springframework.data.repository.query.Param;
 
 public interface CourseSessionRepository extends JpaRepository<CourseSession, UUID> {
 
-	@EntityGraph(attributePaths = { "courseRun", "courseRun.course", "room", "coach" })
+	@EntityGraph(attributePaths = { "courseRun", "courseRun.course", "room", "coach", "replacementSession" })
 	List<CourseSession> findByCourseRunIdOrderByStartAtAscIdAsc(UUID runId);
 
-	@EntityGraph(attributePaths = { "courseRun", "courseRun.course", "room", "coach" })
+	@EntityGraph(attributePaths = { "courseRun", "courseRun.course", "room", "coach", "replacementSession" })
 	java.util.Optional<CourseSession> findByIdAndCourseRunId(UUID id, UUID runId);
 
 	@Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
@@ -30,6 +30,9 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 
 	@Query("select session.courseRun.id from CourseSession session where session.id = :id")
 	java.util.Optional<UUID> findCourseRunIdById(@Param("id") UUID id);
+
+	@Query("select session.id from CourseSession session where session.replacementSession.id = :replacementId")
+	java.util.Optional<UUID> findOriginalIdByReplacementId(@Param("replacementId") UUID replacementId);
 
 	@Query("""
 		select (count(session) > 0) from CourseSession session

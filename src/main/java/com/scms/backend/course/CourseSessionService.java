@@ -46,6 +46,16 @@ public class CourseSessionService {
 	@Transactional
 	public CourseSession create(UUID runId, int unitNumber, UUID coachId, UUID roomId, Instant startAt,
 			Instant endAt, BigInteger allocationVnd) {
+		return create(runId, unitNumber, coachId, roomId, startAt, endAt, allocationVnd, false);
+	}
+
+	CourseSession createMakeup(UUID runId, int unitNumber, UUID coachId, UUID roomId, Instant startAt,
+			Instant endAt, BigInteger allocationVnd) {
+		return create(runId, unitNumber, coachId, roomId, startAt, endAt, allocationVnd, true);
+	}
+
+	private CourseSession create(UUID runId, int unitNumber, UUID coachId, UUID roomId, Instant startAt,
+			Instant endAt, BigInteger allocationVnd, boolean makeup) {
 		if (runId == null || unitNumber <= 0 || coachId == null || roomId == null || startAt == null
 				|| endAt == null || !startAt.isBefore(endAt) || allocationVnd == null || allocationVnd.signum() <= 0
 				|| allocationVnd.toString().length() > 19) {
@@ -59,6 +69,7 @@ public class CourseSessionService {
 		validateResources(run, coach, room, startAt, endAt, null);
 		CourseSession session = new CourseSession(UUID.randomUUID(), run, unitNumber, room, coach, startAt,
 			endAt, allocationVnd);
+		if (makeup) session.scheduleMakeup();
 		try {
 			return sessions.saveAndFlush(session);
 		}
