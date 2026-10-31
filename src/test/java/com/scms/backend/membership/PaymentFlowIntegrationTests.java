@@ -1060,7 +1060,7 @@ class PaymentFlowIntegrationTests {
 		assertThat(db.queryForObject("select status from course_reservations where course_order_id=?", String.class,
 			course.orderId())).isEqualTo("EXPIRED");
 		assertThat(db.queryForObject("select status from course_payments where id=?", String.class,
-			course.paymentId())).isEqualTo("PENDING");
+			course.paymentId())).isEqualTo("FAILED");
 		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
 	}
 

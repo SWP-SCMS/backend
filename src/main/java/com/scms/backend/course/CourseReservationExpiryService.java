@@ -54,6 +54,12 @@ class CourseReservationExpiryService {
 			update course_orders set status='EXPIRED',updated_at=?
 			where id=? and status='PENDING_PAYMENT'
 			""", Timestamp.from(now), reservation.orderId());
+		for (UUID paymentId : db.queryForList("select id from course_payments where course_order_id=? order by id",
+				UUID.class, reservation.orderId())) {
+			db.queryForObject("select id from course_payments where id=? for update", UUID.class, paymentId);
+		}
+		db.update("update course_payments set status='FAILED',updated_at=? "
+			+ "where course_order_id=? and status='PENDING'", Timestamp.from(now), reservation.orderId());
 		audits.save(new AuditEvent(UUID.randomUUID(), "COURSE_RESERVATION_EXPIRED", "COURSE_RESERVATION",
 			reservationId, Map.of("orderId", reservation.orderId().toString(),
 				"memberAccountId", reservation.memberId().toString(),

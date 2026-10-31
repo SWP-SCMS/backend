@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -47,6 +48,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -68,6 +71,8 @@ class CourseOrderIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
 	@Autowired CourseWaitlistService waitlists;
+	@Autowired CourseOrderService orders;
+	@Autowired PlatformTransactionManager transactionManager;
 	@Autowired JwtEncoder jwtEncoder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	@MockitoBean Clock clock;
@@ -129,6 +134,66 @@ class CourseOrderIntegrationTests {
 			.andExpect(jsonPath("$.code").value("COURSE_REGISTRATION_CLOSED"));
 		createSelf(member, afterClose.runId(), "after-close").andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("COURSE_REGISTRATION_CLOSED"));
+	}
+
+	@Test
+	void waitlistAcceptanceAndOrdinaryOrderForSameMemberDoNotDeadlock() throws Exception {
+		MemberProfile member = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		UUID waitlistId = UUID.randomUUID();
+		db.update("insert into course_waitlists(id,course_run_id,member_account_id,status,invited_at,"
+			+ "invitation_expires_at,created_at,updated_at) values(?,?,?,'INVITED',?,?,?,?)", waitlistId,
+			fixture.runId(), member.getAccountId(), Timestamp.from(NOW.minusSeconds(60)),
+			Timestamp.from(NOW.plusSeconds(600)), Timestamp.from(NOW.minusSeconds(120)),
+			Timestamp.from(NOW.minusSeconds(120)));
+
+		CountDownLatch ordinaryOrderBeforeRunLock = new CountDownLatch(1);
+		CountDownLatch releaseOrdinaryOrder = new CountDownLatch(1);
+		CountDownLatch acceptancePidReady = new CountDownLatch(1);
+		AtomicInteger ordinaryOrderPid = new AtomicInteger();
+		AtomicInteger acceptancePid = new AtomicInteger();
+		doAnswer(invocation -> {
+			if (Thread.currentThread().getName().equals("course-order-waitlist-race")) {
+				ordinaryOrderPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				ordinaryOrderBeforeRunLock.countDown();
+				await(releaseOrdinaryOrder);
+			}
+			return null;
+		}).when(creationRendezvous).beforeRunLock();
+
+		TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var ordinaryOrder = executor.submit(() -> {
+				Thread.currentThread().setName("course-order-waitlist-race");
+				return transactions.execute(status -> orders.createForMember(member.getAccountId(),
+					new CourseOrderCreateRequest(fixture.runId()), "ordinary-order-race"));
+			});
+			assertThat(ordinaryOrderBeforeRunLock.await(10, TimeUnit.SECONDS)).isTrue();
+			var acceptance = executor.submit(() -> transactions.execute(status -> {
+				acceptancePid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				acceptancePidReady.countDown();
+				return waitlists.accept(member.getAccountId(), waitlistId, "waitlist-order-race");
+			}));
+			try {
+				assertThat(acceptancePidReady.await(10, TimeUnit.SECONDS)).isTrue();
+				awaitDatabaseLock(acceptancePid.get(), ordinaryOrderPid.get());
+				releaseOrdinaryOrder.countDown();
+				assertThat(ordinaryOrder.get(10, TimeUnit.SECONDS)).isNotNull();
+				assertThatThrownBy(() -> acceptance.get(10, TimeUnit.SECONDS))
+					.rootCause().isInstanceOf(CourseOrderException.class);
+			}
+			finally {
+				releaseOrdinaryOrder.countDown();
+			}
+		}
+
+		assertThat(db.queryForObject("select count(*) from course_orders where member_account_id=? and course_run_id=?",
+			Long.class, member.getAccountId(), fixture.runId())).isOne();
+		assertThat(db.queryForObject("select count(*) from course_reservations where member_account_id=? "
+			+ "and course_run_id=? and status='HELD'", Long.class, member.getAccountId(), fixture.runId())).isOne();
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, waitlistId))
+			.isEqualTo("INVITED");
 	}
 
 	@Test
@@ -627,7 +692,7 @@ class CourseOrderIntegrationTests {
 			if (waiting != null && waiting == 1) return;
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("Timed out waiting for the second CourseOrder transaction to block on CourseRun");
+		throw new AssertionError("Timed out waiting for the expected PostgreSQL lock contention");
 	}
 
 	private org.springframework.test.web.servlet.ResultActions createSelf(MemberProfile member, UUID runId,

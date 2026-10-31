@@ -39,9 +39,9 @@ class CourseManagementServiceTests {
 	private final AccountRepository accounts = mock(AccountRepository.class);
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
 	private final CourseSessionService sessionService = mock(CourseSessionService.class);
-	private final CourseWaitlistService waitlists = mock(CourseWaitlistService.class);
+	private final CourseRunClosureService runClosure = mock(CourseRunClosureService.class);
 	private final CourseManagementService service = new CourseManagementService(courses, runs, sessions,
-		disciplines, accounts, audits, sessionService, waitlists);
+		disciplines, accounts, audits, sessionService, runClosure);
 	private UUID managerId;
 
 	@BeforeEach
@@ -171,7 +171,23 @@ class CourseManagementServiceTests {
 
 		service.cancelRun(managerId, run.getId(), new VersionRequest(2L));
 
-		verify(waitlists).cancelForRun(managerId, run.getId());
+		verify(runClosure).cancelEffects(managerId, run);
+	}
+
+	@Test
+	void cancellingRunRecordsActorAndStableReasonInBeforeAndAfterAudit() {
+		CourseRun run = run(2L, 3);
+		when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+		when(runs.saveAndFlush(run)).thenReturn(run);
+
+		service.cancelRun(managerId, run.getId(), new VersionRequest(2L));
+
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(audit.capture());
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getBeforeData()).containsEntry("status", "DRAFT");
+		assertThat(audit.getValue().getAfterData()).containsEntry("status", "CANCELLED")
+			.containsEntry("reasonCode", "MANAGER_CANCELLED");
 	}
 
 	@Test
