@@ -41,7 +41,8 @@ class CourseScheduleChangeService {
 		List<Map<String, Object>> members = db.queryForList("""
 			select es.id enrollment_session_id, e.member_account_id
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
-			where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE'
+			where es.course_session_id=? and es.disposition='ENROLLED'
+			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 			order by es.id
 			""", session.getId());
 		if (material && !members.isEmpty() && !deadline.isAfter(sentAt)) throw CourseException.responseDeadline();

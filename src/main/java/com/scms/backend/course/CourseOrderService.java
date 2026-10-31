@@ -119,9 +119,9 @@ class CourseOrderService {
 			""", member.getAccountId(), run.getId(), Timestamp.from(now)) > 0) {
 			throw CourseOrderException.reservationExists();
 		}
-		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status='ACTIVE'",
+		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')",
 				member.getAccountId(), run.getId()) > 0) throw CourseOrderException.alreadyEnrolled();
-		long usedSeats = count("select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE'",
+		long usedSeats = count("select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')",
 			run.getId()) + count("""
 			select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?
 			""", run.getId(), Timestamp.from(now)) + count("""
@@ -192,7 +192,8 @@ class CourseOrderService {
 				select 1 from course_enrollments enrollment
 				join course_enrollment_sessions enrolled_unit on enrolled_unit.course_enrollment_id=enrollment.id
 				join course_sessions session on session.id=enrolled_unit.course_session_id
-				where enrollment.member_account_id=? and enrollment.course_run_id<>? and enrollment.lifecycle_status='ACTIVE'
+				where enrollment.member_account_id=? and enrollment.course_run_id<>?
+				  and enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 				  and enrolled_unit.disposition='ENROLLED'
 				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
 				  and session.start_at<? and session.end_at>?

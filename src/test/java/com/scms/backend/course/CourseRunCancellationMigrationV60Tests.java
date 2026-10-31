@@ -26,7 +26,7 @@ class CourseRunCancellationMigrationV60Tests {
 		migrated.validate();
 
 		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(61);
+			Integer.class)).isEqualTo(62);
 		assertThat(db().queryForObject("select pg_get_constraintdef(oid) from pg_constraint "
 			+ "where conname='chk_course_refund_obligations_source'", String.class))
 			.contains("UNRESOLVED_SESSIONS", "COURSE_RUN_CANCELLED");
@@ -44,7 +44,7 @@ class CourseRunCancellationMigrationV60Tests {
 		upgraded.validate();
 
 		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(61);
+			Integer.class)).isEqualTo(62);
 	}
 
 	private Flyway flyway(String target) {

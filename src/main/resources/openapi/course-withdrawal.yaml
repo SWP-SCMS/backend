@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info: {title: SCMS Course Withdrawal API, version: v1}
+security: [{bearerAuth: []}]
+paths:
+  /members/me/course-enrollments/{enrollmentId}/withdrawal-requests:
+    post:
+      operationId: requestMyCourseWithdrawal
+      parameters: [{$ref: '#/components/parameters/EnrollmentId'}]
+      requestBody: {$ref: '#/components/requestBodies/Create'}
+      responses: {'201': {description: Pending withdrawal request}, '409': {$ref: '#/components/responses/Conflict'}}
+  /members/me/course-withdrawal-requests:
+    get: {operationId: listMyCourseWithdrawalRequests, responses: {'200': {description: Own withdrawal history}}}
+  /members/me/course-withdrawal-requests/{requestId}:
+    get:
+      operationId: getMyCourseWithdrawalRequest
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses: {'200': {description: Own withdrawal request}, '404': {description: Hidden or missing request}}
+  /reception/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests:
+    post:
+      operationId: requestCourseWithdrawalForMember
+      parameters:
+        - {$ref: '#/components/parameters/MemberId'}
+        - {$ref: '#/components/parameters/EnrollmentId'}
+      requestBody: {$ref: '#/components/requestBodies/Create'}
+      responses: {'201': {description: Pending withdrawal request}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-withdrawal-requests:
+    get: {operationId: listCourseWithdrawalRequests, responses: {'200': {description: Manager withdrawal queue}}}
+  /manager/course-withdrawal-requests/{requestId}:
+    get:
+      operationId: getCourseWithdrawalRequest
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses: {'200': {description: Withdrawal request detail}}
+  /manager/course-withdrawal-requests/{requestId}/approve:
+    post:
+      operationId: approveCourseWithdrawal
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses: {'200': {description: Approved withdrawal with refund snapshot}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-withdrawal-requests/{requestId}/reject:
+    post:
+      operationId: rejectCourseWithdrawal
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses: {'200': {description: Rejected withdrawal}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests:
+    post:
+      operationId: requestCourseWithdrawalAsManager
+      parameters:
+        - {$ref: '#/components/parameters/MemberId'}
+        - {$ref: '#/components/parameters/EnrollmentId'}
+      requestBody: {$ref: '#/components/requestBodies/Create'}
+      responses: {'201': {description: Pending request eligible for self-approval}}
+components:
+  parameters:
+    RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+    EnrollmentId: {name: enrollmentId, in: path, required: true, schema: {type: string, format: uuid}}
+    MemberId: {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    Create:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: {reason: {type: string, minLength: 1, maxLength: 1000}}
+    Decision:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties: {reason: {type: string, minLength: 1, maxLength: 1000}}
+  requestBodies:
+    Create: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Create'}}}}
+    Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Decision'}}}}
+  responses:
+    Conflict: {description: Withdrawal lifecycle, deadline, or concurrent decision conflict}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

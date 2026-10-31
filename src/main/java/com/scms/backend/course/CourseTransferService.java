@@ -338,7 +338,7 @@ public class CourseTransferService {
 	private long usedSeats(UUID runId, Instant now) { return usedSeatsExcludingOffer(runId, null, now); }
 	private long usedSeatsExcludingOffer(UUID runId, UUID excludedOfferId, Instant now) {
 		return db.queryForObject("""
-			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE')
+			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))
 			 +(select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?)
 			 +(select count(*) from course_waitlists where course_run_id=? and status='INVITED' and invitation_expires_at>?)
 			 +(select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?
@@ -354,7 +354,7 @@ public class CourseTransferService {
 			 join course_enrollments existing on existing.id=existing_session.course_enrollment_id
 			 join course_sessions existing_time on existing_time.id=existing_session.course_session_id
 			 where target.course_run_id=? and target.status in ('SCHEDULED','MAKEUP_SCHEDULED')
-			 and existing.member_account_id=? and existing.lifecycle_status='ACTIVE' and existing.course_run_id<>?
+			 and existing.member_account_id=? and existing.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') and existing.course_run_id<>?
 			 and existing_time.start_at<target.end_at and existing_time.end_at>target.start_at)
 			""", Boolean.class, targetRunId, memberId, sourceRunId));
 	}
@@ -373,7 +373,7 @@ public class CourseTransferService {
 	}
 	private int capacity(UUID runId) { return db.queryForObject("select capacity from course_runs where id=?", Integer.class, runId); }
 	private boolean activeEnrollmentExists(UUID memberId, UUID runId) { return Boolean.TRUE.equals(db.queryForObject(
-		"select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status='ACTIVE')", Boolean.class, memberId, runId)); }
+		"select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))", Boolean.class, memberId, runId)); }
 	private void active(UUID id, AccountRole role) { if (!accounts.existsByIdAndRoleAndStatus(id, role, AccountStatus.ACTIVE)) throw new InvalidAuthenticatedAccountException(); }
 	private String reason(String value) { if (value == null || value.isBlank() || value.trim().length() > 500) throw CourseTransferException.invalid("A reason of at most 500 characters is required."); return value.trim(); }
 	private String key(String value) { if (value == null || value.isBlank() || value.trim().length() > 100) throw CourseTransferException.keyRequired(); return value.trim(); }
