@@ -17,6 +17,8 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +46,7 @@ class CourseRunClosureIntegrationTests {
 	@Autowired CourseRunClosureService closure;
 	@Autowired CourseWaitlistService waitlists;
 	@Autowired AccountRepository accounts;
+	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
 	@Autowired PlatformTransactionManager transactionManager;
 
@@ -214,6 +217,79 @@ class CourseRunClosureIntegrationTests {
 		assertThat(status(run.id())).isEqualTo("CANCELLED");
 		assertThat(db.queryForObject("select status from course_waitlists where course_run_id=?",
 			String.class, run.id())).isEqualTo("CANCELLED");
+	}
+
+	@Test
+	void acceptanceAndClosureWaitOnTheCourseRunLockWithoutLeavingAnOpenOrderOnCancelledRun() throws Exception {
+		CourseRunResponse run = openRun(2);
+		UUID invited = waitlist(run.id(), "INVITED");
+		UUID memberId = db.queryForObject("select member_account_id from course_waitlists where id=?", UUID.class,
+			invited);
+		profiles.saveAndFlush(new MemberProfile(accounts.findById(memberId).orElseThrow()));
+		TransactionTemplate transactions = new TransactionTemplate(transactionManager);
+		CountDownLatch blockerLocked = new CountDownLatch(1);
+		CountDownLatch releaseBlocker = new CountDownLatch(1);
+		CountDownLatch acceptanceStarted = new CountDownLatch(1);
+		CountDownLatch closureStarted = new CountDownLatch(1);
+		AtomicInteger blockerPid = new AtomicInteger();
+		AtomicInteger acceptancePid = new AtomicInteger();
+		AtomicInteger closurePid = new AtomicInteger();
+		boolean accepted = false;
+
+		try (var executor = Executors.newFixedThreadPool(3)) {
+			var blocker = executor.submit(() -> transactions.executeWithoutResult(status -> {
+				blockerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				db.queryForObject("select id from course_runs where id=? for update", UUID.class, run.id());
+				blockerLocked.countDown();
+				await(releaseBlocker);
+			}));
+			assertThat(blockerLocked.await(10, TimeUnit.SECONDS)).isTrue();
+			var acceptance = executor.submit(() -> transactions.execute(status -> {
+				acceptancePid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				acceptanceStarted.countDown();
+				try {
+					waitlists.accept(memberId, invited, "accept-close-race-" + invited);
+					return true;
+				}
+				catch (CourseWaitlistException expectedAfterClosure) {
+					return false;
+				}
+			}));
+			var close = executor.submit(() -> transactions.execute(status -> {
+				closurePid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				closureStarted.countDown();
+				return closure.closeAtRegistration(run.id(), CLOSE);
+			}));
+			try {
+				assertThat(acceptanceStarted.await(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(closureStarted.await(10, TimeUnit.SECONDS)).isTrue();
+				awaitDatabaseLock(acceptancePid.get(), blockerPid.get());
+				awaitDatabaseLock(closurePid.get(), blockerPid.get());
+				releaseBlocker.countDown();
+				accepted = acceptance.get(10, TimeUnit.SECONDS);
+				assertThat(close.get(10, TimeUnit.SECONDS)).isTrue();
+				blocker.get(10, TimeUnit.SECONDS);
+			}
+			finally {
+				releaseBlocker.countDown();
+			}
+		}
+
+		assertThat(status(run.id())).isEqualTo("CANCELLED");
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, invited))
+			.isEqualTo(accepted ? "ACCEPTED" : "CANCELLED");
+		assertThat(db.queryForObject("select count(*) from course_orders where course_run_id=? "
+			+ "and status='PENDING_PAYMENT'", Long.class, run.id())).isZero();
+		assertThat(db.queryForObject("select count(*) from course_reservations where course_run_id=? "
+			+ "and status='HELD'", Long.class, run.id())).isZero();
+		UUID acceptedOrder = db.queryForObject("select accepted_order_id from course_waitlists where id=?",
+			UUID.class, invited);
+		if (acceptedOrder != null) {
+			assertThat(db.queryForObject("select status from course_orders where id=?", String.class, acceptedOrder))
+				.isEqualTo("EXPIRED");
+			assertThat(db.queryForObject("select status from course_reservations where course_order_id=?",
+				String.class, acceptedOrder)).isEqualTo("EXPIRED");
+		}
 	}
 
 	private CourseRunResponse openRun(int minimum) {
