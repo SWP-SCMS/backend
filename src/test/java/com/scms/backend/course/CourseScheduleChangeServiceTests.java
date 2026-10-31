@@ -36,6 +36,30 @@ class CourseScheduleChangeServiceTests {
 	private final UUID responseId = UUID.randomUUID();
 
 	@Test
+	void nullChoiceProducesStableValidationError() {
+		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER,
+			com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
+
+		assertThatThrownBy(() -> service.respond(memberId, responseId, null))
+			.isInstanceOfSatisfying(CourseException.class, error ->
+				org.assertj.core.api.Assertions.assertThat(error.getCode())
+					.isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID"));
+	}
+
+	@Test
+	void nullRequestBodyProducesStableValidationError() {
+		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER,
+			com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
+		CourseEnrollmentService enrollmentService = new CourseEnrollmentService(db, accounts,
+			mock(com.scms.backend.audit.AuditEventRepository.class), Clock.fixed(NOW, ZoneOffset.UTC), service);
+
+		assertThatThrownBy(() -> enrollmentService.respondToScheduleChange(memberId, responseId, null))
+			.isInstanceOfSatisfying(CourseException.class, error ->
+				org.assertj.core.api.Assertions.assertThat(error.getCode())
+					.isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID"));
+	}
+
+	@Test
 	void memberCannotReadOrRespondToAnotherMembersRecord() {
 		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER,
 			com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);

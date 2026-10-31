@@ -88,7 +88,7 @@ class CourseScheduleChangeService {
 	@Transactional
 	ScheduleChange respond(UUID memberId, UUID responseId, String choice) {
 		activeMember(memberId);
-		if (!List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
+		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
 			throw CourseException.invalidResponse();
 		List<ScheduleChange> rows = db.query("""
 			select r.* from course_schedule_change_responses r join course_enrollment_sessions es on es.id=r.enrollment_session_id
