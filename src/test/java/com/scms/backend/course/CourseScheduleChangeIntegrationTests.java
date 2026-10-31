@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -22,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -41,6 +43,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired CourseSessionRepository sessions;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate db;
+	@Autowired TransactionTemplate transactions;
 
 	private UUID managerId;
 	private UUID coachId;
@@ -109,29 +112,43 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
-	void concurrentMemberResponseAndManagerSupersedePreserveOneConsistentOutcome() throws Exception {
-		CountDownLatch ready = new CountDownLatch(2);
-		CountDownLatch start = new CountDownLatch(1);
+	void managerSupersedeBlocksBehindMemberResponseRowLockThenPreservesHistory() throws Exception {
+		CountDownLatch memberLocked = new CountDownLatch(1);
+		CountDownLatch managerAtReschedule = new CountDownLatch(1);
+		CountDownLatch releaseMember = new CountDownLatch(1);
+		AtomicInteger memberPid = new AtomicInteger();
+		AtomicInteger managerPid = new AtomicInteger();
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var member = executor.submit(() -> {
-				ready.countDown(); await(start);
-				try { members.respondToScheduleChange(memberId, responseId,
-					new CourseScheduleChangeApiModels.ScheduleChangeResponse("CONTINUE")); return "RESPONDED"; }
-				catch (CourseException error) { return error.getCode(); }
+				transactions.executeWithoutResult(status -> {
+					memberPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					db.queryForObject("select id from course_schedule_change_responses where id=? for update",
+						UUID.class, responseId);
+					memberLocked.countDown();
+					await(releaseMember);
+					members.respondToScheduleChange(memberId, responseId,
+						new CourseScheduleChangeApiModels.ScheduleChangeResponse("CONTINUE"));
+				});
+				return null;
 			});
+			assertThat(memberLocked.await(10, TimeUnit.SECONDS)).isTrue();
 			var manager = executor.submit(() -> {
-				ready.countDown(); await(start);
-				return managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(
-					session.version(), null, null, session.startAt().plusSeconds(7200),
-					session.endAt().plusSeconds(7200)));
+				return transactions.execute(status -> {
+					managerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+					managerAtReschedule.countDown();
+					return managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(
+						session.version(), null, null, session.startAt().plusSeconds(7200),
+						session.endAt().plusSeconds(7200)));
+				});
 			});
-			assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-			start.countDown();
+			assertThat(managerAtReschedule.await(10, TimeUnit.SECONDS)).isTrue();
+			awaitDatabaseLock(managerPid.get(), memberPid.get());
+			releaseMember.countDown();
 			assertThat(manager.get(10, TimeUnit.SECONDS)).isNotNull();
-			assertThat(member.get(10, TimeUnit.SECONDS)).isIn("RESPONDED", "COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED");
+			assertThat(member.get(10, TimeUnit.SECONDS)).isNull();
 		}
 		assertThat(db.queryForObject("select status from course_schedule_change_responses where id=?", String.class,
-			responseId)).isIn("RESPONDED", "SUPERSEDED");
+			responseId)).isEqualTo("RESPONDED");
 		assertThat(db.queryForObject("select count(*) from course_schedule_change_responses where enrollment_session_id in "
 			+ "(select id from course_enrollment_sessions where course_session_id=?)", Long.class, session.id())).isEqualTo(2);
 		assertThat(db.queryForObject("select count(*) from course_schedule_change_responses where enrollment_session_id in "
@@ -200,5 +217,18 @@ class CourseScheduleChangeIntegrationTests {
 	private static void await(CountDownLatch latch) {
 		try { if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Concurrency rendezvous timed out"); }
 		catch (InterruptedException exception) { Thread.currentThread().interrupt(); throw new AssertionError(exception); }
+	}
+
+	private void awaitDatabaseLock(int waiterPid, int blockerPid) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		do {
+			Long waiting = db.queryForObject("""
+				select count(*) from pg_stat_activity
+				where pid=? and wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))
+				""", Long.class, waiterPid, blockerPid);
+			if (waiting != null && waiting == 1) return;
+			Thread.onSpinWait();
+		} while (System.nanoTime() < deadline);
+		throw new AssertionError("Timed out waiting for Manager supersede to block on Member response row lock");
 	}
 }
