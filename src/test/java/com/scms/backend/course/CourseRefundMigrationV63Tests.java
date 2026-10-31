@@ -26,7 +26,7 @@ class CourseRefundMigrationV63Tests {
 
 		JdbcTemplate db = db();
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(63);
+			Integer.class)).isEqualTo(64);
 		assertThat(db.queryForObject("select pg_get_constraintdef(oid) from pg_constraint "
 			+ "where conname='chk_course_refund_obligations_source'", String.class))
 			.contains("MEMBER_WITHDRAWAL", "COURSE_RUN_CANCELLED", "MATERIAL_CHANGE", "UNRESOLVED_SESSIONS",
