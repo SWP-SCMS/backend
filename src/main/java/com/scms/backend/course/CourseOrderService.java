@@ -119,14 +119,16 @@ class CourseOrderService {
 			""", member.getAccountId(), run.getId(), Timestamp.from(now)) > 0) {
 			throw CourseOrderException.reservationExists();
 		}
-		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=?",
+		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status='ACTIVE'",
 				member.getAccountId(), run.getId()) > 0) throw CourseOrderException.alreadyEnrolled();
-		long usedSeats = count("""
-			select count(*) from course_reservations
-			where course_run_id=? and (status='ENROLLED' or (status='HELD' and expires_at>?))
+		long usedSeats = count("select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE'",
+			run.getId()) + count("""
+			select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?
 			""", run.getId(), Timestamp.from(now)) + count("""
 			select count(*) from course_waitlists
 			where course_run_id=? and status='INVITED' and invitation_expires_at>?
+			""", run.getId(), Timestamp.from(now)) + count("""
+			select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?
 			""", run.getId(), Timestamp.from(now));
 		if (usedSeats - (invitedSeat ? 1 : 0) >= run.getCapacity()) {
 			throw CourseOrderException.capacityFull();
@@ -187,15 +189,23 @@ class CourseOrderService {
 	private boolean hasHeldCourseOverlap(UUID memberId, UUID runId, CourseSession target, Instant now) {
 		return Boolean.TRUE.equals(db.queryForObject("""
 			select exists (
+				select 1 from course_enrollments enrollment
+				join course_enrollment_sessions enrolled_unit on enrolled_unit.course_enrollment_id=enrollment.id
+				join course_sessions session on session.id=enrolled_unit.course_session_id
+				where enrollment.member_account_id=? and enrollment.course_run_id<>? and enrollment.lifecycle_status='ACTIVE'
+				  and enrolled_unit.disposition='ENROLLED'
+				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
+				  and session.start_at<? and session.end_at>?
+				union all
 				select 1 from course_reservations reservation
 				join course_sessions session on session.course_run_id=reservation.course_run_id
 				where reservation.member_account_id=? and reservation.course_run_id<>?
-				  and (reservation.status='ENROLLED' or (reservation.status='HELD' and reservation.expires_at>?))
+				  and reservation.status='HELD' and reservation.expires_at>?
 				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
 				  and session.start_at<? and session.end_at>?
 			)
-			""", Boolean.class, memberId, runId, Timestamp.from(now), Timestamp.from(target.getEndAt()),
-			Timestamp.from(target.getStartAt())));
+			""", Boolean.class, memberId, runId, Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt()),
+			memberId, runId, Timestamp.from(now), Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt())));
 	}
 
 	private Account lockActive(UUID accountId, AccountRole role) {

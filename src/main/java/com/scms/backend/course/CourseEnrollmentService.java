@@ -47,7 +47,7 @@ class CourseEnrollmentService {
 	List<MemberEnrollment> memberEnrollments(UUID memberId) {
 		active(memberId, AccountRole.MEMBER);
 		List<Map<String, Object>> rows = db.queryForList("""
-			select e.id enrollment_id,e.course_run_id,c.code course_code,c.name course_name,r.run_code,e.enrolled_at,
+			select e.id enrollment_id,e.course_run_id,c.code course_code,c.name course_name,r.run_code,e.lifecycle_status,e.enrolled_at,
 				es.id enrollment_session_id,es.course_session_id,es.unit_number,s.start_at,s.end_at,
 				es.disposition,es.attendance_status,es.attendance_recorded_at
 			from course_enrollments e join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
@@ -60,7 +60,7 @@ class CourseEnrollmentService {
 			UUID id = uuid(row, "enrollment_id");
 			grouped.computeIfAbsent(id, ignored -> new EnrollmentBuilder(id, uuid(row, "course_run_id"),
 				text(row, "course_code"), text(row, "course_name"), text(row, "run_code"),
-				instant(row, "enrolled_at"))).sessions.add(new MemberSession(uuid(row, "enrollment_session_id"),
+				text(row, "lifecycle_status"), instant(row, "enrolled_at"))).sessions.add(new MemberSession(uuid(row, "enrollment_session_id"),
 				uuid(row, "course_session_id"), number(row, "unit_number"), instant(row, "start_at"),
 				instant(row, "end_at"), text(row, "disposition"),
 				CourseAttendanceStatus.valueOf(text(row, "attendance_status")), instant(row, "attendance_recorded_at")));
@@ -77,7 +77,7 @@ class CourseEnrollmentService {
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.course_session_id=? and es.disposition='ENROLLED'
+			where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE'
 			order by a.full_name,a.id
 			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class),
 			rs.getString("member_code"), rs.getString("full_name"),
@@ -107,7 +107,7 @@ class CourseEnrollmentService {
 				es.attendance_status,es.attendance_recorded_at
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED' for update of es
+			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE' for update of es
 			""", enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		CourseAttendanceStatus before = CourseAttendanceStatus.valueOf(text(row, "attendance_status"));
 		db.update("""
@@ -132,12 +132,12 @@ class CourseEnrollmentService {
 	private static Instant instant(Map<String, Object> row, String key) {
 		Object value = row.get(key); return value == null ? null : value instanceof Instant instant ? instant : ((Timestamp) value).toInstant();
 	}
-	private record EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode,
+	private record EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode, String lifecycleStatus,
 			Instant enrolledAt, List<MemberSession> sessions) {
-		EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode, Instant enrolledAt) {
-			this(id, runId, courseCode, courseName, runCode, enrolledAt, new ArrayList<>());
+		EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode, String lifecycleStatus, Instant enrolledAt) {
+			this(id, runId, courseCode, courseName, runCode, lifecycleStatus, enrolledAt, new ArrayList<>());
 		}
 		MemberEnrollment response() { return new MemberEnrollment(id, runId, courseCode, courseName, runCode,
-			enrolledAt, List.copyOf(sessions)); }
+			lifecycleStatus, enrolledAt, List.copyOf(sessions)); }
 	}
 }

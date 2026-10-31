@@ -11,7 +11,7 @@ public final class CourseEnrollmentApiModels {
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record MemberEnrollment(UUID enrollmentId, UUID courseRunId, String courseCode, String courseName,
-			String runCode, Instant enrolledAt, List<MemberSession> sessions) {}
+			String runCode, String lifecycleStatus, Instant enrolledAt, List<MemberSession> sessions) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record MemberSession(UUID enrollmentSessionId, UUID courseSessionId, int unitNumber, Instant startAt,

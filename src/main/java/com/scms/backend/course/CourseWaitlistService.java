@@ -201,19 +201,22 @@ public class CourseWaitlistService {
 
 	private long usedSeats(UUID runId, Instant now) {
 		return db.queryForObject("""
-			select (select count(*) from course_reservations where course_run_id=?
-				and (status='ENROLLED' or (status='HELD' and expires_at>?)))
+			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE')
+			 + (select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?)
 			 + (select count(*) from course_waitlists where course_run_id=? and status='INVITED' and invitation_expires_at>?)
-			""", Long.class, runId, Timestamp.from(now), runId, Timestamp.from(now));
+			 + (select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?)
+			""", Long.class, runId, runId, Timestamp.from(now), runId, Timestamp.from(now), runId, Timestamp.from(now));
 	}
 
 	private boolean hasEnrollmentOrHold(UUID memberId, UUID runId, Instant now) {
 		return Boolean.TRUE.equals(db.queryForObject("""
-			select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=?)
+			select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status='ACTIVE')
 			 or exists(select 1 from course_reservations where member_account_id=? and course_run_id=?
-				and (status='ENROLLED' or (status='HELD' and expires_at>?)))
+				and status='HELD' and expires_at>?)
 			 or exists(select 1 from course_waitlists where member_account_id=? and course_run_id=? and status in ('WAITING','INVITED'))
-			""", Boolean.class, memberId, runId, memberId, runId, Timestamp.from(now), memberId, runId));
+			 or exists(select 1 from course_transfer_holds where member_account_id=? and target_run_id=? and status='HELD' and expires_at>?)
+			""", Boolean.class, memberId, runId, memberId, runId, Timestamp.from(now), memberId, runId,
+			memberId, runId, Timestamp.from(now)));
 	}
 
 	private UUID activeId(UUID memberId, UUID runId) {

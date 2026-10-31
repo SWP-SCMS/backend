@@ -14,7 +14,9 @@ import java.util.UUID;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.course.CourseEnrollmentResponse;
+import com.scms.backend.course.CourseTransferService;
 import com.scms.backend.notification.NotificationWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -31,6 +33,7 @@ class PaymentFulfillmentService {
 	private final AuditEventRepository audits;
 	private final NotificationWriter notifications;
 	private final Clock clock;
+	@Autowired(required = false) private CourseTransferService courseTransfers;
 
 	PaymentFulfillmentService(JdbcTemplate db, MembershipLifecycleService lifecycle, AuditEventRepository audits,
 			NotificationWriter notifications, Clock clock) {
@@ -252,15 +255,20 @@ class PaymentFulfillmentService {
 			uuid(row, "order_id"));
 		db.update("update course_reservations set status='ENROLLED',updated_at=current_timestamp where id=? and status='HELD'",
 			uuid(row, "reservation_id"));
+		if (courseTransfers != null) {
+			CourseEnrollmentResponse transferred = courseTransfers.completePaidDifference(uuid(row, "order_id"),
+				paymentId, actorId, now);
+			if (transferred != null) return transferred;
+		}
 		UUID enrollmentId = UUID.randomUUID();
 		db.update("""
 			insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,
 				member_account_id,actor_account_id,processed_by_account_id,course_run_id,
-				amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at)
-			values(?,?,?,?,?,?,?,?,?,?,?)
+				amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at,credit_applied_vnd,cash_paid_vnd)
+			values(?,?,?,?,?,?,?,?,?,?,?,0,?)
 			""", enrollmentId, uuid(row, "order_id"), uuid(row, "reservation_id"), paymentId,
 			uuid(row, "member_account_id"), uuid(row, "actor_account_id"), actorId,
-			uuid(row, "course_run_id"), paidAmount, units.size(), Timestamp.from(now));
+			uuid(row, "course_run_id"), paidAmount, units.size(), Timestamp.from(now), paidAmount);
 		for (int index = 0; index < units.size(); index++) {
 			CourseUnit unit = units.get(index);
 			BigInteger allocation = index == units.size() - 1 ? split[0].add(split[1]) : split[0];

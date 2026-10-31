@@ -112,13 +112,14 @@ components:
     MemberEnrollment:
       type: object
       additionalProperties: false
-      required: [enrollmentId, courseRunId, courseCode, courseName, runCode, enrolledAt, sessions]
+      required: [enrollmentId, courseRunId, courseCode, courseName, runCode, lifecycleStatus, enrolledAt, sessions]
       properties:
         enrollmentId: {type: string, format: uuid}
         courseRunId: {type: string, format: uuid}
         courseCode: {type: string}
         courseName: {type: string}
         runCode: {type: string}
+        lifecycleStatus: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}
         enrolledAt: {type: string, format: date-time}
         sessions: {type: array, items: {$ref: '#/components/schemas/MemberSession'}}
     RosterEntry:

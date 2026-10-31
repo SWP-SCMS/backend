@@ -1,0 +1,45 @@
+openapi: 3.1.0
+info: {title: SCMS Course Transfer API, version: v1}
+security: [{bearerAuth: []}]
+paths:
+  /manager/course-transfer-requests:
+    get: {operationId: listCourseTransferRequests, responses: {'200': {description: Transfer queue}}}
+  /manager/course-transfer-requests/{requestId}/targets:
+    get: {operationId: listCourseTransferTargets, parameters: [{$ref: '#/components/parameters/RequestId'}], responses: {'200': {description: Eligible targets}}}
+  /manager/course-transfer-requests/{requestId}/approve:
+    post:
+      operationId: approveCourseTransfer
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApproveTransfer'}}}}
+      responses: {'200': {description: Concrete transfer offer}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-transfer-requests/{requestId}/reject:
+    post:
+      operationId: rejectCourseTransfer
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RejectTransfer'}}}}
+      responses: {'200': {description: Rejected request}, '409': {$ref: '#/components/responses/Conflict'}}
+  /members/me/course-transfer-offers:
+    get: {operationId: listMyCourseTransferOffers, responses: {'200': {description: Own transfer offers}}}
+  /members/me/course-transfer-offers/{offerId}/accept:
+    post:
+      operationId: acceptCourseTransferOffer
+      parameters:
+        - {name: offerId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 100}}
+      responses: {'200': {description: Completed transfer or difference-payment order}, '409': {$ref: '#/components/responses/Conflict'}}
+components:
+  parameters:
+    RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    ApproveTransfer:
+      type: object
+      required: [targetRunId, reason]
+      properties: {targetRunId: {type: string, format: uuid}, reason: {type: string, maxLength: 500}}
+    RejectTransfer:
+      type: object
+      required: [reason]
+      properties: {reason: {type: string, maxLength: 500}}
+  responses:
+    Conflict: {description: Transfer state or capacity conflict}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

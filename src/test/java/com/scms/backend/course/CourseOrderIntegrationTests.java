@@ -356,8 +356,9 @@ class CourseOrderIntegrationTests {
 	void cancellingCourseRunCancelsAndNotifiesItsActiveWaitlistInvitation() throws Exception {
 		Account manager = account(AccountRole.MANAGER, AccountStatus.ACTIVE);
 		MemberProfile holder = member(AccountStatus.ACTIVE);
+		MemberProfile temporaryHolder = member(AccountStatus.ACTIVE);
 		MemberProfile invited = member(AccountStatus.ACTIVE);
-		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+		RunFixture fixture = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
 			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
 		JsonNode order = json(createSelf(holder, fixture.runId(), "cancel-holder")
 			.andExpect(status().isCreated()).andReturn());
@@ -368,9 +369,11 @@ class CourseOrderIntegrationTests {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
 			.header("Idempotency-Key", "cancel-holder-cash"))
 			.andExpect(status().isOk());
+		UUID temporaryOrderId = UUID.fromString(json(createSelf(temporaryHolder, fixture.runId(), "cancel-temporary-holder")
+			.andExpect(status().isCreated()).andReturn()).path("orderId").asText());
 		UUID waitlistId = UUID.fromString(json(joinWaitlist(invited, fixture.runId())
 			.andExpect(status().isCreated()).andReturn()).path("id").asText());
-		assertThat(db.update("update course_reservations set status='EXPIRED' where course_order_id=?", orderId)).isOne();
+		assertThat(db.update("update course_reservations set status='EXPIRED' where course_order_id=?", temporaryOrderId)).isOne();
 		waitlists.promote(fixture.runId(), NOW);
 		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, waitlistId))
 			.isEqualTo("INVITED");
