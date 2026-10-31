@@ -185,6 +185,7 @@ class CourseScheduleChangeIntegrationTests {
 		UUID heldOrderId = seedHeldOrder(newMember.getId());
 		CountDownLatch enrollmentCreated = new CountDownLatch(1);
 		CountDownLatch commitFulfillment = new CountDownLatch(1);
+		CountDownLatch managerPidReady = new CountDownLatch(1);
 		AtomicInteger fulfillmentPid = new AtomicInteger();
 		AtomicInteger managerPid = new AtomicInteger();
 		try (var executor = Executors.newFixedThreadPool(2)) {
@@ -204,11 +205,13 @@ class CourseScheduleChangeIntegrationTests {
 			assertThat(enrollmentCreated.await(10, TimeUnit.SECONDS)).isTrue();
 			var reschedule = executor.submit(() -> transactions.execute(status -> {
 				managerPid.set(db.queryForObject("select pg_backend_pid()", Integer.class));
+				managerPidReady.countDown();
 				return managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(
 					session.version(), null, null, session.startAt().plusSeconds(7200),
 					session.endAt().plusSeconds(7200)));
 			}));
 			try {
+				assertThat(managerPidReady.await(10, TimeUnit.SECONDS)).isTrue();
 				awaitDatabaseLock(managerPid.get(), fulfillmentPid.get());
 				commitFulfillment.countDown();
 				payment.get(10, TimeUnit.SECONDS);
