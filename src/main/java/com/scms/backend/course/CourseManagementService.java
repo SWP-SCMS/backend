@@ -32,11 +32,11 @@ class CourseManagementService {
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
 	private final CourseSessionService sessionService;
-	private final CourseWaitlistService waitlists;
+	private final CourseRunClosureService runClosure;
 
 	CourseManagementService(CourseRepository courses, CourseRunRepository runs, CourseSessionRepository sessions,
 			DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits,
-			CourseSessionService sessionService, CourseWaitlistService waitlists) {
+			CourseSessionService sessionService, CourseRunClosureService runClosure) {
 		this.courses = courses;
 		this.runs = runs;
 		this.sessions = sessions;
@@ -44,7 +44,7 @@ class CourseManagementService {
 		this.accounts = accounts;
 		this.audits = audits;
 		this.sessionService = sessionService;
-		this.waitlists = waitlists;
+		this.runClosure = runClosure;
 	}
 
 	@Transactional(readOnly = true)
@@ -220,8 +220,10 @@ class CourseManagementService {
 		Map<String, Object> before = snapshot(run);
 		run.cancel();
 		runs.saveAndFlush(run);
-		waitlists.cancelForRun(managerId, runId);
-		audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, before, snapshot(run));
+		runClosure.cancelEffects(managerId, run);
+		Map<String, Object> after = snapshot(run);
+		after.put("reasonCode", "MANAGER_CANCELLED");
+		audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, before, after);
 		return CourseRunResponse.from(run);
 	}
 
