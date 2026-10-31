@@ -313,7 +313,7 @@ class CourseRunClosureIntegrationTests {
 		course = management.publishCourse(managerId, course.id(), new VersionRequest(course.version()));
 		CourseRunResponse run = management.createRun(managerId, new CourseRunCreateRequest(
 			"CLOSE-" + UUID.randomUUID().toString().substring(0, 8), course.id(), coachId,
-			BigInteger.valueOf(1_000_000), 10, minimum, Instant.parse("2030-01-01T00:00:00Z"), CLOSE,
+			BigInteger.valueOf(1_000_000), 10, minimum, Instant.parse("2020-01-01T00:00:00Z"), CLOSE,
 			Instant.parse("2030-02-01T00:00:00Z"), Instant.parse("2030-03-01T00:00:00Z"), 10, true));
 		return management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "policy-v1"));
 	}
