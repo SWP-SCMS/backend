@@ -316,18 +316,19 @@ class CourseRunClosureIntegrationTests {
 		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
 			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key,created_at,updated_at) "
 			+ "values(?,?,?,?,?,1000000,'VND','PAID',?,?,?)", orderId, reference, member.getId(), managerId, runId,
-			"paid-" + orderId, created, created);
+			"paid-" + orderId, java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
 		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at,"
 			+ "created_at,updated_at) values(?,?,?,?,'ENROLLED',?,?,?)", reservationId, orderId, member.getId(), runId,
-			expires, created, created);
+			java.sql.Timestamp.from(expires), java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
 		db.update("insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,"
 			+ "payment_reference,amount,currency_code,status,deadline_at,method,processed_by_account_id,paid_at) "
 			+ "values(?,?,?,?,?, ?,1000000,'VND','PAID',?,'CASH',?,?)", paymentId, orderId, reservationId,
-			member.getId(), managerId, reference, expires, managerId, created);
+			member.getId(), managerId, reference, java.sql.Timestamp.from(expires), managerId,
+			java.sql.Timestamp.from(created));
 		db.update("insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,"
 			+ "member_account_id,actor_account_id,processed_by_account_id,course_run_id,amount_paid_vnd_snapshot,"
 			+ "total_units_snapshot,enrolled_at) values(?,?,?,?,?,?,?,?,1000000,10,?)", enrollmentId, orderId,
-			reservationId, paymentId, member.getId(), managerId, managerId, runId, created);
+			reservationId, paymentId, member.getId(), managerId, managerId, runId, java.sql.Timestamp.from(created));
 		return member.getId();
 	}
 
@@ -341,13 +342,14 @@ class CourseRunClosureIntegrationTests {
 		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
 			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key,created_at,updated_at) "
 			+ "values(?,?,?,?,?,1000000,'VND','PENDING_PAYMENT',?,?,?)", orderId, reference, member.getId(), managerId,
-			runId, "held-" + orderId, created, created);
+			runId, "held-" + orderId, java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
 		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at,"
 			+ "created_at,updated_at) values(?,?,?,?,'HELD',?,?,?)", reservationId, orderId, member.getId(), runId,
-			CLOSE, created, created);
+			java.sql.Timestamp.from(CLOSE), java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
 		db.update("insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,"
 			+ "payment_reference,amount,currency_code,status,deadline_at,method) values(?,?,?,?,?, ?,1000000,'VND',"
-			+ "'PENDING',?,'CASH')", paymentId, orderId, reservationId, member.getId(), managerId, reference, CLOSE);
+			+ "'PENDING',?,'CASH')", paymentId, orderId, reservationId, member.getId(), managerId, reference,
+			java.sql.Timestamp.from(CLOSE));
 		return orderId;
 	}
 
@@ -357,11 +359,13 @@ class CourseRunClosureIntegrationTests {
 		if ("INVITED".equals(status)) {
 			db.update("insert into course_waitlists(id,course_run_id,member_account_id,status,invited_at,"
 				+ "invitation_expires_at,created_at,updated_at) values(?,?,?,'INVITED',?,?,?,?)", id, runId,
-				memberId, CLOSE.minusSeconds(3600), CLOSE, CLOSE.minusSeconds(7200), CLOSE.minusSeconds(7200));
+				memberId, java.sql.Timestamp.from(CLOSE.minusSeconds(3600)), java.sql.Timestamp.from(CLOSE),
+				java.sql.Timestamp.from(CLOSE.minusSeconds(7200)), java.sql.Timestamp.from(CLOSE.minusSeconds(7200)));
 		}
 		else {
 			db.update("insert into course_waitlists(id,course_run_id,member_account_id,status,created_at,updated_at) "
-				+ "values(?,?,?,'WAITING',?,?)", id, runId, memberId, CLOSE.minusSeconds(7200), CLOSE.minusSeconds(7200));
+			+ "values(?,?,?,'WAITING',?,?)", id, runId, memberId,
+			java.sql.Timestamp.from(CLOSE.minusSeconds(7200)), java.sql.Timestamp.from(CLOSE.minusSeconds(7200)));
 		}
 		return id;
 	}

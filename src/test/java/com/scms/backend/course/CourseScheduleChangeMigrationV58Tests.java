@@ -45,7 +45,7 @@ class CourseScheduleChangeMigrationV58Tests {
 		upgraded.validate();
 
 		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(59);
+			Integer.class)).isEqualTo(60);
 		assertThat(db().queryForObject("select count(*) from information_schema.tables where table_schema='public'"
 			+ " and table_name='course_schedule_change_responses'", Long.class)).isOne();
 	}
