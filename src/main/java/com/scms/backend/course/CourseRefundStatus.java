@@ -1,0 +1,12 @@
+package com.scms.backend.course;
+
+enum CourseRefundStatus {
+	PENDING_REVIEW,
+	APPROVED,
+	DISBURSEMENT_RECORDED,
+	PENDING_VERIFICATION,
+	COMPLETED,
+	REJECTED,
+	FAILED,
+	RETURNED
+}

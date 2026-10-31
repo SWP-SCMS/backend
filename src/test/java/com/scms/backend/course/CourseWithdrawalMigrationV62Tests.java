@@ -25,7 +25,7 @@ class CourseWithdrawalMigrationV62Tests {
 		upgraded.validate();
 
 		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(62);
+			Integer.class)).isEqualTo(63);
 		assertThat(db().queryForObject("select to_regclass('course_withdrawal_requests') is not null", Boolean.class)).isTrue();
 		assertThat(db().queryForObject("select pg_get_constraintdef(oid) from pg_constraint "
 			+ "where conname='chk_course_refund_obligations_source'", String.class)).contains("MEMBER_WITHDRAWAL");

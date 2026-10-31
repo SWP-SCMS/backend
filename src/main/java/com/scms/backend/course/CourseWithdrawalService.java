@@ -115,9 +115,11 @@ class CourseWithdrawalService {
 			""", normalizedReason, managerId, Timestamp.from(now), snapshot.totalUnits(), snapshot.remainingUnits(),
 			snapshot.unusedAllocation(), refund, requestId);
 		db.update("""
-			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
-			values(?,?,?,'MEMBER_WITHDRAWAL',?) on conflict(course_enrollment_id,source_type) do nothing
-			""", UUID.randomUUID(), request.enrollmentId(), request.courseRunId(), refund);
+			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
+			 requester_account_id,request_reason)
+			values(?,?,?,'MEMBER_WITHDRAWAL',?,?,?) on conflict(course_enrollment_id,source_type) do nothing
+			""", UUID.randomUUID(), request.enrollmentId(), request.courseRunId(), refund,
+			request.requesterAccountId(), request.requestReason());
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_WITHDRAWAL_APPROVED",
 			"COURSE_WITHDRAWAL_REQUEST", requestId, normalizedReason, Map.of("status", "PENDING"),
 			Map.of("status", "APPROVED", "remainingUnits", snapshot.remainingUnits(),

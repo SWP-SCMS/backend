@@ -148,6 +148,8 @@ public class SecurityConfiguration {
 					.hasRole("MANAGER")
 				.requestMatchers("/manager/course-withdrawal-requests", "/manager/course-withdrawal-requests/**",
 					"/manager/members/*/course-enrollments/*/withdrawal-requests").hasRole("MANAGER")
+				.requestMatchers("/manager/course-refund-obligations", "/manager/course-refund-obligations/**")
+					.hasRole("MANAGER")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
