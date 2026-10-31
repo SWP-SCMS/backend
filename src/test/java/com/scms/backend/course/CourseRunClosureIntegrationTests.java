@@ -117,6 +117,20 @@ class CourseRunClosureIntegrationTests {
 	}
 
 	@Test
+	void pendingPaymentEnrollmentDoesNotCreateRefundObligationWhenManagerCancelsRun() {
+		CourseRunResponse run = openRun(2);
+		UUID paymentId = pendingPaymentEnrollment(run.id());
+		assertThat(db.queryForObject("select count(*) from course_enrollments enrollment join course_payments payment "
+			+ "on payment.id=enrollment.course_payment_id where enrollment.course_run_id=? and payment.id=? "
+			+ "and payment.status='PENDING'", Long.class, run.id(), paymentId)).isOne();
+
+		management.cancelRun(managerId, run.id(), new VersionRequest(run.version()));
+
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=? "
+			+ "and source_type='COURSE_RUN_CANCELLED'", Long.class, run.id())).isZero();
+	}
+
+	@Test
 	void managerCancellationUsesTheSameEffectsAndRepeatedCancellationAddsNoArtifacts() {
 		CourseRunResponse run = openRun(2);
 		paidEnrollment(run.id());
@@ -330,6 +344,32 @@ class CourseRunClosureIntegrationTests {
 			+ "total_units_snapshot,enrolled_at) values(?,?,?,?,?,?,?,?,1000000,10,?)", enrollmentId, orderId,
 			reservationId, paymentId, member.getId(), managerId, managerId, runId, java.sql.Timestamp.from(created));
 		return member.getId();
+	}
+
+	private UUID pendingPaymentEnrollment(UUID runId) {
+		Account member = account(AccountRole.MEMBER);
+		UUID orderId = UUID.randomUUID();
+		UUID reservationId = UUID.randomUUID();
+		UUID paymentId = UUID.randomUUID();
+		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase();
+		Instant created = CLOSE.minusSeconds(3600);
+		Instant expires = CLOSE.plusSeconds(3600);
+		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
+			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key,created_at,updated_at) "
+			+ "values(?,?,?,?,?,1000000,'VND','PENDING_PAYMENT',?,?,?)", orderId, reference, member.getId(), managerId,
+			runId, "pending-" + orderId, java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
+		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at,"
+			+ "created_at,updated_at) values(?,?,?,?,'HELD',?,?,?)", reservationId, orderId, member.getId(), runId,
+			java.sql.Timestamp.from(expires), java.sql.Timestamp.from(created), java.sql.Timestamp.from(created));
+		db.update("insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,"
+			+ "payment_reference,amount,currency_code,status,deadline_at,method) values(?,?,?,?,?, ?,1000000,'VND',"
+			+ "'PENDING',?,'CASH')", paymentId, orderId, reservationId, member.getId(), managerId, reference,
+			java.sql.Timestamp.from(expires));
+		db.update("insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,"
+			+ "member_account_id,actor_account_id,processed_by_account_id,course_run_id,amount_paid_vnd_snapshot,"
+			+ "total_units_snapshot,enrolled_at) values(?,?,?,?,?,?,?,?,1000000,10,?)", UUID.randomUUID(), orderId,
+			reservationId, paymentId, member.getId(), managerId, managerId, runId, java.sql.Timestamp.from(created));
+		return paymentId;
 	}
 
 	private UUID heldOrder(UUID runId) {

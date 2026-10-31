@@ -51,6 +51,7 @@ class CourseRunClosureService {
 		if (run == null || run.getStatus() != CourseRunStatus.OPEN_FOR_REGISTRATION
 				|| run.getRegistrationClosesAt().isAfter(now)) return false;
 
+		List<UUID> cancellationRecipients = affectedMembers(runId);
 		expiry.expireDueForRun(runId, now);
 		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=?",
 			Integer.class, runId);
@@ -69,7 +70,7 @@ class CourseRunClosureService {
 		else {
 			run.cancel();
 			runs.saveAndFlush(run);
-			cancelEffects(null, run, now);
+			cancelEffects(null, run, now, cancellationRecipients);
 			Map<String, Object> after = snapshot(run);
 			after.put("reasonCode", "MINIMUM_ENROLLMENT_NOT_MET");
 			after.put("activeEnrollmentCount", enrollmentCount);
@@ -80,6 +81,10 @@ class CourseRunClosureService {
 	}
 
 	void cancelEffects(UUID actorId, CourseRun run, Instant now) {
+		cancelEffects(actorId, run, now, null);
+	}
+
+	private void cancelEffects(UUID actorId, CourseRun run, Instant now, List<UUID> cancellationRecipients) {
 		UUID runId = run.getId();
 		List<UUID> orderIds = db.queryForList(
 			"select id from course_orders where course_run_id=? order by id", UUID.class, runId);
@@ -93,9 +98,7 @@ class CourseRunClosureService {
 			  on orders.id=payment.course_order_id where orders.course_run_id=? order by payment.id
 			""", UUID.class, runId))
 			db.queryForObject("select id from course_payments where id=? for update", UUID.class, paymentId);
-		List<UUID> affectedMembers = db.queryForList("select distinct member_account_id from course_orders "
-			+ "where course_run_id=? and status in ('PENDING_PAYMENT','PAID') order by member_account_id",
-			UUID.class, runId);
+		if (cancellationRecipients == null) cancellationRecipients = affectedMembers(runId);
 
 		db.update("update course_reservations set status='EXPIRED',updated_at=? "
 			+ "where course_run_id=? and status='HELD'", Timestamp.from(now), runId);
@@ -108,11 +111,13 @@ class CourseRunClosureService {
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
 			select gen_random_uuid(),enrollment.id,enrollment.course_run_id,'COURSE_RUN_CANCELLED',
 				enrollment.amount_paid_vnd_snapshot
-			from course_enrollments enrollment where enrollment.course_run_id=?
+			from course_enrollments enrollment
+			join course_payments payment on payment.id=enrollment.course_payment_id and payment.status='PAID'
+			where enrollment.course_run_id=?
 			on conflict (course_enrollment_id,source_type) do nothing
 			""", runId);
 		waitlists.cancelForRun(actorId, runId);
-		for (UUID memberId : affectedMembers) {
+		for (UUID memberId : cancellationRecipients) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":course_run_cancelled",
 				memberId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
 		}
@@ -120,6 +125,12 @@ class CourseRunClosureService {
 
 	void cancelEffects(UUID actorId, CourseRun run) {
 		cancelEffects(actorId, run, clock.instant());
+	}
+
+	private List<UUID> affectedMembers(UUID runId) {
+		return db.queryForList("select distinct member_account_id from course_orders "
+			+ "where course_run_id=? and status in ('PENDING_PAYMENT','PAID') order by member_account_id",
+			UUID.class, runId);
 	}
 
 	private void notifyEnrolledMembers(UUID runId, String type) {
