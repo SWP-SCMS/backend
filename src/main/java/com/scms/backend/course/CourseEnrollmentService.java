@@ -77,7 +77,8 @@ class CourseEnrollmentService {
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE'
+			where es.course_session_id=? and es.disposition='ENROLLED'
+			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 			order by a.full_name,a.id
 			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class),
 			rs.getString("member_code"), rs.getString("full_name"),
@@ -107,7 +108,8 @@ class CourseEnrollmentService {
 				es.attendance_status,es.attendance_recorded_at
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE' for update of es
+			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED'
+			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') for update of es
 			""", enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		CourseAttendanceStatus before = CourseAttendanceStatus.valueOf(text(row, "attendance_status"));
 		db.update("""

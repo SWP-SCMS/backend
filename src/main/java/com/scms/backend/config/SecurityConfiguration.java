@@ -146,6 +146,8 @@ public class SecurityConfiguration {
 					"/manager/course-runs", "/manager/course-runs/**").hasRole("MANAGER")
 				.requestMatchers("/manager/course-transfer-requests", "/manager/course-transfer-requests/**")
 					.hasRole("MANAGER")
+				.requestMatchers("/manager/course-withdrawal-requests", "/manager/course-withdrawal-requests/**",
+					"/manager/members/*/course-enrollments/*/withdrawal-requests").hasRole("MANAGER")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
@@ -201,6 +203,10 @@ public class SecurityConfiguration {
 				.requestMatchers("/members/me/course-transfer-offers", "/members/me/course-transfer-offers/**")
 					.hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/course-enrollments").hasRole("MEMBER")
+				.requestMatchers("/members/me/course-withdrawal-requests", "/members/me/course-withdrawal-requests/**",
+					"/members/me/course-enrollments/*/withdrawal-requests").hasRole("MEMBER")
+				.requestMatchers("/reception/members/*/course-enrollments/*/withdrawal-requests")
+					.hasRole("RECEPTIONIST")
 				.requestMatchers("/course-runs/*/waitlist", "/course-waitlists/*/accept",
 					"/members/me/course-waitlists").hasRole("MEMBER")
 				.requestMatchers("/coach/course-sessions/*/roster", "/coach/course-sessions/*/roster/**")

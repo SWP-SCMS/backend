@@ -201,7 +201,7 @@ public class CourseWaitlistService {
 
 	private long usedSeats(UUID runId, Instant now) {
 		return db.queryForObject("""
-			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE')
+			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))
 			 + (select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?)
 			 + (select count(*) from course_waitlists where course_run_id=? and status='INVITED' and invitation_expires_at>?)
 			 + (select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?)
@@ -210,7 +210,7 @@ public class CourseWaitlistService {
 
 	private boolean hasEnrollmentOrHold(UUID memberId, UUID runId, Instant now) {
 		return Boolean.TRUE.equals(db.queryForObject("""
-			select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status='ACTIVE')
+			select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))
 			 or exists(select 1 from course_reservations where member_account_id=? and course_run_id=?
 				and status='HELD' and expires_at>?)
 			 or exists(select 1 from course_waitlists where member_account_id=? and course_run_id=? and status in ('WAITING','INVITED'))

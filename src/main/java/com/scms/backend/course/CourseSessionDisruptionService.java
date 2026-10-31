@@ -165,7 +165,7 @@ class CourseSessionDisruptionService {
 	private List<UUID> enrolledMembers(UUID sessionId) {
 		return db.query("select e.member_account_id from course_enrollment_sessions es "
 			+ "join course_enrollments e on e.id=es.course_enrollment_id "
-			+ "where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE' order by e.member_account_id",
+			+ "where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by e.member_account_id",
 			(row, index) -> row.getObject(1, UUID.class), sessionId);
 	}
 

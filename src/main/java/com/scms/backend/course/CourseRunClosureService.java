@@ -53,7 +53,7 @@ class CourseRunClosureService {
 
 		List<UUID> cancellationRecipients = affectedMembers(runId);
 		expiry.expireDueForRun(runId, now);
-		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE'",
+		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')",
 			Integer.class, runId);
 		Map<String, Object> before = snapshot(run);
 		if (enrollmentCount >= run.getMinimumEnrollment()) {
@@ -120,7 +120,7 @@ class CourseRunClosureService {
 				enrollment.amount_paid_vnd_snapshot
 			from course_enrollments enrollment
 			join course_payments payment on payment.id=enrollment.course_payment_id and payment.status='PAID'
-			where enrollment.course_run_id=? and enrollment.lifecycle_status='ACTIVE'
+			where enrollment.course_run_id=? and enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 			on conflict (course_enrollment_id,source_type) do nothing
 			""", runId);
 		waitlists.cancelForRun(actorId, runId);
@@ -142,7 +142,7 @@ class CourseRunClosureService {
 
 	private void notifyEnrolledMembers(UUID runId, String type) {
 		for (UUID memberId : db.queryForList("select member_account_id from course_enrollments "
-				+ "where course_run_id=? and lifecycle_status='ACTIVE' order by id", UUID.class, runId)) {
+				+ "where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by id", UUID.class, runId)) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":" + type.toLowerCase(),
 				memberId, type, "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
 		}
