@@ -453,6 +453,9 @@ class CourseRunClosureIntegrationTests {
 			if (waiting != null && waiting == 1) return;
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("Timed out waiting for CourseRun lock serialization");
+		var activity = db.queryForList("select format('pid=%s state=%s wait_event_type=%s wait_event=%s query=%s blocking_pids=%s', "
+			+ "pid,state,wait_event_type,wait_event,left(query,500),pg_blocking_pids(pid)) "
+			+ "from pg_stat_activity where pid in (?,?) order by pid", String.class, waiterPid, blockerPid);
+		throw new AssertionError("Timed out waiting for CourseRun lock serialization; " + activity);
 	}
 }
