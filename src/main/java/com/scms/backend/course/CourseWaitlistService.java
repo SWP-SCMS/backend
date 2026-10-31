@@ -90,13 +90,11 @@ public class CourseWaitlistService {
 
 	@Transactional(noRollbackFor = CourseWaitlistException.class)
 	CourseOrderService.CreateResult accept(UUID memberId, UUID waitlistId, String idempotencyKey) {
-		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE))
-			throw new InvalidAuthenticatedAccountException();
+		lockActiveMember(memberId);
 		UUID runId = db.query("select course_run_id from course_waitlists where id=? and member_account_id=?",
 			(rs, row) -> rs.getObject(1, UUID.class), waitlistId, memberId).stream().findFirst()
 			.orElseThrow(CourseWaitlistException::notFound);
 		runs.findByIdForUpdate(runId).orElseThrow(CourseWaitlistException::notFound);
-		lockActiveMember(memberId);
 		Instant now = clock.instant();
 		var row = db.queryForMap("select status,invitation_expires_at,accepted_order_id from course_waitlists where id=? for update", waitlistId);
 		if ("ACCEPTED".equals(row.get("status"))) {
@@ -127,9 +125,9 @@ public class CourseWaitlistService {
 			return db.update("update course_waitlists set status='EXPIRED',updated_at=? where course_run_id=? and status='INVITED' and invitation_expires_at<=?",
 				Timestamp.from(now), runId, Timestamp.from(now)) > 0;
 		}
+		var member = accounts.findByIdForUpdate(candidateMemberId).orElse(null);
 		CourseRun run = runs.findByIdForUpdate(runId).orElse(null);
 		if (run == null) return false;
-		var member = accounts.findByIdForUpdate(candidateMemberId).orElse(null);
 		int expired = db.update("update course_waitlists set status='EXPIRED',updated_at=? where course_run_id=? and status='INVITED' and invitation_expires_at<=?",
 			Timestamp.from(now), runId, Timestamp.from(now));
 		if (run.getStatus() != CourseRunStatus.OPEN_FOR_REGISTRATION || !now.isBefore(run.getRegistrationClosesAt())) {
