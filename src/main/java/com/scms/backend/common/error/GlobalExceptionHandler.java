@@ -13,6 +13,7 @@ import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditHistoryValidationException;
 import com.scms.backend.course.CourseTransferException;
 import com.scms.backend.course.CourseWithdrawalException;
+import com.scms.backend.course.CourseRefundException;
 import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
@@ -417,6 +418,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 	ProblemDetail handleCourseWithdrawal(CourseWithdrawalException exception) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
 		problem.setTitle("Course withdrawal request failed");
+		problem.setProperty("code", exception.code());
+		return problem;
+	}
+
+	@ExceptionHandler(CourseRefundException.class)
+	ProblemDetail handleCourseRefund(CourseRefundException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
+		problem.setTitle("Course refund request failed");
 		problem.setProperty("code", exception.code());
 		return problem;
 	}

@@ -271,9 +271,12 @@ public class CourseTransferService {
 		db.update("update course_transfer_offers set status='COMPLETED',completed_at=? where id=?", Timestamp.from(now), offer.id());
 		db.update("update course_transfer_requests set status='COMPLETED',completed_at=? where id=?", Timestamp.from(now), offer.requestId());
 		if (offer.creditVnd().compareTo(offer.targetTuitionVnd()) > 0) db.update("""
-			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
-			values(?,?,?,'TRANSFER_CREDIT_EXCESS',?) on conflict(course_enrollment_id,source_type) do nothing
-			""", UUID.randomUUID(), offer.sourceEnrollmentId(), offer.sourceRunId(), offer.creditVnd().subtract(offer.targetTuitionVnd()));
+			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
+			 requester_account_id,request_reason)
+			values(?,?,?,'TRANSFER_CREDIT_EXCESS',?,?,'Unused Course transfer credit refund')
+			on conflict(course_enrollment_id,source_type) do nothing
+			""", UUID.randomUUID(), offer.sourceEnrollmentId(), offer.sourceRunId(),
+			offer.creditVnd().subtract(offer.targetTuitionVnd()), actorId);
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_TRANSFER_COMPLETED", "COURSE_TRANSFER_OFFER",
 			offer.id(), Map.of("sourceEnrollmentId", offer.sourceEnrollmentId().toString(), "targetEnrollmentId", enrollmentId.toString(),
 				"creditVnd", appliedCredit.toString(), "cashPaidVnd", cashPaid.toString())));

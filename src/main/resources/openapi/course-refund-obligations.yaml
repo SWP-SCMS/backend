@@ -1,0 +1,49 @@
+openapi: 3.1.0
+info: {title: SCMS Course Refund Obligation API, version: v1}
+security: [{bearerAuth: []}]
+paths:
+  /manager/course-refund-obligations:
+    get:
+      operationId: listCourseRefundObligations
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/Status'}}
+      responses: {'200': {description: Paginated refund review queue}, '400': {description: Invalid filter}}
+  /manager/course-refund-obligations/{obligationId}:
+    get:
+      operationId: getCourseRefundObligation
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      responses: {'200': {description: Refund obligation detail}, '404': {description: Missing obligation}}
+  /manager/course-refund-obligations/{obligationId}/approve:
+    post:
+      operationId: approveCourseRefundObligation
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses: {'200': {description: Approved obligation}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-refund-obligations/{obligationId}/reject:
+    post:
+      operationId: rejectCourseRefundObligation
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses: {'200': {description: Rejected obligation}, '409': {$ref: '#/components/responses/Conflict'}}
+components:
+  parameters:
+    ObligationId: {name: obligationId, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    Status:
+      type: string
+      enum: [PENDING_REVIEW, APPROVED, DISBURSEMENT_RECORDED, PENDING_VERIFICATION, COMPLETED, REJECTED, FAILED, RETURNED]
+    Decision:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+  requestBodies:
+    Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Decision'}}}}
+  responses:
+    Conflict: {description: Stale version, invalid transition, conflicting replay, or refund cap exceeded}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

@@ -115,14 +115,15 @@ class CourseRunClosureService {
 		db.update("update course_transfer_offers set status='CANCELLED' where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT')",
 			runId);
 		db.update("""
-			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
+			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
+			 requester_account_id,request_reason)
 			select gen_random_uuid(),enrollment.id,enrollment.course_run_id,'COURSE_RUN_CANCELLED',
-				enrollment.amount_paid_vnd_snapshot
+				enrollment.amount_paid_vnd_snapshot,?,'Course Run cancellation refund'
 			from course_enrollments enrollment
 			join course_payments payment on payment.id=enrollment.course_payment_id and payment.status='PAID'
 			where enrollment.course_run_id=? and enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 			on conflict (course_enrollment_id,source_type) do nothing
-			""", runId);
+			""", actorId, runId);
 		waitlists.cancelForRun(actorId, runId);
 		for (UUID memberId : cancellationRecipients) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":course_run_cancelled",
