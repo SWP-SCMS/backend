@@ -108,9 +108,7 @@ class CourseRunClosureService {
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
 			select gen_random_uuid(),enrollment.id,enrollment.course_run_id,'COURSE_RUN_CANCELLED',
 				enrollment.amount_paid_vnd_snapshot
-			from course_enrollments enrollment
-			join course_payments payment on payment.id=enrollment.course_payment_id and payment.status='PAID'
-			where enrollment.course_run_id=?
+			from course_enrollments enrollment where enrollment.course_run_id=?
 			on conflict (course_enrollment_id,source_type) do nothing
 			""", runId);
 		waitlists.cancelForRun(actorId, runId);

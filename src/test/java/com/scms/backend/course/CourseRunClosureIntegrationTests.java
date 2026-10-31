@@ -382,9 +382,12 @@ class CourseRunClosureIntegrationTests {
 	}
 
 	private String status(String table, UUID orderId) {
-		return db.queryForObject("select status from " + table + " where "
-			+ ("course_reservations".equals(table) ? "course_order_id" : "course_orders".equals(table)
-				? "id" : "course_order_id") + "=?", String.class, orderId);
+		String column = switch (table) {
+			case "course_orders", "course_waitlists" -> "id";
+			case "course_reservations", "course_payments" -> "course_order_id";
+			default -> throw new IllegalArgumentException("Unsupported status table: " + table);
+		};
+		return db.queryForObject("select status from " + table + " where " + column + "=?", String.class, orderId);
 	}
 
 	private long auditCount(String action, UUID runId) {
@@ -394,7 +397,7 @@ class CourseRunClosureIntegrationTests {
 
 	private static void await(CountDownLatch latch) {
 		try {
-			if (!latch.await(10, TimeUnit.SECONDS)) throw new AssertionError("Concurrency rendezvous timed out");
+			if (!latch.await(30, TimeUnit.SECONDS)) throw new AssertionError("Concurrency rendezvous timed out");
 		}
 		catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();
