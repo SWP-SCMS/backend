@@ -150,6 +150,7 @@ public class SecurityConfiguration {
 					"/manager/members/*/course-enrollments/*/withdrawal-requests").hasRole("MANAGER")
 				.requestMatchers("/manager/course-refund-obligations", "/manager/course-refund-obligations/**")
 					.hasRole("MANAGER")
+				.requestMatchers("/reception/course-refund-obligations/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
@@ -207,6 +208,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/members/me/course-enrollments").hasRole("MEMBER")
 				.requestMatchers("/members/me/course-withdrawal-requests", "/members/me/course-withdrawal-requests/**",
 					"/members/me/course-enrollments/*/withdrawal-requests").hasRole("MEMBER")
+				.requestMatchers("/members/me/course-refund-obligations", "/members/me/course-refund-obligations/**")
+					.hasRole("MEMBER")
 				.requestMatchers("/reception/members/*/course-enrollments/*/withdrawal-requests")
 					.hasRole("RECEPTIONIST")
 				.requestMatchers("/course-runs/*/waitlist", "/course-waitlists/*/accept",

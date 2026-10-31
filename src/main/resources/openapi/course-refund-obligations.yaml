@@ -9,12 +9,12 @@ paths:
         - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
         - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
         - {name: status, in: query, schema: {$ref: '#/components/schemas/Status'}}
-      responses: {'200': {description: Paginated refund review queue}, '400': {description: Invalid filter}}
+      responses: {'200': {description: Paginated refund workflow queue}, '400': {description: Invalid filter}}
   /manager/course-refund-obligations/{obligationId}:
     get:
       operationId: getCourseRefundObligation
       parameters: [{$ref: '#/components/parameters/ObligationId'}]
-      responses: {'200': {description: Refund obligation detail}, '404': {description: Missing obligation}}
+      responses: {'200': {description: Internal refund obligation detail}, '404': {description: Missing obligation}}
   /manager/course-refund-obligations/{obligationId}/approve:
     post:
       operationId: approveCourseRefundObligation
@@ -27,9 +27,50 @@ paths:
       parameters: [{$ref: '#/components/parameters/ObligationId'}]
       requestBody: {$ref: '#/components/requestBodies/Decision'}
       responses: {'200': {description: Rejected obligation}, '409': {$ref: '#/components/responses/Conflict'}}
+  /reception/course-refund-obligations/{obligationId}/disburse:
+    post:
+      operationId: recordCourseRefundDisbursement
+      parameters:
+        - {$ref: '#/components/parameters/ObligationId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody: {$ref: '#/components/requestBodies/Disbursement'}
+      responses: {'200': {description: Disbursement recorded or replayed}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-refund-obligations/{obligationId}/verify:
+    post:
+      operationId: verifyCourseRefundDisbursement
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      requestBody: {$ref: '#/components/requestBodies/Verification'}
+      responses: {'200': {description: Final verification completed}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-refund-obligations/{obligationId}/fail:
+    post:
+      operationId: failCourseRefundObligation
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      requestBody: {$ref: '#/components/requestBodies/Terminal'}
+      responses: {'200': {description: Obligation marked failed}, '409': {$ref: '#/components/responses/Conflict'}}
+  /manager/course-refund-obligations/{obligationId}/return:
+    post:
+      operationId: returnCourseRefundObligation
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      requestBody: {$ref: '#/components/requestBodies/Terminal'}
+      responses: {'200': {description: Disbursement marked returned}, '409': {$ref: '#/components/responses/Conflict'}}
+  /members/me/course-refund-obligations:
+    get:
+      operationId: listMyCourseRefundObligations
+      description: Returns only the authenticated Member's financial history and excludes evidence and staff identities.
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses: {'200': {description: Paginated owned refund history}}
+  /members/me/course-refund-obligations/{obligationId}:
+    get:
+      operationId: getMyCourseRefundObligation
+      description: Returns a redacted obligation only when it belongs to the authenticated Member.
+      parameters: [{$ref: '#/components/parameters/ObligationId'}]
+      responses: {'200': {description: Redacted owned refund detail}, '404': {description: Missing or not owned}}
 components:
   parameters:
     ObligationId: {name: obligationId, in: path, required: true, schema: {type: string, format: uuid}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
   schemas:
     Status:
       type: string
@@ -41,9 +82,39 @@ components:
       properties:
         expectedVersion: {type: integer, format: int64, minimum: 0}
         reason: {type: string, minLength: 1, maxLength: 1000}
+    Disbursement:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, amountVnd, method, reference, evidenceReference]
+      properties:
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        amountVnd: {type: integer, minimum: 0, maximum: 9999999999999999999}
+        method: {type: string, enum: [BANK_TRANSFER, CASH]}
+        reference: {type: string, minLength: 1, maxLength: 200}
+        evidenceReference: {type: string, minLength: 1, maxLength: 500}
+    Verification:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, amountVnd, disbursementReference, evidenceReference, reason]
+      properties:
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        amountVnd: {type: integer, minimum: 0, maximum: 9999999999999999999}
+        disbursementReference: {type: string, minLength: 1, maxLength: 200}
+        evidenceReference: {type: string, minLength: 1, maxLength: 500}
+        reason: {type: string, minLength: 1, maxLength: 1000}
+    Terminal:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 1000}
   requestBodies:
     Decision: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Decision'}}}}
+    Disbursement: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Disbursement'}}}}
+    Verification: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Verification'}}}}
+    Terminal: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Terminal'}}}}
   responses:
-    Conflict: {description: Stale version, invalid transition, conflicting replay, or refund cap exceeded}
+    Conflict: {description: Stale version, invalid transition, idempotency conflict, duplicate disbursement, or evidence mismatch}
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}

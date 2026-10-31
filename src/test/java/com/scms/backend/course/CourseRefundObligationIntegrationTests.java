@@ -186,6 +186,134 @@ class CourseRefundObligationIntegrationTests {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	void receptionistRecordsExactlyOneDisbursementAndManagerVerifiesMatchingEvidence() {
+		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.MEMBER_WITHDRAWAL,
+			BigInteger.valueOf(250_000), memberId, "Withdrawal refund");
+		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
+		var input = new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(250_000),
+			"BANK_TRANSFER", "BANK-REF-1", "evidence:receipt-1");
+
+		var recorded = refunds.recordDisbursement(receptionistId, obligationId, "disburse-once", input);
+		var replay = refunds.recordDisbursement(receptionistId, obligationId, "disburse-once", input);
+		assertThat(recorded.status()).isEqualTo("DISBURSEMENT_RECORDED");
+		assertThat(replay.version()).isEqualTo(recorded.version());
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_REFUND_DISBURSED' "
+			+ "and target_id=?", Long.class, obligationId)).isOne();
+
+		var verification = new CourseRefundApiModels.RefundVerification(recorded.version(),
+			BigInteger.valueOf(250_000), "BANK-REF-1", "evidence:receipt-1", "Evidence matched");
+		var completed = refunds.verify(managerId, obligationId, verification);
+		assertThat(completed.status()).isEqualTo("COMPLETED");
+		assertThat(completed.verifiedAmountVnd()).isEqualTo(BigInteger.valueOf(250_000));
+		assertThat(refunds.verify(managerId, obligationId, verification).version()).isEqualTo(completed.version());
+		assertThatThrownBy(() -> refunds.recordDisbursement(receptionistId, obligationId, "second-disbursement", input))
+			.isInstanceOfSatisfying(CourseRefundException.class,
+				error -> assertThat(error.code()).isEqualTo("COURSE_REFUND_ALREADY_DISBURSED"));
+	}
+
+	@Test
+	void disbursementRejectsConflictingReplayAndVerificationMismatch() {
+		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.PAYMENT_EXCEPTION,
+			BigInteger.valueOf(100_000), receptionistId, "Payment exception");
+		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
+		var recorded = refunds.recordDisbursement(receptionistId, obligationId, "retry-key",
+			new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(100_000),
+				"CASH", "CASH-1", "evidence:voucher-1"));
+
+		assertThatThrownBy(() -> refunds.recordDisbursement(receptionistId, obligationId, "retry-key",
+			new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(100_000),
+				"CASH", "CASH-2", "evidence:voucher-1")))
+			.isInstanceOfSatisfying(CourseRefundException.class,
+				error -> assertThat(error.code()).isEqualTo("COURSE_REFUND_IDEMPOTENCY_CONFLICT"));
+		assertThatThrownBy(() -> refunds.verify(managerId, obligationId,
+			new CourseRefundApiModels.RefundVerification(recorded.version(), BigInteger.valueOf(99_999),
+				"CASH-1", "evidence:voucher-1", "Mismatch")))
+			.isInstanceOfSatisfying(CourseRefundException.class,
+				error -> assertThat(error.code()).isEqualTo("COURSE_REFUND_EVIDENCE_MISMATCH"));
+		assertThat(refunds.detail(managerId, obligationId).status()).isEqualTo("DISBURSEMENT_RECORDED");
+	}
+
+	@Test
+	void memberHistoryIsOwnedAndRedactedWhileRolesRemainSeparated() throws Exception {
+		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.MATERIAL_CHANGE,
+			BigInteger.valueOf(10_000), managerId, "Material change");
+		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
+		refunds.recordDisbursement(receptionistId, obligationId, "member-visible",
+			new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(10_000),
+				"CASH", "CASH-REDACT", "private:evidence"));
+
+		mockMvc.perform(get("/api/v1/members/me/course-refund-obligations/{id}", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.evidenceReference").doesNotExist())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.disbursedByAccountId").doesNotExist());
+		mockMvc.perform(get("/api/v1/members/me/course-refund-obligations/{id}", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(account(AccountRole.MEMBER))))
+			.andExpect(status().isNotFound());
+		mockMvc.perform(post("/api/v1/reception/course-refund-obligations/{id}/disburse", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId))
+			.header("Idempotency-Key", "forbidden").contentType("application/json")
+			.content("{\"expectedVersion\":2,\"amountVnd\":10000,\"method\":\"CASH\",\"reference\":\"X\",\"evidenceReference\":\"Y\"}"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/api/v1/members/me/course-refund-obligations/{id}", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(coachId)))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/api/v1/reception/course-refund-obligations/{id}/disburse", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(managerId))
+			.header("Idempotency-Key", "manager-forbidden").contentType("application/json").content("{}"))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/api/v1/manager/course-refund-obligations/{id}/verify", obligationId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))
+			.contentType("application/json").content("{}"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	void twoReceptionistsCompetingToDisburseCommitExactlyOneRecord() throws Exception {
+		UUID otherReceptionist = account(AccountRole.RECEPTIONIST);
+		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.COURSE_RUN_CANCELLED,
+			BigInteger.valueOf(75_000), managerId, "Cancelled run");
+		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
+		var input = new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(75_000),
+			"BANK_TRANSFER", "COMPETE-REF", "evidence:compete");
+		CountDownLatch start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> decide(start,
+				() -> refunds.recordDisbursement(receptionistId, obligationId, "compete-one", input)));
+			var second = executor.submit(() -> decide(start,
+				() -> refunds.recordDisbursement(otherReceptionist, obligationId, "compete-two", input)));
+			start.countDown();
+			assertThat(java.util.stream.Stream.of(first.get(), second.get())
+				.filter(CourseRefundApiModels.RefundObligation.class::isInstance).count()).isOne();
+		}
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_REFUND_DISBURSED' "
+			+ "and target_id=?", Long.class, obligationId)).isOne();
+	}
+
+	@Test
+	void managerCanFailApprovedObligationOrMarkRecordedDisbursementReturned() {
+		UUID failedId = writer.create(enrollmentId, runId, CourseRefundSource.UNRESOLVED_SESSIONS,
+			BigInteger.valueOf(20_000), managerId, "Unresolved sessions");
+		var failedApproved = refunds.approve(managerId, failedId, 0L, "Approved");
+		var failed = refunds.fail(managerId, failedId,
+			new CourseRefundApiModels.RefundTerminal(failedApproved.version(), "Beneficiary details invalid"));
+		assertThat(failed.status()).isEqualTo("FAILED");
+
+		UUID returnedId = writer.create(enrollmentId, runId, CourseRefundSource.TRANSFER_CREDIT_EXCESS,
+			BigInteger.valueOf(30_000), managerId, "Transfer excess");
+		var returnedApproved = refunds.approve(managerId, returnedId, 0L, "Approved");
+		var recorded = refunds.recordDisbursement(receptionistId, returnedId, "returned-payment",
+			new CourseRefundApiModels.RefundDisbursement(returnedApproved.version(), BigInteger.valueOf(30_000),
+				"BANK_TRANSFER", "RETURN-REF", "evidence:return"));
+		var returned = refunds.returned(managerId, returnedId,
+			new CourseRefundApiModels.RefundTerminal(recorded.version(), "Bank returned transfer"));
+		assertThat(returned.status()).isEqualTo("RETURNED");
+		assertThat(refunds.returned(managerId, returnedId,
+			new CourseRefundApiModels.RefundTerminal(recorded.version(), "Bank returned transfer")).version())
+			.isEqualTo(returned.version());
+	}
+
 	private Object decide(CountDownLatch start, java.util.concurrent.Callable<Object> decision) {
 		try { start.await(); return decision.call(); }
 		catch (Exception exception) { return exception; }
