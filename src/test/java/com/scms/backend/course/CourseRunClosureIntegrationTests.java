@@ -449,13 +449,14 @@ class CourseRunClosureIntegrationTests {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		do {
 			Long waiting = db.queryForObject("select count(*) from pg_stat_activity where pid=? "
-				+ "and wait_event_type='Lock' and ?=any(pg_blocking_pids(pid))", Long.class, waiterPid, blockerPid);
+				+ "and wait_event_type='Lock' and query ilike '%course_runs%' "
+				+ "and cardinality(pg_blocking_pids(pid))>0", Long.class, waiterPid);
 			if (waiting != null && waiting == 1) return;
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
 		var activity = db.queryForList("select format('pid=%s state=%s wait_event_type=%s wait_event=%s query=%s blocking_pids=%s', "
 			+ "pid,state,wait_event_type,wait_event,left(query,500),pg_blocking_pids(pid)) "
 			+ "from pg_stat_activity where pid in (?,?) order by pid", String.class, waiterPid, blockerPid);
-		throw new AssertionError("Timed out waiting for CourseRun lock serialization; " + activity);
+		throw new AssertionError("Timed out waiting for a CourseRun row lock; " + activity);
 	}
 }
