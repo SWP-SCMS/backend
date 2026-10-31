@@ -508,7 +508,13 @@ class GeneratedOpenApiTests {
 		"GET /manager/members/{memberId}/coach-assignment",
 		"GET /manager/members/{memberId}/coach-assignment/impact",
 		"GET /manager/members/{memberId}/coach-assignments",
-		"PATCH /manager/members/{memberId}/coach-assignment/end"
+		"PATCH /manager/members/{memberId}/coach-assignment/end",
+		"GET /manager/course-transfer-requests",
+		"GET /manager/course-transfer-requests/{requestId}/targets",
+		"POST /manager/course-transfer-requests/{requestId}/approve",
+		"POST /manager/course-transfer-requests/{requestId}/reject",
+		"GET /members/me/course-transfer-offers",
+		"POST /members/me/course-transfer-offers/{offerId}/accept"
 	);
 
 	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(

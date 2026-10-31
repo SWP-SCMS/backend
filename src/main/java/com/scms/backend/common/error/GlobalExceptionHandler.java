@@ -11,6 +11,7 @@ import com.scms.backend.auth.CurrentPasswordIncorrectException;
 import com.scms.backend.auth.ChangePasswordValidationException;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.audit.AuditHistoryValidationException;
+import com.scms.backend.course.CourseTransferException;
 import com.scms.backend.auth.InvalidCredentialsException;
 import com.scms.backend.auth.InvalidRefreshTokenException;
 import com.scms.backend.auth.NewPasswordSameAsCurrentException;
@@ -400,6 +401,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
 		problem.setTitle("Course waitlist request failed");
 		problem.setProperty("code", exception.getCode());
+		return problem;
+	}
+
+	@ExceptionHandler(CourseTransferException.class)
+	ProblemDetail handleCourseTransfer(CourseTransferException exception) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
+		problem.setTitle("Course transfer request failed");
+		problem.setProperty("code", exception.code());
 		return problem;
 	}
 

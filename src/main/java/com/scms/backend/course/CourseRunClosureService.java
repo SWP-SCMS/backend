@@ -53,7 +53,7 @@ class CourseRunClosureService {
 
 		List<UUID> cancellationRecipients = affectedMembers(runId);
 		expiry.expireDueForRun(runId, now);
-		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=?",
+		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=? and lifecycle_status='ACTIVE'",
 			Integer.class, runId);
 		Map<String, Object> before = snapshot(run);
 		if (enrollmentCount >= run.getMinimumEnrollment()) {
@@ -107,13 +107,20 @@ class CourseRunClosureService {
 		db.update("update course_payments set status='FAILED',updated_at=? "
 			+ "where course_order_id in (select id from course_orders where course_run_id=?) and status='PENDING'",
 			Timestamp.from(now), runId);
+		db.update("update course_transfer_holds set status='RELEASED',released_at=? where target_run_id=? and status='HELD'",
+			Timestamp.from(now), runId);
+		db.update("update course_transfer_requests set status='EXPIRED' where status='OFFERED' and id in "
+			+ "(select transfer_request_id from course_transfer_offers where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT'))",
+			runId);
+		db.update("update course_transfer_offers set status='CANCELLED' where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT')",
+			runId);
 		db.update("""
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd)
 			select gen_random_uuid(),enrollment.id,enrollment.course_run_id,'COURSE_RUN_CANCELLED',
 				enrollment.amount_paid_vnd_snapshot
 			from course_enrollments enrollment
 			join course_payments payment on payment.id=enrollment.course_payment_id and payment.status='PAID'
-			where enrollment.course_run_id=?
+			where enrollment.course_run_id=? and enrollment.lifecycle_status='ACTIVE'
 			on conflict (course_enrollment_id,source_type) do nothing
 			""", runId);
 		waitlists.cancelForRun(actorId, runId);
@@ -135,7 +142,7 @@ class CourseRunClosureService {
 
 	private void notifyEnrolledMembers(UUID runId, String type) {
 		for (UUID memberId : db.queryForList("select member_account_id from course_enrollments "
-				+ "where course_run_id=? order by id", UUID.class, runId)) {
+				+ "where course_run_id=? and lifecycle_status='ACTIVE' order by id", UUID.class, runId)) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":" + type.toLowerCase(),
 				memberId, type, "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
 		}

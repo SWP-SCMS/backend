@@ -144,6 +144,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/rooms", "/manager/rooms/**").hasRole("MANAGER")
 				.requestMatchers("/manager/courses", "/manager/courses/**",
 					"/manager/course-runs", "/manager/course-runs/**").hasRole("MANAGER")
+				.requestMatchers("/manager/course-transfer-requests", "/manager/course-transfer-requests/**")
+					.hasRole("MANAGER")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
@@ -196,6 +198,8 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.POST, "/reception/members/*/membership-orders/*/payments/sepay")
 					.hasRole("RECEPTIONIST")
 				.requestMatchers("/members/me/course-orders/**").hasRole("MEMBER")
+				.requestMatchers("/members/me/course-transfer-offers", "/members/me/course-transfer-offers/**")
+					.hasRole("MEMBER")
 				.requestMatchers(HttpMethod.GET, "/members/me/course-enrollments").hasRole("MEMBER")
 				.requestMatchers("/course-runs/*/waitlist", "/course-waitlists/*/accept",
 					"/members/me/course-waitlists").hasRole("MEMBER")

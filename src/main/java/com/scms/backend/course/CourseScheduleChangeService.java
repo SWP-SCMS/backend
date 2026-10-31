@@ -14,6 +14,7 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.notification.NotificationWriter;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,7 @@ class CourseScheduleChangeService {
 	private final NotificationWriter notifications;
 	private final AccountRepository accounts;
 	private final Clock clock;
+	@Autowired(required = false) private CourseTransferService transfers;
 
 	CourseScheduleChangeService(JdbcTemplate db, NotificationWriter notifications, AccountRepository accounts, Clock clock) {
 		this.db = db; this.notifications = notifications; this.accounts = accounts; this.clock = clock;
@@ -39,7 +41,7 @@ class CourseScheduleChangeService {
 		List<Map<String, Object>> members = db.queryForList("""
 			select es.id enrollment_session_id, e.member_account_id
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
-			where es.course_session_id=? and es.disposition='ENROLLED'
+			where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE'
 			order by es.id
 			""", session.getId());
 		if (material && !members.isEmpty() && !deadline.isAfter(sentAt)) throw CourseException.responseDeadline();
@@ -102,7 +104,12 @@ class CourseScheduleChangeService {
 		if (rows.isEmpty()) throw CourseException.responseNotFound();
 		ScheduleChange current = rows.getFirst();
 		if (current.response() != null) {
-			if (current.response().equals(choice)) return current;
+			if (current.response().equals(choice)) {
+				if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
+					transfers.requestFromScheduleChange(memberId, responseId,
+						current.respondedAt() == null ? clock.instant() : current.respondedAt());
+				return current;
+			}
 			throw CourseException.responseConflict();
 		}
 		Instant now = clock.instant();
@@ -110,6 +117,8 @@ class CourseScheduleChangeService {
 			throw CourseException.responseClosed();
 		db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?",
 			choice, Timestamp.from(now), responseId);
+		if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
+			transfers.requestFromScheduleChange(memberId, responseId, now);
 		return new ScheduleChange(current.id(), current.enrollmentSessionId(), current.oldStartAt(), current.oldEndAt(),
 			current.newStartAt(), current.newEndAt(), current.notificationSentAt(), current.responseDeadline(),
 			"RESPONDED", choice, now);
