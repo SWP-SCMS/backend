@@ -39,7 +39,7 @@ class CourseCoachSessionService {
 				and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')) roster_count
 		""";
 	private static final String GROUP_BY = """
-		group by s.id,s.unit_number,s.start_at,s.end_at,c.id,c.code,c.name,
+		 group by s.id,s.unit_number,s.start_at,s.end_at,c.id,c.code,c.name,
 			cr.id,cr.run_code,cr.status,coach.id,coach.full_name,room.id,room.name,s.status
 		""";
 
