@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import java.time.Instant;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,4 +24,15 @@ public final class CourseEnrollmentApiModels {
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record AttendanceUpdate(CourseAttendanceStatus status) {}
+
+	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+	public record ReceptionCourseEnrollment(UUID memberId, String memberCode, String memberName, UUID courseId,
+		String courseCode, String courseName, UUID courseRunId, String runCode, String courseRunStatus,
+		UUID enrollmentId, String enrollmentStatus, Instant enrolledAt, int totalUnits, int remainingUnits,
+		boolean withdrawalEligible, CourseWithdrawalEligibilityReason withdrawalReason,
+		@Schema(description = "Null when withdrawalEligible is false.", nullable = true) BigInteger estimatedRefundAmount) {}
+
+	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+	public record ReceptionCourseEnrollmentPage(List<ReceptionCourseEnrollment> content, int page, int size,
+		long totalElements, int totalPages) {}
 }

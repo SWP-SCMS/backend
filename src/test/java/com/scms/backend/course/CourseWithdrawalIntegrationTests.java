@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 import java.math.BigInteger;
 import java.sql.Timestamp;
@@ -170,6 +171,42 @@ class CourseWithdrawalIntegrationTests {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId))).andExpect(status().isForbidden());
 		mockMvc.perform(get("/api/v1/members/me/course-withdrawal-requests").contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(managerId))).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void receptionistEnrollmentDiscoveryIsOwnedAndNotAvailableToOtherRoles() throws Exception {
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.content[0].memberId").value(memberId.toString()))
+			.andExpect(jsonPath("$.content[0].remainingUnits").value(7))
+			.andExpect(jsonPath("$.content[0].estimatedRefundAmount").value(560000));
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
+			.param("status", "ACTIVE").param("withdrawalEligible", "true").param("page", "0").param("size", "1")
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments/{enrollmentId}",
+			memberId, enrollmentId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))).andExpect(status().isOk());
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments/{enrollmentId}",
+			otherMemberId, enrollmentId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))).andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(managerId)))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isForbidden());
+		var request = withdrawals.createForReceptionist(receptionistId, memberId, enrollmentId, "Display test");
+		assertThat(request.memberCode()).isNotBlank();
+		assertThat(request.courseCode()).isNotBlank();
+		assertThat(request.runCode()).isNotBlank();
+		assertThat(request.totalUnits()).isEqualTo(10);
+		assertThat(request.remainingUnits()).isEqualTo(7);
+		assertThat(request.estimatedRefundAmount()).isEqualTo(BigInteger.valueOf(560_000));
+		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
+			.param("status", "WITHDRAWAL_PENDING").param("withdrawalEligible", "false")
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
 	}
 
 	@Test

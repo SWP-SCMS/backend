@@ -64,21 +64,23 @@ class CourseWithdrawalService {
 	@Transactional(readOnly = true)
 	List<WithdrawalRequest> listForMember(UUID memberId) {
 		active(memberId, AccountRole.MEMBER, false);
-		return db.query(select() + " where member_account_id=? order by requested_at desc,id desc",
-			this::map, memberId);
+		return db.query(select() + " where w.member_account_id=? order by w.requested_at desc,w.id desc",
+			this::map, Timestamp.from(clock.instant()), memberId);
 	}
 
 	@Transactional(readOnly = true)
 	WithdrawalRequest detailForMember(UUID memberId, UUID requestId) {
 		active(memberId, AccountRole.MEMBER, false);
-		return db.query(select() + " where id=? and member_account_id=?", this::map, requestId, memberId)
+		return db.query(select() + " where w.id=? and w.member_account_id=?", this::map,
+			Timestamp.from(clock.instant()), requestId, memberId)
 			.stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
 	}
 
 	@Transactional(readOnly = true)
 	List<WithdrawalRequest> managerQueue(UUID managerId) {
 		active(managerId, AccountRole.MANAGER, false);
-		return db.query(select() + " order by case when status='PENDING' then 0 else 1 end,requested_at,id", this::map);
+		return db.query(select() + " order by case when w.status='PENDING' then 0 else 1 end,w.requested_at,w.id",
+			this::map, Timestamp.from(clock.instant()));
 	}
 
 	@Transactional(readOnly = true)
@@ -265,22 +267,47 @@ class CourseWithdrawalService {
 			"The withdrawal request is no longer pending.");
 	}
 	private WithdrawalRequest lock(UUID id) {
-		return db.query(select() + " where id=? for update", this::map, id).stream().findFirst()
+		return db.query(select() + " where w.id=? for update of w", this::map, Timestamp.from(clock.instant()), id).stream().findFirst()
 			.orElseThrow(CourseWithdrawalException::notFound);
 	}
 	private WithdrawalRequest find(UUID id) {
-		return db.query(select() + " where id=?", this::map, id).stream().findFirst()
+		return db.query(select() + " where w.id=?", this::map, Timestamp.from(clock.instant()), id).stream().findFirst()
 			.orElseThrow(CourseWithdrawalException::notFound);
 	}
-	private String select() { return "select * from course_withdrawal_requests"; }
+	private String select() { return "select w.*,a.id member_id,mp.member_code,a.full_name member_name,c.id course_id,"
+		+ "c.code course_code,c.name course_name,r.run_code,r.status course_run_status,"
+		+ "e.lifecycle_status,e.amount_paid_vnd_snapshot,e.total_units_snapshot current_total_units,"
+		+ "coalesce(u.remaining_units,0) current_remaining_units,"
+		+ "u.unused_allocation from course_withdrawal_requests w join course_enrollments e on e.id=w.course_enrollment_id "
+		+ "join accounts a on a.id=e.member_account_id join member_profiles mp on mp.account_id=a.id "
+		+ "join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id "
+		+ "left join lateral (select count(*) filter(where s.start_at>?) remaining_units,"
+		+ "coalesce(sum(es.allocation_vnd) filter(where s.start_at>?),0) unused_allocation "
+		+ "from course_enrollment_sessions es join course_sessions s on s.id=es.course_session_id "
+		+ "where es.course_enrollment_id=e.id) u on true"; }
 	private WithdrawalRequest map(ResultSet rs, int row) throws SQLException {
+		int currentTotal = rs.getInt("current_total_units"), currentRemaining = rs.getInt("current_remaining_units");
+		Integer totalUnits = rs.getObject("total_units_snapshot", Integer.class);
+		Integer remainingUnits = rs.getObject("remaining_units_snapshot", Integer.class);
 		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class),
 			rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class),
 			rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"),
 			rs.getString("decision_reason"), rs.getTimestamp("requested_at").toInstant(),
 			rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")),
-			rs.getObject("total_units_snapshot", Integer.class), rs.getObject("remaining_units_snapshot", Integer.class),
-			amount(rs.getBigDecimal("refund_basis_vnd")), amount(rs.getBigDecimal("refund_amount_vnd")));
+			totalUnits == null ? currentTotal : totalUnits, remainingUnits == null ? currentRemaining : remainingUnits,
+			amount(rs.getBigDecimal("refund_basis_vnd")), amount(rs.getBigDecimal("refund_amount_vnd")),
+			rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"),
+			rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"),
+			rs.getString("run_code"), rs.getString("course_run_status"), estimate(rs));
+	}
+	private BigInteger estimate(ResultSet rs) throws SQLException {
+		int total = rs.getInt("current_total_units"), remaining = rs.getInt("current_remaining_units");
+		String lifecycle = rs.getString("lifecycle_status"), runStatus = rs.getString("course_run_status");
+		if (!("ACTIVE".equals(lifecycle) || "WITHDRAWAL_PENDING".equals(lifecycle))
+			|| !List.of("OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS").contains(runStatus)
+			|| !CourseWithdrawalPolicy.canWithdraw(remaining, total)) return null;
+		return CourseWithdrawalPolicy.refund(remaining, total,
+			amount(rs.getBigDecimal("unused_allocation")).min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot"))));
 	}
 	private record RefundSnapshot(int totalUnits, int remainingUnits, BigInteger unusedAllocation) { }
 	private static UUID uuid(Map<String, Object> row, String key) { return (UUID) row.get(key); }
