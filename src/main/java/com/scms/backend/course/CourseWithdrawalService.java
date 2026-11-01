@@ -64,23 +64,26 @@ class CourseWithdrawalService {
 	@Transactional(readOnly = true)
 	List<WithdrawalRequest> listForMember(UUID memberId) {
 		active(memberId, AccountRole.MEMBER, false);
+		Timestamp now = Timestamp.from(clock.instant());
 		return db.query(select() + " where w.member_account_id=? order by w.requested_at desc,w.id desc",
-			this::map, Timestamp.from(clock.instant()), memberId);
+			this::map, now, now, memberId);
 	}
 
 	@Transactional(readOnly = true)
 	WithdrawalRequest detailForMember(UUID memberId, UUID requestId) {
 		active(memberId, AccountRole.MEMBER, false);
+		Timestamp now = Timestamp.from(clock.instant());
 		return db.query(select() + " where w.id=? and w.member_account_id=?", this::map,
-			Timestamp.from(clock.instant()), requestId, memberId)
+			now, now, requestId, memberId)
 			.stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
 	}
 
 	@Transactional(readOnly = true)
 	List<WithdrawalRequest> managerQueue(UUID managerId) {
 		active(managerId, AccountRole.MANAGER, false);
+		Timestamp now = Timestamp.from(clock.instant());
 		return db.query(select() + " order by case when w.status='PENDING' then 0 else 1 end,w.requested_at,w.id",
-			this::map, Timestamp.from(clock.instant()));
+			this::map, now, now);
 	}
 
 	@Transactional(readOnly = true)
