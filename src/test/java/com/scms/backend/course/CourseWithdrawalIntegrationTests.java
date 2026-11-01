@@ -79,6 +79,7 @@ class CourseWithdrawalIntegrationTests {
 		receptionistId = account(AccountRole.RECEPTIONIST).getId();
 		memberId = account(AccountRole.MEMBER).getId();
 		otherMemberId = account(AccountRole.MEMBER).getId();
+		profiles.saveAndFlush(new MemberProfile(accounts.findById(memberId).orElseThrow()));
 		profiles.saveAndFlush(new MemberProfile(accounts.findById(otherMemberId).orElseThrow()));
 		coachId = account(AccountRole.COACH).getId();
 		UUID disciplineId = UUID.randomUUID();

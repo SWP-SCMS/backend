@@ -268,12 +268,12 @@ class CourseWithdrawalService {
 	}
 	private WithdrawalRequest lock(UUID id) {
 		Timestamp now = Timestamp.from(clock.instant());
-		return db.query(select() + " where w.id=? for update of w", this::map, now, now, now, id).stream().findFirst()
+		return db.query(select() + " where w.id=? for update of w", this::map, now, now, id).stream().findFirst()
 			.orElseThrow(CourseWithdrawalException::notFound);
 	}
 	private WithdrawalRequest find(UUID id) {
 		Timestamp now = Timestamp.from(clock.instant());
-		return db.query(select() + " where w.id=?", this::map, now, now, now, id).stream().findFirst()
+		return db.query(select() + " where w.id=?", this::map, now, now, id).stream().findFirst()
 			.orElseThrow(CourseWithdrawalException::notFound);
 	}
 	private String select() { return "select w.*,a.id member_id,mp.member_code,a.full_name member_name,c.id course_id,"
