@@ -392,6 +392,8 @@ class GeneratedOpenApiTests {
 		"DELETE /course-runs/{runId}/waitlist",
 		"GET /members/me/course-waitlists",
 		"POST /course-waitlists/{waitlistId}/accept",
+		"GET /coach/course-sessions",
+		"GET /coach/course-sessions/{sessionId}",
 		"GET /coach/course-sessions/{sessionId}/roster",
 		"PATCH /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance",
 		"POST /reception/members/{memberId}/cash-payments",
@@ -728,6 +730,26 @@ class GeneratedOpenApiTests {
 		assertThat(detail.at("/properties/sessions/items/$ref").asText())
 			.isEqualTo("#/components/schemas/CatalogCourseSessionResponse");
 		assertThat(detail.toString()).doesNotContain("capacityRemaining", "policyVersionSnapshot", "version");
+	}
+
+	@Test
+	void generatedCoachCourseSessionDiscoveryDocumentsFiltersAndAttendanceState() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode list = operation(document, "/coach/course-sessions", "get");
+		assertThat(list.path("description").asText()).contains("Requires COACH role");
+		assertThat(list.path("parameters").toString()).contains("from", "to", "status", "page", "size", "sort");
+		JsonNode page = resolve(document, response(document, "/coach/course-sessions", "get", "200")
+			.at("/content/*~1*/schema"));
+		JsonNode item = resolve(document, page.at("/properties/content/items"));
+		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList())
+			.contains("courseSessionId", "courseId", "courseRunId", "startsAt", "endsAt", "roomId",
+				"sessionStatus", "rosterCount", "attendanceWritable", "attendanceWriteReason");
+		assertThat(item.at("/properties/attendanceWriteReason/enum").toString())
+			.contains("WRITABLE", "TOO_EARLY", "WINDOW_CLOSED", "SESSION_CANCELLED",
+				"NOT_ASSIGNED_COACH", "COURSE_RUN_NOT_ACTIVE");
+		assertThat(operation(document, "/coach/course-sessions/{sessionId}", "get")
+			.at("/responses/200/content/*~1*/schema/$ref").asText())
+			.isEqualTo("#/components/schemas/CourseCoachSessionResponse");
 	}
 
 	@Test

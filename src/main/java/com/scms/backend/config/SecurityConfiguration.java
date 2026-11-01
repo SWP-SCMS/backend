@@ -220,6 +220,8 @@ public class SecurityConfiguration {
 					.hasRole("RECEPTIONIST")
 				.requestMatchers("/course-runs/*/waitlist", "/course-waitlists/*/accept",
 					"/members/me/course-waitlists").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/coach/course-sessions", "/coach/course-sessions/*")
+					.hasRole("COACH")
 				.requestMatchers("/coach/course-sessions/*/roster", "/coach/course-sessions/*/roster/**")
 					.hasRole("COACH")
 				.requestMatchers("/reception/members/*/course-orders/**").hasRole("RECEPTIONIST")

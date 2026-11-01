@@ -96,12 +96,13 @@ class CourseEnrollmentService {
 		if (request == null || request.status() == null || !CourseAttendanceStatus.writableValues().contains(request.status()))
 			throw CourseAttendanceException.invalid();
 		Map<String, Object> session = db.queryForList("""
-			select id,start_at,end_at,status from course_sessions
-			where id=? and coach_account_id=? for update
+			select s.id,s.start_at,s.end_at,s.status from course_sessions s
+			where s.id=? and s.coach_account_id=? for update
 			""", sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		Instant now = clock.instant();
-		if (now.isBefore(instant(session, "start_at")) || !now.isBefore(instant(session, "end_at").plusSeconds(1800))
-				|| !(text(session, "status").equals("SCHEDULED") || text(session, "status").equals("MAKEUP_SCHEDULED")))
+		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), null,
+			instant(session, "start_at"), instant(session, "end_at"), now, true);
+		if (!attendance.writable())
 			throw CourseAttendanceException.closed();
 		Map<String, Object> row = db.queryForList("""
 			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
