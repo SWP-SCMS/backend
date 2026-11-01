@@ -123,22 +123,31 @@ class CourseScheduleChangeIntegrationTests {
 	@Test
 	void memberTimelineIncludesPaymentRunAndMakeupMetadata() {
 		var enrollment = members.memberEnrollments(memberId).getFirst();
-		assertThat(enrollment.courseRunStatus()).isEqualTo("OPEN_FOR_REGISTRATION");
+		assertThat(enrollment.courseRunStatus()).isEqualTo(CourseRunStatus.OPEN_FOR_REGISTRATION);
 		assertThat(enrollment.payment().amountVnd()).isEqualTo(BigInteger.valueOf(100_000));
 		assertThat(enrollment.payment().status()).isEqualTo("PAID");
 		assertThat(enrollment.payment().method()).isEqualTo("CASH");
+		assertThat(enrollment.sessions()).singleElement().satisfies(original -> {
+			assertThat(original.courseSessionId()).isEqualTo(session.id());
+			assertThat(original.isMakeup()).isFalse();
+			assertThat(original.originalSessionId()).isNull();
+			assertThat(original.replacementSessionId()).isNull();
+		});
 
 		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
 		CourseSessionDisruptionService.CourseMakeupResponse makeup = disruptions.scheduleMakeup(managerId, runId, session.id(),
 			new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId,
 				Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z")));
 
-		var sessionsById = members.memberEnrollments(memberId).getFirst().sessions().stream()
-			.collect(java.util.stream.Collectors.toMap(CourseEnrollmentApiModels.MemberSession::courseSessionId, value -> value));
-		assertThat(sessionsById.get(makeup.originalSession().id()).isMakeup()).isFalse();
-		assertThat(sessionsById.get(makeup.originalSession().id()).replacementSessionId()).isEqualTo(makeup.makeupSession().id());
-		assertThat(sessionsById.get(makeup.makeupSession().id()).isMakeup()).isTrue();
-		assertThat(sessionsById.get(makeup.makeupSession().id()).originalSessionId()).isEqualTo(makeup.originalSession().id());
+		assertThat(makeup.originalSession().isMakeup()).isFalse();
+		assertThat(makeup.originalSession().replacementSessionId()).isEqualTo(makeup.makeupSession().id());
+		assertThat(members.memberEnrollments(memberId).getFirst().sessions()).singleElement().satisfies(replacement -> {
+			assertThat(replacement.courseSessionId()).isEqualTo(makeup.makeupSession().id());
+			assertThat(replacement.isMakeup()).isTrue();
+			assertThat(replacement.originalSessionId()).isEqualTo(makeup.originalSession().id());
+			assertThat(replacement.replacementSessionId()).isNull();
+			assertThat(replacement.unitNumber()).isEqualTo(session.unitNumber());
+		});
 	}
 
 	@Test
