@@ -24,10 +24,14 @@ class CourseWaitlistModelsTests {
 		UUID id = UUID.randomUUID();
 		UUID runId = UUID.randomUUID();
 		Instant now = Instant.parse("2026-11-01T00:00:00Z");
-		CourseWaitlistResponse response = new CourseWaitlistResponse(id, runId, "WAITING", 2, null, null, now);
+		CourseWaitlistResponse response = new CourseWaitlistResponse(id, runId, "Yoga Basics", "YOGA-01",
+			"YOGA-01-R1", "WAITING", 2, null, null, now);
 
 		assertThat(response.id()).isEqualTo(id);
 		assertThat(response.courseRunId()).isEqualTo(runId);
+		assertThat(response.courseName()).isEqualTo("Yoga Basics");
+		assertThat(response.courseCode()).isEqualTo("YOGA-01");
+		assertThat(response.runCode()).isEqualTo("YOGA-01-R1");
 		assertThat(response.position()).isEqualTo(2);
 	}
 }

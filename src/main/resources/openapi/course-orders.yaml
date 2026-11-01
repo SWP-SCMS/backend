@@ -282,10 +282,13 @@ components:
     CourseWaitlistResponse:
       type: object
       additionalProperties: false
-      required: [id, courseRunId, status, position, invitedAt, invitationExpiresAt, createdAt]
+      required: [id, courseRunId, courseName, courseCode, runCode, status, position, invitedAt, invitationExpiresAt, createdAt]
       properties:
         id: { type: string, format: uuid }
         courseRunId: { type: string, format: uuid }
+        courseName: { type: string }
+        courseCode: { type: string }
+        runCode: { type: string }
         status: { type: string, enum: [WAITING, INVITED, ACCEPTED, LEFT, EXPIRED, CANCELLED] }
         position: { type: [integer, 'null'], minimum: 1 }
         invitedAt: { type: [string, 'null'], format: date-time }

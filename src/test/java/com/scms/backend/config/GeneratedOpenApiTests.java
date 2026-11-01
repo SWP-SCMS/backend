@@ -809,7 +809,8 @@ class GeneratedOpenApiTests {
 				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
 			assertThat(document.at("/components/schemas/CourseWaitlistResponse/properties").properties()
 				.stream().map(Map.Entry::getKey).toList()).containsExactlyInAnyOrder("id", "courseRunId", "status",
-					"position", "invitedAt", "invitationExpiresAt", "createdAt");
+					"courseName", "courseCode", "runCode", "position", "invitedAt", "invitationExpiresAt",
+					"createdAt");
 		}
 	}
 
