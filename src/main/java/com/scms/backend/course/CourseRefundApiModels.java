@@ -51,8 +51,7 @@ final class CourseRefundApiModels {
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) Instant approvedAt,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean disbursementEligible,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = { "ELIGIBLE",
-			"AWAITING_COURSE_COMPLETION", "REFUND_NOT_APPROVED", "COURSE_RUN_NOT_FOUND",
-			"REFUND_ALREADY_DISBURSED" }) String disbursementEligibilityReason) { }
+			"AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND" }) String disbursementEligibilityReason) { }
 
 	@Schema(name = "ReceptionCourseRefundPage", additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	record ReceptionCourseRefundPage(

@@ -659,11 +659,16 @@ class GeneratedOpenApiTests {
 				"approvedAt", "disbursementEligible", "disbursementEligibilityReason")
 			.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
 		assertThat(item.at("/properties/disbursementEligibilityReason/enum").toString())
-			.contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "REFUND_NOT_APPROVED", "COURSE_RUN_NOT_FOUND",
-				"REFUND_ALREADY_DISBURSED");
+			.contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND")
+			.doesNotContain("REFUND_NOT_APPROVED", "REFUND_ALREADY_DISBURSED");
 		assertThat(operation(document, "/reception/course-refunds/{refundId}", "get")
 			.at("/responses/200/content/application~1json/schema/$ref").asText())
 			.isEqualTo("#/components/schemas/ReceptionCourseRefund");
+		assertThat(operation(document, "/reception/course-refund-obligations/{obligationId}/disburse", "post")
+			.at("/responses/409/$ref").asText())
+			.isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
+		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText())
+			.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
 	}
 
 	@Test

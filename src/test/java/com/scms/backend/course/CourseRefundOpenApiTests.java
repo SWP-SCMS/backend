@@ -27,6 +27,8 @@ class CourseRefundOpenApiTests {
 			assertThat(paths.has("/reception/course-refunds/{refundId}")).isTrue();
 			var disburse = paths.path("/reception/course-refund-obligations/{obligationId}/disburse").path("post");
 			assertThat(disburse.path("parameters").toString()).contains("IdempotencyKey");
+			assertThat(disburse.at("/responses/409/description").asText())
+				.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
 			assertThat(document.at("/components/parameters/IdempotencyKey/name").asText())
 				.isEqualTo("Idempotency-Key");
 		}
@@ -51,7 +53,7 @@ class CourseRefundOpenApiTests {
 					"amount", "approvedAt", "disbursementEligible", "disbursementEligibilityReason")
 				.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
 			assertThat(response.at("/properties/disbursementEligibilityReason/enum").toString())
-				.isEqualTo("[\"ELIGIBLE\",\"AWAITING_COURSE_COMPLETION\",\"REFUND_NOT_APPROVED\",\"COURSE_RUN_NOT_FOUND\",\"REFUND_ALREADY_DISBURSED\"]");
+				.isEqualTo("[\"ELIGIBLE\",\"AWAITING_COURSE_COMPLETION\",\"COURSE_RUN_NOT_FOUND\"]");
 		}
 	}
 }

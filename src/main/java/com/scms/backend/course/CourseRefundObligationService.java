@@ -105,7 +105,7 @@ class CourseRefundObligationService {
 	@Transactional(readOnly = true)
 	ReceptionCourseRefund detailForReceptionist(UUID receptionistId, UUID refundId) {
 		active(receptionistId, AccountRole.RECEPTIONIST, false);
-		return db.query("select * from (" + receptionSelect() + ") refunds where refund_id=?",
+		return db.query("select * from (" + receptionSelect() + ") refunds where refund_id=? and status='APPROVED'",
 			this::mapReception, refundId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
 	}
 
@@ -417,8 +417,6 @@ class CourseRefundObligationService {
 			  course.id course_id,course.code course_code,course.name course_name,refund.course_run_id,run.run_code,
 			  run.status course_run_status,refund.source_type source,refund.amount_vnd amount,refund.approved_at,
 			  refund.status,case
-			   when refund.disbursed_at is not null then 'REFUND_ALREADY_DISBURSED'
-			   when refund.status<>'APPROVED' then 'REFUND_NOT_APPROVED'
 			   when run.id is null then 'COURSE_RUN_NOT_FOUND'
 			   when refund.source_type in ('COURSE_RUN_CANCELLED','PAYMENT_EXCEPTION','TRANSFER_CREDIT_EXCESS')
 			    or run.status='COMPLETED' then 'ELIGIBLE'

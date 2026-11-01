@@ -34,7 +34,10 @@ paths:
         - {$ref: '#/components/parameters/ObligationId'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody: {$ref: '#/components/requestBodies/Disbursement'}
-      responses: {'200': {description: Disbursement recorded or replayed}, '409': {$ref: '#/components/responses/Conflict'}}
+      responses:
+        '200': {description: Disbursement recorded or replayed}
+        '409':
+          description: An approved non-immediate refund before Course Run completion uses code COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE.
   /reception/course-refunds:
     get:
       operationId: listReceptionCourseRefunds
@@ -158,8 +161,7 @@ components:
         disbursementEligible: {type: boolean}
         disbursementEligibilityReason:
           type: string
-          enum: [ELIGIBLE, AWAITING_COURSE_COMPLETION, REFUND_NOT_APPROVED, COURSE_RUN_NOT_FOUND,
-            REFUND_ALREADY_DISBURSED]
+          enum: [ELIGIBLE, AWAITING_COURSE_COMPLETION, COURSE_RUN_NOT_FOUND]
     ReceptionCourseRefundPage:
       type: object
       additionalProperties: false
