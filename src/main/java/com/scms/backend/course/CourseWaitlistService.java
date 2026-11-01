@@ -84,7 +84,8 @@ public class CourseWaitlistService {
 	List<CourseWaitlistResponse> mine(UUID memberId) {
 		if (!accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE))
 			throw new InvalidAuthenticatedAccountException();
-		return db.query(selectWithPosition() + " where member_account_id=? order by created_at desc,id desc",
+		return db.query(selectWithPosition()
+			+ " where waitlist.member_account_id=? order by waitlist.created_at desc,waitlist.id desc",
 			this::map, memberId);
 	}
 
@@ -225,19 +226,21 @@ public class CourseWaitlistService {
 	}
 
 	private CourseWaitlistResponse find(UUID id) {
-		return db.query(selectWithPosition() + " where id=?", this::map, id).stream().findFirst()
+		return db.query(selectWithPosition() + " where waitlist.id=?", this::map, id).stream().findFirst()
 			.orElseThrow(CourseWaitlistException::notFound);
 	}
 
 	private String selectWithPosition() {
 		return """
-			select waitlist.*,
+			select waitlist.*,course.name course_name,course.code course_code,run.run_code,
 				case when waitlist.status='WAITING' then (
 					select count(*)::integer+1 from course_waitlists earlier
 					where earlier.course_run_id=waitlist.course_run_id and earlier.status='WAITING'
 					  and (earlier.created_at,earlier.id)<(waitlist.created_at,waitlist.id)
 				) end as queue_position
 			from course_waitlists waitlist
+			join course_runs run on run.id=waitlist.course_run_id
+			join courses course on course.id=run.course_id
 			""";
 	}
 
@@ -246,6 +249,7 @@ public class CourseWaitlistService {
 		Timestamp expires = rs.getTimestamp("invitation_expires_at");
 		Integer position = rs.getObject("queue_position", Integer.class);
 		return new CourseWaitlistResponse(rs.getObject("id", UUID.class), rs.getObject("course_run_id", UUID.class),
+			rs.getString("course_name"), rs.getString("course_code"), rs.getString("run_code"),
 			rs.getString("status"), position, invited == null ? null : invited.toInstant(),
 			expires == null ? null : expires.toInstant(), rs.getTimestamp("created_at").toInstant());
 	}
