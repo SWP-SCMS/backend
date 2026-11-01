@@ -101,6 +101,12 @@ public class CourseController {
 		return ResponseEntity.ok(service.openRun(accountId(jwt), runId, request));
 	}
 
+	@PatchMapping("/course-runs/{runId}/schedule")
+	ResponseEntity<CourseRunResponse> patchRunSchedule(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
+			@Valid @RequestBody CourseRunScheduleRequest request) {
+		return ResponseEntity.ok(service.patchRunSchedule(accountId(jwt), runId, request));
+	}
+
 	@PostMapping("/course-runs/{runId}/cancel")
 	ResponseEntity<CourseRunResponse> cancelRun(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
 			@Valid @RequestBody VersionRequest request) {
@@ -134,8 +140,15 @@ public class CourseController {
 	@PostMapping("/course-runs/{runId}/sessions/{sessionId}/cancel")
 	ResponseEntity<CourseSessionResponse> cancelSession(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
 			@PathVariable UUID sessionId, @Valid @RequestBody CourseSessionDisruptionRequest request) {
-		return ResponseEntity.ok(disruptions.cancel(accountId(jwt), runId, sessionId,
+		return ResponseEntity.ok(disruptions.cancelFromEndpoint(accountId(jwt), runId, sessionId,
 			request == null ? null : request.expectedVersion()));
+	}
+
+	@PostMapping("/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup")
+	ResponseEntity<CourseSessionDisruptionService.CourseMakeupResponse> cancelWithMakeup(
+			@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId, @PathVariable UUID sessionId,
+			@Valid @RequestBody CourseSessionCancelWithMakeupRequest request) {
+		return ResponseEntity.ok(disruptions.cancelWithMakeup(accountId(jwt), runId, sessionId, request));
 	}
 
 	@PostMapping("/course-runs/{runId}/sessions/{sessionId}/makeup")

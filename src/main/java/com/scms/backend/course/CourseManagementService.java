@@ -1,6 +1,8 @@
 package com.scms.backend.course;
 
 import java.math.BigInteger;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +21,7 @@ import com.scms.backend.scheduling.DisciplineRepository;
 import com.scms.backend.scheduling.DisciplineStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,10 +36,20 @@ class CourseManagementService {
 	private final AuditEventRepository audits;
 	private final CourseSessionService sessionService;
 	private final CourseRunClosureService runClosure;
+	private final JdbcTemplate db;
+	private final CourseScheduleChangeService scheduleChanges;
 
 	CourseManagementService(CourseRepository courses, CourseRunRepository runs, CourseSessionRepository sessions,
 			DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits,
 			CourseSessionService sessionService, CourseRunClosureService runClosure) {
+		this(courses, runs, sessions, disciplines, accounts, audits, sessionService, runClosure, null, null);
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	CourseManagementService(CourseRepository courses, CourseRunRepository runs, CourseSessionRepository sessions,
+			DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits,
+			CourseSessionService sessionService, CourseRunClosureService runClosure, JdbcTemplate db,
+			CourseScheduleChangeService scheduleChanges) {
 		this.courses = courses;
 		this.runs = runs;
 		this.sessions = sessions;
@@ -45,6 +58,8 @@ class CourseManagementService {
 		this.audits = audits;
 		this.sessionService = sessionService;
 		this.runClosure = runClosure;
+		this.db = db;
+		this.scheduleChanges = scheduleChanges;
 	}
 
 	@Transactional(readOnly = true)
@@ -263,6 +278,76 @@ class CourseManagementService {
 		runs.saveAndFlush(run);
 		audit(managerId, "COURSE_RUN_OPENED", "COURSE_RUN", runId, before, snapshot(run));
 		return CourseRunResponse.from(run);
+	}
+
+	@Transactional
+	CourseRunResponse patchRunSchedule(UUID managerId, UUID runId, CourseRunScheduleRequest request) {
+		ensureActiveManager(managerId);
+		if (request == null || request.expectedVersion() == null || request.plannedStartAt() == null
+				|| request.plannedEndAt() == null || request.totalUnits() == null
+				|| !request.plannedStartAt().isBefore(request.plannedEndAt()) || request.totalUnits() <= 0) {
+			throw CourseException.validation("schedule", "must define an ordered schedule and positive totalUnits");
+		}
+		CourseRun run = lockRun(runId);
+		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
+		if (run.getStatus() == CourseRunStatus.COMPLETED || run.getStatus() == CourseRunStatus.CANCELLED
+				|| run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING) throw CourseException.invalidTransition();
+		List<CourseSession> current = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId);
+		for (CourseSession session : current) {
+			if (!session.isMakeup() && session.getUnitNumber() <= request.totalUnits()
+					&& (session.getStartAt().isBefore(request.plannedStartAt())
+						|| session.getEndAt().isAfter(request.plannedEndAt()))) {
+				throw CourseException.validation("plannedStartAt", "retained sessions must have a schedule inside the Run window");
+			}
+		}
+		CourseWithdrawalCause cause = scheduleCause(run, request, runId);
+		Map<String, Object> before = snapshot(run);
+		Instant oldStart = run.getPlannedStartAt(), oldEnd = run.getPlannedEndAt();
+		int oldUnits = run.getTotalUnits();
+		run.changeSchedule(request.plannedStartAt(), request.plannedEndAt(), request.totalUnits());
+		runs.saveAndFlush(run);
+		UUID eventId = UUID.randomUUID();
+		db.update("""
+			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,
+			old_planned_start_at,old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
+			values(?,?,?,?,?,?,?,?,?,?)
+			""", eventId, runId, managerId, cause.name(), oldStart, oldEnd, request.plannedStartAt(),
+			request.plannedEndAt(), oldUnits, request.totalUnits());
+		if (request.totalUnits() < oldUnits) {
+			for (CourseSession session : current) if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
+				session.removeByRunChange();
+				sessions.saveAndFlush(session);
+				db.update("update course_enrollment_sessions set disposition='REMOVED_BY_RUN_CHANGE' "
+					+ "where course_session_id=? and disposition='ENROLLED'", session.getId());
+			}
+		}
+		if (scheduleChanges != null) scheduleChanges.createRunScheduleResponses(eventId, run, cause, Instant.now());
+		Map<String, Object> after = snapshot(run);
+		after.put("changeEventId", eventId.toString());
+		after.put("cause", cause.name());
+		audit(managerId, "COURSE_RUN_SCHEDULE_CHANGED", "COURSE_RUN", runId, before, after);
+		return CourseRunResponse.from(run);
+	}
+
+	private CourseWithdrawalCause scheduleCause(CourseRun run, CourseRunScheduleRequest request, UUID runId) {
+		if (request.totalUnits() < run.getTotalUnits()) return CourseWithdrawalCause.REDUCED_UNIT_COUNT;
+		if (Duration.between(run.getPlannedStartAt(), request.plannedStartAt()).compareTo(Duration.ofDays(7)) > 0)
+			return CourseWithdrawalCause.START_DELAY_OVER_7_DAYS;
+		if (db != null && Boolean.TRUE.equals(db.queryForObject("""
+			select exists(select 1 from course_enrollments current_enrollment
+			join course_enrollment_sessions current_es on current_es.course_enrollment_id=current_enrollment.id
+			join course_sessions current_session on current_session.id=current_es.course_session_id
+			where current_enrollment.course_run_id=? and current_es.disposition='ENROLLED'
+			and exists(select 1 from course_enrollments other_enrollment
+				join course_enrollment_sessions other_es on other_es.course_enrollment_id=other_enrollment.id
+				join course_sessions other_session on other_session.id=other_es.course_session_id
+				where other_enrollment.member_account_id=current_enrollment.member_account_id
+				and other_enrollment.course_run_id<>? and other_es.disposition='ENROLLED'
+				and other_session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
+				and other_session.start_at < ? and other_session.end_at > ?))
+			""", Boolean.class, runId, runId, request.plannedEndAt(), request.plannedStartAt())))
+			return CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT;
+		return CourseWithdrawalCause.VOLUNTARY;
 	}
 
 	@Transactional

@@ -61,6 +61,64 @@ class CourseWithdrawalService {
 		return create(managerId, AccountRole.MANAGER, memberId, enrollmentId, reason);
 	}
 
+	@Transactional
+	WithdrawalRequest createForScheduleChange(UUID memberId, UUID responseId) {
+		active(memberId, AccountRole.MEMBER, true);
+		List<Map<String, Object>> response = db.queryForList("""
+			select r.id response_id,r.response,r.status,r.cause_code,r.change_event_id,
+				es.course_enrollment_id,e.course_run_id,e.member_account_id
+			from course_schedule_change_responses r
+			join course_enrollment_sessions es on es.id=r.enrollment_session_id
+			join course_enrollments e on e.id=es.course_enrollment_id
+			where r.id=? and e.member_account_id=? for update of r
+			""", responseId, memberId);
+		if (response.isEmpty()) throw CourseException.responseNotFound();
+		UUID existing = db.queryForList("select id from course_withdrawal_requests where schedule_change_response_id=?",
+			responseId).stream().map(row -> uuid(row, "id")).findFirst().orElse(null);
+		if (existing != null) return find(existing);
+		Map<String, Object> change = response.getFirst();
+		if (!"REQUEST_WITHDRAWAL".equals(text(change, "response")) || !"RESPONDED".equals(text(change, "status")))
+			throw CourseException.responseConflict();
+		UUID enrollmentId = uuid(change, "course_enrollment_id"), runId = uuid(change, "course_run_id");
+		CourseWithdrawalCause cause = CourseWithdrawalCause.valueOf(text(change, "cause_code"));
+		lockRun(runId);
+		Map<String, Object> enrollment = lockEnrollment(enrollmentId, memberId);
+		if (!"ACTIVE".equals(text(enrollment, "lifecycle_status"))) {
+			if ("WITHDRAWAL_PENDING".equals(text(enrollment, "lifecycle_status"))) {
+				UUID pending = db.queryForList("select id from course_withdrawal_requests where course_enrollment_id=? and status='PENDING'",
+					enrollmentId).stream().map(row -> uuid(row, "id")).findFirst().orElse(null);
+				if (pending != null) return find(pending);
+			}
+			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_ENROLLMENT_INACTIVE",
+				"Only an active Enrollment can be withdrawn.");
+		}
+		Instant now = clock.instant();
+		RefundSnapshot snapshot = refundSnapshot(enrollmentId, number(enrollment, "total_units_snapshot"),
+			amount(enrollment, "amount_paid_vnd_snapshot"), now);
+		CourseWithdrawalPolicy.Decision decision = CourseWithdrawalPolicy.evaluate(cause, snapshot.remainingUnits(),
+			snapshot.totalUnits(), snapshot.unusedAllocation());
+		if (!decision.eligible()) throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED",
+			"Withdrawal is no longer allowed after the final unit has started.");
+		UUID requestId = UUID.randomUUID();
+		db.update("""
+			insert into course_withdrawal_requests(id,course_enrollment_id,course_run_id,member_account_id,
+			 requester_account_id,request_reason,requested_at,cause_code,schedule_change_response_id,change_event_id)
+			values(?,?,?,?,?,?,?,?,?,?)
+			""", requestId, enrollmentId, runId, memberId, memberId,
+			"Withdrawal requested after a material schedule change", Timestamp.from(now), cause.name(), responseId,
+			change.get("change_event_id"));
+		db.update("update course_enrollments set lifecycle_status='WITHDRAWAL_PENDING' where id=? and lifecycle_status='ACTIVE'",
+			enrollmentId);
+		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "COURSE_WITHDRAWAL_REQUESTED",
+			"COURSE_WITHDRAWAL_REQUEST", requestId, "Material schedule change", Map.of(),
+			Map.of("status", "PENDING", "cause", cause.name(), "scheduleChangeResponseId", responseId.toString())));
+		for (UUID managerId : db.queryForList("select id from accounts where role='MANAGER' and status='ACTIVE' order by id",
+			UUID.class)) notifications.write("course-withdrawal-review:" + requestId + ":" + managerId, managerId,
+			"COURSE_WITHDRAWAL_REVIEW_REQUIRED", "COURSE_WITHDRAWAL_REQUEST", requestId,
+			Map.of("courseRunId", runId.toString(), "cause", cause.name()));
+		return find(requestId);
+	}
+
 	@Transactional(readOnly = true)
 	List<WithdrawalRequest> listForMember(UUID memberId) {
 		active(memberId, AccountRole.MEMBER, false);
@@ -108,8 +166,11 @@ class CourseWithdrawalService {
 		if (!CourseWithdrawalPolicy.canWithdraw(snapshot.remainingUnits(), snapshot.totalUnits()))
 			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED",
 				"Withdrawal is no longer allowed after the final unit has started.");
-		BigInteger refund = CourseWithdrawalPolicy.refund(snapshot.remainingUnits(), snapshot.totalUnits(),
-			snapshot.unusedAllocation());
+		CourseWithdrawalPolicy.Decision decision = CourseWithdrawalPolicy.evaluate(request.cause(), snapshot.remainingUnits(),
+			snapshot.totalUnits(), snapshot.unusedAllocation());
+		if (!decision.eligible()) throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED",
+			"Withdrawal is no longer allowed after the final unit has started.");
+		BigInteger refund = decision.refundAmountVnd();
 		db.update("update course_enrollments set lifecycle_status='WITHDRAWN' where id=? and lifecycle_status='WITHDRAWAL_PENDING'",
 			request.enrollmentId());
 		db.update("update course_reservations set status='WITHDRAWN',updated_at=? where id=(select course_reservation_id "
@@ -122,8 +183,9 @@ class CourseWithdrawalService {
 		db.update("""
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
 			 requester_account_id,request_reason)
-			values(?,?,?,'MEMBER_WITHDRAWAL',?,?,?) on conflict(course_enrollment_id,source_type) do nothing
-			""", UUID.randomUUID(), request.enrollmentId(), request.courseRunId(), refund,
+			values(?,?,?, ?,?,?,?) on conflict(course_enrollment_id,source_type) do nothing
+			""", UUID.randomUUID(), request.enrollmentId(), request.courseRunId(),
+			request.cause() == CourseWithdrawalCause.VOLUNTARY ? "MEMBER_WITHDRAWAL" : "MATERIAL_CHANGE", refund,
 			request.requesterAccountId(), request.requestReason());
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_WITHDRAWAL_APPROVED",
 			"COURSE_WITHDRAWAL_REQUEST", requestId, normalizedReason, Map.of("status", "PENDING"),
@@ -193,7 +255,7 @@ class CourseWithdrawalService {
 		try {
 			db.update("""
 				insert into course_withdrawal_requests(id,course_enrollment_id,course_run_id,member_account_id,
-				 requester_account_id,request_reason,requested_at) values(?,?,?,?,?,?,?)
+				 requester_account_id,request_reason,requested_at,cause_code) values(?,?,?,?,?,?,?,'VOLUNTARY')
 				""", requestId, enrollmentId, runId, memberId, requesterId, normalizedReason, Timestamp.from(now));
 		}
 		catch (DataIntegrityViolationException exception) {
@@ -294,25 +356,23 @@ class CourseWithdrawalService {
 		int currentTotal = rs.getInt("current_total_units"), currentRemaining = rs.getInt("current_remaining_units");
 		Integer totalUnits = rs.getObject("total_units_snapshot", Integer.class);
 		Integer remainingUnits = rs.getObject("remaining_units_snapshot", Integer.class);
+		CourseWithdrawalCause cause = CourseWithdrawalCause.valueOf(rs.getString("cause_code"));
+		BigInteger currentBasis = amount(rs.getBigDecimal("unused_allocation"))
+			.min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")));
+		CourseWithdrawalPolicy.Decision decision = CourseWithdrawalPolicy.evaluate(cause, currentRemaining, currentTotal, currentBasis);
+		BigInteger basis = amount(rs.getBigDecimal("refund_basis_vnd"));
+		BigInteger refund = amount(rs.getBigDecimal("refund_amount_vnd"));
 		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class),
 			rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class),
 			rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"),
-			rs.getString("decision_reason"), rs.getTimestamp("requested_at").toInstant(),
+			rs.getString("decision_reason"), cause, decision.eligible(), decision.reason(), rs.getTimestamp("requested_at").toInstant(),
 			rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")),
 			totalUnits == null ? currentTotal : totalUnits, remainingUnits == null ? currentRemaining : remainingUnits,
-			amount(rs.getBigDecimal("refund_basis_vnd")), amount(rs.getBigDecimal("refund_amount_vnd")),
+			basis == null ? decision.refundBasisVnd() : basis, refund == null ? decision.refundAmountVnd() : refund,
 			rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"),
 			rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"),
-			rs.getString("run_code"), rs.getString("course_run_status"), estimate(rs));
-	}
-	private BigInteger estimate(ResultSet rs) throws SQLException {
-		int total = rs.getInt("current_total_units"), remaining = rs.getInt("current_remaining_units");
-		String lifecycle = rs.getString("lifecycle_status"), runStatus = rs.getString("course_run_status");
-		if (!("ACTIVE".equals(lifecycle) || "WITHDRAWAL_PENDING".equals(lifecycle))
-			|| !List.of("OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS").contains(runStatus)
-			|| !CourseWithdrawalPolicy.canWithdraw(remaining, total)) return null;
-		return CourseWithdrawalPolicy.refund(remaining, total,
-			amount(rs.getBigDecimal("unused_allocation")).min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot"))));
+			rs.getString("run_code"), rs.getString("course_run_status"), decision.eligible() ? decision.refundAmountVnd() : null,
+			rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("change_event_id", UUID.class));
 	}
 	private record RefundSnapshot(int totalUnits, int remainingUnits, BigInteger unusedAllocation) { }
 	private static UUID uuid(Map<String, Object> row, String key) { return (UUID) row.get(key); }

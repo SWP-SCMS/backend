@@ -26,7 +26,11 @@ class CourseWithdrawalOpenApiTests {
 		try (var input = getClass().getResourceAsStream("/openapi/course-withdrawal.yaml")) {
 			var schemas = new ObjectMapper(new YAMLFactory()).readTree(input).at("/components/schemas");
 			assertThat(schemas.path("WithdrawalRequest").path("properties").fieldNames()).toIterable()
-				.contains("memberCode", "courseCode", "runCode", "totalUnits", "remainingUnits", "estimatedRefundAmount");
+				.contains("memberCode", "courseCode", "runCode", "totalUnits", "remainingUnits", "estimatedRefundAmount",
+					"cause", "withdrawalEligible", "withdrawalReason", "refundBasisVnd", "refundAmountVnd",
+					"scheduleChangeResponseId", "changeEventId");
+			assertThat(schemas.at("/WithdrawalRequest/properties/cause/enum").toString())
+				.contains("VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
 		}
 	}
 }

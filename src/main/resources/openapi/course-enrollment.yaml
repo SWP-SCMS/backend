@@ -136,7 +136,8 @@ components:
     ScheduleChange:
       type: object
       additionalProperties: false
-      required: [id, enrollmentSessionId, oldStartAt, oldEndAt, newStartAt, newEndAt, notificationSentAt, responseDeadline, status]
+      required: [id, enrollmentSessionId, oldStartAt, oldEndAt, newStartAt, newEndAt, notificationSentAt, responseDeadline,
+        status, cause, withdrawalEligible]
       properties:
         id: {type: string, format: uuid}
         enrollmentSessionId: {type: string, format: uuid}
@@ -149,6 +150,13 @@ components:
         status: {type: string, enum: [PENDING, RESPONDED, SUPERSEDED]}
         response: {type: [string, 'null'], enum: [CONTINUE, REQUEST_WITHDRAWAL, REQUEST_TRANSFER, null]}
         respondedAt: {type: [string, 'null'], format: date-time}
+        changeEventId: {type: [string, 'null'], format: uuid}
+        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT]}
+        withdrawalRequestId: {type: [string, 'null'], format: uuid}
+        withdrawalEligible: {type: boolean}
+        withdrawalReason: {type: [string, 'null']}
+        refundBasisVnd: {type: [integer, 'null']}
+        refundAmountVnd: {type: [integer, 'null']}
     AttendanceUpdate:
       type: object
       additionalProperties: false

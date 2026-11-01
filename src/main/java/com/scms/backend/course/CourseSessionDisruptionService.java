@@ -45,6 +45,16 @@ class CourseSessionDisruptionService {
 
 	@Transactional
 	CourseSessionResponse cancel(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion) {
+		return cancelInternal(managerId, runId, sessionId, expectedVersion, false);
+	}
+
+	@Transactional
+	CourseSessionResponse cancelFromEndpoint(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion) {
+		return cancelInternal(managerId, runId, sessionId, expectedVersion, true);
+	}
+
+	private CourseSessionResponse cancelInternal(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion,
+			boolean requireConcreteMakeup) {
 		ensureManager(managerId);
 		if (expectedVersion == null || expectedVersion < 0) throw CourseException.sessionDisruptionConflict();
 		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseException::runNotFound);
@@ -61,6 +71,7 @@ class CourseSessionDisruptionService {
 			.flatMap(sessions::findByIdForUpdate).orElse(null);
 		if (original != null && original.getReplacementSession() == null) throw CourseException.sessionDisruptionConflict();
 		List<UUID> recipients = enrolledMembers(sessionId);
+		if (requireConcreteMakeup && !recipients.isEmpty()) throw CourseException.sessionDisruptionConflict();
 		Map<String, Object> before = snapshot(session);
 		session.cancelPendingMakeup();
 		if (original != null) {
@@ -73,6 +84,39 @@ class CourseSessionDisruptionService {
 		audit(managerId, "COURSE_SESSION_CANCELLED", sessionId, before, snapshot(session));
 		notify(recipients, session, "COURSE_SESSION_CANCELLED", "cancelled");
 		return CourseSessionResponse.from(session, original == null ? null : original.getId());
+	}
+
+	@Transactional
+	CourseMakeupResponse cancelWithMakeup(UUID managerId, UUID runId, UUID sessionId,
+			CourseSessionCancelWithMakeupRequest request) {
+		ensureManager(managerId);
+		if (request == null || request.expectedVersion() == null || request.expectedVersion() < 0
+				|| request.roomId() == null || request.coachId() == null || request.startAt() == null
+				|| request.endAt() == null || !request.startAt().isAfter(clock.instant())
+				|| !request.startAt().isBefore(request.endAt())) throw CourseException.sessionDisruptionConflict();
+		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseException::runNotFound);
+		ensureDisruptible(run);
+		CourseSession original = sessions.findByIdForUpdate(sessionId)
+			.filter(value -> value.getCourseRun().getId().equals(runId)).orElseThrow(CourseException::sessionNotFound);
+		checkSessionVersion(original, request.expectedVersion());
+		if (original.isMakeup() || !original.getStartAt().isAfter(clock.instant())
+				|| original.getStatus() != CourseSessionStatus.SCHEDULED) throw CourseException.sessionDisruptionConflict();
+		List<UUID> recipients = enrolledMembers(sessionId);
+		Map<String, Object> before = snapshot(original);
+		CourseSession makeup = sessionService.createMakeup(runId, original.getUnitNumber(), request.coachId(),
+			request.roomId(), request.startAt(), request.endAt(), original.getAllocationVnd());
+		Instant now = clock.instant();
+		original.cancelPendingMakeup();
+		original.linkReplacement(makeup, now);
+		sessions.saveAndFlush(original);
+		db.update("update course_enrollment_sessions set course_session_id=? where course_session_id=? and disposition='ENROLLED'",
+			makeup.getId(), sessionId);
+		audit(managerId, "COURSE_SESSION_CANCELLED", sessionId, before, snapshot(original));
+		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before,
+			Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
+		notify(recipients, original, "COURSE_SESSION_CANCELLED", "cancelled");
+		notify(recipients, makeup, "COURSE_SESSION_MAKEUP_SCHEDULED", "makeup scheduled");
+		return new CourseMakeupResponse(CourseSessionResponse.from(original), CourseSessionResponse.from(makeup));
 	}
 
 	@Transactional

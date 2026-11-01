@@ -134,6 +134,11 @@ public class CourseSession {
 		this.status = CourseSessionStatus.MAKEUP_SCHEDULED;
 	}
 
+	void removeByRunChange() {
+		this.status = CourseSessionStatus.REMOVED_BY_RUN_CHANGE;
+		this.updatedAt = Instant.now();
+	}
+
 	void linkReplacement(CourseSession replacement, Instant now) {
 		this.replacementSession = replacement;
 		this.updatedAt = now;

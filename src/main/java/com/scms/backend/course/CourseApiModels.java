@@ -153,6 +153,12 @@ record CourseRunPatchRequest(
 	@NotNull @PositiveOrZero Long expectedVersion,
 	@NotNull @Positive Integer minimumEnrollment) { }
 
+record CourseRunScheduleRequest(
+	@NotNull @PositiveOrZero Long expectedVersion,
+	@NotNull Instant plannedStartAt,
+	@NotNull Instant plannedEndAt,
+	@NotNull @Positive Integer totalUnits) { }
+
 record CourseRunOpenRequest(
 	@NotNull @PositiveOrZero Long expectedVersion,
 	@NotBlank @Size(max = 100) String policyVersion) { }
@@ -245,3 +251,8 @@ record CourseMakeupRequest(@jakarta.validation.constraints.NotNull @jakarta.vali
 	Long expectedVersion, @jakarta.validation.constraints.NotNull UUID roomId,
 	@jakarta.validation.constraints.NotNull UUID coachId, @jakarta.validation.constraints.NotNull Instant startAt,
 	@jakarta.validation.constraints.NotNull Instant endAt) { }
+
+record CourseSessionCancelWithMakeupRequest(
+	@jakarta.validation.constraints.NotNull @jakarta.validation.constraints.PositiveOrZero Long expectedVersion,
+	@jakarta.validation.constraints.NotNull UUID roomId, @jakarta.validation.constraints.NotNull UUID coachId,
+	@jakarta.validation.constraints.NotNull Instant startAt, @jakarta.validation.constraints.NotNull Instant endAt) { }
