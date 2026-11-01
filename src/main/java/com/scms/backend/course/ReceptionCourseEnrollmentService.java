@@ -37,8 +37,9 @@ class ReceptionCourseEnrollmentService {
 		active(receptionistId);
 		page(page, size);
 		String normalizedStatus = status(status);
-		String source = select() + " where member_id=? and (cast(? as varchar) is null or enrollment_status=?) "
-			+ "and (cast(? as boolean) is null or withdrawal_eligible=?)";
+		String source = "select * from (" + select()
+			+ " where a.id=? and (cast(? as varchar) is null or e.lifecycle_status=?)) enrollment "
+			+ "where (cast(? as boolean) is null or withdrawal_eligible=?)";
 		Timestamp now = Timestamp.from(clock.instant());
 		long total = db.queryForObject("select count(*) from (" + source + ") e", Long.class,
 			now, now, now, memberId, normalizedStatus, normalizedStatus, eligible, eligible);
@@ -51,7 +52,7 @@ class ReceptionCourseEnrollmentService {
 	ReceptionCourseEnrollment detail(UUID receptionistId, UUID memberId, UUID enrollmentId) {
 		active(receptionistId);
 		Timestamp now = Timestamp.from(clock.instant());
-		return db.query(select() + " where member_id=? and enrollment_id=?", this::map,
+		return db.query(select() + " where a.id=? and e.id=?", this::map,
 			now, now, now, memberId, enrollmentId)
 			.stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
 	}
@@ -88,7 +89,7 @@ class ReceptionCourseEnrollmentService {
 			: CourseWithdrawalPolicy.refund(remaining, total, amount(rs.getBigDecimal("unused_allocation"))).signum() == 0
 				? "ELIGIBLE_WITHOUT_REFUND" : "ELIGIBLE_WITH_REFUND");
 		BigInteger refund = eligible ? CourseWithdrawalPolicy.refund(remaining, total,
-			amount(rs.getBigDecimal("unused_allocation"))) : null;
+			amount(rs.getBigDecimal("unused_allocation")).min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")))) : null;
 		return new ReceptionCourseEnrollment(rs.getObject("member_id", UUID.class), rs.getString("member_code"),
 			rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"),
 			rs.getString("course_name"), rs.getObject("course_run_id", UUID.class), rs.getString("run_code"),
