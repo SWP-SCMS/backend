@@ -5,6 +5,93 @@ info:
 security:
   - bearerAuth: []
 paths:
+  /reception/courses:
+    post:
+      summary: Submit a course for Manager approval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseCreateRequest' }
+      responses:
+        '201':
+          description: Course submitted for approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseApprovalResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-approval-requests:
+    get:
+      summary: List pending course approval requests
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Paginated pending course approvals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseApprovalPageResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /manager/course-approval-requests/{courseId}:
+    parameters: [{ $ref: '#/components/parameters/CourseId' }]
+    get:
+      summary: Get a submitted course approval request
+      responses:
+        '200':
+          description: Submitted course details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseApprovalResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /manager/course-approval-requests/{courseId}/approve:
+    post:
+      summary: Approve a pending course into the Manager draft workflow
+      parameters: [{ $ref: '#/components/parameters/CourseId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseApprovalDecision' }
+      responses:
+        '200':
+          description: Course approved as a draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseApprovalResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-approval-requests/{courseId}/reject:
+    post:
+      summary: Reject a pending course
+      parameters: [{ $ref: '#/components/parameters/CourseId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseApprovalDecision' }
+      responses:
+        '200':
+          description: Course rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseApprovalResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /manager/courses:
     get:
       summary: List courses
@@ -392,7 +479,7 @@ components:
   schemas:
     CourseStatus:
       type: string
-      enum: [DRAFT, PUBLISHED, INACTIVE, ARCHIVED]
+      enum: [DRAFT, PENDING_APPROVAL, REJECTED, PUBLISHED, INACTIVE, ARCHIVED]
     CourseRunStatus:
       type: string
       enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]
@@ -405,6 +492,13 @@ components:
       required: [expectedVersion]
       properties:
         expectedVersion: { type: integer, format: int64, minimum: 0 }
+    CourseApprovalDecision:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, reason]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        reason: { type: string, minLength: 1, maxLength: 1000 }
     CourseCreateRequest:
       type: object
       additionalProperties: false
@@ -447,6 +541,37 @@ components:
       required: [content, page, size, totalElements, totalPages]
       properties:
         content: { type: array, items: { $ref: '#/components/schemas/CourseResponse' } }
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+        totalPages: { type: integer }
+    CourseApprovalResponse:
+      type: object
+      required: [id, code, name, disciplineId, disciplineName, status, submittedByAccountId, submittedAt,
+        createdAt, updatedAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        disciplineId: { type: string, format: uuid }
+        disciplineName: { type: string }
+        imageUrl: { type: [string, 'null'] }
+        defaultMinimumEnrollment: { type: [integer, 'null'] }
+        status: { $ref: '#/components/schemas/CourseStatus' }
+        submittedByAccountId: { type: string, format: uuid }
+        submittedAt: { type: string, format: date-time }
+        reviewedByAccountId: { type: [string, 'null'], format: uuid }
+        reviewedAt: { type: [string, 'null'], format: date-time }
+        reviewReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64 }
+    CourseApprovalPageResponse:
+      type: object
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: { type: array, items: { $ref: '#/components/schemas/CourseApprovalResponse' } }
         page: { type: integer }
         size: { type: integer }
         totalElements: { type: integer, format: int64 }
@@ -602,7 +727,7 @@ components:
             COURSE_RUN_INVALID_TRANSITION, COURSE_RUN_IMMUTABLE, COURSE_RUN_CHANGED,
             COURSE_SESSION_NOT_FOUND, COURSE_SESSION_INVALID, COURSE_SESSION_RESOURCE_CONFLICT,
             COURSE_SESSION_ROOM_CAPACITY_CONFLICT, COURSE_SESSION_CHANGED,
-            COURSE_SESSION_DISRUPTION_CONFLICT,
+            COURSE_SESSION_DISRUPTION_CONFLICT, COURSE_APPROVAL_INVALID_TRANSITION,
             COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE, COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID,
             COURSE_SCHEDULE_CHANGE_NOT_FOUND, COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT,
             COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED]

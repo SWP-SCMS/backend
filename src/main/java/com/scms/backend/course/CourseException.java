@@ -37,6 +37,11 @@ public class CourseException extends RuntimeException {
 			"The course cannot transition from its current state.");
 	}
 
+	static CourseException invalidApprovalTransition() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_APPROVAL_INVALID_TRANSITION",
+			"Only a pending Course submission can be approved or rejected.");
+	}
+
 	static CourseException changed() {
 		return new CourseException(HttpStatus.CONFLICT, "COURSE_CHANGED",
 			"The course was changed by another request.");

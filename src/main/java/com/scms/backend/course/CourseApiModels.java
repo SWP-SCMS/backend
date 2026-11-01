@@ -110,6 +110,31 @@ final class CourseFieldLimits {
 
 record VersionRequest(@NotNull @PositiveOrZero Long expectedVersion) { }
 
+record CourseApprovalDecision(
+	@NotNull @PositiveOrZero Long expectedVersion,
+	@NotBlank @Size(max = 1000) String reason) { }
+
+record CourseApprovalResponse(UUID id, String code, String name, String description, UUID disciplineId,
+	String disciplineName, String imageUrl, Integer defaultMinimumEnrollment, CourseStatus status,
+	UUID submittedByAccountId, Instant submittedAt, UUID reviewedByAccountId, Instant reviewedAt,
+	String reviewReason, Instant createdAt, Instant updatedAt, Long version) {
+	static CourseApprovalResponse from(Course course) {
+		return new CourseApprovalResponse(course.getId(), course.getCode(), course.getName(), course.getDescription(),
+			course.getDiscipline().getId(), course.getDiscipline().getName(), course.getImageUrl(),
+			course.getDefaultMinimumEnrollment(), course.getStatus(), course.getSubmittedByAccountId(),
+			course.getSubmittedAt(), course.getReviewedByAccountId(), course.getReviewedAt(),
+			course.getReviewReason(), course.getCreatedAt(), course.getUpdatedAt(), course.getVersion());
+	}
+}
+
+record CourseApprovalPageResponse(List<CourseApprovalResponse> content, int page, int size, long totalElements,
+	int totalPages) {
+	static CourseApprovalPageResponse from(org.springframework.data.domain.Page<Course> page) {
+		return new CourseApprovalPageResponse(page.getContent().stream().map(CourseApprovalResponse::from).toList(),
+			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
+}
+
 record CourseRunCreateRequest(
 	@NotBlank @Size(max = 50) String runCode,
 	@NotNull UUID courseId,

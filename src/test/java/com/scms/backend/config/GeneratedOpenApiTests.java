@@ -66,12 +66,20 @@ class GeneratedOpenApiTests {
 		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED",
 		"COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
 		"COURSE_SCHEDULE_CHANGE_NOT_FOUND", "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT",
-		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED", "COURSE_SESSION_DISRUPTION_CONFLICT");
+		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED", "COURSE_SESSION_DISRUPTION_CONFLICT",
+		"COURSE_APPROVAL_INVALID_TRANSITION");
 	private static final Set<String> READ_COLLECTION_RESPONSES = Set.of("200", "400", "401", "403");
 	private static final Set<String> CREATE_RESPONSES = Set.of("201", "400", "401", "403", "409");
 	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
 	private static final Set<String> MUTATE_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404", "409");
 	private static final List<CourseOperationContract> COURSE_OPERATION_CONTRACTS = List.of(
+		new CourseOperationContract("/reception/courses", "post", CREATE_RESPONSES),
+		new CourseOperationContract("/manager/course-approval-requests", "get", READ_COLLECTION_RESPONSES),
+		new CourseOperationContract("/manager/course-approval-requests/{courseId}", "get", READ_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-approval-requests/{courseId}/approve", "post",
+			MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-approval-requests/{courseId}/reject", "post",
+			MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/courses", "get", READ_COLLECTION_RESPONSES),
 		new CourseOperationContract("/manager/courses", "post", CREATE_RESPONSES),
 		new CourseOperationContract("/manager/courses/{courseId}", "get", READ_ITEM_RESPONSES),
@@ -436,6 +444,11 @@ class GeneratedOpenApiTests {
 		"POST /manager/disciplines",
 		"GET /manager/disciplines/{disciplineId}",
 		"PATCH /manager/disciplines/{disciplineId}",
+		"POST /reception/courses",
+		"GET /manager/course-approval-requests",
+		"GET /manager/course-approval-requests/{courseId}",
+		"POST /manager/course-approval-requests/{courseId}/approve",
+		"POST /manager/course-approval-requests/{courseId}/reject",
 		"GET /manager/courses",
 		"POST /manager/courses",
 		"GET /manager/courses/{courseId}",

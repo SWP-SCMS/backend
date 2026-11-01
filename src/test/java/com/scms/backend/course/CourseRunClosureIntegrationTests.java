@@ -449,8 +449,7 @@ class CourseRunClosureIntegrationTests {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		do {
 			Long waiting = db.queryForObject("select count(*) from pg_stat_activity where pid=? "
-				+ "and wait_event_type='Lock' and query ilike '%course_runs%' "
-				+ "and cardinality(pg_blocking_pids(pid))>0", Long.class, waiterPid);
+				+ "and wait_event_type='Lock' and cardinality(pg_blocking_pids(pid))>0", Long.class, waiterPid);
 			if (waiting != null && waiting == 1) return;
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
