@@ -127,6 +127,8 @@ public class SecurityConfiguration {
 					.hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/course-orders/*")
 					.hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.GET, "/reception/members/*/course-enrollments",
+					"/reception/members/*/course-enrollments/*").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/reception/members/*/cash-payments")
 					.hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.POST, "/reception/members").hasRole("RECEPTIONIST")

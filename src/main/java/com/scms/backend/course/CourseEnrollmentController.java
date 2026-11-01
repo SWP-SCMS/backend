@@ -6,6 +6,8 @@ import java.util.UUID;
 import com.scms.backend.course.CourseEnrollmentApiModels.AttendanceUpdate;
 import com.scms.backend.course.CourseEnrollmentApiModels.MemberEnrollment;
 import com.scms.backend.course.CourseEnrollmentApiModels.RosterEntry;
+import com.scms.backend.course.CourseEnrollmentApiModels.ReceptionCourseEnrollment;
+import com.scms.backend.course.CourseEnrollmentApiModels.ReceptionCourseEnrollmentPage;
 import com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import org.springframework.http.ResponseEntity;
@@ -17,12 +19,31 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 class CourseEnrollmentController {
 	private final CourseEnrollmentService service;
-	CourseEnrollmentController(CourseEnrollmentService service) { this.service = service; }
+	private final ReceptionCourseEnrollmentService receptionService;
+	CourseEnrollmentController(CourseEnrollmentService service, ReceptionCourseEnrollmentService receptionService) {
+		this.service = service; this.receptionService = receptionService;
+	}
+
+	@GetMapping("/reception/members/{memberId}/course-enrollments")
+	ResponseEntity<ReceptionCourseEnrollmentPage> receptionEnrollments(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String status,
+			@RequestParam(required = false) Boolean withdrawalEligible) {
+		return ResponseEntity.ok(receptionService.list(subject(jwt), memberId, page, size, status, withdrawalEligible));
+	}
+
+	@GetMapping("/reception/members/{memberId}/course-enrollments/{enrollmentId}")
+	ResponseEntity<ReceptionCourseEnrollment> receptionEnrollment(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID memberId, @PathVariable UUID enrollmentId) {
+		return ResponseEntity.ok(receptionService.detail(subject(jwt), memberId, enrollmentId));
+	}
+	private static UUID subject(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
 
 	@GetMapping("/members/me/course-enrollments")
 	ResponseEntity<List<MemberEnrollment>> memberEnrollments(@AuthenticationPrincipal Jwt jwt) {

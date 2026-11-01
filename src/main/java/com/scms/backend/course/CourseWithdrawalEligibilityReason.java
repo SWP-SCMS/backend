@@ -1,0 +1,9 @@
+package com.scms.backend.course;
+
+public enum CourseWithdrawalEligibilityReason {
+	ELIGIBLE_WITH_REFUND,
+	ELIGIBLE_WITHOUT_REFUND,
+	FINAL_UNIT_ALREADY_STARTED,
+	ENROLLMENT_NOT_ACTIVE,
+	COURSE_RUN_NOT_WITHDRAWABLE
+}

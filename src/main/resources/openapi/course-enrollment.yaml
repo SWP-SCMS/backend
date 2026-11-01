@@ -2,6 +2,31 @@ openapi: 3.1.0
 info: {title: SCMS Course Enrollment API, version: v1}
 security: [{bearerAuth: []}]
 paths:
+  /reception/members/{memberId}/course-enrollments:
+    get:
+      operationId: listReceptionMemberCourseEnrollments
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: page, in: query, required: false, schema: {type: integer, format: int32, minimum: 0, default: 0}}
+        - {name: size, in: query, required: false, schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, required: false, schema: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}}
+        - {name: withdrawalEligible, in: query, required: false, schema: {type: boolean}}
+      responses:
+        '200': {description: Current enrollment and withdrawal display data, content: {application/json: {schema: {$ref: '#/components/schemas/ReceptionCourseEnrollmentPage'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /reception/members/{memberId}/course-enrollments/{enrollmentId}:
+    get:
+      operationId: getReceptionMemberCourseEnrollment
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: enrollmentId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Current enrollment and withdrawal display data, content: {application/json: {schema: {$ref: '#/components/schemas/ReceptionCourseEnrollment'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /members/me/course-enrollments:
     get:
       operationId: listMyCourseEnrollments
@@ -69,6 +94,39 @@ components:
   parameters:
     SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
+    CourseRunStatus: {type: string, enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]}
+    ReceptionCourseEnrollmentPage:
+      type: object
+      additionalProperties: false
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/ReceptionCourseEnrollment'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer}
+    ReceptionCourseEnrollment:
+      type: object
+      additionalProperties: false
+      required: [memberId, memberCode, memberName, courseId, courseCode, courseName, courseRunId, runCode, courseRunStatus, enrollmentId, enrollmentStatus, enrolledAt, totalUnits, remainingUnits, withdrawalEligible, withdrawalReason, estimatedRefundAmount]
+      properties:
+        memberId: {type: string, format: uuid}
+        memberCode: {type: string}
+        memberName: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        courseRunId: {type: string, format: uuid}
+        runCode: {type: string}
+        courseRunStatus: {$ref: '#/components/schemas/CourseRunStatus'}
+        enrollmentId: {type: string, format: uuid}
+        enrollmentStatus: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}
+        enrolledAt: {type: string, format: date-time}
+        totalUnits: {type: integer}
+        remainingUnits: {type: integer}
+        withdrawalEligible: {type: boolean}
+        withdrawalReason: {type: string, enum: [ELIGIBLE_WITH_REFUND, ELIGIBLE_WITHOUT_REFUND, FINAL_UNIT_ALREADY_STARTED, ENROLLMENT_NOT_ACTIVE, COURSE_RUN_NOT_WITHDRAWABLE]}
+        estimatedRefundAmount: {type: [integer, 'null'], description: Null when withdrawalEligible is false.}
     AttendanceStatus: {type: string, enum: [NOT_RECORDED, PRESENT, ABSENT]}
     ScheduleChangeResponse:
       type: object

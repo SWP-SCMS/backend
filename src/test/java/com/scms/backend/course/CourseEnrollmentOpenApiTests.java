@@ -14,6 +14,8 @@ class CourseEnrollmentOpenApiTests {
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/members/me/course-schedule-changes",
+				"/reception/members/{memberId}/course-enrollments",
+				"/reception/members/{memberId}/course-enrollments/{enrollmentId}",
 				"/members/me/course-schedule-changes/{responseId}/response", "/coach/course-sessions/{sessionId}/roster",
 				"/coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance");
 		assertThat(document.at("/components/schemas/AttendanceUpdate/properties/status/enum").toString())
@@ -22,6 +24,8 @@ class CourseEnrollmentOpenApiTests {
 		assertThat(document.at("/components/schemas/RosterEntry/properties/memberId").isMissingNode()).isTrue();
 		assertThat(document.at("/components/schemas/MemberEnrollment/properties/sessions/items/$ref").asText())
 			.isEqualTo("#/components/schemas/MemberSession");
+		assertThat(document.at("/components/schemas/ReceptionCourseEnrollment/properties/estimatedRefundAmount/description")
+			.asText()).contains("Null when withdrawalEligible is false");
 		assertThat(document.at("/paths/~1coach~1course-sessions~1{sessionId}~1roster~1{enrollmentSessionId}~1attendance/patch/responses/409/$ref").asText())
 			.isEqualTo("#/components/responses/Conflict");
 	}
