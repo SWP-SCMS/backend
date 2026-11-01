@@ -9,7 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
+
+import com.scms.backend.course.CourseRunStatus;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +55,23 @@ class ManagerReportingControllerTests {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
 			.andExpect(jsonPath("$.errors.to[0]").value("must be later than from"));
+	}
+
+	@Test
+	void returnsBoundedFilteredCourseRunReportForManager() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		LocalDate start = LocalDate.of(2026, 10, 1);
+		LocalDate end = LocalDate.of(2026, 11, 1);
+		when(service.courseRuns(managerId, null, CourseRunStatus.COMPLETED, start, end, 1, 10))
+			.thenReturn(new CourseRunReportPageResponse(List.of(), 1, 10, 12, 2));
+
+		mockMvc.perform(get("/api/v1/manager/reports/course-runs").contextPath("/api/v1")
+			.with(jwt().jwt(jwt -> jwt.subject(managerId.toString()).claim("role", "MANAGER")))
+			.queryParam("status", "COMPLETED").queryParam("startDate", start.toString())
+			.queryParam("endDate", end.toString()).queryParam("page", "1").queryParam("size", "10"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.content").isEmpty())
+			.andExpect(jsonPath("$.page").value(1)).andExpect(jsonPath("$.size").value(10))
+			.andExpect(jsonPath("$.totalElements").value(12)).andExpect(jsonPath("$.totalPages").value(2));
 	}
 
 }

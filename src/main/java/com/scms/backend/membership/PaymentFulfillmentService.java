@@ -238,11 +238,12 @@ class PaymentFulfillmentService {
 			db.update("""
 				insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,
 					actor_account_id,payment_reference,amount,currency_code,status,deadline_at,method,
-					processed_by_account_id,paid_at)
-				values(?,?,?,?,?,?,?,'VND','PAID',?,'CASH',?,?)
+					processed_by_account_id,paid_at,created_at,updated_at)
+				values(?,?,?,?,?,?,?,'VND','PAID',?,'CASH',?,?,?,?)
 				""", paymentId, uuid(row, "order_id"), uuid(row, "reservation_id"), uuid(row, "member_account_id"),
 				uuid(row, "actor_account_id"), string(row, "order_reference"), row.get("payment_amount"),
-				Timestamp.from(instant(row, "reservation_expires_at")), actorId, Timestamp.from(now));
+				Timestamp.from(instant(row, "reservation_expires_at")), actorId, Timestamp.from(now),
+				Timestamp.from(now), Timestamp.from(now));
 		}
 		else {
 			db.update("""

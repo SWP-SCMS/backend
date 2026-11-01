@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,7 +13,9 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,6 +26,7 @@ import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 
 class ManagerReportingServiceTests {
 
@@ -81,5 +85,44 @@ class ManagerReportingServiceTests {
 		assertThat(result.utilizationRate()).isEqualByComparingTo(new BigDecimal("0.4000"));
 		assertThat(result.present()).isEqualTo(4);
 		assertThat(result.totalCapacity()).isEqualTo(10);
+	}
+
+	@Test
+	void courseRunReportRejectsRangesWiderThanOneYearBeforeReadingData() {
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.courseRuns(managerId, null, null,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 3), 0, 20))
+			.isInstanceOf(ReportingValidationException.class)
+			.hasMessage("must not span more than 366 days");
+
+		verify(db, never()).queryForObject(anyString(), eq(Long.class), any(Object[].class));
+	}
+
+	@Test
+	void courseRunReportRejectsUnboundedPageSize() {
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(true);
+
+		assertThatThrownBy(() -> service.courseRuns(managerId, null, null, null, null, 0, 101))
+			.isInstanceOf(ReportingValidationException.class)
+			.hasMessage("must be between 1 and 100");
+	}
+
+	@Test
+	void courseRunReportUsesTwoQueriesRegardlessOfPageSizeAndReturnsEmptyPage() {
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			.thenReturn(true);
+		when(db.queryForObject(anyString(), eq(Long.class), any(Object[].class))).thenReturn(0L);
+		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+
+		CourseRunReportPageResponse result = service.courseRuns(managerId, null, null, null, null, 4, 100);
+
+		assertThat(result.content()).isEmpty();
+		assertThat(result.totalElements()).isZero();
+		assertThat(result.totalPages()).isZero();
+		verify(db).queryForObject(anyString(), eq(Long.class), any(Object[].class));
+		verify(db).query(anyString(), any(RowMapper.class), any(Object[].class));
 	}
 }
