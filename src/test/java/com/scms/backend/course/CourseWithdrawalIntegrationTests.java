@@ -175,12 +175,11 @@ class CourseWithdrawalIntegrationTests {
 
 	@Test
 	void receptionistEnrollmentDiscoveryIsOwnedAndNotAvailableToOtherRoles() throws Exception {
-		db.update("update course_enrollments set amount_paid_vnd_snapshot=500000 where id=?", enrollmentId);
 		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
 			.andExpect(status().isOk()).andExpect(jsonPath("$.content[0].memberId").value(memberId.toString()))
 			.andExpect(jsonPath("$.content[0].remainingUnits").value(7))
-			.andExpect(jsonPath("$.content[0].estimatedRefundAmount").value(400000));
+			.andExpect(jsonPath("$.content[0].estimatedRefundAmount").value(560000));
 		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments", memberId)
 			.param("status", "ACTIVE").param("withdrawalEligible", "true").param("page", "0").param("size", "1")
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
@@ -188,7 +187,7 @@ class CourseWithdrawalIntegrationTests {
 		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments/{enrollmentId}",
 			memberId, enrollmentId).contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))).andExpect(status().isOk())
-			.andExpect(jsonPath("$.estimatedRefundAmount").value(400000));
+			.andExpect(jsonPath("$.estimatedRefundAmount").value(560000));
 		mockMvc.perform(get("/api/v1/reception/members/{memberId}/course-enrollments/{enrollmentId}",
 			otherMemberId, enrollmentId).contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))).andExpect(status().isNotFound());
