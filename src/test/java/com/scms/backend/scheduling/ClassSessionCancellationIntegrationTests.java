@@ -87,7 +87,7 @@ class ClassSessionCancellationIntegrationTests {
 			+ "and recipient_account_id = ?", Long.class, member.getId())).isZero();
 		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class,
 			"BOOKING_CREATED:" + response.id())).isEqualTo("FAILED");
-		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?",
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' where event_key=?",
 			"BOOKING_CREATED:" + response.id());
 		notificationOutboxDispatcher.dispatchAvailable();
 
@@ -120,7 +120,7 @@ class ClassSessionCancellationIntegrationTests {
 			"BOOKING_CANCELLED:" + response.id())).isZero();
 		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class,
 			"BOOKING_CANCELLED:" + response.id())).isEqualTo("FAILED");
-		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?",
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' where event_key=?",
 			"BOOKING_CANCELLED:" + response.id());
 		notificationOutboxDispatcher.dispatchAvailable();
 
@@ -229,7 +229,7 @@ class ClassSessionCancellationIntegrationTests {
 			+ "and target_id = ?", Long.class, session.getId())).isEqualTo(1L);
 		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'SESSION_CANCELLED' "
 			+ "and target_id = ?", Long.class, session.getId())).isZero();
-		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp "
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' "
 			+ "where event_key like ?", "SESSION_CANCELLED:" + session.getId() + ":%");
 		notificationOutboxDispatcher.dispatchAvailable();
 

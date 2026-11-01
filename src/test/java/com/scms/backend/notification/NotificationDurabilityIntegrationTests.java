@@ -117,7 +117,8 @@ class NotificationDurabilityIntegrationTests {
 			eventKey)).isEqualTo("FAILED");
 		assertThat(count(eventKey)).isZero();
 
-		db.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?", eventKey);
+		db.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' "
+			+ "where event_key=?", eventKey);
 		dispatcher.dispatchAvailable();
 		assertThat(count(eventKey)).isOne();
 		assertThat(db.queryForObject("select status from notification_outbox where event_key=?", String.class,

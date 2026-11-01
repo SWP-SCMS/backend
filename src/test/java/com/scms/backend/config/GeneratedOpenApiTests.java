@@ -401,6 +401,7 @@ class GeneratedOpenApiTests {
 		"GET /manager/reports/attendance",
 		"GET /manager/reports/center-visits",
 		"GET /manager/reports/class-utilization",
+		"GET /manager/reports/course-runs",
 		"POST /members/me/membership-orders/{orderId}/payments/sepay",
 		"POST /members/me/membership-orders/{orderId}/bank-transfer",
 		"POST /payments/sepay/webhook",

@@ -97,11 +97,13 @@ class MembershipRefundIntegrationTests {
 			jdbc.execute("drop trigger fail_refund_staff_delivery on notifications");
 			jdbc.execute("drop function fail_refund_staff_delivery()");
 		}
-		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp where event_key=?", staffKey);
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' "
+			+ "where event_key=?", staffKey);
 		dispatchRefundEvents(created.id());
 		assertDeliveredRefundEvents(created.id(), completedCount);
 		// A delivery replay must also be harmless after the inbox insert already committed.
-		jdbc.update("update notification_outbox set status='FAILED',next_attempt_at=current_timestamp where event_key=?", staffKey);
+		jdbc.update("update notification_outbox set status='FAILED',"
+			+ "next_attempt_at=current_timestamp - interval '1 second' where event_key=?", staffKey);
 		dispatchRefundEvents(created.id());
 		assertDeliveredRefundEvents(created.id(), completedCount);
 
