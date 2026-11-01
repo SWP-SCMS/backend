@@ -62,6 +62,39 @@ class CourseManagementService {
 	@Transactional
 	CourseResponse createCourse(UUID managerId, CourseCreateRequest request) {
 		ensureActiveManager(managerId);
+		return CourseResponse.from(createCourse(managerId, request, false));
+	}
+
+	@Transactional
+	CourseApprovalResponse submitCourse(UUID receptionistId, CourseCreateRequest request) {
+		ensureActiveReceptionist(receptionistId);
+		return CourseApprovalResponse.from(createCourse(receptionistId, request, true));
+	}
+
+	@Transactional(readOnly = true)
+	CourseApprovalPageResponse listCourseApprovals(UUID managerId, Pageable pageable) {
+		ensureActiveManager(managerId);
+		return CourseApprovalPageResponse.from(courses.findByStatus(CourseStatus.PENDING_APPROVAL, pageable));
+	}
+
+	@Transactional(readOnly = true)
+	CourseApprovalResponse getCourseApproval(UUID managerId, UUID courseId) {
+		ensureActiveManager(managerId);
+		return CourseApprovalResponse.from(courses.findSubmittedById(courseId)
+			.orElseThrow(CourseException::notFound));
+	}
+
+	@Transactional
+	CourseApprovalResponse approveCourse(UUID managerId, UUID courseId, CourseApprovalDecision request) {
+		return decideCourse(managerId, courseId, request, true);
+	}
+
+	@Transactional
+	CourseApprovalResponse rejectCourse(UUID managerId, UUID courseId, CourseApprovalDecision request) {
+		return decideCourse(managerId, courseId, request, false);
+	}
+
+	private Course createCourse(UUID actorId, CourseCreateRequest request, boolean submittedForApproval) {
 		if (request == null) throw CourseException.validation("request", "must be a JSON object");
 		String code = required(request.code(), 50, "code").toUpperCase(java.util.Locale.ROOT);
 		String name = required(request.name(), 200, "name");
@@ -74,17 +107,40 @@ class CourseManagementService {
 			throw CourseException.validation("disciplineId", "must identify an active discipline");
 		}
 		if (courses.existsByCode(code)) throw CourseException.duplicateCode();
-		Course course = new Course(UUID.randomUUID(), code, name,
-			optional(request.description(), CourseFieldLimits.DESCRIPTION, "description"), discipline,
-			optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl"), request.defaultMinimumEnrollment());
+		String description = optional(request.description(), CourseFieldLimits.DESCRIPTION, "description");
+		String imageUrl = optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl");
+		Course course = submittedForApproval
+			? Course.submittedForApproval(UUID.randomUUID(), code, name, description, discipline, imageUrl,
+				request.defaultMinimumEnrollment(), actorId)
+			: new Course(UUID.randomUUID(), code, name, description, discipline, imageUrl,
+				request.defaultMinimumEnrollment());
 		try {
 			courses.saveAndFlush(course);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw CourseException.duplicateCode();
 		}
-		audit(managerId, "COURSE_CREATED", "COURSE", course.getId(), null, snapshot(course));
-		return CourseResponse.from(course);
+		audit(actorId, submittedForApproval ? "COURSE_SUBMITTED_FOR_APPROVAL" : "COURSE_CREATED",
+			"COURSE", course.getId(), null, snapshot(course));
+		return course;
+	}
+
+	private CourseApprovalResponse decideCourse(UUID managerId, UUID courseId, CourseApprovalDecision request,
+			boolean approved) {
+		ensureActiveManager(managerId);
+		if (request == null || request.expectedVersion() == null) {
+			throw CourseException.validation("expectedVersion", "is required");
+		}
+		String reason = required(request.reason(), 1000, "reason");
+		Course course = lockCourse(courseId);
+		checkVersion(course.getVersion(), request.expectedVersion(), CourseException::changed);
+		Map<String, Object> before = snapshot(course);
+		if (approved) course.approve(managerId, reason);
+		else course.reject(managerId, reason);
+		courses.saveAndFlush(course);
+		audit(managerId, approved ? "COURSE_APPROVED" : "COURSE_REJECTED", "COURSE", courseId,
+			before, snapshot(course));
+		return CourseApprovalResponse.from(course);
 	}
 
 	@Transactional
@@ -296,6 +352,12 @@ class CourseManagementService {
 		}
 	}
 
+	private void ensureActiveReceptionist(UUID receptionistId) {
+		if (!accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+	}
+
 	private void validateRun(CourseRunCreateRequest request) {
 		BigInteger tuition = request.tuitionVnd();
 		if (tuition == null || tuition.signum() <= 0 || tuition.toString().length() > 19) {
@@ -348,6 +410,11 @@ class CourseManagementService {
 		data.put("imageUrl", course.getImageUrl());
 		data.put("defaultMinimumEnrollment", course.getDefaultMinimumEnrollment());
 		data.put("status", course.getStatus().name());
+		data.put("submittedByAccountId", course.getSubmittedByAccountId());
+		data.put("submittedAt", course.getSubmittedAt() == null ? null : course.getSubmittedAt().toString());
+		data.put("reviewedByAccountId", course.getReviewedByAccountId());
+		data.put("reviewedAt", course.getReviewedAt() == null ? null : course.getReviewedAt().toString());
+		data.put("reviewReason", course.getReviewReason());
 		return data;
 	}
 

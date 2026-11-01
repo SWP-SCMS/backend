@@ -44,6 +44,21 @@ public class Course {
 	@Column(name = "default_minimum_enrollment")
 	private Integer defaultMinimumEnrollment;
 
+	@Column(name = "submitted_by_account_id", updatable = false)
+	private UUID submittedByAccountId;
+
+	@Column(name = "submitted_at", updatable = false)
+	private Instant submittedAt;
+
+	@Column(name = "reviewed_by_account_id")
+	private UUID reviewedByAccountId;
+
+	@Column(name = "reviewed_at")
+	private Instant reviewedAt;
+
+	@Column(name = "review_reason", length = 1000)
+	private String reviewReason;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 20)
 	private CourseStatus status;
@@ -65,6 +80,11 @@ public class Course {
 
 	Course(UUID id, String code, String name, String description, Discipline discipline, String imageUrl,
 			Integer defaultMinimumEnrollment) {
+		this(id, code, name, description, discipline, imageUrl, defaultMinimumEnrollment, CourseStatus.DRAFT, null);
+	}
+
+	private Course(UUID id, String code, String name, String description, Discipline discipline, String imageUrl,
+			Integer defaultMinimumEnrollment, CourseStatus status, UUID submittedByAccountId) {
 		this.id = id;
 		this.code = code;
 		this.name = name;
@@ -72,7 +92,15 @@ public class Course {
 		this.discipline = discipline;
 		this.imageUrl = imageUrl;
 		this.defaultMinimumEnrollment = defaultMinimumEnrollment;
-		this.status = CourseStatus.DRAFT;
+		this.status = status;
+		this.submittedByAccountId = submittedByAccountId;
+		this.submittedAt = submittedByAccountId == null ? null : Instant.now();
+	}
+
+	static Course submittedForApproval(UUID id, String code, String name, String description, Discipline discipline,
+			String imageUrl, Integer defaultMinimumEnrollment, UUID receptionistId) {
+		return new Course(id, code, name, description, discipline, imageUrl, defaultMinimumEnrollment,
+			CourseStatus.PENDING_APPROVAL, receptionistId);
 	}
 
 	void update(String name, String description, String imageUrl, Integer defaultMinimumEnrollment) {
@@ -89,6 +117,24 @@ public class Course {
 		}
 		status = CourseStatus.PUBLISHED;
 		updatedAt = Instant.now();
+	}
+
+	void approve(UUID managerId, String reason) {
+		if (status != CourseStatus.PENDING_APPROVAL) throw CourseException.invalidApprovalTransition();
+		status = CourseStatus.DRAFT;
+		reviewedByAccountId = managerId;
+		reviewedAt = Instant.now();
+		reviewReason = reason;
+		updatedAt = reviewedAt;
+	}
+
+	void reject(UUID managerId, String reason) {
+		if (status != CourseStatus.PENDING_APPROVAL) throw CourseException.invalidApprovalTransition();
+		status = CourseStatus.REJECTED;
+		reviewedByAccountId = managerId;
+		reviewedAt = Instant.now();
+		reviewReason = reason;
+		updatedAt = reviewedAt;
 	}
 
 	void deactivate() {
@@ -112,6 +158,11 @@ public class Course {
 	public Discipline getDiscipline() { return discipline; }
 	public String getImageUrl() { return imageUrl; }
 	public Integer getDefaultMinimumEnrollment() { return defaultMinimumEnrollment; }
+	public UUID getSubmittedByAccountId() { return submittedByAccountId; }
+	public Instant getSubmittedAt() { return submittedAt; }
+	public UUID getReviewedByAccountId() { return reviewedByAccountId; }
+	public Instant getReviewedAt() { return reviewedAt; }
+	public String getReviewReason() { return reviewReason; }
 	public CourseStatus getStatus() { return status; }
 	public Instant getCreatedAt() { return createdAt; }
 	public Instant getUpdatedAt() { return updatedAt; }

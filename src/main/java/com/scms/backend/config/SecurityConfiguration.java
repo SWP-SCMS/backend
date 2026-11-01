@@ -135,6 +135,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/receipts")
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers(HttpMethod.GET, "/reception/class-sessions").hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.POST, "/reception/courses").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/email-verification/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/center-visits/**").hasRole("RECEPTIONIST")
@@ -146,6 +147,8 @@ public class SecurityConfiguration {
 				.requestMatchers("/manager/rooms", "/manager/rooms/**").hasRole("MANAGER")
 				.requestMatchers("/manager/courses", "/manager/courses/**",
 					"/manager/course-runs", "/manager/course-runs/**").hasRole("MANAGER")
+				.requestMatchers("/manager/course-approval-requests", "/manager/course-approval-requests/**")
+					.hasRole("MANAGER")
 				.requestMatchers("/manager/course-transfer-requests", "/manager/course-transfer-requests/**")
 					.hasRole("MANAGER")
 				.requestMatchers("/manager/course-withdrawal-requests", "/manager/course-withdrawal-requests/**",

@@ -20,6 +20,9 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
 	Page<Course> findAll(Pageable pageable);
 
 	@EntityGraph(attributePaths = "discipline")
+	Page<Course> findByStatus(CourseStatus status, Pageable pageable);
+
+	@EntityGraph(attributePaths = "discipline")
 	@Query("select course from Course course where course.status = :status")
 	Page<Course> findCatalogByStatus(@Param("status") CourseStatus status, Pageable pageable);
 
@@ -30,6 +33,10 @@ public interface CourseRepository extends JpaRepository<Course, UUID> {
 	@EntityGraph(attributePaths = "discipline")
 	@Query("select course from Course course where course.id = :id")
 	Optional<Course> findDetailedById(@Param("id") UUID id);
+
+	@EntityGraph(attributePaths = "discipline")
+	@Query("select course from Course course where course.id = :id and course.submittedByAccountId is not null")
+	Optional<Course> findSubmittedById(@Param("id") UUID id);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@EntityGraph(attributePaths = "discipline")

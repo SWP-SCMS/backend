@@ -17,6 +17,10 @@ class CourseManagerOpenApiTests {
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
 		assertThat(document.path("openapi").asText()).isEqualTo("3.1.0");
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains(
+			"/reception/courses", "/manager/course-approval-requests",
+			"/manager/course-approval-requests/{courseId}",
+			"/manager/course-approval-requests/{courseId}/approve",
+			"/manager/course-approval-requests/{courseId}/reject",
 			"/manager/courses", "/manager/courses/{courseId}",
 			"/manager/courses/{courseId}/publish", "/manager/courses/{courseId}/deactivate",
 			"/manager/courses/{courseId}/archive", "/manager/course-runs",
@@ -27,7 +31,7 @@ class CourseManagerOpenApiTests {
 			"/manager/course-runs/{runId}/sessions/{sessionId}/makeup");
 		assertThat(document.at("/security/0/bearerAuth").isArray()).isTrue();
 		assertThat(document.at("/components/schemas/CourseStatus/enum").toString())
-			.isEqualTo("[\"DRAFT\",\"PUBLISHED\",\"INACTIVE\",\"ARCHIVED\"]");
+			.isEqualTo("[\"DRAFT\",\"PENDING_APPROVAL\",\"REJECTED\",\"PUBLISHED\",\"INACTIVE\",\"ARCHIVED\"]");
 		assertThat(document.at("/components/schemas/CourseRunStatus/enum").toString())
 			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
 		assertThat(document.at("/components/schemas/CourseCreateRequest/required").toString())
@@ -48,7 +52,7 @@ class CourseManagerOpenApiTests {
 			.contains("title", "status", "detail", "instance", "code");
 		assertThat(document.at("/components/schemas/CourseProblem/properties/code/enum").toString())
 			.contains("COURSE_VALIDATION_ERROR", "COURSE_RUN_CHANGED", "COURSE_SESSION_CHANGED",
-				"UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN");
+				"COURSE_APPROVAL_INVALID_TRANSITION", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN");
 		assertThat(document.at("/components/responses/Unauthorized/description").asText())
 			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
 		assertThat(document.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
