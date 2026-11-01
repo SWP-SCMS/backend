@@ -287,15 +287,17 @@ class CourseManagementService {
 	List<CourseSessionResponse> listSessions(UUID managerId, UUID runId) {
 		ensureActiveManager(managerId);
 		if (!runs.existsById(runId)) throw CourseException.runNotFound();
-		return sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId).stream()
-			.map(CourseSessionResponse::from).toList();
+		List<CourseSession> values = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId);
+		Map<UUID, UUID> originalIds = originalSessionIds(values);
+		return values.stream().map(value -> CourseSessionResponse.from(value, originalIds.get(value.getId()))).toList();
 	}
 
 	@Transactional(readOnly = true)
 	CourseSessionResponse getSession(UUID managerId, UUID runId, UUID sessionId) {
 		ensureActiveManager(managerId);
-		return CourseSessionResponse.from(sessions.findByIdAndCourseRunId(sessionId, runId)
-			.orElseThrow(CourseException::sessionNotFound));
+		CourseSession session = sessions.findByIdAndCourseRunId(sessionId, runId)
+			.orElseThrow(CourseException::sessionNotFound);
+		return CourseSessionResponse.from(session, originalSessionId(session));
 	}
 
 	@Transactional
@@ -320,7 +322,20 @@ class CourseManagementService {
 		CourseSession changed = sessionService.reschedule(sessionId, request.roomId(), request.coachId(),
 			request.startAt(), request.endAt(), request.expectedVersion());
 		audit(managerId, "COURSE_SESSION_RESCHEDULED", "COURSE_SESSION", sessionId, before, snapshot(changed));
-		return CourseSessionResponse.from(changed);
+		return CourseSessionResponse.from(changed, originalSessionId(changed));
+	}
+
+	private UUID originalSessionId(CourseSession session) {
+		return session.isMakeup() ? sessions.findOriginalIdByReplacementId(session.getId()).orElse(null) : null;
+	}
+
+	private Map<UUID, UUID> originalSessionIds(List<CourseSession> values) {
+		List<UUID> makeupIds = values.stream().filter(CourseSession::isMakeup).map(CourseSession::getId).toList();
+		if (makeupIds.isEmpty()) return Map.of();
+		Map<UUID, UUID> result = new LinkedHashMap<>();
+		for (CourseSessionRepository.OriginalSessionLink link : sessions.findOriginalIdsByReplacementIds(makeupIds))
+			result.put(link.getReplacementId(), link.getOriginalId());
+		return result;
 	}
 
 	private CourseResponse transitionCourse(UUID managerId, UUID courseId, VersionRequest request, String action,

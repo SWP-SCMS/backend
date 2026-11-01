@@ -121,6 +121,27 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
+	void memberTimelineIncludesPaymentRunAndMakeupMetadata() {
+		var enrollment = members.memberEnrollments(memberId).getFirst();
+		assertThat(enrollment.courseRunStatus()).isEqualTo("OPEN_FOR_REGISTRATION");
+		assertThat(enrollment.payment().amountVnd()).isEqualTo(BigInteger.valueOf(100_000));
+		assertThat(enrollment.payment().status()).isEqualTo("PAID");
+		assertThat(enrollment.payment().method()).isEqualTo("CASH");
+
+		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		CourseSessionDisruptionService.CourseMakeupResponse makeup = disruptions.scheduleMakeup(managerId, runId, session.id(),
+			new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId,
+				Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z")));
+
+		var sessionsById = members.memberEnrollments(memberId).getFirst().sessions().stream()
+			.collect(java.util.stream.Collectors.toMap(CourseEnrollmentApiModels.MemberSession::courseSessionId, value -> value));
+		assertThat(sessionsById.get(makeup.originalSession().id()).isMakeup()).isFalse();
+		assertThat(sessionsById.get(makeup.originalSession().id()).replacementSessionId()).isEqualTo(makeup.makeupSession().id());
+		assertThat(sessionsById.get(makeup.makeupSession().id()).isMakeup()).isTrue();
+		assertThat(sessionsById.get(makeup.makeupSession().id()).originalSessionId()).isEqualTo(makeup.originalSession().id());
+	}
+
+	@Test
 	void auditFailureRollsBackSessionResponseAndOutbox() {
 		CourseSessionResponse before = session;
 		String constraint = "chk_test_reject_schedule_audit";
@@ -245,6 +266,9 @@ class CourseScheduleChangeIntegrationTests {
 				Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z")));
 
 		assertThat(result.originalSession().replacementSessionId()).isEqualTo(result.makeupSession().id());
+		assertThat(result.originalSession().isMakeup()).isFalse();
+		assertThat(result.makeupSession().isMakeup()).isTrue();
+		assertThat(result.makeupSession().originalSessionId()).isEqualTo(result.originalSession().id());
 		assertThat(result.makeupSession().unitNumber()).isEqualTo(session.unitNumber());
 		assertThat(result.makeupSession().allocationVnd()).isEqualTo(session.allocationVnd());
 		assertThat(result.makeupSession().status()).isEqualTo(CourseSessionStatus.MAKEUP_SCHEDULED);

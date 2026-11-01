@@ -669,7 +669,8 @@ components:
     CourseSessionResponse:
       type: object
       required: [id, runId, runCode, unitNumber, roomId, roomName, coachId, coachName, startAt, endAt,
-        originalStartAt, originalEndAt, allocationVnd, status, replacementSessionId, createdAt, updatedAt, version]
+        originalStartAt, originalEndAt, allocationVnd, status, isMakeup, originalSessionId, replacementSessionId,
+        createdAt, updatedAt, version]
       properties:
         id: { type: string, format: uuid }
         runId: { type: string, format: uuid }
@@ -685,6 +686,8 @@ components:
         originalEndAt: { type: string, format: date-time }
         allocationVnd: { type: integer }
         status: { $ref: '#/components/schemas/CourseSessionStatus' }
+        isMakeup: { type: boolean }
+        originalSessionId: { type: [string, 'null'], format: uuid }
         replacementSessionId: { type: [string, 'null'], format: uuid }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

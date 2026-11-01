@@ -157,7 +157,8 @@ components:
     MemberSession:
       type: object
       additionalProperties: false
-      required: [enrollmentSessionId, courseSessionId, unitNumber, startAt, endAt, disposition, attendanceStatus]
+      required: [enrollmentSessionId, courseSessionId, unitNumber, startAt, endAt, disposition, sessionStatus,
+        attendanceStatus, isMakeup, originalSessionId, replacementSessionId]
       properties:
         enrollmentSessionId: {type: string, format: uuid}
         courseSessionId: {type: string, format: uuid}
@@ -165,20 +166,35 @@ components:
         startAt: {type: string, format: date-time}
         endAt: {type: string, format: date-time}
         disposition: {type: string, enum: [ENROLLED, NOT_ENROLLED]}
+        sessionStatus: {$ref: '#/components/schemas/CourseSessionStatus'}
         attendanceStatus: {$ref: '#/components/schemas/AttendanceStatus'}
         attendanceRecordedAt: {type: [string, 'null'], format: date-time}
+        isMakeup: {type: boolean}
+        originalSessionId: {type: [string, 'null'], format: uuid}
+        replacementSessionId: {type: [string, 'null'], format: uuid}
+    MemberPaymentSummary:
+      type: object
+      additionalProperties: false
+      required: [amountVnd, status, method]
+      properties:
+        amountVnd: {type: integer}
+        status: {type: [string, 'null'], enum: [PENDING, PAID, FAILED, null]}
+        method: {type: [string, 'null'], enum: [SEPAY, CASH, null]}
     MemberEnrollment:
       type: object
       additionalProperties: false
-      required: [enrollmentId, courseRunId, courseCode, courseName, runCode, lifecycleStatus, enrolledAt, sessions]
+      required: [enrollmentId, courseRunId, courseCode, courseName, runCode, courseRunStatus, lifecycleStatus,
+        enrolledAt, payment, sessions]
       properties:
         enrollmentId: {type: string, format: uuid}
         courseRunId: {type: string, format: uuid}
         courseCode: {type: string}
         courseName: {type: string}
         runCode: {type: string}
+        courseRunStatus: {$ref: '#/components/schemas/CourseRunStatus'}
         lifecycleStatus: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}
         enrolledAt: {type: string, format: date-time}
+        payment: {$ref: '#/components/schemas/MemberPaymentSummary'}
         sessions: {type: array, items: {$ref: '#/components/schemas/MemberSession'}}
     RosterEntry:
       type: object

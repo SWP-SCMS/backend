@@ -72,7 +72,7 @@ class CourseSessionDisruptionService {
 		sessions.saveAndFlush(session);
 		audit(managerId, "COURSE_SESSION_CANCELLED", sessionId, before, snapshot(session));
 		notify(recipients, session, "COURSE_SESSION_CANCELLED", "cancelled");
-		return CourseSessionResponse.from(session);
+		return CourseSessionResponse.from(session, original == null ? null : original.getId());
 	}
 
 	@Transactional
@@ -107,7 +107,7 @@ class CourseSessionDisruptionService {
 		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before,
 			Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
 		notify(recipients, makeup, "COURSE_SESSION_MAKEUP_SCHEDULED", "makeup scheduled");
-		return new CourseMakeupResponse(CourseSessionResponse.from(original), CourseSessionResponse.from(makeup));
+		return new CourseMakeupResponse(CourseSessionResponse.from(original), CourseSessionResponse.from(makeup, original.getId()));
 	}
 
 	@Transactional

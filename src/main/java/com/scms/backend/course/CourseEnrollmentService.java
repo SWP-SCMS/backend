@@ -1,6 +1,8 @@
 package com.scms.backend.course;
 
 import java.sql.Timestamp;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,6 +19,7 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.course.CourseEnrollmentApiModels.AttendanceUpdate;
 import com.scms.backend.course.CourseEnrollmentApiModels.MemberEnrollment;
+import com.scms.backend.course.CourseEnrollmentApiModels.MemberPaymentSummary;
 import com.scms.backend.course.CourseEnrollmentApiModels.MemberSession;
 import com.scms.backend.course.CourseEnrollmentApiModels.RosterEntry;
 import com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChange;
@@ -47,12 +50,16 @@ class CourseEnrollmentService {
 	List<MemberEnrollment> memberEnrollments(UUID memberId) {
 		active(memberId, AccountRole.MEMBER);
 		List<Map<String, Object>> rows = db.queryForList("""
-			select e.id enrollment_id,e.course_run_id,c.code course_code,c.name course_name,r.run_code,e.lifecycle_status,e.enrolled_at,
+			select e.id enrollment_id,e.course_run_id,c.code course_code,c.name course_name,r.run_code,r.status course_run_status,
+				e.lifecycle_status,e.enrolled_at,e.amount_paid_vnd_snapshot,p.status payment_status,p.method payment_method,
 				es.id enrollment_session_id,es.course_session_id,es.unit_number,s.start_at,s.end_at,
-				es.disposition,es.attendance_status,es.attendance_recorded_at
+				es.disposition,s.status session_status,s.is_makeup,s.replacement_session_id,original.id original_session_id,
+				es.attendance_status,es.attendance_recorded_at
 			from course_enrollments e join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
 			join course_enrollment_sessions es on es.course_enrollment_id=e.id
 			join course_sessions s on s.id=es.course_session_id
+			left join course_payments p on p.id=e.course_payment_id
+			left join course_sessions original on original.replacement_session_id=s.id
 			where e.member_account_id=? order by e.enrolled_at desc,e.id,es.unit_number
 			""", memberId);
 		Map<UUID, EnrollmentBuilder> grouped = new LinkedHashMap<>();
@@ -60,10 +67,14 @@ class CourseEnrollmentService {
 			UUID id = uuid(row, "enrollment_id");
 			grouped.computeIfAbsent(id, ignored -> new EnrollmentBuilder(id, uuid(row, "course_run_id"),
 				text(row, "course_code"), text(row, "course_name"), text(row, "run_code"),
-				text(row, "lifecycle_status"), instant(row, "enrolled_at"))).sessions.add(new MemberSession(uuid(row, "enrollment_session_id"),
+				CourseRunStatus.valueOf(text(row, "course_run_status")), text(row, "lifecycle_status"), instant(row, "enrolled_at"),
+				new MemberPaymentSummary(amount(row, "amount_paid_vnd_snapshot"), text(row, "payment_status"),
+					text(row, "payment_method")))).sessions.add(new MemberSession(uuid(row, "enrollment_session_id"),
 				uuid(row, "course_session_id"), number(row, "unit_number"), instant(row, "start_at"),
-				instant(row, "end_at"), text(row, "disposition"),
-				CourseAttendanceStatus.valueOf(text(row, "attendance_status")), instant(row, "attendance_recorded_at")));
+				instant(row, "end_at"), text(row, "disposition"), CourseSessionStatus.valueOf(text(row, "session_status")),
+				CourseAttendanceStatus.valueOf(text(row, "attendance_status")), instant(row, "attendance_recorded_at"),
+				Boolean.TRUE.equals(row.get("is_makeup")), uuid(row, "original_session_id"),
+				uuid(row, "replacement_session_id")));
 		}
 		return grouped.values().stream().map(EnrollmentBuilder::response).toList();
 	}
@@ -132,15 +143,23 @@ class CourseEnrollmentService {
 	private static UUID uuid(Map<String, Object> row, String key) { return (UUID) row.get(key); }
 	private static String text(Map<String, Object> row, String key) { return row.get(key) == null ? null : row.get(key).toString(); }
 	private static int number(Map<String, Object> row, String key) { return ((Number) row.get(key)).intValue(); }
+	private static BigInteger amount(Map<String, Object> row, String key) {
+		Object value = row.get(key);
+		return value == null ? null : value instanceof BigDecimal decimal ? decimal.toBigIntegerExact()
+			: BigInteger.valueOf(((Number) value).longValue());
+	}
 	private static Instant instant(Map<String, Object> row, String key) {
 		Object value = row.get(key); return value == null ? null : value instanceof Instant instant ? instant : ((Timestamp) value).toInstant();
 	}
-	private record EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode, String lifecycleStatus,
-			Instant enrolledAt, List<MemberSession> sessions) {
-		EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode, String lifecycleStatus, Instant enrolledAt) {
-			this(id, runId, courseCode, courseName, runCode, lifecycleStatus, enrolledAt, new ArrayList<>());
+	private record EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode,
+			CourseRunStatus courseRunStatus, String lifecycleStatus, Instant enrolledAt, MemberPaymentSummary payment,
+			List<MemberSession> sessions) {
+		EnrollmentBuilder(UUID id, UUID runId, String courseCode, String courseName, String runCode,
+				CourseRunStatus courseRunStatus, String lifecycleStatus, Instant enrolledAt, MemberPaymentSummary payment) {
+			this(id, runId, courseCode, courseName, runCode, courseRunStatus, lifecycleStatus, enrolledAt, payment,
+				new ArrayList<>());
 		}
 		MemberEnrollment response() { return new MemberEnrollment(id, runId, courseCode, courseName, runCode,
-			lifecycleStatus, enrolledAt, List.copyOf(sessions)); }
+			courseRunStatus, lifecycleStatus, enrolledAt, payment, List.copyOf(sessions)); }
 	}
 }
