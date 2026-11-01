@@ -12,11 +12,24 @@ public final class CourseEnrollmentApiModels {
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record MemberEnrollment(UUID enrollmentId, UUID courseRunId, String courseCode, String courseName,
-			String runCode, String lifecycleStatus, Instant enrolledAt, List<MemberSession> sessions) {}
+			String runCode, @Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseRunStatus courseRunStatus,
+			String lifecycleStatus, Instant enrolledAt,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) MemberPaymentSummary payment, List<MemberSession> sessions) {}
+
+	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+	public record MemberPaymentSummary(
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) BigInteger amountVnd,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) String status,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) String method) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record MemberSession(UUID enrollmentSessionId, UUID courseSessionId, int unitNumber, Instant startAt,
-			Instant endAt, String disposition, CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt) {}
+			Instant endAt, String disposition,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseSessionStatus sessionStatus,
+			CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean isMakeup,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID originalSessionId,
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID replacementSessionId) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record RosterEntry(UUID enrollmentSessionId, String memberCode, String fullName,

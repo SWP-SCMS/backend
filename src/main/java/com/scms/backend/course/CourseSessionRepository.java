@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +34,15 @@ public interface CourseSessionRepository extends JpaRepository<CourseSession, UU
 
 	@Query("select session.id from CourseSession session where session.replacementSession.id = :replacementId")
 	java.util.Optional<UUID> findOriginalIdByReplacementId(@Param("replacementId") UUID replacementId);
+
+	@Query("select original.id as originalId, replacement.id as replacementId from CourseSession original "
+		+ "join original.replacementSession replacement where replacement.id in :replacementIds")
+	List<OriginalSessionLink> findOriginalIdsByReplacementIds(@Param("replacementIds") Collection<UUID> replacementIds);
+
+	interface OriginalSessionLink {
+		UUID getOriginalId();
+		UUID getReplacementId();
+	}
 
 	@Query("""
 		select (count(session) > 0) from CourseSession session

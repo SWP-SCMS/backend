@@ -215,14 +215,23 @@ record CourseRunPageResponse(List<CourseRunResponse> content, int page, int size
 
 record CourseSessionResponse(UUID id, UUID runId, String runCode, int unitNumber, UUID roomId, String roomName,
 	UUID coachId, String coachName, Instant startAt, Instant endAt, Instant originalStartAt, Instant originalEndAt,
-	BigInteger allocationVnd, CourseSessionStatus status, UUID replacementSessionId, Instant createdAt,
+	BigInteger allocationVnd, CourseSessionStatus status,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean isMakeup,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID originalSessionId,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID replacementSessionId,
+	Instant createdAt,
 	Instant updatedAt, Long version) {
 	static CourseSessionResponse from(CourseSession session) {
+		return from(session, null);
+	}
+
+	static CourseSessionResponse from(CourseSession session, UUID originalSessionId) {
 		return new CourseSessionResponse(session.getId(), session.getCourseRun().getId(),
 			session.getCourseRun().getRunCode(), session.getUnitNumber(), session.getRoom().getId(),
 			session.getRoom().getName(), session.getCoach().getId(), session.getCoach().getFullName(),
 			session.getStartAt(), session.getEndAt(), session.getOriginalStartAt(), session.getOriginalEndAt(),
 			session.getAllocationVnd(), session.getStatus(),
+			session.isMakeup(), originalSessionId,
 			session.getReplacementSession() == null ? null : session.getReplacementSession().getId(),
 			session.getCreatedAt(), session.getUpdatedAt(),
 			session.getVersion());

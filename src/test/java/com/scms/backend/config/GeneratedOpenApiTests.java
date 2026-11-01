@@ -693,6 +693,27 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedCourseMemberTimelineAndManagerMakeupMetadata() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode enrollment = document.at("/components/schemas/MemberEnrollment");
+		assertThat(enrollment.at("/properties/courseRunStatus").isMissingNode()).isFalse();
+		assertThat(enrollment.at("/properties/payment/$ref").asText())
+			.isEqualTo("#/components/schemas/MemberPaymentSummary");
+		assertThat(document.at("/components/schemas/MemberPaymentSummary/properties/status/type").toString()).contains("null");
+		assertThat(document.at("/components/schemas/MemberPaymentSummary/properties/method/type").toString()).contains("null");
+		JsonNode memberSession = document.at("/components/schemas/MemberSession");
+		assertThat(memberSession.path("properties").properties().stream().map(Map.Entry::getKey).toList())
+			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(memberSession.path("required").toString())
+			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
+		JsonNode managerSession = document.at("/components/schemas/CourseSessionResponse");
+		assertThat(managerSession.path("properties").properties().stream().map(Map.Entry::getKey).toList())
+			.contains("isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(managerSession.at("/properties/originalSessionId/type").toString()).contains("null");
+		assertThat(managerSession.at("/properties/replacementSessionId/type").toString()).contains("null");
+	}
+
+	@Test
 	void generatedReceptionEnrollmentDiscoveryDocumentsFiltersAndRedactedFields() throws Exception {
 		JsonNode document = generatedDocument();
 		JsonNode list = operation(document, "/reception/members/{memberId}/course-enrollments", "get");
