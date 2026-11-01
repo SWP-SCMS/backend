@@ -15,6 +15,8 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +53,7 @@ class CourseTransferIntegrationTests {
 	@Autowired CourseEnrollmentService enrollmentService;
 	@Autowired CourseTransferService transfers;
 	@Autowired AccountRepository accounts;
+	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
 	@Autowired MockMvc mockMvc;
 	@Autowired JwtEncoder jwtEncoder;
@@ -70,6 +73,7 @@ class CourseTransferIntegrationTests {
 		managerId = account(AccountRole.MANAGER).getId();
 		coachId = account(AccountRole.COACH).getId();
 		memberId = account(AccountRole.MEMBER).getId();
+		profiles.saveAndFlush(new MemberProfile(accounts.findById(memberId).orElseThrow()));
 		UUID disciplineId = UUID.randomUUID();
 		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')", disciplineId, "Transfer " + disciplineId);
 		CourseResponse course = management.createCourse(managerId, new CourseCreateRequest("TR-" + shortId(),
@@ -95,10 +99,27 @@ class CourseTransferIntegrationTests {
 		enrollmentService.respondToScheduleChange(memberId, responseId,
 			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_TRANSFER"));
 		var request = currentRequest();
+		assertThat(request.memberId()).isEqualTo(memberId);
+		assertThat(request.memberCode()).isNotBlank();
+		assertThat(request.memberName()).isEqualTo("MEMBER transfer test");
+		assertThat(request.sourceCourseId()).isNotNull();
+		assertThat(request.sourceCourseCode()).startsWith("TR-");
+		assertThat(request.sourceCourseName()).isEqualTo("Transfer course");
+		assertThat(request.sourceRunCode()).startsWith("SRC-");
+		assertThat(request.sourceCourseRunStatus()).isEqualTo("OPEN_FOR_REGISTRATION");
+		assertThat(request.targetCourseCode()).isNull();
 		var offer = transfers.approve(managerId, request.id(), targetRunId, "Material schedule change");
 
 		assertThat(offer.creditVnd()).isEqualTo(BigInteger.valueOf(100_000));
 		assertThat(offer.differenceVnd()).isZero();
+		assertThat(offer.memberCode()).isEqualTo(request.memberCode());
+		assertThat(offer.memberName()).isEqualTo(request.memberName());
+		assertThat(offer.sourceCourseCode()).isEqualTo(request.sourceCourseCode());
+		assertThat(offer.targetCourseId()).isEqualTo(request.sourceCourseId());
+		assertThat(offer.targetCourseCode()).isEqualTo(request.sourceCourseCode());
+		assertThat(offer.targetCourseName()).isEqualTo(request.sourceCourseName());
+		assertThat(offer.targetRunCode()).startsWith("TGT-");
+		assertThat(offer.targetCourseRunStatus()).isEqualTo("OPEN_FOR_REGISTRATION");
 		assertThat(db.queryForObject("select count(*) from course_transfer_holds where transfer_offer_id=? and status='HELD'", Long.class, offer.id())).isOne();
 
 		var completed = transfers.accept(memberId, offer.id(), "accept-equal-price");

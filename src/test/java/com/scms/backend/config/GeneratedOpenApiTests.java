@@ -1550,6 +1550,17 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void generatedTransferResponsesIncludeDisplayIdentity() throws Exception {
+		JsonNode document = generatedDocument();
+		for (String schemaName : List.of("TransferRequest", "TransferOffer")) {
+			assertThat(document.at("/components/schemas/" + schemaName + "/properties").fieldNames())
+				.toIterable().contains("memberCode", "memberName", "sourceCourseCode", "sourceCourseName",
+					"sourceRunCode", "sourceCourseRunStatus", "targetCourseCode", "targetCourseName",
+					"targetRunCode", "targetCourseRunStatus");
+		}
+	}
+
+	@Test
 	void receptionSearchRequiresExplicitNullableMembershipInGeneratedAndStaticContracts() throws Exception {
 		JsonNode generated = generatedDocument().at("/components/schemas/ReceptionMemberSearchResponse");
 		JsonNode membership = generated.at("/properties/activeMembership");

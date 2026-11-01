@@ -21,4 +21,19 @@ class CourseTransferOpenApiTests {
 				.isEqualTo("Idempotency-Key");
 		}
 	}
+
+	@Test
+	void contractExposesTransferDisplayFields() throws Exception {
+		try (var input = getClass().getResourceAsStream("/openapi/course-transfer.yaml")) {
+			var document = new ObjectMapper(new YAMLFactory()).readTree(input);
+			assertThat(document.at("/components/schemas/TransferRequest/properties").fieldNames())
+				.toIterable().contains("memberCode", "memberName", "sourceCourseCode", "sourceCourseName",
+					"sourceRunCode", "sourceCourseRunStatus", "targetCourseCode", "targetCourseName",
+					"targetRunCode", "targetCourseRunStatus");
+			assertThat(document.at("/components/schemas/TransferOffer/properties").fieldNames())
+				.toIterable().contains("memberCode", "memberName", "sourceCourseCode", "sourceCourseName",
+					"sourceRunCode", "sourceCourseRunStatus", "targetCourseCode", "targetCourseName",
+					"targetRunCode", "targetCourseRunStatus");
+		}
+	}
 }
