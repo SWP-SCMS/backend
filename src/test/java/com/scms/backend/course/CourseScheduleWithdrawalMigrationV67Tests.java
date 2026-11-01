@@ -31,6 +31,16 @@ class CourseScheduleWithdrawalMigrationV67Tests {
 			String.class)).contains("chk_course_schedule_change_event_cause");
 	}
 
+	@Test
+	void upgradeFromV66WidensDispositionForRemovedUnits() {
+		flyway("66").migrate();
+		flyway(null).migrate();
+		assertThat(db().queryForObject("""
+			select character_maximum_length from information_schema.columns
+			where table_schema='public' and table_name='course_enrollment_sessions' and column_name='disposition'
+			""", Integer.class)).isEqualTo(32);
+	}
+
 	private Flyway flyway(String target) {
 		var configuration = Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
 			.cleanDisabled(false);

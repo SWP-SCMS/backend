@@ -52,6 +52,7 @@ alter table course_sessions
     ));
 
 alter table course_enrollment_sessions
+    alter column disposition type varchar(32),
     drop constraint chk_course_enrollment_sessions_disposition,
     add constraint chk_course_enrollment_sessions_disposition
         check (disposition in ('ENROLLED', 'NOT_ENROLLED', 'UNRESOLVED', 'REMOVED_BY_RUN_CHANGE'));

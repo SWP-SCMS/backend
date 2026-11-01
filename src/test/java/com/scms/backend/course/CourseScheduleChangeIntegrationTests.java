@@ -534,6 +534,12 @@ class CourseScheduleChangeIntegrationTests {
 			+ "payment_method,status,expires_at,paid_at) values(?,?,?,?,?,?,'PLUS',100000,'VND',60,'CASH','PAID',?,?)",
 			orderId, "GYM-" + shortId(), enrolledMemberId, managerId, offerId, "Schedule conflict",
 			java.sql.Timestamp.from(startAt), java.sql.Timestamp.from(startAt.minusSeconds(86400)));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,
+			    processed_by_account_id)
+			values(?,?,'CASH','PAID',100000,'VND',?,?,?)
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId,
+			java.sql.Timestamp.from(startAt.minusSeconds(86400)), managerId);
 		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,"
 			+ "price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) "
 			+ "values(?,?,?,?,'PLUS','Schedule conflict',100000,'VND',60,'ACTIVE',?,?)", membershipId,
