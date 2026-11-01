@@ -17,7 +17,9 @@ final class CourseRefundApiModels {
 		String evidenceReference, String reason) { }
 	record RefundTerminal(Long expectedVersion, String reason) { }
 	record RefundObligation(UUID id, UUID enrollmentId, UUID courseRunId, UUID memberAccountId,
-		UUID courseOrderId, UUID coursePaymentId, String source, String status, BigInteger grossObligationVnd,
+		String memberCode, String memberName, String courseCode, String courseName, String runCode,
+		String courseRunStatus, UUID courseOrderId, UUID coursePaymentId, String source, String status,
+		BigInteger grossObligationVnd,
 		BigInteger approvedAmountVnd, BigInteger disbursedAmountVnd, BigInteger verifiedAmountVnd,
 		String currencyCode, UUID requesterAccountId, String requestReason, UUID approvedByAccountId,
 		String approvalReason, Instant approvedAt, UUID rejectedByAccountId, String rejectionReason,
@@ -48,6 +50,7 @@ final class CourseRefundApiModels {
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String source,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0", maximum = "9999999999999999999")
 		BigInteger amount,
+		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") long version,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) Instant approvedAt,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean disbursementEligible,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = { "ELIGIBLE",

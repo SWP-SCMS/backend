@@ -673,7 +673,7 @@ class GeneratedOpenApiTests {
 		assertThat(item.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("refundId", "memberId", "memberCode", "memberName", "courseId",
 				"courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "source", "amount",
-				"approvedAt", "disbursementEligible", "disbursementEligibilityReason")
+				"approvedAt", "version", "disbursementEligible", "disbursementEligibilityReason")
 			.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
 		assertThat(item.at("/properties/disbursementEligibilityReason/enum").toString())
 			.contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND")
@@ -686,6 +686,10 @@ class GeneratedOpenApiTests {
 			.isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
 		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText())
 			.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
+		JsonNode manager = resolve(document, response(document, "/manager/course-refund-obligations/{obligationId}", "get", "200")
+			.at("/content/*~1*/schema"));
+		assertThat(manager.path("properties").properties().stream().map(Map.Entry::getKey).toList())
+			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus");
 	}
 
 	@Test

@@ -50,7 +50,7 @@ class CourseRefundOpenApiTests {
 			assertThat(response.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
 				.containsExactlyInAnyOrder("refundId", "memberId", "memberCode", "memberName", "courseId",
 					"courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "source",
-					"amount", "approvedAt", "disbursementEligible", "disbursementEligibilityReason")
+					"amount", "approvedAt", "version", "disbursementEligible", "disbursementEligibilityReason")
 				.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
 			assertThat(response.at("/properties/disbursementEligibilityReason/enum").toString())
 				.isEqualTo("[\"ELIGIBLE\",\"AWAITING_COURSE_COMPLETION\",\"COURSE_RUN_NOT_FOUND\"]");

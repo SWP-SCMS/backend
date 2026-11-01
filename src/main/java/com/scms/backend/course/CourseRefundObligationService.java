@@ -57,8 +57,8 @@ class CourseRefundObligationService {
 		String normalizedStatus = status(status);
 		long total = db.queryForObject("select count(*) from course_refund_obligations where "
 			+ "(cast(? as varchar) is null or status=?)", Long.class, normalizedStatus, normalizedStatus);
-		List<RefundObligation> items = db.query(select() + " where (cast(? as varchar) is null or status=?) "
-			+ "order by case when status='PENDING_REVIEW' then 0 else 1 end,created_at,id limit ? offset ?",
+		List<RefundObligation> items = db.query(select() + " where (cast(? as varchar) is null or obligation.status=?) "
+			+ "order by case when obligation.status='PENDING_REVIEW' then 0 else 1 end,obligation.created_at,obligation.id limit ? offset ?",
 			this::map, normalizedStatus, normalizedStatus, size, (long) page * size);
 		return new RefundObligationPage(items, page, size, total, (int) ((total + size - 1) / size));
 	}
@@ -75,8 +75,8 @@ class CourseRefundObligationService {
 		page(page, size);
 		long total = db.queryForObject("select count(*) from course_refund_obligations where member_account_id=?",
 			Long.class, memberId);
-		List<MemberRefundObligation> items = db.query(select() + " where member_account_id=? "
-			+ "order by created_at desc,id desc limit ? offset ?", this::map, memberId, size, (long) page * size)
+		List<MemberRefundObligation> items = db.query(select() + " where obligation.member_account_id=? "
+			+ "order by obligation.created_at desc,obligation.id desc limit ? offset ?", this::map, memberId, size, (long) page * size)
 			.stream().map(this::member).toList();
 		return new MemberRefundObligationPage(items, page, size, total, (int) ((total + size - 1) / size));
 	}
@@ -84,7 +84,7 @@ class CourseRefundObligationService {
 	@Transactional(readOnly = true)
 	MemberRefundObligation detailForMember(UUID memberId, UUID obligationId) {
 		active(memberId, AccountRole.MEMBER, false);
-		return db.query(select() + " where id=? and member_account_id=?", this::map, obligationId, memberId)
+		return db.query(select() + " where obligation.id=? and obligation.member_account_id=?", this::map, obligationId, memberId)
 			.stream().findFirst().map(this::member).orElseThrow(CourseRefundException::notFound);
 	}
 
@@ -317,7 +317,7 @@ class CourseRefundObligationService {
 			String.class, runId);
 		BigInteger amountPaid = db.queryForObject("select amount_paid_vnd_snapshot from course_enrollments "
 			+ "where id=? and course_run_id=? for update", BigDecimal.class, enrollmentId, runId).toBigIntegerExact();
-		List<RefundObligation> all = db.query(select() + " where course_enrollment_id=? order by id for update",
+		List<RefundObligation> all = db.query(select() + " where obligation.course_enrollment_id=? order by obligation.id for update of obligation",
 			this::map, enrollmentId);
 		RefundObligation obligation = all.stream().filter(item -> item.id().equals(obligationId)).findFirst()
 			.orElseThrow(CourseRefundException::notFound);
@@ -406,16 +406,25 @@ class CourseRefundObligationService {
 			"The refund obligation already has another decision.");
 	}
 	private RefundObligation find(UUID id) {
-		return db.query(select() + " where id=?", this::map, id).stream().findFirst()
+		return db.query(select() + " where obligation.id=?", this::map, id).stream().findFirst()
 			.orElseThrow(CourseRefundException::notFound);
 	}
-	private String select() { return "select * from course_refund_obligations"; }
+	private String select() {
+		return "select obligation.*,profile.member_code display_member_code,member.full_name display_member_name,"
+			+ "course.code display_course_code,course.name display_course_name,run.run_code display_run_code,"
+			+ "run.status display_course_run_status from course_refund_obligations obligation "
+			+ "join accounts member on member.id=obligation.member_account_id "
+			+ "left join member_profiles profile on profile.account_id=member.id "
+			+ "join course_runs run on run.id=obligation.course_run_id "
+			+ "join courses course on course.id=run.course_id";
+	}
 	private String receptionSelect() {
 		return """
 			select queue.*,queue.disbursement_eligibility_reason='ELIGIBLE' disbursement_eligible from (
 			 select refund.id refund_id,refund.member_account_id member_id,profile.member_code,member.full_name member_name,
 			  course.id course_id,course.code course_code,course.name course_name,refund.course_run_id,run.run_code,
 			  run.status course_run_status,refund.source_type source,refund.amount_vnd amount,refund.approved_at,
+			  refund.version,
 			  refund.status,case
 			   when run.id is null then 'COURSE_RUN_NOT_FOUND'
 			   when refund.source_type in ('COURSE_RUN_CANCELLED','PAYMENT_EXCEPTION','TRANSFER_CREDIT_EXCESS')
@@ -433,6 +442,9 @@ class CourseRefundObligationService {
 	private RefundObligation map(ResultSet rs, int row) throws SQLException {
 		return new RefundObligation(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class),
 			rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class),
+			rs.getString("display_member_code"), rs.getString("display_member_name"),
+			rs.getString("display_course_code"), rs.getString("display_course_name"),
+			rs.getString("display_run_code"), rs.getString("display_course_run_status"),
 			rs.getObject("course_order_id", UUID.class), rs.getObject("course_payment_id", UUID.class),
 			rs.getString("source_type"), rs.getString("status"), amount(rs.getBigDecimal("amount_vnd")),
 			amount(rs.getBigDecimal("approved_amount_vnd")), amount(rs.getBigDecimal("disbursed_amount_vnd")),
@@ -454,7 +466,7 @@ class CourseRefundObligationService {
 			rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"),
 			rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"),
 			rs.getObject("course_run_id", UUID.class), rs.getString("run_code"), rs.getString("course_run_status"),
-			rs.getString("source"), amount(rs.getBigDecimal("amount")), instant(rs.getTimestamp("approved_at")),
+			rs.getString("source"), amount(rs.getBigDecimal("amount")), rs.getLong("version"), instant(rs.getTimestamp("approved_at")),
 			rs.getBoolean("disbursement_eligible"), rs.getString("disbursement_eligibility_reason"));
 	}
 	private MemberRefundObligation member(RefundObligation value) {
