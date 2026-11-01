@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -16,6 +17,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
 
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.notification.NotificationWriter;
@@ -63,7 +65,7 @@ class CourseScheduleChangeServiceTests {
 	void memberCannotReadOrRespondToAnotherMembersRecord() {
 		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER,
 			com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
-		when(db.query(any(String.class), any(RowMapper.class), eq(responseId), eq(memberId))).thenReturn(List.of());
+		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), eq(responseId), eq(memberId))).thenReturn(List.of());
 
 		assertThatThrownBy(() -> service.respond(memberId, responseId, "CONTINUE"))
 			.isInstanceOfSatisfying(CourseException.class, error ->
@@ -72,12 +74,18 @@ class CourseScheduleChangeServiceTests {
 
 	@Test
 	void sameChoiceReplayIsIdempotentAndDifferentChoiceConflicts() {
+		com.scms.backend.account.Account member = mock(com.scms.backend.account.Account.class);
+		when(member.getRole()).thenReturn(com.scms.backend.account.AccountRole.MEMBER);
+		when(member.getStatus()).thenReturn(com.scms.backend.account.AccountStatus.ACTIVE);
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(java.util.Optional.of(member));
+		when(db.queryForList(contains("select e.course_run_id"), eq(UUID.class), eq(responseId), eq(memberId)))
+			.thenReturn(List.of(UUID.randomUUID()));
 		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER,
 			com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
 		var existing = new com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChange(responseId,
 			enrollmentSessionId, NOW.minusSeconds(7200), NOW.minusSeconds(3600), NOW.plusSeconds(3600),
 			NOW.plusSeconds(7200), NOW.minusSeconds(3600), NOW.plusSeconds(1800), "RESPONDED", "CONTINUE", NOW);
-		when(db.query(any(String.class), any(RowMapper.class), eq(responseId), eq(memberId)))
+		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), eq(responseId), eq(memberId)))
 			.thenReturn(List.of(existing));
 
 		org.assertj.core.api.Assertions.assertThat(service.respond(memberId, responseId, "CONTINUE"))
@@ -96,7 +104,7 @@ class CourseScheduleChangeServiceTests {
 		var pending = new com.scms.backend.course.CourseScheduleChangeApiModels.ScheduleChange(responseId,
 			enrollmentSessionId, NOW.minusSeconds(7200), NOW.minusSeconds(3600), NOW.plusSeconds(3600),
 			NOW.plusSeconds(7200), NOW.minusSeconds(3600), NOW, "PENDING", null, null);
-		when(db.query(any(String.class), any(RowMapper.class), eq(responseId), eq(memberId)))
+		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), eq(responseId), eq(memberId)))
 			.thenReturn(List.of(pending));
 
 		assertThatThrownBy(() -> service.respond(memberId, responseId, "CONTINUE"))
@@ -133,6 +141,43 @@ class CourseScheduleChangeServiceTests {
 		verify(notifications).write(any(String.class), eq(memberId), eq("COURSE_SCHEDULE_CHANGED"),
 			eq("COURSE_SESSION"), eq(sessionId), org.mockito.ArgumentMatchers.argThat(payload ->
 			payload.get("responseDeadline").equals("2030-01-04T00:00:00Z") && payload.get("recordId") != null));
+	}
+
+	@Test
+	void delayedLaterUnitDoesNotGrantOpeningDelayRefundCause() {
+		when(db.queryForList(contains("disposition='ENROLLED'"), any(Object[].class)))
+			.thenReturn(List.of(Map.of("enrollment_session_id", enrollmentSessionId, "member_account_id", memberId)));
+		List<Object[]> inserts = new ArrayList<>();
+		org.mockito.Mockito.doAnswer(call -> { inserts.add((Object[]) call.getRawArguments()[1]); return 1; })
+			.when(db).update(contains("insert into course_schedule_change_responses"), any(Object[].class));
+		Instant oldStart = Instant.parse("2035-01-01T02:00:00Z");
+
+		service.notifyReschedule(session(), oldStart, oldStart.plusSeconds(3600), oldStart.plusSeconds(8 * 86400),
+			oldStart.plusSeconds(8 * 86400 + 3600));
+
+		assertThat(inserts).singleElement().satisfies(values -> assertThat(values[8]).isEqualTo("VOLUNTARY"));
+	}
+
+	@Test
+	void conflictRefundCauseOnlyAppliesToAffectedEnrollment() {
+		UUID otherEnrollment = UUID.randomUUID(), otherMember = UUID.randomUUID();
+		when(db.queryForList(contains("disposition='ENROLLED'"), any(Object[].class))).thenReturn(List.of(
+			Map.of("enrollment_session_id", enrollmentSessionId, "member_account_id", memberId),
+			Map.of("enrollment_session_id", otherEnrollment, "member_account_id", otherMember)));
+		when(db.queryForObject(any(String.class), eq(Boolean.class), any(Object[].class))).thenReturn(true);
+		when(db.queryForList(contains("select distinct current_es.id"), eq(UUID.class), any(Object[].class)))
+			.thenReturn(List.of(enrollmentSessionId));
+		List<Object[]> inserts = new ArrayList<>();
+		org.mockito.Mockito.doAnswer(call -> { inserts.add((Object[]) call.getRawArguments()[1]); return 1; })
+			.when(db).update(contains("insert into course_schedule_change_responses"), any(Object[].class));
+		Instant oldStart = Instant.parse("2035-01-01T02:00:00Z");
+
+		service.notifyReschedule(session(), oldStart, oldStart.plusSeconds(3600), oldStart.plusSeconds(7200),
+			oldStart.plusSeconds(10800));
+
+		assertThat(inserts).hasSize(2);
+		assertThat(inserts.get(0)[8]).isEqualTo("MEMBER_SCHEDULE_CONFLICT");
+		assertThat(inserts.get(1)[8]).isEqualTo("VOLUNTARY");
 	}
 
 	@Test

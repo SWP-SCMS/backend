@@ -647,6 +647,7 @@ components:
     CourseRunScheduleRequest:
       type: object
       additionalProperties: false
+      description: Retained effective sessions must fit the new Run window. Units cannot increase after opening or remove an already started unit. Pending member responses expire at the earlier of 72 hours or 24 hours before the next future unit; changes without a future response window are rejected atomically.
       required: [expectedVersion, plannedStartAt, plannedEndAt, totalUnits]
       properties:
         expectedVersion: { type: integer, format: int64, minimum: 0 }

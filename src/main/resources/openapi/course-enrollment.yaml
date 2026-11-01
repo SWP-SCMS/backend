@@ -173,7 +173,7 @@ components:
         unitNumber: {type: integer, minimum: 1}
         startAt: {type: string, format: date-time}
         endAt: {type: string, format: date-time}
-        disposition: {type: string, enum: [ENROLLED, NOT_ENROLLED]}
+        disposition: {type: string, enum: [ENROLLED, NOT_ENROLLED, UNRESOLVED, REMOVED_BY_RUN_CHANGE]}
         sessionStatus: {$ref: '#/components/schemas/CourseSessionStatus'}
         attendanceStatus: {$ref: '#/components/schemas/AttendanceStatus'}
         attendanceRecordedAt: {type: [string, 'null'], format: date-time}

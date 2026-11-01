@@ -155,8 +155,10 @@ record CourseRunPatchRequest(
 
 record CourseRunScheduleRequest(
 	@NotNull @PositiveOrZero Long expectedVersion,
+	@Schema(description = "Must not precede registration closing. Retained effective sessions must fit within the new Run window.")
 	@NotNull Instant plannedStartAt,
 	@NotNull Instant plannedEndAt,
+	@Schema(description = "Cannot increase after opening. A reduction may only remove units that have not started.")
 	@NotNull @Positive Integer totalUnits) { }
 
 record CourseRunOpenRequest(

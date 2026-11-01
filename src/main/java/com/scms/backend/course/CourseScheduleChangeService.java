@@ -2,8 +2,9 @@ package com.scms.backend.course;
 
 import java.sql.Timestamp;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,9 +47,9 @@ class CourseScheduleChangeService {
 		if (oldStart.equals(newStart) && oldEnd.equals(newEnd)) return;
 		Instant sentAt = clock.instant();
 		boolean material = CourseScheduleChangePolicy.isMaterial(oldStart, oldEnd, newStart, newEnd);
-		Instant deadline = material ? CourseScheduleChangePolicy.deadline(sentAt, newStart) : null;
-		CourseWithdrawalCause cause = Duration.between(oldStart, newStart).compareTo(Duration.ofDays(7)) > 0
-			? CourseWithdrawalCause.START_DELAY_OVER_7_DAYS : CourseWithdrawalCause.VOLUNTARY;
+		Set<UUID> conflicts = conflictingEnrollmentSessions(session.getCourseRun().getId(), session.getId(), newStart, newEnd);
+		Instant deadline = material || !conflicts.isEmpty() ? CourseScheduleChangePolicy.deadline(sentAt, newStart) : null;
+		CourseWithdrawalCause cause = CourseWithdrawalCause.VOLUNTARY;
 		UUID eventId = UUID.randomUUID();
 		List<Map<String, Object>> members = db.queryForList("""
 			select es.id enrollment_session_id, e.member_account_id
@@ -57,9 +58,7 @@ class CourseScheduleChangeService {
 			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 			order by es.id
 			""", session.getId());
-		if (material && !members.isEmpty() && !deadline.isAfter(sentAt)) throw CourseException.responseDeadline();
-		if (hasMemberScheduleConflict(session.getId(), newStart, newEnd))
-			cause = CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT;
+		if (deadline != null && !members.isEmpty() && !deadline.isAfter(sentAt)) throw CourseException.responseDeadline();
 		db.update("""
 			insert into course_schedule_change_events(id,course_run_id,cause_code,old_planned_start_at,
 			old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
@@ -71,13 +70,15 @@ class CourseScheduleChangeService {
 		db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING'"
 			+ " and enrollment_session_id in (select id from course_enrollment_sessions where course_session_id=?)", session.getId());
 		for (Map<String, Object> member : members) {
-			UUID recordId = material ? UUID.randomUUID() : null;
-			if (material) db.update("""
+			boolean conflicted = conflicts.contains(member.get("enrollment_session_id"));
+			CourseWithdrawalCause memberCause = conflicted ? CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT : cause;
+			UUID recordId = material || conflicted ? UUID.randomUUID() : null;
+			if (recordId != null) db.update("""
 				insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
 				new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id)
 				values(?,?,?,?,?,?,?,?,?,?)
 				""", recordId, member.get("enrollment_session_id"), Timestamp.from(oldStart), Timestamp.from(oldEnd),
-				Timestamp.from(newStart), Timestamp.from(newEnd), Timestamp.from(sentAt), Timestamp.from(deadline), cause.name(), eventId);
+				Timestamp.from(newStart), Timestamp.from(newEnd), Timestamp.from(sentAt), Timestamp.from(deadline), memberCause.name(), eventId);
 			Map<String, Object> payload = new LinkedHashMap<>();
 			payload.put("courseCode", session.getCourseRun().getCourse().getCode());
 			payload.put("runCode", session.getCourseRun().getRunCode());
@@ -86,7 +87,7 @@ class CourseScheduleChangeService {
 			payload.put("oldEndAt", oldEnd.toString());
 			payload.put("newStartAt", newStart.toString());
 			payload.put("newEndAt", newEnd.toString());
-			payload.put("responseDeadline", deadline == null ? null : deadline.toString());
+			payload.put("responseDeadline", recordId == null ? null : deadline.toString());
 			payload.put("recordId", recordId);
 			notifications.write("COURSE_SESSION_RESCHEDULED:" + session.getId() + ":" + session.getVersion()
 				+ ":" + member.get("enrollment_session_id"), (UUID) member.get("member_account_id"),
@@ -97,14 +98,9 @@ class CourseScheduleChangeService {
 	@Transactional(readOnly = true)
 	List<ScheduleChange> list(UUID memberId) {
 		activeMember(memberId);
-		return db.query("""
-			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd
-			from course_schedule_change_responses r
-			join course_enrollment_sessions es on es.id=r.enrollment_session_id
-			join course_enrollments e on e.id=es.course_enrollment_id
-			left join course_withdrawal_requests w on w.schedule_change_response_id=r.id
-			where e.member_account_id=? order by r.created_at desc,r.id
-			""", this::map, memberId);
+		Timestamp now = Timestamp.from(clock.instant());
+		return db.query(select() + " where e.member_account_id=? order by r.created_at desc,r.id",
+			this::map, now, now, memberId);
 	}
 
 	@Transactional
@@ -112,14 +108,19 @@ class CourseScheduleChangeService {
 		activeMember(memberId);
 		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
 			throw CourseException.invalidResponse();
-		List<ScheduleChange> rows = db.query("""
-			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd
-			from course_schedule_change_responses r join course_enrollment_sessions es on es.id=r.enrollment_session_id
-			join course_enrollments e on e.id=es.course_enrollment_id
-			left join course_withdrawal_requests w on w.schedule_change_response_id=r.id
-			where r.id=? and e.member_account_id=? for update of r
-			""", this::map,
-			responseId, memberId);
+		if (!"CONTINUE".equals(choice)) {
+			List<UUID> runIds = db.queryForList("select e.course_run_id from course_schedule_change_responses r "
+				+ "join course_enrollment_sessions es on es.id=r.enrollment_session_id "
+				+ "join course_enrollments e on e.id=es.course_enrollment_id where r.id=? and e.member_account_id=?",
+				UUID.class, responseId, memberId);
+			if (runIds.isEmpty()) throw CourseException.responseNotFound();
+			accounts.findByIdForUpdate(memberId).filter(account -> account.getRole() == AccountRole.MEMBER
+				&& account.getStatus() == AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);
+			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runIds.getFirst());
+		}
+		Timestamp queryTime = Timestamp.from(clock.instant());
+		List<ScheduleChange> rows = db.query(select() + " where r.id=? and e.member_account_id=? for update of r",
+			this::map, queryTime, queryTime, responseId, memberId);
 		if (rows.isEmpty()) throw CourseException.responseNotFound();
 		ScheduleChange current = rows.getFirst();
 		if (current.response() != null) {
@@ -138,6 +139,9 @@ class CourseScheduleChangeService {
 		Instant now = clock.instant();
 		if (!current.status().equals("PENDING") || !now.isBefore(current.responseDeadline()))
 			throw CourseException.responseClosed();
+		if ("REQUEST_WITHDRAWAL".equals(choice) && !current.withdrawalEligible())
+			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED",
+				"Withdrawal is not allowed for the current Enrollment or CourseRun state.");
 		db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?",
 			choice, Timestamp.from(now), responseId);
 		if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
@@ -146,76 +150,117 @@ class CourseScheduleChangeService {
 		}
 		if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
 			transfers.requestFromScheduleChange(memberId, responseId, now);
-		return new ScheduleChange(current.id(), current.enrollmentSessionId(), current.oldStartAt(), current.oldEndAt(),
-			current.newStartAt(), current.newEndAt(), current.notificationSentAt(), current.responseDeadline(),
-			"RESPONDED", choice, now, current.changeEventId(), current.cause(), null, false, null, null, null);
+		return reload(memberId, responseId);
 	}
 
 	@Transactional
-	void createRunScheduleResponses(UUID eventId, CourseRun run, CourseWithdrawalCause cause, Instant sentAt) {
-		Instant deadline = CourseScheduleChangePolicy.deadline(sentAt, run.getPlannedStartAt());
+	void createRunScheduleResponses(UUID eventId, CourseRun run, CourseWithdrawalCause cause) {
+		Instant sentAt = clock.instant();
 		List<Map<String, Object>> members = db.queryForList("""
 			select es.id enrollment_session_id,e.member_account_id,s.start_at,s.end_at
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id
-			where e.course_run_id=? and es.disposition='ENROLLED'
+			where e.course_run_id=? and es.disposition in ('ENROLLED','REMOVED_BY_RUN_CHANGE') and s.start_at>?
 			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by es.id
-			""", run.getId());
+			""", run.getId(), Timestamp.from(sentAt));
+		if (members.isEmpty()) return;
+		Instant nextStart = members.stream().map(row -> ((Timestamp) row.get("start_at")).toInstant())
+			.min(Instant::compareTo).orElseThrow();
+		Instant deadline = CourseScheduleChangePolicy.deadline(sentAt, nextStart);
+		if (!deadline.isAfter(sentAt)) throw CourseException.responseDeadline();
+		Set<UUID> conflicts = conflictingEnrollmentSessions(run.getId(), null, null, null);
+		db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING'"
+			+ " and enrollment_session_id in (select id from course_enrollment_sessions where course_run_id=?)", run.getId());
 		for (Map<String, Object> member : members) {
+			CourseWithdrawalCause memberCause = cause == CourseWithdrawalCause.VOLUNTARY
+				&& conflicts.contains(member.get("enrollment_session_id")) ? CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT : cause;
 			UUID responseId = UUID.randomUUID();
 			db.update("""
 				insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
 				new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id)
 				values(?,?,?,?,?,?,?,?,?,?)
 				""", responseId, member.get("enrollment_session_id"), member.get("start_at"), member.get("end_at"),
-				member.get("start_at"), member.get("end_at"), Timestamp.from(sentAt), Timestamp.from(deadline), cause.name(), eventId);
+				member.get("start_at"), member.get("end_at"), Timestamp.from(sentAt), Timestamp.from(deadline), memberCause.name(), eventId);
 			notifications.write("COURSE_RUN_SCHEDULE_CHANGED:" + eventId + ":" + member.get("enrollment_session_id"),
 				(UUID) member.get("member_account_id"), "COURSE_SCHEDULE_CHANGED", "COURSE_RUN", run.getId(),
-				Map.of("recordId", responseId, "cause", cause.name(), "responseDeadline", deadline.toString()));
+				Map.of("recordId", responseId, "cause", memberCause.name(), "responseDeadline", deadline.toString()));
 		}
 	}
 
 	private ScheduleChange reload(UUID memberId, UUID responseId) {
-		return db.query("""
-			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd
+		Timestamp now = Timestamp.from(clock.instant());
+		return db.query(select() + " where r.id=? and e.member_account_id=?", this::map, now, now, responseId, memberId)
+			.stream().findFirst().orElseThrow(CourseException::responseNotFound);
+	}
+
+	private String select() {
+		return """
+			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd,
+			 e.lifecycle_status,e.total_units_snapshot,e.amount_paid_vnd_snapshot,run.status course_run_status,
+			 u.remaining_units,u.unused_allocation
 			from course_schedule_change_responses r join course_enrollment_sessions es on es.id=r.enrollment_session_id
-			join course_enrollments e on e.id=es.course_enrollment_id
+			join course_enrollments e on e.id=es.course_enrollment_id join course_runs run on run.id=e.course_run_id
 			left join course_withdrawal_requests w on w.schedule_change_response_id=r.id
-			where r.id=? and e.member_account_id=?
-			""", this::map, responseId, memberId).stream().findFirst().orElseThrow(CourseException::responseNotFound);
+			left join lateral (select count(*) filter(where s.start_at>?) remaining_units,
+			 coalesce(sum(unit.allocation_vnd) filter(where s.start_at>?),0) unused_allocation
+			 from course_enrollment_sessions unit join course_sessions s on s.id=unit.course_session_id
+			 where unit.course_enrollment_id=e.id) u on true
+			""";
 	}
 
 	private ScheduleChange map(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
-		String cause = rs.getString("cause_code");
+		CourseWithdrawalCause cause = CourseWithdrawalCause.valueOf(rs.getString("cause_code"));
+		CourseWithdrawalPolicy.Decision decision = CourseWithdrawalPolicy.evaluate(cause, rs.getInt("remaining_units"),
+			rs.getInt("total_units_snapshot"), rs.getBigDecimal("unused_allocation").toBigIntegerExact()
+				.min(rs.getBigDecimal("amount_paid_vnd_snapshot").toBigIntegerExact()));
+		String reason = decision.reason();
+		boolean eligible = decision.eligible();
+		if (!List.of("ACTIVE", "WITHDRAWAL_PENDING").contains(rs.getString("lifecycle_status"))) {
+			eligible = false; reason = "ENROLLMENT_NOT_ACTIVE";
+		}
+		else if (!List.of("OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS").contains(rs.getString("course_run_status"))) {
+			eligible = false; reason = "COURSE_RUN_NOT_WITHDRAWABLE";
+		}
+		else if (!"REQUEST_WITHDRAWAL".equals(rs.getString("response"))
+				&& (!"PENDING".equals(rs.getString("status")) || !clock.instant().isBefore(rs.getTimestamp("response_deadline").toInstant()))) {
+			eligible = false; reason = "SCHEDULE_CHANGE_RESPONSE_CLOSED";
+		}
 		return new ScheduleChange(rs.getObject("id", UUID.class), rs.getObject("enrollment_session_id", UUID.class),
 			rs.getTimestamp("old_start_at").toInstant(), rs.getTimestamp("old_end_at").toInstant(),
 			rs.getTimestamp("new_start_at").toInstant(), rs.getTimestamp("new_end_at").toInstant(),
 			rs.getTimestamp("notification_sent_at").toInstant(), rs.getTimestamp("response_deadline").toInstant(),
 			rs.getString("status"), rs.getString("response"), rs.getTimestamp("responded_at") == null ? null : rs.getTimestamp("responded_at").toInstant(),
-			rs.getObject("change_event_id", UUID.class), cause == null ? CourseWithdrawalCause.VOLUNTARY : CourseWithdrawalCause.valueOf(cause),
-			rs.getObject("withdrawal_request_id", UUID.class), rs.getObject("withdrawal_request_id") != null,
-			rs.getObject("withdrawal_request_id") == null ? null : "ELIGIBLE_WITH_REFUND",
-			rs.getBigDecimal("refund_basis_vnd") == null ? null : rs.getBigDecimal("refund_basis_vnd").toBigIntegerExact(),
-			rs.getBigDecimal("refund_amount_vnd") == null ? null : rs.getBigDecimal("refund_amount_vnd").toBigIntegerExact());
+			rs.getObject("change_event_id", UUID.class), cause, rs.getObject("withdrawal_request_id", UUID.class), eligible, reason,
+			rs.getBigDecimal("refund_basis_vnd") == null ? decision.refundBasisVnd() : rs.getBigDecimal("refund_basis_vnd").toBigIntegerExact(),
+			rs.getBigDecimal("refund_amount_vnd") == null ? decision.refundAmountVnd() : rs.getBigDecimal("refund_amount_vnd").toBigIntegerExact());
 	}
 
 	private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }
 
-	private boolean hasMemberScheduleConflict(UUID sessionId, Instant startAt, Instant endAt) {
-		return Boolean.TRUE.equals(db.queryForObject("""
-			select exists(select 1
+	private Set<UUID> conflictingEnrollmentSessions(UUID runId, UUID sessionId, Instant startAt, Instant endAt) {
+		return new HashSet<>(db.queryForList("""
+			select distinct current_es.id
 			from course_enrollment_sessions current_es
 			join course_enrollments current_enrollment on current_enrollment.id=current_es.course_enrollment_id
-			where current_es.course_session_id=? and current_es.disposition='ENROLLED'
-			and exists(select 1
+			join course_sessions current_session on current_session.id=current_es.course_session_id
+			where current_enrollment.course_run_id=? and current_es.disposition='ENROLLED'
+			and current_enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
+			and (cast(? as uuid) is null or current_es.course_session_id=?)
+			and (exists(select 1
 				from course_enrollment_sessions other_es
 				join course_enrollments other_enrollment on other_enrollment.id=other_es.course_enrollment_id
 				join course_sessions other_session on other_session.id=other_es.course_session_id
 				where other_enrollment.member_account_id=current_enrollment.member_account_id
-				and other_es.course_session_id<>? and other_es.disposition='ENROLLED'
+				and other_es.course_session_id<>current_es.course_session_id and other_es.disposition='ENROLLED'
+				and other_enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 				and other_session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
-				and other_session.start_at < ? and other_session.end_at > ?))
-			""", Boolean.class, sessionId, sessionId, Timestamp.from(endAt), Timestamp.from(startAt)));
+				and other_session.start_at < coalesce(cast(? as timestamptz),current_session.end_at)
+				and other_session.end_at > coalesce(cast(? as timestamptz),current_session.start_at))
+			or exists(select 1 from bookings b join class_sessions gym on gym.id=b.class_session_id
+				where b.member_account_id=current_enrollment.member_account_id and b.status='BOOKED'
+				and gym.start_time < coalesce(cast(? as timestamptz),current_session.end_at)
+				and gym.end_time > coalesce(cast(? as timestamptz),current_session.start_at)))
+			""", UUID.class, runId, sessionId, sessionId, timestamp(endAt), timestamp(startAt), timestamp(endAt), timestamp(startAt)));
 	}
 
 	private void activeMember(UUID id) {

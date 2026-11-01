@@ -92,6 +92,10 @@ class CourseWithdrawalService {
 			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_ENROLLMENT_INACTIVE",
 				"Only an active Enrollment can be withdrawn.");
 		}
+		if (Boolean.TRUE.equals(db.queryForObject("select exists(select 1 from course_transfer_requests where "
+			+ "source_enrollment_id=? and status in ('PENDING','OFFERED'))", Boolean.class, enrollmentId)))
+			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_TRANSFER_OPEN",
+				"The Enrollment already has an open transfer request.");
 		Instant now = clock.instant();
 		RefundSnapshot snapshot = refundSnapshot(enrollmentId, number(enrollment, "total_units_snapshot"),
 			amount(enrollment, "amount_paid_vnd_snapshot"), now);
@@ -360,18 +364,26 @@ class CourseWithdrawalService {
 		BigInteger currentBasis = amount(rs.getBigDecimal("unused_allocation"))
 			.min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")));
 		CourseWithdrawalPolicy.Decision decision = CourseWithdrawalPolicy.evaluate(cause, currentRemaining, currentTotal, currentBasis);
+		boolean eligible = decision.eligible();
+		String eligibilityReason = decision.reason();
+		if (!List.of("ACTIVE", "WITHDRAWAL_PENDING").contains(rs.getString("lifecycle_status"))) {
+			eligible = false; eligibilityReason = "ENROLLMENT_NOT_ACTIVE";
+		}
+		else if (!List.of("OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS").contains(rs.getString("course_run_status"))) {
+			eligible = false; eligibilityReason = "COURSE_RUN_NOT_WITHDRAWABLE";
+		}
 		BigInteger basis = amount(rs.getBigDecimal("refund_basis_vnd"));
 		BigInteger refund = amount(rs.getBigDecimal("refund_amount_vnd"));
 		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class),
 			rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class),
 			rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"),
-			rs.getString("decision_reason"), cause, decision.eligible(), decision.reason(), rs.getTimestamp("requested_at").toInstant(),
+			rs.getString("decision_reason"), cause, eligible, eligibilityReason, rs.getTimestamp("requested_at").toInstant(),
 			rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")),
 			totalUnits == null ? currentTotal : totalUnits, remainingUnits == null ? currentRemaining : remainingUnits,
-			basis == null ? decision.refundBasisVnd() : basis, refund == null ? decision.refundAmountVnd() : refund,
+			basis, refund,
 			rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"),
 			rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"),
-			rs.getString("run_code"), rs.getString("course_run_status"), decision.eligible() ? decision.refundAmountVnd() : null,
+			rs.getString("run_code"), rs.getString("course_run_status"), eligible ? decision.refundAmountVnd() : null,
 			rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("change_event_id", UUID.class));
 	}
 	private record RefundSnapshot(int totalUnits, int remainingUnits, BigInteger unusedAllocation) { }
