@@ -12,6 +12,10 @@ class CourseEnrollmentOpenApiTests {
 		var source = getClass().getResourceAsStream("/openapi/course-enrollment.yaml");
 		assertThat(source).isNotNull();
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
+		for (JsonNode reference : document.findValues("$ref")) {
+			if (reference.asText().startsWith("#/"))
+				assertThat(document.at(reference.asText().substring(1)).isMissingNode()).as(reference.asText()).isFalse();
+		}
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/members/me/course-schedule-changes",
 				"/reception/members/{memberId}/course-enrollments",

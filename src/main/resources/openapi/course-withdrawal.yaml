@@ -87,7 +87,6 @@ components:
         withdrawalEligible: {type: boolean}
         withdrawalReason: {type: string}
         refundBasisVnd: {type: [integer, 'null']}
-        refundAmountVnd: {type: [integer, 'null']}
         scheduleChangeResponseId: {type: [string, 'null'], format: uuid}
         changeEventId: {type: [string, 'null'], format: uuid}
     Create:
