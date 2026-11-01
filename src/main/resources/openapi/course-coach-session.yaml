@@ -1,0 +1,76 @@
+openapi: 3.1.0
+info: {title: SCMS Coach CourseSession API, version: v1}
+security: [{bearerAuth: []}]
+paths:
+  /coach/course-sessions:
+    get:
+      operationId: listAssignedCoachCourseSessions
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: status, in: query, required: false, schema: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}}
+        - {name: page, in: query, required: false, schema: {type: integer, format: int32, minimum: 0, default: 0}}
+        - {name: size, in: query, required: false, schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}}
+        - {name: sort, in: query, required: false, schema: {type: array, items: {type: string}, example: [startsAt,desc]}}
+      responses:
+        '200': {description: Assigned CourseSessions, content: {application/json: {schema: {$ref: '#/components/schemas/CourseCoachSessionPage'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /coach/course-sessions/{sessionId}:
+    get:
+      operationId: getAssignedCoachCourseSession
+      parameters: [{name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Assigned CourseSession, content: {application/json: {schema: {$ref: '#/components/schemas/CourseCoachSession'}}}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+components:
+  schemas:
+    CourseCoachSessionPage:
+      type: object
+      additionalProperties: false
+      required: [content, page, size, totalElements, totalPages]
+      properties:
+        content: {type: array, items: {$ref: '#/components/schemas/CourseCoachSession'}}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+        totalElements: {type: integer, format: int64, minimum: 0}
+        totalPages: {type: integer, minimum: 0}
+    CourseCoachSession:
+      type: object
+      additionalProperties: false
+      required: [courseSessionId, unitNumber, startsAt, endsAt, courseId, courseCode, courseName, courseRunId, runCode, courseRunStatus, coachId, coachName, roomId, roomCode, roomName, sessionStatus, rosterCount, attendanceWritable, attendanceWriteReason]
+      properties:
+        courseSessionId: {type: string, format: uuid}
+        unitNumber: {type: integer, minimum: 1}
+        startsAt: {type: string, format: date-time}
+        endsAt: {type: string, format: date-time}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        courseRunId: {type: string, format: uuid}
+        runCode: {type: string}
+        courseRunStatus: {type: string, enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]}
+        coachId: {type: string, format: uuid}
+        coachName: {type: string}
+        roomId: {type: string, format: uuid}
+        roomCode: {type: [string, 'null']}
+        roomName: {type: string}
+        sessionStatus: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}
+        rosterCount: {type: integer, format: int64, minimum: 0}
+        attendanceWritable: {type: boolean}
+        attendanceWriteReason: {$ref: '#/components/schemas/AttendanceWriteReason'}
+    AttendanceWriteReason: {type: string, enum: [WRITABLE, TOO_EARLY, WINDOW_CLOSED, SESSION_CANCELLED, NOT_ASSIGNED_COACH, COURSE_RUN_NOT_ACTIVE]}
+    ApiProblem:
+      type: object
+      required: [title, status, detail, instance, code]
+      properties: {title: {type: string}, status: {type: integer}, detail: {type: string}, instance: {type: string}, code: {type: string}}
+  responses:
+    BadRequest: {description: Invalid request, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Unauthorized: {description: Authentication required, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    Forbidden: {description: Role denied, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+    NotFound: {description: Hidden or missing resource, content: {application/problem+json: {schema: {$ref: '#/components/schemas/ApiProblem'}}}}
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
