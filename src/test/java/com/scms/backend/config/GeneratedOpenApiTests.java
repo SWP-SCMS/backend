@@ -363,6 +363,8 @@ class GeneratedOpenApiTests {
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay",
 		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash",
 		"GET /members/me/course-enrollments",
+		"GET /reception/members/{memberId}/course-enrollments",
+		"GET /reception/members/{memberId}/course-enrollments/{enrollmentId}",
 		"POST /members/me/course-enrollments/{enrollmentId}/withdrawal-requests",
 		"GET /members/me/course-withdrawal-requests",
 		"GET /members/me/course-withdrawal-requests/{requestId}",
@@ -682,6 +684,29 @@ class GeneratedOpenApiTests {
 			.isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
 		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText())
 			.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
+	}
+
+	@Test
+	void generatedReceptionEnrollmentDiscoveryDocumentsFiltersAndRedactedFields() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode list = operation(document, "/reception/members/{memberId}/course-enrollments", "get");
+		assertThat(list.path("parameters").toString()).contains("memberId", "page", "size", "status", "withdrawalEligible");
+		JsonNode schema = resolve(document, response(document, "/reception/members/{memberId}/course-enrollments", "get", "200")
+			.at("/content/*~1*/schema"));
+		JsonNode item = resolve(document, schema.at("/properties/content/items"));
+		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList())
+			.contains("memberId", "memberCode", "memberName", "courseId", "courseCode", "courseName",
+				"courseRunId", "runCode", "courseRunStatus", "enrollmentId", "enrollmentStatus", "enrolledAt",
+				"totalUnits", "remainingUnits", "withdrawalEligible", "withdrawalReason", "estimatedRefundAmount")
+			.doesNotContain("email", "phone", "emergencyContactPhone");
+		assertThat(item.at("/properties/withdrawalReason/enum").toString()).contains("FINAL_UNIT_ALREADY_STARTED");
+		assertThat(operation(document, "/reception/members/{memberId}/course-enrollments/{enrollmentId}", "get")
+			.at("/responses/404").isMissingNode()).isFalse();
+		JsonNode withdrawal = document.at("/components/schemas/WithdrawalRequest/properties");
+		assertThat(withdrawal.properties().stream().map(Map.Entry::getKey).toList())
+			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus",
+				"totalUnits", "remainingUnits", "estimatedRefundAmount")
+			.doesNotContain("email", "phone", "emergencyContactPhone");
 	}
 
 	@Test

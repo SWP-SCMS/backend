@@ -56,6 +56,34 @@ components:
     EnrollmentId: {name: enrollmentId, in: path, required: true, schema: {type: string, format: uuid}}
     MemberId: {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
+    WithdrawalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        enrollmentId: {type: string, format: uuid}
+        courseRunId: {type: string, format: uuid}
+        memberAccountId: {type: string, format: uuid}
+        requesterAccountId: {type: string, format: uuid}
+        status: {type: string}
+        requestReason: {type: string}
+        decisionReason: {type: [string, 'null']}
+        requestedAt: {type: string, format: date-time}
+        decidedByAccountId: {type: [string, 'null'], format: uuid}
+        decidedAt: {type: [string, 'null'], format: date-time}
+        totalUnits: {type: [integer, 'null']}
+        remainingUnits: {type: [integer, 'null']}
+        refundBasisVnd: {type: [integer, 'null']}
+        refundAmountVnd: {type: [integer, 'null']}
+        memberId: {type: string, format: uuid}
+        memberCode: {type: string}
+        memberName: {type: string}
+        courseId: {type: string, format: uuid}
+        courseCode: {type: string}
+        courseName: {type: string}
+        runCode: {type: string}
+        courseRunStatus: {type: string}
+        estimatedRefundAmount: {type: [integer, 'null']}
     Create:
       type: object
       additionalProperties: false
