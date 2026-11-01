@@ -83,18 +83,20 @@ class ReceptionCourseEnrollmentService {
 		boolean runWithdrawable = List.of("OPEN_FOR_REGISTRATION", "CONFIRMED", "IN_PROGRESS").contains(runStatus);
 		boolean eligible = "ACTIVE".equals(lifecycle) && runWithdrawable
 			&& CourseWithdrawalPolicy.canWithdraw(remaining, total);
+		BigInteger unusedAllocation = amount(rs.getBigDecimal("unused_allocation"))
+			.min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")));
+		BigInteger refund = "ACTIVE".equals(lifecycle) && runWithdrawable && remaining != 0
+			? CourseWithdrawalPolicy.refund(remaining, total, unusedAllocation) : null;
 		CourseWithdrawalEligibilityReason reason = CourseWithdrawalEligibilityReason.valueOf(!"ACTIVE".equals(lifecycle) ? "ENROLLMENT_NOT_ACTIVE"
 			: !runWithdrawable ? "COURSE_RUN_NOT_WITHDRAWABLE"
 			: remaining == 0 ? "FINAL_UNIT_ALREADY_STARTED"
-			: CourseWithdrawalPolicy.refund(remaining, total, amount(rs.getBigDecimal("unused_allocation"))).signum() == 0
+			: refund.signum() == 0
 				? "ELIGIBLE_WITHOUT_REFUND" : "ELIGIBLE_WITH_REFUND");
-		BigInteger refund = eligible ? CourseWithdrawalPolicy.refund(remaining, total,
-			amount(rs.getBigDecimal("unused_allocation")).min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")))) : null;
 		return new ReceptionCourseEnrollment(rs.getObject("member_id", UUID.class), rs.getString("member_code"),
 			rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"),
 			rs.getString("course_name"), rs.getObject("course_run_id", UUID.class), rs.getString("run_code"),
 			rs.getString("course_run_status"), rs.getObject("enrollment_id", UUID.class),
-			lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, refund);
+			lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, eligible ? refund : null);
 	}
 	private BigInteger amount(BigDecimal value) { return value == null ? BigInteger.ZERO : value.toBigIntegerExact(); }
 	private String status(String value) {
