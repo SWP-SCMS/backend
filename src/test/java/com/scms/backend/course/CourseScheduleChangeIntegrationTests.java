@@ -80,6 +80,7 @@ class CourseScheduleChangeIntegrationTests {
 		managerId = account(AccountRole.MANAGER, "Schedule Manager").getId();
 		coachId = account(AccountRole.COACH, "Schedule Coach").getId();
 		memberId = account(AccountRole.MEMBER, "Schedule Member").getId();
+		db.update("insert into member_profiles(account_id) values(?)", memberId);
 		disciplineId = UUID.randomUUID();
 		db.update("insert into disciplines(id,name,status) values (?,?,'ACTIVE')", disciplineId, "Schedule " + disciplineId);
 		CourseResponse course = managers.createCourse(managerId,
@@ -97,7 +98,7 @@ class CourseScheduleChangeIntegrationTests {
 		Instant startAt = Instant.parse("2035-01-05T02:00:00Z");
 		session = managers.createSession(managerId, runId,
 			new CourseSessionCreateRequest(1, roomId, coachId, startAt, startAt.plusSeconds(3600), BigInteger.TEN));
-		seedEnrollment();
+		seedEnrollment(memberId);
 		CourseSessionResponse changed = managers.patchSession(managerId, runId, session.id(),
 			new CourseSessionPatchRequest(session.version(), null, null, startAt.plusSeconds(7200),
 				startAt.plusSeconds(10800)));
@@ -382,6 +383,81 @@ class CourseScheduleChangeIntegrationTests {
 			+ "and target_id=?", Long.class, runId)).isOne();
 	}
 
+	@Test
+	void reducingStartedRunRemovesOnlyFutureTailAndStillReachesSettlement() {
+		db.update("update course_runs set total_units=3,version=version+1 where id=?", runId);
+		CourseSessionResponse retained = createSession(2, Instant.parse("2035-01-07T02:00:00Z"));
+		CourseSessionResponse removed = createSession(3, Instant.parse("2035-01-08T02:00:00Z"));
+		UUID enrollmentId = db.queryForObject("select id from course_enrollments where course_run_id=? and member_account_id=?",
+			UUID.class, runId, memberId);
+		db.update("update course_enrollments set total_units_snapshot=3 where id=?", enrollmentId);
+		db.update("update course_enrollment_sessions set allocation_vnd=30000 where course_enrollment_id=?", enrollmentId);
+		seedEnrollmentSession(enrollmentId, retained, 2, BigInteger.valueOf(30_000));
+		seedEnrollmentSession(enrollmentId, removed, 3, BigInteger.valueOf(40_000));
+		db.update("update course_runs set status='IN_PROGRESS',version=version+1 where id=?", runId);
+		Instant changedAt = Instant.parse("2035-01-06T00:00:00Z");
+		when(clock.instant()).thenReturn(changedAt);
+
+		managers.patchRunSchedule(managerId, runId, new CourseRunScheduleRequest(runVersion(),
+			Instant.parse("2035-01-01T00:00:00Z"), Instant.parse("2035-02-01T00:00:00Z"), 2));
+
+		assertThat(sessionStatus(session.id())).isEqualTo("SCHEDULED");
+		assertThat(sessionStatus(retained.id())).isEqualTo("SCHEDULED");
+		assertThat(sessionStatus(removed.id())).isEqualTo("REMOVED_BY_RUN_CHANGE");
+		disruptions.advance(retained.endAt().plusSeconds(1));
+		assertThat(sessionStatus(session.id())).isEqualTo("COMPLETED");
+		assertThat(sessionStatus(retained.id())).isEqualTo("COMPLETED");
+		assertThat(sessionStatus(removed.id())).isEqualTo("REMOVED_BY_RUN_CHANGE");
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId))
+			.isEqualTo("SETTLEMENT_PENDING");
+	}
+
+	@Test
+	void runChangeUsesFutureSessionDeadlineAndWithdrawalResponseIsIdempotent() {
+		Instant changedAt = Instant.parse("2035-01-03T00:00:00Z");
+		when(clock.instant()).thenReturn(changedAt);
+		managers.patchRunSchedule(managerId, runId, new CourseRunScheduleRequest(runVersion(),
+			Instant.parse("2035-01-02T00:00:00Z"), Instant.parse("2035-02-01T00:00:00Z"), 1));
+
+		var pending = members.scheduleChanges(memberId).stream()
+			.filter(change -> change.notificationSentAt().equals(changedAt)).findFirst().orElseThrow();
+		assertThat(pending.responseDeadline()).isEqualTo(session.startAt().minusSeconds(24 * 3600));
+		assertThat(pending.responseDeadline()).isAfter(changedAt);
+		assertThat(pending.status()).isEqualTo("PENDING");
+		assertThat(pending.withdrawalEligible()).isTrue();
+		assertThat(pending.withdrawalReason()).isEqualTo("ELIGIBLE_WITH_REFUND");
+		assertThat(pending.refundBasisVnd()).isEqualTo(BigInteger.valueOf(100_000));
+		assertThat(pending.refundAmountVnd()).isEqualTo(BigInteger.valueOf(80_000));
+
+		var created = members.respondToScheduleChange(memberId, pending.id(),
+			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_WITHDRAWAL"));
+		var retried = members.respondToScheduleChange(memberId, pending.id(),
+			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_WITHDRAWAL"));
+		assertThat(created.withdrawalRequestId()).isNotNull().isEqualTo(retried.withdrawalRequestId());
+		assertThat(db.queryForObject("select count(*) from course_withdrawal_requests where schedule_change_response_id=?",
+			Long.class, pending.id())).isOne();
+	}
+
+	@Test
+	void scheduleConflictCauseIsPerMemberAndSessionMoveIsNotOpeningDelay() {
+		Account unaffected = account(AccountRole.MEMBER, "Unaffected Schedule Member");
+		db.update("insert into member_profiles(account_id) values(?)", unaffected.getId());
+		seedEnrollment(unaffected.getId());
+		Instant movedStart = session.startAt().plusSeconds(10 * 86400L);
+		seedGymBooking(memberId, movedStart.plusSeconds(1800), movedStart.plusSeconds(5400));
+
+		managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(session.version(), null, null,
+			movedStart, movedStart.plusSeconds(3600)));
+
+		var affected = members.scheduleChanges(memberId).stream()
+			.filter(change -> change.newStartAt().equals(movedStart)).findFirst().orElseThrow();
+		var unaffectedResponse = members.scheduleChanges(unaffected.getId()).stream()
+			.filter(change -> change.newStartAt().equals(movedStart)).findFirst().orElseThrow();
+		assertThat(affected.cause()).isEqualTo(CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT);
+		assertThat(unaffectedResponse.cause()).isEqualTo(CourseWithdrawalCause.VOLUNTARY);
+		assertThat(unaffectedResponse.cause()).isNotEqualTo(CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
+	}
+
 	private void rescheduleAgain() {
 		managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(session.version(), null,
 			null, session.startAt().plusSeconds(7200), session.endAt().plusSeconds(7200)));
@@ -404,31 +480,90 @@ class CourseScheduleChangeIntegrationTests {
 			+ " and target_id=?", Long.class, before.id())).isOne();
 	}
 
-	private void seedEnrollment() {
+	private UUID seedEnrollment(UUID enrolledMemberId) {
 		UUID enrollmentId = UUID.randomUUID(), enrollmentSessionId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID(), reservationId = UUID.randomUUID(), paymentId = UUID.randomUUID();
 		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase();
 		Instant expiresAt = Instant.parse("2034-12-15T00:00:00Z");
 		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
 			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key) values(?,?,?,?,?,100000,'VND','PAID',?)",
-			orderId, reference, memberId, memberId, runId, UUID.randomUUID().toString());
+			orderId, reference, enrolledMemberId, enrolledMemberId, runId, UUID.randomUUID().toString());
 		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at) "
-			+ "values(?,?,?,?,'ENROLLED',?)", reservationId, orderId, memberId, runId,
+			+ "values(?,?,?,?,'ENROLLED',?)", reservationId, orderId, enrolledMemberId, runId,
 			java.sql.Timestamp.from(expiresAt));
 		db.update("""
 			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,
 			payment_reference,amount,currency_code,status,deadline_at,bank_code_snapshot,bank_account_number_snapshot,
 			bank_account_name_snapshot,method,paid_at)
 			values(?,?,?,?,?,?,100000,'VND','PAID',?,'CASH','CASH','CASH','CASH',current_timestamp)
-			""", paymentId, orderId, reservationId, memberId, memberId, reference,
+			""", paymentId, orderId, reservationId, enrolledMemberId, enrolledMemberId, reference,
 			java.sql.Timestamp.from(expiresAt));
 		db.update("insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,"
 			+ "member_account_id,actor_account_id,course_run_id,amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at) "
 			+ "values(?,?,?,?,?,?,?,100000,1,current_timestamp)", enrollmentId, orderId, reservationId, paymentId,
-			memberId, memberId, runId);
+			enrolledMemberId, enrolledMemberId, runId);
 		db.update("insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,"
 			+ "unit_number,allocation_vnd,disposition) values(?,?,?,?,1,100000,'ENROLLED')", enrollmentSessionId,
 			enrollmentId, session.id(), runId);
+		return enrollmentId;
+	}
+
+	private void seedEnrollmentSession(UUID enrollmentId, CourseSessionResponse enrolledSession, int unitNumber,
+			BigInteger allocation) {
+		db.update("insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,"
+			+ "unit_number,allocation_vnd,disposition) values(?,?,?,?,?,?,'ENROLLED')", UUID.randomUUID(), enrollmentId,
+			enrolledSession.id(), runId, unitNumber, allocation);
+	}
+
+	private CourseSessionResponse createSession(int unitNumber, Instant startAt) {
+		UUID roomId = UUID.randomUUID();
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
+			roomId, "Schedule room " + roomId);
+		return managers.createSession(managerId, runId, new CourseSessionCreateRequest(unitNumber, roomId, coachId,
+			startAt, startAt.plusSeconds(3600), BigInteger.valueOf(30_000)));
+	}
+
+	private void seedGymBooking(UUID enrolledMemberId, Instant startAt, Instant endAt) {
+		UUID offerId = UUID.randomUUID(), orderId = UUID.randomUUID(), membershipId = UUID.randomUUID();
+		UUID sportClassId = UUID.randomUUID(), roomId = UUID.randomUUID(), gymSessionId = UUID.randomUUID();
+		db.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,"
+			+ "status,created_by_account_id) values(?,'PLUS',?,?,100000,'VND',60,'ACTIVE',?)", offerId,
+			"Schedule conflict " + offerId, "Schedule conflict", managerId);
+		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,"
+			+ "offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,"
+			+ "payment_method,status,expires_at,paid_at) values(?,?,?,?,?,?,'PLUS',100000,'VND',60,'CASH','PAID',?,?)",
+			orderId, "GYM-" + shortId(), enrolledMemberId, managerId, offerId, "Schedule conflict",
+			java.sql.Timestamp.from(startAt), java.sql.Timestamp.from(startAt.minusSeconds(86400)));
+		db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,
+			    processed_by_account_id)
+			values(?,?,'CASH','PAID',100000,'VND',?,?,?)
+			""", UUID.randomUUID(), orderId, "CASH-" + orderId,
+			java.sql.Timestamp.from(startAt.minusSeconds(86400)), managerId);
+		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,"
+			+ "price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) "
+			+ "values(?,?,?,?,'PLUS','Schedule conflict',100000,'VND',60,'ACTIVE',?,?)", membershipId,
+			enrolledMemberId, orderId, offerId, java.sql.Timestamp.from(startAt.minusSeconds(86400)),
+			java.sql.Timestamp.from(endAt.plusSeconds(86400)));
+		db.update("insert into sport_classes(id,discipline_id,name,class_type,status) values(?,?,?,'GROUP','ACTIVE')",
+			sportClassId, disciplineId, "Schedule conflict " + sportClassId);
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values(?,?,10,'EXCLUSIVE','ACTIVE')", roomId,
+			"Schedule conflict room " + roomId);
+		db.update("insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,"
+			+ "capacity,status,created_by_account_id) values(?,?,?,?,?,?,10,'SCHEDULED',?)", gymSessionId,
+			sportClassId, account(AccountRole.COACH, "Gym Conflict Coach").getId(), roomId,
+			java.sql.Timestamp.from(startAt), java.sql.Timestamp.from(endAt), managerId);
+		db.update("insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id) "
+			+ "values(?,?,?,?,'BOOKED',?)", UUID.randomUUID(), gymSessionId, enrolledMemberId, membershipId,
+			enrolledMemberId);
+	}
+
+	private Long runVersion() {
+		return db.queryForObject("select version from course_runs where id=?", Long.class, runId);
+	}
+
+	private String sessionStatus(UUID sessionId) {
+		return db.queryForObject("select status from course_sessions where id=?", String.class, sessionId);
 	}
 
 	private UUID seedHeldOrder(UUID heldMemberId) {

@@ -99,6 +99,8 @@ class CourseWithdrawalIntegrationTests {
 	void pendingKeepsCapacityAndExactSeventyPercentApprovalCreatesFlooredRefund() {
 		var request = withdrawals.createForMember(memberId, enrollmentId, "Schedule no longer works");
 		assertThat(request.status()).isEqualTo("PENDING");
+		assertThat(request.refundAmountVnd()).isNull();
+		assertThat(request.estimatedRefundAmount()).isEqualTo(BigInteger.valueOf(560_000));
 		assertThatThrownBy(() -> withdrawals.createForMember(memberId, enrollmentId, "Duplicate"))
 			.isInstanceOfSatisfying(CourseWithdrawalException.class,
 				error -> assertThat(error.code()).isEqualTo("COURSE_WITHDRAWAL_ALREADY_PENDING"));
@@ -114,6 +116,8 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(approved.totalUnits()).isEqualTo(10);
 		assertThat(approved.refundBasisVnd()).isEqualTo(BigInteger.valueOf(700_000));
 		assertThat(approved.refundAmountVnd()).isEqualTo(BigInteger.valueOf(560_000));
+		assertThat(approved.withdrawalEligible()).isFalse();
+		assertThat(approved.estimatedRefundAmount()).isNull();
 		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class,
 			enrollmentId)).isEqualTo("WITHDRAWN");
 		assertThat(db.queryForObject("select amount_vnd from course_refund_obligations where course_enrollment_id=? "

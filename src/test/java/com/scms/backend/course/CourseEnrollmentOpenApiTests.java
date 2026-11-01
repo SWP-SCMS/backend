@@ -12,6 +12,10 @@ class CourseEnrollmentOpenApiTests {
 		var source = getClass().getResourceAsStream("/openapi/course-enrollment.yaml");
 		assertThat(source).isNotNull();
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
+		for (JsonNode reference : document.findValues("$ref")) {
+			if (reference.asText().startsWith("#/"))
+				assertThat(document.at(reference.asText().substring(1)).isMissingNode()).as(reference.asText()).isFalse();
+		}
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/members/me/course-schedule-changes",
 				"/reception/members/{memberId}/course-enrollments",
@@ -32,6 +36,11 @@ class CourseEnrollmentOpenApiTests {
 			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
 		assertThat(document.at("/components/schemas/MemberSession/required").toString())
 			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(document.at("/components/schemas/ScheduleChange/properties").fieldNames()).toIterable()
+			.contains("changeEventId", "cause", "withdrawalRequestId", "withdrawalEligible", "withdrawalReason",
+				"refundBasisVnd", "refundAmountVnd");
+		assertThat(document.at("/components/schemas/ScheduleChange/properties/cause/enum").toString())
+			.contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
 		assertThat(document.at("/components/schemas/ReceptionCourseEnrollment/properties/estimatedRefundAmount/description")
 			.asText()).contains("Null when withdrawalEligible is false");
 		assertThat(document.at("/paths/~1coach~1course-sessions~1{sessionId}~1roster~1{enrollmentSessionId}~1attendance/patch/responses/409/$ref").asText())

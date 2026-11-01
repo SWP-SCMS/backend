@@ -103,7 +103,9 @@ record CatalogCourseSessionResponse(
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Instant originalEndAt,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "1", maximum = "9999999999999999999")
 	BigInteger allocationVnd,
-	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseSessionStatus status) {
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {"SCHEDULED",
+		"CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED", "RESOLVED_BY_REFUND"})
+	CourseSessionStatus status) {
 
 	static CatalogCourseSessionResponse from(CourseSession session) {
 		return new CatalogCourseSessionResponse(session.getId(), session.getUnitNumber(), session.getRoom().getId(),

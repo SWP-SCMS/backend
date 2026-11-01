@@ -296,6 +296,26 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/schedule:
+    patch:
+      summary: Apply a versioned Course Run schedule change
+      parameters: [{ $ref: '#/components/parameters/RunId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseRunScheduleRequest' }
+      responses:
+        '200':
+          description: Course Run schedule changed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseRunResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /manager/course-runs/{runId}/sessions:
     get:
       summary: List sessions for a course run
@@ -409,6 +429,28 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup:
+    post:
+      summary: Atomically cancel a session and schedule its makeup
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseSessionCancelWithMakeupRequest' }
+      responses:
+        '200':
+          description: Session cancellation and makeup link committed atomically
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseMakeupResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     bearerAuth:
@@ -485,7 +527,7 @@ components:
       enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]
     CourseSessionStatus:
       type: string
-      enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
+      enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND, REMOVED_BY_RUN_CHANGE]
     VersionRequest:
       type: object
       additionalProperties: false
@@ -602,6 +644,16 @@ components:
       properties:
         expectedVersion: { type: integer, format: int64, minimum: 0 }
         minimumEnrollment: { type: integer, minimum: 1 }
+    CourseRunScheduleRequest:
+      type: object
+      additionalProperties: false
+      description: Retained effective sessions must fit the new Run window. Units cannot increase after opening or remove an already started unit. Pending member responses expire at the earlier of 72 hours or 24 hours before the next future unit; changes without a future response window are rejected atomically.
+      required: [expectedVersion, plannedStartAt, plannedEndAt, totalUnits]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        plannedStartAt: { type: string, format: date-time }
+        plannedEndAt: { type: string, format: date-time }
+        totalUnits: { type: integer, minimum: 1 }
     CourseRunOpenRequest:
       type: object
       additionalProperties: false
@@ -699,6 +751,16 @@ components:
       properties:
         expectedVersion: { type: integer, format: int64, minimum: 0 }
     CourseMakeupRequest:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, roomId, coachId, startAt, endAt]
+      properties:
+        expectedVersion: { type: integer, format: int64, minimum: 0 }
+        roomId: { type: string, format: uuid }
+        coachId: { type: string, format: uuid }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+    CourseSessionCancelWithMakeupRequest:
       type: object
       additionalProperties: false
       required: [expectedVersion, roomId, coachId, startAt, endAt]

@@ -1,6 +1,10 @@
 package com.scms.backend.course;
 
 import java.math.BigInteger;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +23,7 @@ import com.scms.backend.scheduling.DisciplineRepository;
 import com.scms.backend.scheduling.DisciplineStatus;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,10 +38,21 @@ class CourseManagementService {
 	private final AuditEventRepository audits;
 	private final CourseSessionService sessionService;
 	private final CourseRunClosureService runClosure;
+	private final JdbcTemplate db;
+	private final CourseScheduleChangeService scheduleChanges;
+	private final Clock clock;
 
 	CourseManagementService(CourseRepository courses, CourseRunRepository runs, CourseSessionRepository sessions,
 			DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits,
 			CourseSessionService sessionService, CourseRunClosureService runClosure) {
+		this(courses, runs, sessions, disciplines, accounts, audits, sessionService, runClosure, null, null, Clock.systemUTC());
+	}
+
+	@org.springframework.beans.factory.annotation.Autowired
+	CourseManagementService(CourseRepository courses, CourseRunRepository runs, CourseSessionRepository sessions,
+			DisciplineRepository disciplines, AccountRepository accounts, AuditEventRepository audits,
+			CourseSessionService sessionService, CourseRunClosureService runClosure, JdbcTemplate db,
+			CourseScheduleChangeService scheduleChanges, Clock clock) {
 		this.courses = courses;
 		this.runs = runs;
 		this.sessions = sessions;
@@ -45,6 +61,9 @@ class CourseManagementService {
 		this.audits = audits;
 		this.sessionService = sessionService;
 		this.runClosure = runClosure;
+		this.db = db;
+		this.scheduleChanges = scheduleChanges;
+		this.clock = clock;
 	}
 
 	@Transactional(readOnly = true)
@@ -263,6 +282,76 @@ class CourseManagementService {
 		runs.saveAndFlush(run);
 		audit(managerId, "COURSE_RUN_OPENED", "COURSE_RUN", runId, before, snapshot(run));
 		return CourseRunResponse.from(run);
+	}
+
+	@Transactional
+	CourseRunResponse patchRunSchedule(UUID managerId, UUID runId, CourseRunScheduleRequest request) {
+		ensureActiveManager(managerId);
+		if (request == null || request.expectedVersion() == null || request.plannedStartAt() == null
+				|| request.plannedEndAt() == null || request.totalUnits() == null
+				|| !request.plannedStartAt().isBefore(request.plannedEndAt()) || request.totalUnits() <= 0) {
+			throw CourseException.validation("schedule", "must define an ordered schedule and positive totalUnits");
+		}
+		CourseRun run = lockRun(runId);
+		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
+		if (run.getStatus() == CourseRunStatus.COMPLETED || run.getStatus() == CourseRunStatus.CANCELLED
+				|| run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING) throw CourseException.invalidTransition();
+		if (request.plannedStartAt().isBefore(run.getRegistrationClosesAt()))
+			throw CourseException.validation("plannedStartAt", "must not precede registration closing");
+		if (request.totalUnits() > run.getTotalUnits() && run.getStatus() != CourseRunStatus.DRAFT)
+			throw CourseException.validation("totalUnits", "cannot increase after the Run is opened");
+		List<CourseSession> current = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId);
+		for (CourseSession session : current) {
+			if (session.getStatus() == CourseSessionStatus.REMOVED_BY_RUN_CHANGE) continue;
+			if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
+				CourseSession effective = session.getReplacementSession() == null ? session : session.getReplacementSession();
+				if (!effective.getStartAt().isAfter(clock.instant()) || effective.getStatus() == CourseSessionStatus.COMPLETED)
+					throw CourseException.validation("totalUnits", "cannot remove units that have already started");
+			}
+			if (session.getUnitNumber() <= request.totalUnits() && session.getReplacementSession() == null
+					&& (session.getStartAt().isBefore(request.plannedStartAt())
+						|| session.getEndAt().isAfter(request.plannedEndAt()))) {
+				throw CourseException.validation("plannedStartAt", "retained sessions must have a schedule inside the Run window");
+			}
+		}
+		CourseWithdrawalCause cause = scheduleCause(run, request);
+		Map<String, Object> before = snapshot(run);
+		Instant oldStart = run.getPlannedStartAt(), oldEnd = run.getPlannedEndAt();
+		int oldUnits = run.getTotalUnits();
+		run.changeSchedule(request.plannedStartAt(), request.plannedEndAt(), request.totalUnits());
+		runs.saveAndFlush(run);
+		UUID eventId = UUID.randomUUID();
+		db.update("""
+			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,
+			old_planned_start_at,old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
+			values(?,?,?,?,?,?,?,?,?,?)
+			""", eventId, runId, managerId, cause.name(), Timestamp.from(oldStart), Timestamp.from(oldEnd),
+			Timestamp.from(request.plannedStartAt()), Timestamp.from(request.plannedEndAt()), oldUnits, request.totalUnits());
+		if (request.totalUnits() < oldUnits) {
+			for (CourseSession session : current) if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
+				session.removeByRunChange();
+				sessions.saveAndFlush(session);
+				if (session.getReplacementSession() != null) {
+					session.getReplacementSession().removeByRunChange();
+					sessions.saveAndFlush(session.getReplacementSession());
+				}
+				db.update("update course_enrollment_sessions set disposition='REMOVED_BY_RUN_CHANGE' "
+					+ "where course_run_id=? and unit_number=? and disposition='ENROLLED'", runId, session.getUnitNumber());
+			}
+		}
+		if (scheduleChanges != null) scheduleChanges.createRunScheduleResponses(eventId, run, cause);
+		Map<String, Object> after = snapshot(run);
+		after.put("changeEventId", eventId.toString());
+		after.put("cause", cause.name());
+		audit(managerId, "COURSE_RUN_SCHEDULE_CHANGED", "COURSE_RUN", runId, before, after);
+		return CourseRunResponse.from(run);
+	}
+
+	private CourseWithdrawalCause scheduleCause(CourseRun run, CourseRunScheduleRequest request) {
+		if (request.totalUnits() < run.getTotalUnits()) return CourseWithdrawalCause.REDUCED_UNIT_COUNT;
+		if (Duration.between(run.getPlannedStartAt(), request.plannedStartAt()).compareTo(Duration.ofDays(7)) > 0)
+			return CourseWithdrawalCause.START_DELAY_OVER_7_DAYS;
+		return CourseWithdrawalCause.VOLUNTARY;
 	}
 
 	@Transactional

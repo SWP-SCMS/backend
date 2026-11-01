@@ -149,6 +149,36 @@ class CourseManagementServiceTests {
 	}
 
 	@Test
+	void runScheduleCannotAddUnsoldUnitsAfterOpeningOrStartBeforeRegistrationCloses() {
+		CourseRun run = run(4L, 3);
+		run.openForRegistration("POLICY");
+		when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+
+		assertThatThrownBy(() -> service.patchRunSchedule(managerId, run.getId(), new CourseRunScheduleRequest(4L,
+			run.getPlannedStartAt(), run.getPlannedEndAt(), 11))).isInstanceOf(CourseException.class);
+		assertThatThrownBy(() -> service.patchRunSchedule(managerId, run.getId(), new CourseRunScheduleRequest(4L,
+			run.getRegistrationClosesAt().minusSeconds(1), run.getPlannedEndAt(), 10))).isInstanceOf(CourseException.class);
+		assertThat(run.getTotalUnits()).isEqualTo(10);
+		verify(runs, never()).saveAndFlush(any());
+		verifyNoInteractions(audits);
+	}
+
+	@Test
+	void runReductionCannotRemoveAnAlreadyStartedUnit() {
+		CourseRun run = run(4L, 3);
+		CourseSession started = new CourseSession(UUID.randomUUID(), run, 10, room("Room"), coach("Coach"),
+			Instant.EPOCH, Instant.EPOCH.plusSeconds(3600), BigInteger.TEN);
+		when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+		when(sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId())).thenReturn(java.util.List.of(started));
+
+		assertThatThrownBy(() -> service.patchRunSchedule(managerId, run.getId(), new CourseRunScheduleRequest(4L,
+			run.getPlannedStartAt(), run.getPlannedEndAt(), 9))).isInstanceOf(CourseException.class);
+		assertThat(started.getStatus()).isEqualTo(CourseSessionStatus.SCHEDULED);
+		verify(runs, never()).saveAndFlush(any());
+		verifyNoInteractions(audits);
+	}
+
+	@Test
 	void runPatchWritesBeforeAndAfterAudit() {
 		CourseRun run = run(4L, 3);
 		when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));

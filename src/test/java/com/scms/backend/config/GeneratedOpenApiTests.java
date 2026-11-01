@@ -92,6 +92,7 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}", "patch", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/open-registration", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/schedule", "patch", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/cancel", "post", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post",
@@ -99,6 +100,7 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel", "post", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/makeup", "post", MUTATE_ITEM_RESPONSES)
 	);
 	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(
@@ -465,12 +467,14 @@ class GeneratedOpenApiTests {
 		"GET /manager/course-runs/{runId}",
 		"PATCH /manager/course-runs/{runId}",
 		"POST /manager/course-runs/{runId}/open-registration",
+		"PATCH /manager/course-runs/{runId}/schedule",
 		"POST /manager/course-runs/{runId}/cancel",
 		"GET /manager/course-runs/{runId}/sessions",
 		"POST /manager/course-runs/{runId}/sessions",
 		"GET /manager/course-runs/{runId}/sessions/{sessionId}",
 		"PATCH /manager/course-runs/{runId}/sessions/{sessionId}",
 		"POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel",
+		"POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup",
 		"POST /manager/course-runs/{runId}/sessions/{sessionId}/makeup",
 		"GET /manager/rooms",
 		"GET /manager/rooms/availability",
@@ -732,8 +736,24 @@ class GeneratedOpenApiTests {
 		JsonNode withdrawal = document.at("/components/schemas/WithdrawalRequest/properties");
 		assertThat(withdrawal.properties().stream().map(Map.Entry::getKey).toList())
 			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus",
-				"totalUnits", "remainingUnits", "estimatedRefundAmount")
+				"totalUnits", "remainingUnits", "estimatedRefundAmount", "cause", "withdrawalEligible",
+				"withdrawalReason", "refundBasisVnd", "refundAmountVnd", "scheduleChangeResponseId", "changeEventId")
 			.doesNotContain("email", "phone", "emergencyContactPhone");
+		assertThat(withdrawal.at("/cause/enum").toString())
+			.contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
+	}
+
+	@Test
+	void generatedManagerScheduleChangesExposeVersionedRequestsAndRemovedUnitState() throws Exception {
+		JsonNode document = generatedDocument();
+		assertThat(operation(document, "/manager/course-runs/{runId}/schedule", "patch")
+			.at("/requestBody/content/application~1json/schema/$ref").asText())
+			.isEqualTo("#/components/schemas/CourseRunScheduleRequest");
+		assertThat(operation(document, "/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post")
+			.at("/requestBody/content/application~1json/schema/$ref").asText())
+			.isEqualTo("#/components/schemas/CourseSessionCancelWithMakeupRequest");
+		assertThat(document.at("/components/schemas/CourseSessionResponse/properties/status/enum").toString())
+			.contains("REMOVED_BY_RUN_CHANGE");
 	}
 
 	@Test

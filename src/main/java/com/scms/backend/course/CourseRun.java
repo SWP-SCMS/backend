@@ -52,13 +52,13 @@ public class CourseRun {
 	@Column(name = "registration_closes_at", nullable = false, updatable = false)
 	private Instant registrationClosesAt;
 
-	@Column(name = "planned_start_at", nullable = false, updatable = false)
+	@Column(name = "planned_start_at", nullable = false)
 	private Instant plannedStartAt;
 
-	@Column(name = "planned_end_at", nullable = false, updatable = false)
+	@Column(name = "planned_end_at", nullable = false)
 	private Instant plannedEndAt;
 
-	@Column(name = "total_units", nullable = false, updatable = false)
+	@Column(name = "total_units", nullable = false)
 	private int totalUnits;
 
 	@Column(name = "named_coach_commitment", nullable = false, updatable = false)
@@ -143,6 +143,13 @@ public class CourseRun {
 		if (minimumEnrollment <= 0 || minimumEnrollment > capacity) throw CourseException.invalidOpening();
 		this.minimumEnrollment = minimumEnrollment;
 		updatedAt = Instant.now();
+	}
+
+	void changeSchedule(Instant plannedStartAt, Instant plannedEndAt, int totalUnits) {
+		this.plannedStartAt = plannedStartAt;
+		this.plannedEndAt = plannedEndAt;
+		this.totalUnits = totalUnits;
+		this.updatedAt = Instant.now();
 	}
 
 	public CourseRunStatus getStatus() {

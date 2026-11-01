@@ -73,7 +73,6 @@ components:
         decidedAt: {type: [string, 'null'], format: date-time}
         totalUnits: {type: [integer, 'null']}
         remainingUnits: {type: [integer, 'null']}
-        refundBasisVnd: {type: [integer, 'null']}
         refundAmountVnd: {type: [integer, 'null']}
         memberId: {type: string, format: uuid}
         memberCode: {type: string}
@@ -84,6 +83,12 @@ components:
         runCode: {type: string}
         courseRunStatus: {type: string}
         estimatedRefundAmount: {type: [integer, 'null']}
+        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT]}
+        withdrawalEligible: {type: boolean}
+        withdrawalReason: {type: string}
+        refundBasisVnd: {type: [integer, 'null']}
+        scheduleChangeResponseId: {type: [string, 'null'], format: uuid}
+        changeEventId: {type: [string, 'null'], format: uuid}
     Create:
       type: object
       additionalProperties: false
