@@ -266,6 +266,40 @@ class CourseOrderIntegrationTests {
 	}
 
 	@Test
+	void waitlistHistoryKeepsCourseAndRunIdentityAfterCourseLeavesPublicCatalog() throws Exception {
+		MemberProfile member = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		UUID waitlistId = UUID.randomUUID();
+		db.update("insert into course_waitlists(id,course_run_id,member_account_id,status,created_at,updated_at) "
+			+ "values(?,?,?,'WAITING',?,?)", waitlistId, fixture.runId(), member.getAccountId(),
+			Timestamp.from(NOW), Timestamp.from(NOW));
+		String courseName = db.queryForObject("""
+			select course.name from courses course
+			join course_runs run on run.course_id=course.id where run.id=?
+			""", String.class, fixture.runId());
+		String courseCode = db.queryForObject("""
+			select course.code from courses course
+			join course_runs run on run.course_id=course.id where run.id=?
+			""", String.class, fixture.runId());
+		String runCode = db.queryForObject("select run_code from course_runs where id=?", String.class,
+			fixture.runId());
+		db.update("update courses set status='INACTIVE' where id=(select course_id from course_runs where id=?)",
+			fixture.runId());
+
+		mockMvc.perform(get("/api/v1/course-runs/{runId}", fixture.runId()).contextPath("/api/v1"))
+			.andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/v1/members/me/course-waitlists").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(member.getAccount())))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$[0].id").value(waitlistId.toString()))
+			.andExpect(jsonPath("$[0].courseRunId").value(fixture.runId().toString()))
+			.andExpect(jsonPath("$[0].courseName").value(courseName))
+			.andExpect(jsonPath("$[0].courseCode").value(courseCode))
+			.andExpect(jsonPath("$[0].runCode").value(runCode));
+	}
+
+	@Test
 	void invitedMemberAcceptsOnceAndSameIdempotencyKeyReplaysTheOrder() throws Exception {
 		MemberProfile holder = member(AccountStatus.ACTIVE);
 		MemberProfile waiting = member(AccountStatus.ACTIVE);
