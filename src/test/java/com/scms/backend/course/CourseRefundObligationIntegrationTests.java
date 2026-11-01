@@ -12,6 +12,9 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -187,12 +190,129 @@ class CourseRefundObligationIntegrationTests {
 	}
 
 	@Test
+	void disbursementRequiresCompletionExceptForImmediateSourcesWithoutMutatingRejectedRefunds() {
+		Set<CourseRefundSource> immediate = Set.of(CourseRefundSource.COURSE_RUN_CANCELLED,
+			CourseRefundSource.PAYMENT_EXCEPTION, CourseRefundSource.TRANSFER_CREDIT_EXCESS);
+		Set<CourseRefundSource> deferred = Set.of(CourseRefundSource.MEMBER_WITHDRAWAL,
+			CourseRefundSource.MATERIAL_CHANGE, CourseRefundSource.UNRESOLVED_SESSIONS);
+
+		for (CourseRefundSource source : immediate) {
+			UUID id = writer.create(enrollmentId, runId, source, BigInteger.valueOf(10_000), managerId, source.name());
+			var approved = refunds.approve(managerId, id, 0L, "Approved");
+			assertThat(refunds.recordDisbursement(receptionistId, id, "immediate-" + source,
+				new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(10_000),
+					"CASH", "REF-" + source, "evidence:" + source)).status())
+				.isEqualTo("DISBURSEMENT_RECORDED");
+		}
+
+		for (CourseRefundSource source : deferred) {
+			UUID id = writer.create(enrollmentId, runId, source, BigInteger.valueOf(10_000), managerId, source.name());
+			var approved = refunds.approve(managerId, id, 0L, "Approved");
+			var input = new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(10_000),
+				"CASH", "REF-" + source, "evidence:" + source);
+
+			assertThatThrownBy(() -> refunds.recordDisbursement(receptionistId, id, "deferred-" + source, input))
+				.isInstanceOfSatisfying(CourseRefundException.class, error -> {
+					assertThat(error.status()).isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+					assertThat(error.code()).isEqualTo("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
+				});
+			var unchanged = refunds.detail(managerId, id);
+			assertThat(unchanged.status()).isEqualTo("APPROVED");
+			assertThat(unchanged.version()).isEqualTo(approved.version());
+			assertThat(unchanged.disbursedAt()).isNull();
+			assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_REFUND_DISBURSED' "
+				+ "and target_id=?", Long.class, id)).isZero();
+		}
+
+		db.update("update course_runs set status='COMPLETED' where id=?", runId);
+		for (CourseRefundSource source : deferred) {
+			UUID id = db.queryForObject("select id from course_refund_obligations where course_enrollment_id=? "
+				+ "and source_type=?", UUID.class, enrollmentId, source.name());
+			var approved = refunds.detail(managerId, id);
+			assertThat(refunds.recordDisbursement(receptionistId, id, "completed-" + source,
+				new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(10_000),
+					"CASH", "COMPLETED-" + source, "evidence:completed-" + source)).status())
+				.isEqualTo("DISBURSEMENT_RECORDED");
+		}
+	}
+
+	@Test
+	void receptionistQueueIsApprovedFilteredEligibleSortedRedactedAndRoleProtected() throws Exception {
+		UUID immediateId = writer.create(enrollmentId, runId, CourseRefundSource.PAYMENT_EXCEPTION,
+			BigInteger.valueOf(20_000), managerId, "Payment exception");
+		UUID deferredId = writer.create(enrollmentId, runId, CourseRefundSource.MEMBER_WITHDRAWAL,
+			BigInteger.valueOf(30_000), memberId, "Member withdrawal");
+		UUID pendingId = writer.create(enrollmentId, runId, CourseRefundSource.MATERIAL_CHANGE,
+			BigInteger.valueOf(40_000), managerId, "Material change");
+		var immediate = refunds.approve(managerId, immediateId, 0L, "Approved immediate");
+		refunds.approve(managerId, deferredId, 0L, "Approved deferred");
+		UUID first = List.of(immediateId, deferredId).stream()
+			.max(Comparator.comparing(UUID::toString)).orElseThrow();
+		UUID second = first.equals(immediateId) ? deferredId : immediateId;
+
+		mockMvc.perform(get("/api/v1/reception/course-refunds").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(2))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].refundId").value(first.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[1].refundId").value(second.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].memberId").value(memberId.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].memberCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].memberName").value("MEMBER refund test"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseId").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseName").value("Refund course"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseRunId").value(runId.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].runCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseRunStatus").value("CONFIRMED"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].approvedAt").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].email").doesNotExist())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].phone").doesNotExist())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].evidenceReference").doesNotExist())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].disbursementReference").doesNotExist());
+
+		mockMvc.perform(get("/api/v1/reception/course-refunds?eligible=true").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(1))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].refundId").value(immediateId.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].disbursementEligible").value(true))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].disbursementEligibilityReason").value("ELIGIBLE"));
+		mockMvc.perform(get("/api/v1/reception/course-refunds?eligible=false").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(1))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].refundId").value(deferredId.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].disbursementEligibilityReason").value("AWAITING_COURSE_COMPLETION"));
+		mockMvc.perform(get("/api/v1/reception/course-refunds/{id}", pendingId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.disbursementEligible").value(false))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.disbursementEligibilityReason").value("REFUND_NOT_APPROVED"));
+
+		refunds.recordDisbursement(receptionistId, immediateId, "queue-already-disbursed",
+			new CourseRefundApiModels.RefundDisbursement(immediate.version(), BigInteger.valueOf(20_000),
+				"CASH", "QUEUE-REF", "evidence:queue"));
+		mockMvc.perform(get("/api/v1/reception/course-refunds/{id}", immediateId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.disbursementEligibilityReason").value("REFUND_ALREADY_DISBURSED"));
+		mockMvc.perform(get("/api/v1/reception/course-refunds").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(managerId)))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/api/v1/reception/course-refunds/{id}", deferredId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
 	void receptionistRecordsExactlyOneDisbursementAndManagerVerifiesMatchingEvidence() {
 		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.MEMBER_WITHDRAWAL,
 			BigInteger.valueOf(250_000), memberId, "Withdrawal refund");
 		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
 		var input = new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(250_000),
 			"BANK_TRANSFER", "BANK-REF-1", "evidence:receipt-1");
+		db.update("update course_runs set status='COMPLETED' where id=?", runId);
 
 		var recorded = refunds.recordDisbursement(receptionistId, obligationId, "disburse-once", input);
 		var replay = refunds.recordDisbursement(receptionistId, obligationId, "disburse-once", input);
@@ -239,6 +359,7 @@ class CourseRefundObligationIntegrationTests {
 		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.MATERIAL_CHANGE,
 			BigInteger.valueOf(10_000), managerId, "Material change");
 		var approved = refunds.approve(managerId, obligationId, 0L, "Approved");
+		db.update("update course_runs set status='COMPLETED' where id=?", runId);
 		refunds.recordDisbursement(receptionistId, obligationId, "member-visible",
 			new CourseRefundApiModels.RefundDisbursement(approved.version(), BigInteger.valueOf(10_000),
 				"CASH", "CASH-REDACT", "private:evidence"));
@@ -371,9 +492,11 @@ class CourseRefundObligationIntegrationTests {
 
 	private UUID account(AccountRole role) {
 		UUID id = UUID.randomUUID();
-		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, role + " refund test",
+		UUID saved = accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, role + " refund test",
 			"09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test",
 			LocalDate.of(1990, 1, 1), "{noop}password")).getId();
+		if (role == AccountRole.MEMBER) db.update("insert into member_profiles(account_id) values(?)", saved);
+		return saved;
 	}
 	private String token(UUID accountId) {
 		Account account = accounts.findById(accountId).orElseThrow();

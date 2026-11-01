@@ -10,7 +10,13 @@ import com.scms.backend.course.CourseRefundApiModels.MemberRefundObligation;
 import com.scms.backend.course.CourseRefundApiModels.MemberRefundObligationPage;
 import com.scms.backend.course.CourseRefundApiModels.RefundObligation;
 import com.scms.backend.course.CourseRefundApiModels.RefundObligationPage;
+import com.scms.backend.course.CourseRefundApiModels.ReceptionCourseRefund;
+import com.scms.backend.course.CourseRefundApiModels.ReceptionCourseRefundPage;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +41,22 @@ class CourseRefundObligationController {
 	@GetMapping("/manager/course-refund-obligations/{obligationId}")
 	ResponseEntity<RefundObligation> detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID obligationId) {
 		return ResponseEntity.ok(service.detail(subject(jwt), obligationId));
+	}
+	@Operation(description = "Requires RECEPTIONIST role. Returns only approved refunds and excludes contact, bank, and evidence data.")
+	@GetMapping(value = "/reception/course-refunds", produces = MediaType.APPLICATION_JSON_VALUE)
+	ResponseEntity<ReceptionCourseRefundPage> receptionList(@AuthenticationPrincipal Jwt jwt,
+			@Parameter(schema = @Schema(minimum = "0", defaultValue = "0"))
+			@RequestParam(defaultValue = "0") int page,
+			@Parameter(schema = @Schema(minimum = "1", maximum = "100", defaultValue = "20"))
+			@RequestParam(defaultValue = "20") int size,
+			@RequestParam(required = false) Boolean eligible) {
+		return ResponseEntity.ok(service.listForReceptionist(subject(jwt), page, size, eligible));
+	}
+	@Operation(description = "Requires RECEPTIONIST role. Returns a redacted Course refund detail.")
+	@GetMapping(value = "/reception/course-refunds/{refundId}", produces = MediaType.APPLICATION_JSON_VALUE)
+	ResponseEntity<ReceptionCourseRefund> receptionDetail(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID refundId) {
+		return ResponseEntity.ok(service.detailForReceptionist(subject(jwt), refundId));
 	}
 	@PostMapping("/manager/course-refund-obligations/{obligationId}/approve")
 	ResponseEntity<RefundObligation> approve(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID obligationId,
