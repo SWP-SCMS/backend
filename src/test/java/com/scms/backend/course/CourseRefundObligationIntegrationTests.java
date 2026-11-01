@@ -179,7 +179,13 @@ class CourseRefundObligationIntegrationTests {
 
 		mockMvc.perform(get("/api/v1/manager/course-refund-obligations/{id}", obligationId)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(managerId)))
-			.andExpect(status().isOk());
+			.andExpect(status().isOk())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.memberCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.memberName").value("MEMBER refund test"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.courseCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.courseName").value("Refund course"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.runCode").isString())
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.courseRunStatus").value("CONFIRMED"));
 		mockMvc.perform(get("/api/v1/manager/course-refund-obligations/{id}", obligationId)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
 			.andExpect(status().isForbidden());
@@ -293,6 +299,7 @@ class CourseRefundObligationIntegrationTests {
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseRunId").value(runId.toString()))
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].runCode").isString())
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].courseRunStatus").value("CONFIRMED"))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].version").value(1))
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].approvedAt").isString())
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].email").doesNotExist())
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items[0].phone").doesNotExist())
@@ -322,7 +329,8 @@ class CourseRefundObligationIntegrationTests {
 			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
 			.andExpect(status().isOk())
 			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.refundId")
-				.value(deferredId.toString()));
+				.value(deferredId.toString()))
+			.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.version").value(1));
 
 		refunds.recordDisbursement(receptionistId, immediateId, "queue-already-disbursed",
 			new CourseRefundApiModels.RefundDisbursement(immediate.version(), BigInteger.valueOf(20_000),
