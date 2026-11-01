@@ -215,7 +215,7 @@ class CourseScheduleChangeService {
 				and other_es.course_session_id<>? and other_es.disposition='ENROLLED'
 				and other_session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
 				and other_session.start_at < ? and other_session.end_at > ?))
-			""", Boolean.class, sessionId, sessionId, endAt, startAt));
+			""", Boolean.class, sessionId, sessionId, Timestamp.from(endAt), Timestamp.from(startAt)));
 	}
 
 	private void activeMember(UUID id) {

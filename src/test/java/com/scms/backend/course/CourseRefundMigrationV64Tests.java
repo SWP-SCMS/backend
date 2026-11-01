@@ -26,7 +26,7 @@ class CourseRefundMigrationV64Tests {
 
 		JdbcTemplate db = db();
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(66);
+			Integer.class)).isEqualTo(67);
 		assertThat(db.queryForList("select column_name from information_schema.columns where table_schema='public' "
 			+ "and table_name='course_refund_obligations'", String.class))
 			.contains("disbursement_idempotency_key");

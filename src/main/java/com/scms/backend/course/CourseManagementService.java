@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -311,8 +312,8 @@ class CourseManagementService {
 			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,
 			old_planned_start_at,old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
 			values(?,?,?,?,?,?,?,?,?,?)
-			""", eventId, runId, managerId, cause.name(), oldStart, oldEnd, request.plannedStartAt(),
-			request.plannedEndAt(), oldUnits, request.totalUnits());
+			""", eventId, runId, managerId, cause.name(), Timestamp.from(oldStart), Timestamp.from(oldEnd),
+			Timestamp.from(request.plannedStartAt()), Timestamp.from(request.plannedEndAt()), oldUnits, request.totalUnits());
 		if (request.totalUnits() < oldUnits) {
 			for (CourseSession session : current) if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
 				session.removeByRunChange();
@@ -345,7 +346,7 @@ class CourseManagementService {
 				and other_enrollment.course_run_id<>? and other_es.disposition='ENROLLED'
 				and other_session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
 				and other_session.start_at < ? and other_session.end_at > ?))
-			""", Boolean.class, runId, runId, request.plannedEndAt(), request.plannedStartAt())))
+			""", Boolean.class, runId, runId, Timestamp.from(request.plannedEndAt()), Timestamp.from(request.plannedStartAt()))))
 			return CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT;
 		return CourseWithdrawalCause.VOLUNTARY;
 	}
