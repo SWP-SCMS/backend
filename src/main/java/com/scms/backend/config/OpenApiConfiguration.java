@@ -56,6 +56,9 @@ public class OpenApiConfiguration {
 				"The authenticated account is not allowed to perform this operation (FORBIDDEN).");
 			addErrorResponse(components, "NotFound", "The requested resource was not found.");
 			addErrorResponse(components, "Conflict", "The request conflicts with current resource state.");
+			addErrorResponse(components, "CourseRefundDisbursementConflict",
+				"A Course refund disbursement conflict. An approved non-immediate refund before Course Run "
+					+ "completion uses code COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE.");
 			addBookingConflictResponse(components);
 			addErrorResponse(components, "MembershipOrderConflict",
 				"Membership Order creation conflicts with current state; an unavailable Offer uses code MEMBERSHIP_OFFER_NOT_AVAILABLE.");
@@ -159,6 +162,10 @@ public class OpenApiConfiguration {
 		if (method == HttpMethod.POST && (path.equals("/members/class-sessions/{sessionId}/bookings")
 				|| path.equals("/reception/members/{memberId}/bookings"))) {
 			operation.getResponses().addApiResponse("409", reference("BookingConflict"));
+		}
+		if (method == HttpMethod.POST
+				&& path.equals("/reception/course-refund-obligations/{obligationId}/disburse")) {
+			operation.getResponses().addApiResponse("409", reference("CourseRefundDisbursementConflict"));
 		}
 	}
 

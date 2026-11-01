@@ -365,6 +365,8 @@ class GeneratedOpenApiTests {
 		"POST /manager/course-withdrawal-requests/{requestId}/reject",
 		"GET /manager/course-refund-obligations",
 		"GET /manager/course-refund-obligations/{obligationId}",
+		"GET /reception/course-refunds",
+		"GET /reception/course-refunds/{refundId}",
 		"POST /manager/course-refund-obligations/{obligationId}/approve",
 		"POST /manager/course-refund-obligations/{obligationId}/reject",
 		"POST /reception/course-refund-obligations/{obligationId}/disburse",
@@ -641,6 +643,32 @@ class GeneratedOpenApiTests {
 			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
 		assertThat(document.at("/components/schemas/CourseResponse/properties/createdAt/format").asText())
 			.isEqualTo("date-time");
+	}
+
+	@Test
+	void generatedReceptionCourseRefundQueueDocumentsFilterAndRedactedResponse() throws Exception {
+		JsonNode document = generatedDocument();
+		JsonNode list = operation(document, "/reception/course-refunds", "get");
+		assertThat(list.path("parameters").toString()).contains("page", "size", "eligible");
+		JsonNode page = resolve(document, response(document, "/reception/course-refunds", "get", "200")
+			.at("/content/application~1json/schema"));
+		JsonNode item = resolve(document, page.at("/properties/items/items"));
+		assertThat(item.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
+			.containsExactlyInAnyOrder("refundId", "memberId", "memberCode", "memberName", "courseId",
+				"courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "source", "amount",
+				"approvedAt", "disbursementEligible", "disbursementEligibilityReason")
+			.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
+		assertThat(item.at("/properties/disbursementEligibilityReason/enum").toString())
+			.contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND")
+			.doesNotContain("REFUND_NOT_APPROVED", "REFUND_ALREADY_DISBURSED");
+		assertThat(operation(document, "/reception/course-refunds/{refundId}", "get")
+			.at("/responses/200/content/application~1json/schema/$ref").asText())
+			.isEqualTo("#/components/schemas/ReceptionCourseRefund");
+		assertThat(operation(document, "/reception/course-refund-obligations/{obligationId}/disburse", "post")
+			.at("/responses/409/$ref").asText())
+			.isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
+		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText())
+			.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
 	}
 
 	@Test

@@ -4,6 +4,8 @@ import static com.scms.backend.course.CourseRefundApiModels.RefundObligation;
 import static com.scms.backend.course.CourseRefundApiModels.RefundObligationPage;
 import static com.scms.backend.course.CourseRefundApiModels.MemberRefundObligation;
 import static com.scms.backend.course.CourseRefundApiModels.MemberRefundObligationPage;
+import static com.scms.backend.course.CourseRefundApiModels.ReceptionCourseRefund;
+import static com.scms.backend.course.CourseRefundApiModels.ReceptionCourseRefundPage;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -33,6 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 class CourseRefundObligationService {
 	private static final Set<String> COMMITTED = Set.of("APPROVED", "DISBURSEMENT_RECORDED",
 		"PENDING_VERIFICATION", "COMPLETED");
+	private static final Set<String> IMMEDIATE_DISBURSEMENT_SOURCES = Set.of(
+		CourseRefundSource.COURSE_RUN_CANCELLED.name(), CourseRefundSource.PAYMENT_EXCEPTION.name(),
+		CourseRefundSource.TRANSFER_CREDIT_EXCESS.name());
 	private final JdbcTemplate db;
 	private final AccountRepository accounts;
 	private final AuditEventRepository audits;
@@ -81,6 +86,27 @@ class CourseRefundObligationService {
 		active(memberId, AccountRole.MEMBER, false);
 		return db.query(select() + " where id=? and member_account_id=?", this::map, obligationId, memberId)
 			.stream().findFirst().map(this::member).orElseThrow(CourseRefundException::notFound);
+	}
+
+	@Transactional(readOnly = true)
+	ReceptionCourseRefundPage listForReceptionist(UUID receptionistId, int page, int size, Boolean eligible) {
+		active(receptionistId, AccountRole.RECEPTIONIST, false);
+		page(page, size);
+		String source = receptionSelect();
+		String filter = " where status='APPROVED' and (cast(? as boolean) is null or disbursement_eligible=?)";
+		long total = db.queryForObject("select count(*) from (" + source + ") refunds" + filter,
+			Long.class, eligible, eligible);
+		List<ReceptionCourseRefund> items = db.query("select * from (" + source + ") refunds" + filter
+			+ " order by approved_at desc,refund_id desc limit ? offset ?", this::mapReception,
+			eligible, eligible, size, (long) page * size);
+		return new ReceptionCourseRefundPage(items, page, size, total, (int) ((total + size - 1) / size));
+	}
+
+	@Transactional(readOnly = true)
+	ReceptionCourseRefund detailForReceptionist(UUID receptionistId, UUID refundId) {
+		active(receptionistId, AccountRole.RECEPTIONIST, false);
+		return db.query("select * from (" + receptionSelect() + ") refunds where refund_id=? and status='APPROVED'",
+			this::mapReception, refundId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
 	}
 
 	@Transactional
@@ -163,6 +189,11 @@ class CourseRefundObligationService {
 			if (obligation.disbursedAt() != null) throw CourseRefundException.conflict("COURSE_REFUND_ALREADY_DISBURSED",
 				"A disbursement was already recorded for this refund obligation.");
 			throw transition();
+		}
+		if (!IMMEDIATE_DISBURSEMENT_SOURCES.contains(obligation.source())
+				&& !CourseRunStatus.COMPLETED.name().equals(context.courseRunStatus())) {
+			throw CourseRefundException.conflict("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE",
+				"The Course Run must be completed before this refund can be disbursed.");
 		}
 		version(obligation, input.expectedVersion());
 		if (!input.amount().equals(obligation.approvedAmountVnd())) {
@@ -282,7 +313,8 @@ class CourseRefundObligationService {
 			.orElseThrow(CourseRefundException::notFound);
 		UUID runId = (UUID) visible.get("course_run_id");
 		UUID enrollmentId = (UUID) visible.get("course_enrollment_id");
-		db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
+		String courseRunStatus = db.queryForObject("select status from course_runs where id=? for update",
+			String.class, runId);
 		BigInteger amountPaid = db.queryForObject("select amount_paid_vnd_snapshot from course_enrollments "
 			+ "where id=? and course_run_id=? for update", BigDecimal.class, enrollmentId, runId).toBigIntegerExact();
 		List<RefundObligation> all = db.query(select() + " where course_enrollment_id=? order by id for update",
@@ -291,7 +323,7 @@ class CourseRefundObligationService {
 			.orElseThrow(CourseRefundException::notFound);
 		String disbursementKey = db.queryForObject("select disbursement_idempotency_key "
 			+ "from course_refund_obligations where id=?", String.class, obligationId);
-		return new DecisionContext(obligation, all, amountPaid, disbursementKey);
+		return new DecisionContext(obligation, all, amountPaid, disbursementKey, courseRunStatus);
 	}
 
 	private void active(UUID accountId, AccountRole role, boolean lock) {
@@ -378,6 +410,26 @@ class CourseRefundObligationService {
 			.orElseThrow(CourseRefundException::notFound);
 	}
 	private String select() { return "select * from course_refund_obligations"; }
+	private String receptionSelect() {
+		return """
+			select queue.*,queue.disbursement_eligibility_reason='ELIGIBLE' disbursement_eligible from (
+			 select refund.id refund_id,refund.member_account_id member_id,profile.member_code,member.full_name member_name,
+			  course.id course_id,course.code course_code,course.name course_name,refund.course_run_id,run.run_code,
+			  run.status course_run_status,refund.source_type source,refund.amount_vnd amount,refund.approved_at,
+			  refund.status,case
+			   when run.id is null then 'COURSE_RUN_NOT_FOUND'
+			   when refund.source_type in ('COURSE_RUN_CANCELLED','PAYMENT_EXCEPTION','TRANSFER_CREDIT_EXCESS')
+			    or run.status='COMPLETED' then 'ELIGIBLE'
+			   else 'AWAITING_COURSE_COMPLETION'
+			  end disbursement_eligibility_reason
+			 from course_refund_obligations refund
+			 left join accounts member on member.id=refund.member_account_id
+			 left join member_profiles profile on profile.account_id=refund.member_account_id
+			 left join course_runs run on run.id=refund.course_run_id
+			 left join courses course on course.id=run.course_id
+			) queue
+			""";
+	}
 	private RefundObligation map(ResultSet rs, int row) throws SQLException {
 		return new RefundObligation(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class),
 			rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class),
@@ -397,6 +449,14 @@ class CourseRefundObligationService {
 			instant(rs.getTimestamp("terminal_at")), rs.getTimestamp("created_at").toInstant(),
 			rs.getTimestamp("updated_at").toInstant(), rs.getLong("version"));
 	}
+	private ReceptionCourseRefund mapReception(ResultSet rs, int row) throws SQLException {
+		return new ReceptionCourseRefund(rs.getObject("refund_id", UUID.class),
+			rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"),
+			rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"),
+			rs.getObject("course_run_id", UUID.class), rs.getString("run_code"), rs.getString("course_run_status"),
+			rs.getString("source"), amount(rs.getBigDecimal("amount")), instant(rs.getTimestamp("approved_at")),
+			rs.getBoolean("disbursement_eligible"), rs.getString("disbursement_eligibility_reason"));
+	}
 	private MemberRefundObligation member(RefundObligation value) {
 		return new MemberRefundObligation(value.id(), value.enrollmentId(), value.courseRunId(), value.source(),
 			value.status(), value.grossObligationVnd(), value.approvedAmountVnd(), value.disbursedAmountVnd(),
@@ -409,7 +469,7 @@ class CourseRefundObligationService {
 	private static BigInteger amount(BigDecimal value) { return value == null ? null : value.toBigIntegerExact(); }
 	private static Instant instant(Timestamp value) { return value == null ? null : value.toInstant(); }
 	private record DecisionContext(RefundObligation obligation, List<RefundObligation> all, BigInteger amountPaid,
-		String disbursementKey) { }
+		String disbursementKey, String courseRunStatus) { }
 	private record DisbursementInput(long expectedVersion, BigInteger amount, String method, String reference,
 		String evidence) { }
 	private record VerificationInput(long expectedVersion, BigInteger amount, String reference, String evidence,

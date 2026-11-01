@@ -150,7 +150,8 @@ public class SecurityConfiguration {
 					"/manager/members/*/course-enrollments/*/withdrawal-requests").hasRole("MANAGER")
 				.requestMatchers("/manager/course-refund-obligations", "/manager/course-refund-obligations/**")
 					.hasRole("MANAGER")
-				.requestMatchers("/reception/course-refund-obligations/**").hasRole("RECEPTIONIST")
+				.requestMatchers("/reception/course-refund-obligations/**", "/reception/course-refunds",
+					"/reception/course-refunds/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/manager/recurring-schedules/**").hasRole("MANAGER")
 				.requestMatchers("/manager/class-sessions", "/manager/class-sessions/**").hasRole("MANAGER")
 				.requestMatchers("/manager/coach-leave-requests", "/manager/coach-leave-requests/**").hasRole("MANAGER")
