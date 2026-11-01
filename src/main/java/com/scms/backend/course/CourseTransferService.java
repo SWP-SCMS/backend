@@ -77,7 +77,7 @@ public class CourseTransferService {
 	@Transactional(readOnly = true)
 	List<TransferRequest> managerQueue(UUID managerId) {
 		active(managerId, AccountRole.MANAGER);
-		return db.query(requestSelect() + " order by requested_at,id", this::mapRequest);
+		return db.query(requestSelect() + " order by tr.requested_at,tr.id", this::mapRequest);
 	}
 
 	@Transactional(readOnly = true)
@@ -181,7 +181,8 @@ public class CourseTransferService {
 	@Transactional(readOnly = true)
 	List<TransferOffer> memberOffers(UUID memberId) {
 		active(memberId, AccountRole.MEMBER);
-		return db.query(offerSelect() + " where member_account_id=? order by issued_at desc,id", this::mapOffer, memberId);
+		return db.query(offerSelect() + " where transfer.member_account_id=? order by transfer.issued_at desc,transfer.id",
+			this::mapOffer, memberId);
 	}
 
 	@Transactional(noRollbackFor = CourseTransferException.class)
@@ -219,7 +220,7 @@ public class CourseTransferService {
 
 	@Transactional
 	public CourseEnrollmentResponse completePaidDifference(UUID orderId, UUID paymentId, UUID actorId, Instant now) {
-		TransferOffer offer = db.query(offerSelect() + " where difference_order_id=? for update", this::mapOffer, orderId)
+		TransferOffer offer = db.query(offerSelect() + " where transfer.difference_order_id=? for update of transfer", this::mapOffer, orderId)
 			.stream().findFirst().orElse(null);
 		if (offer == null) return null;
 		if ("COMPLETED".equals(offer.status())) return targetEnrollment(offer.id());
@@ -231,7 +232,7 @@ public class CourseTransferService {
 
 	@Transactional
 	int expireDue(Instant now) {
-		List<TransferOffer> due = db.query(offerSelect() + " where status in ('OFFERED','PENDING_PAYMENT') and expires_at<=? order by id for update skip locked",
+		List<TransferOffer> due = db.query(offerSelect() + " where transfer.status in ('OFFERED','PENDING_PAYMENT') and transfer.expires_at<=? order by transfer.id for update of transfer skip locked",
 			this::mapOffer, Timestamp.from(now));
 		for (TransferOffer offer : due) expireOffer(offer, now);
 		return due.size();
@@ -381,20 +382,40 @@ public class CourseTransferService {
 	private String reason(String value) { if (value == null || value.isBlank() || value.trim().length() > 500) throw CourseTransferException.invalid("A reason of at most 500 characters is required."); return value.trim(); }
 	private String key(String value) { if (value == null || value.isBlank() || value.trim().length() > 100) throw CourseTransferException.keyRequired(); return value.trim(); }
 
-	private TransferRequest lockRequest(UUID id) { return db.query(requestSelect() + " where id=? for update", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
-	private TransferRequest findRequest(UUID id) { return db.query(requestSelect() + " where id=?", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
-	private TransferRequest findRequestByResponse(UUID id) { return db.query(requestSelect() + " where schedule_change_response_id=?", this::mapRequest, id).stream().findFirst().orElse(null); }
-	private TransferOffer lockOffer(UUID memberId, UUID id) { return db.query(offerSelect() + " where id=? and member_account_id=? for update", this::mapOffer, id, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
-	private TransferOffer findOffer(UUID id) { return db.query(offerSelect() + " where id=?", this::mapOffer, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
-	private TransferOffer findOfferByRequest(UUID id) { return db.query(offerSelect() + " where transfer_request_id=?", this::mapOffer, id).stream().findFirst().orElse(null); }
+	private TransferRequest lockRequest(UUID id) { return db.query(requestSelect() + " where tr.id=? for update of tr", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
+	private TransferRequest findRequest(UUID id) { return db.query(requestSelect() + " where tr.id=?", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
+	private TransferRequest findRequestByResponse(UUID id) { return db.query(requestSelect() + " where tr.schedule_change_response_id=?", this::mapRequest, id).stream().findFirst().orElse(null); }
+	private TransferOffer lockOffer(UUID memberId, UUID id) { return db.query(offerSelect() + " where transfer.id=? and transfer.member_account_id=? for update of transfer", this::mapOffer, id, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
+	private TransferOffer findOffer(UUID id) { return db.query(offerSelect() + " where transfer.id=?", this::mapOffer, id).stream().findFirst().orElseThrow(CourseTransferException::notFound); }
+	private TransferOffer findOfferByRequest(UUID id) { return db.query(offerSelect() + " where transfer.transfer_request_id=?", this::mapOffer, id).stream().findFirst().orElse(null); }
 	private CourseEnrollmentResponse targetEnrollment(UUID offerId) {
 		Map<String,Object> row=rows("select id,course_order_id,member_account_id,course_run_id,amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at from course_enrollments where source_transfer_offer_id=?",offerId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
 		return new CourseEnrollmentResponse(uuid(row,"id"),uuid(row,"course_order_id"),uuid(row,"member_account_id"),uuid(row,"course_run_id"),amount(row,"amount_paid_vnd_snapshot"),number(row,"total_units_snapshot"),instant(row,"enrolled_at"));
 	}
-	private String requestSelect() { return "select * from course_transfer_requests"; }
-	private String offerSelect() { return "select * from course_transfer_offers"; }
-	private TransferRequest mapRequest(ResultSet rs,int n)throws SQLException{return new TransferRequest(rs.getObject("id",UUID.class),rs.getObject("schedule_change_response_id",UUID.class),rs.getObject("source_enrollment_id",UUID.class),rs.getObject("source_run_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getString("status"),rs.getObject("target_run_id",UUID.class),rs.getString("reason"),rs.getTimestamp("requested_at").toInstant(),rs.getObject("decided_by_account_id",UUID.class),rs.getTimestamp("decided_at")==null?null:rs.getTimestamp("decided_at").toInstant());}
-	private TransferOffer mapOffer(ResultSet rs,int n)throws SQLException{return new TransferOffer(rs.getObject("id",UUID.class),rs.getObject("transfer_request_id",UUID.class),rs.getObject("source_enrollment_id",UUID.class),rs.getObject("source_run_id",UUID.class),rs.getObject("target_run_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getBigDecimal("credit_vnd_snapshot").toBigIntegerExact(),rs.getBigDecimal("target_tuition_vnd_snapshot").toBigIntegerExact(),rs.getBigDecimal("difference_vnd_snapshot").toBigIntegerExact(),rs.getTimestamp("expires_at").toInstant(),rs.getString("status"),rs.getObject("difference_order_id",UUID.class),rs.getTimestamp("accepted_at")==null?null:rs.getTimestamp("accepted_at").toInstant());}
+	private String requestSelect() { return "select tr.*,member.id member_id,mp.member_code member_code_display,member.full_name member_name_display,"
+		+ "source_course.id source_course_id_display,source_course.code source_course_code_display,source_course.name source_course_name_display,"
+		+ "source_run.run_code source_run_code_display,source_run.status source_course_run_status_display,"
+		+ "target_course.id target_course_id_display,target_course.code target_course_code_display,target_course.name target_course_name_display,"
+		+ "target_run.run_code target_run_code_display,target_run.status target_course_run_status_display "
+		+ "from course_transfer_requests tr join accounts member on member.id=tr.member_account_id "
+		+ "left join member_profiles mp on mp.account_id=member.id "
+		+ "left join course_runs source_run on source_run.id=tr.source_run_id "
+		+ "left join courses source_course on source_course.id=source_run.course_id "
+		+ "left join course_runs target_run on target_run.id=tr.target_run_id "
+		+ "left join courses target_course on target_course.id=target_run.course_id"; }
+	private String offerSelect() { return "select transfer.*,member.id member_id,mp.member_code member_code_display,member.full_name member_name_display,"
+		+ "source_course.id source_course_id_display,source_course.code source_course_code_display,source_course.name source_course_name_display,"
+		+ "source_run.run_code source_run_code_display,source_run.status source_course_run_status_display,"
+		+ "target_course.id target_course_id_display,target_course.code target_course_code_display,target_course.name target_course_name_display,"
+		+ "target_run.run_code target_run_code_display,target_run.status target_course_run_status_display "
+		+ "from course_transfer_offers transfer join accounts member on member.id=transfer.member_account_id "
+		+ "left join member_profiles mp on mp.account_id=member.id "
+		+ "left join course_runs source_run on source_run.id=transfer.source_run_id "
+		+ "left join courses source_course on source_course.id=source_run.course_id "
+		+ "left join course_runs target_run on target_run.id=transfer.target_run_id "
+		+ "left join courses target_course on target_course.id=target_run.course_id"; }
+	private TransferRequest mapRequest(ResultSet rs,int n)throws SQLException{return new TransferRequest(rs.getObject("id",UUID.class),rs.getObject("schedule_change_response_id",UUID.class),rs.getObject("source_enrollment_id",UUID.class),rs.getObject("source_run_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getString("status"),rs.getObject("target_run_id",UUID.class),rs.getString("reason"),rs.getTimestamp("requested_at").toInstant(),rs.getObject("decided_by_account_id",UUID.class),rs.getTimestamp("decided_at")==null?null:rs.getTimestamp("decided_at").toInstant(),rs.getObject("member_id",UUID.class),rs.getString("member_code_display"),rs.getString("member_name_display"),rs.getObject("source_course_id_display",UUID.class),rs.getString("source_course_code_display"),rs.getString("source_course_name_display"),rs.getString("source_run_code_display"),rs.getString("source_course_run_status_display"),rs.getObject("target_course_id_display",UUID.class),rs.getString("target_course_code_display"),rs.getString("target_course_name_display"),rs.getString("target_run_code_display"),rs.getString("target_course_run_status_display"));}
+	private TransferOffer mapOffer(ResultSet rs,int n)throws SQLException{return new TransferOffer(rs.getObject("id",UUID.class),rs.getObject("transfer_request_id",UUID.class),rs.getObject("source_enrollment_id",UUID.class),rs.getObject("source_run_id",UUID.class),rs.getObject("target_run_id",UUID.class),rs.getObject("member_account_id",UUID.class),rs.getBigDecimal("credit_vnd_snapshot").toBigIntegerExact(),rs.getBigDecimal("target_tuition_vnd_snapshot").toBigIntegerExact(),rs.getBigDecimal("difference_vnd_snapshot").toBigIntegerExact(),rs.getTimestamp("expires_at").toInstant(),rs.getString("status"),rs.getObject("difference_order_id",UUID.class),rs.getTimestamp("accepted_at")==null?null:rs.getTimestamp("accepted_at").toInstant(),rs.getObject("member_id",UUID.class),rs.getString("member_code_display"),rs.getString("member_name_display"),rs.getObject("source_course_id_display",UUID.class),rs.getString("source_course_code_display"),rs.getString("source_course_name_display"),rs.getString("source_run_code_display"),rs.getString("source_course_run_status_display"),rs.getObject("target_course_id_display",UUID.class),rs.getString("target_course_code_display"),rs.getString("target_course_name_display"),rs.getString("target_run_code_display"),rs.getString("target_course_run_status_display"));}
 	private List<Map<String,Object>> rows(String sql,Object...args){return db.queryForList(sql,args);}
 	private static UUID uuid(Map<String,Object> row,String key){return (UUID)row.get(key);}
 	private static String text(Map<String,Object> row,String key){return row.get(key)==null?null:row.get(key).toString();}

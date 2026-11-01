@@ -3,7 +3,12 @@ info: {title: SCMS Course Transfer API, version: v1}
 security: [{bearerAuth: []}]
 paths:
   /manager/course-transfer-requests:
-    get: {operationId: listCourseTransferRequests, responses: {'200': {description: Transfer queue}}}
+    get:
+      operationId: listCourseTransferRequests
+      responses:
+        '200':
+          description: Transfer queue
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TransferRequest'}}}}
   /manager/course-transfer-requests/{requestId}/targets:
     get: {operationId: listCourseTransferTargets, parameters: [{$ref: '#/components/parameters/RequestId'}], responses: {'200': {description: Eligible targets}}}
   /manager/course-transfer-requests/{requestId}/approve:
@@ -11,26 +16,87 @@ paths:
       operationId: approveCourseTransfer
       parameters: [{$ref: '#/components/parameters/RequestId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ApproveTransfer'}}}}
-      responses: {'200': {description: Concrete transfer offer}, '409': {$ref: '#/components/responses/Conflict'}}
+      responses: {'200': {description: Concrete transfer offer, content: {application/json: {schema: {$ref: '#/components/schemas/TransferOffer'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
   /manager/course-transfer-requests/{requestId}/reject:
     post:
       operationId: rejectCourseTransfer
       parameters: [{$ref: '#/components/parameters/RequestId'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RejectTransfer'}}}}
-      responses: {'200': {description: Rejected request}, '409': {$ref: '#/components/responses/Conflict'}}
+      responses: {'200': {description: Rejected request, content: {application/json: {schema: {$ref: '#/components/schemas/TransferRequest'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
   /members/me/course-transfer-offers:
-    get: {operationId: listMyCourseTransferOffers, responses: {'200': {description: Own transfer offers}}}
+    get:
+      operationId: listMyCourseTransferOffers
+      responses:
+        '200':
+          description: Own transfer offers
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TransferOffer'}}}}
   /members/me/course-transfer-offers/{offerId}/accept:
     post:
       operationId: acceptCourseTransferOffer
       parameters:
         - {name: offerId, in: path, required: true, schema: {type: string, format: uuid}}
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 100}}
-      responses: {'200': {description: Completed transfer or difference-payment order}, '409': {$ref: '#/components/responses/Conflict'}}
+      responses: {'200': {description: Completed transfer or difference-payment order, content: {application/json: {schema: {$ref: '#/components/schemas/TransferOffer'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
 components:
   parameters:
     RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
+    TransferRequest:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        scheduleChangeResponseId: {type: string, format: uuid}
+        sourceEnrollmentId: {type: string, format: uuid}
+        sourceRunId: {type: string, format: uuid}
+        memberAccountId: {type: string, format: uuid}
+        status: {type: string}
+        targetRunId: {type: [string, 'null'], format: uuid}
+        reason: {type: [string, 'null']}
+        requestedAt: {type: string, format: date-time}
+        decidedByAccountId: {type: [string, 'null'], format: uuid}
+        decidedAt: {type: [string, 'null'], format: date-time}
+        memberId: {type: string, format: uuid}
+        memberCode: {type: [string, 'null']}
+        memberName: {type: [string, 'null']}
+        sourceCourseId: {type: [string, 'null'], format: uuid}
+        sourceCourseCode: {type: [string, 'null']}
+        sourceCourseName: {type: [string, 'null']}
+        sourceRunCode: {type: [string, 'null']}
+        sourceCourseRunStatus: {type: [string, 'null']}
+        targetCourseId: {type: [string, 'null'], format: uuid}
+        targetCourseCode: {type: [string, 'null']}
+        targetCourseName: {type: [string, 'null']}
+        targetRunCode: {type: [string, 'null']}
+        targetCourseRunStatus: {type: [string, 'null']}
+    TransferOffer:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        requestId: {type: string, format: uuid}
+        sourceEnrollmentId: {type: string, format: uuid}
+        sourceRunId: {type: string, format: uuid}
+        targetRunId: {type: string, format: uuid}
+        memberAccountId: {type: string, format: uuid}
+        creditVnd: {type: integer, format: int64}
+        targetTuitionVnd: {type: integer, format: int64}
+        differenceVnd: {type: integer, format: int64}
+        expiresAt: {type: string, format: date-time}
+        status: {type: string}
+        differenceOrderId: {type: [string, 'null'], format: uuid}
+        acceptedAt: {type: [string, 'null'], format: date-time}
+        memberId: {type: string, format: uuid}
+        memberCode: {type: [string, 'null']}
+        memberName: {type: [string, 'null']}
+        sourceCourseId: {type: [string, 'null'], format: uuid}
+        sourceCourseCode: {type: [string, 'null']}
+        sourceCourseName: {type: [string, 'null']}
+        sourceRunCode: {type: [string, 'null']}
+        sourceCourseRunStatus: {type: [string, 'null']}
+        targetCourseId: {type: [string, 'null'], format: uuid}
+        targetCourseCode: {type: [string, 'null']}
+        targetCourseName: {type: [string, 'null']}
+        targetRunCode: {type: [string, 'null']}
+        targetCourseRunStatus: {type: [string, 'null']}
     ApproveTransfer:
       type: object
       required: [targetRunId, reason]
