@@ -47,7 +47,7 @@ class CourseSessionServiceTests {
 		service = new CourseSessionService(runs, sessions, accounts, rooms, leaves, gymSessions, locks, scheduleChanges);
 		runId = UUID.randomUUID(); coachId = UUID.randomUUID(); roomId = UUID.randomUUID();
 		run = mock(CourseRun.class); coach = mock(Account.class); room = mock(Room.class);
-		when(runs.findById(runId)).thenReturn(Optional.of(run));
+		when(runs.findByIdForUpdate(runId)).thenReturn(Optional.of(run));
 		when(accounts.findById(coachId)).thenReturn(Optional.of(coach));
 		when(rooms.findById(roomId)).thenReturn(Optional.of(room));
 		when(run.getCapacity()).thenReturn(20);

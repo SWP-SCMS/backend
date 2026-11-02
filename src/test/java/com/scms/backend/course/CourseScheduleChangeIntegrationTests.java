@@ -56,6 +56,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired CourseManagementService managers;
 	@Autowired CourseEnrollmentService members;
 	@Autowired CourseWithdrawalService withdrawals;
+	@Autowired CourseRefundObligationService refunds;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
@@ -474,6 +475,8 @@ class CourseScheduleChangeIntegrationTests {
 		db.update("update course_runs set status='SETTLEMENT_PENDING' where id=?", runId);
 		db.update("update course_sessions set status='UNRESOLVED' where id=?", session.id());
 		db.update("update course_enrollment_sessions set disposition='UNRESOLVED' where course_run_id=?", runId);
+		db.update("insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd) "
+			+ "select gen_random_uuid(),id,course_run_id,'UNRESOLVED_SESSIONS',100000 from course_enrollments where course_run_id=?", runId);
 		disruptions.advance(session.endAt().plusSeconds(1));
 		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
 		assertThat(db.queryForObject("select status from course_refund_obligations where course_run_id=?", String.class, runId)).isEqualTo("PENDING_REVIEW");
@@ -494,6 +497,106 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
 		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class, enrollment)).isEqualTo("WITHDRAWAL_PENDING");
 		assertThat(withdrawals.approve(managerId, pending.id(), "Snapshot remains valid").refundAmountVnd()).isEqualTo(pending.refundAmountVnd());
+	}
+
+	@Test
+	void completionWaitsForLastEndAndPreservesAttendanceWindowAndEnrollment() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		disruptions.advance(session.endAt().minusSeconds(1));
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("IN_PROGRESS");
+		disruptions.advance(session.endAt());
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isZero();
+		assertThat(members.memberEnrollments(memberId).getFirst().lifecycleStatus()).isEqualTo("ACTIVE");
+		when(clock.instant()).thenReturn(session.endAt().plusSeconds(1));
+		UUID enrollmentSession = db.queryForObject("select id from course_enrollment_sessions where course_run_id=?", UUID.class, runId);
+		assertThat(members.updateAttendance(coachId, session.id(), enrollmentSession,
+			new CourseEnrollmentApiModels.AttendanceUpdate(CourseAttendanceStatus.PRESENT)).attendanceStatus()).isEqualTo(CourseAttendanceStatus.PRESENT);
+	}
+
+	@Test
+	void missingUnitsAndLegacyFutureSessionsDoNotComplete() {
+		db.update("update course_runs set status='CONFIRMED',total_units=2 where id=?", runId);
+		disruptions.advance(session.endAt().plusSeconds(1));
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("IN_PROGRESS");
+		db.update("update course_runs set status='SETTLEMENT_PENDING',total_units=1 where id=?", runId);
+		disruptions.advance(session.endAt().minusSeconds(1));
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("SETTLEMENT_PENDING");
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(ints = {3, 10})
+	void completionUsesEffectiveMakeupEndEvenWhenEarlierThanCancelledOriginal(int day) {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		var cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		Instant start = Instant.parse("2035-01-01T02:00:00Z").plusSeconds((day - 1L) * 86400);
+		var makeup = disruptions.scheduleMakeup(managerId, runId, session.id(),
+			new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId, start, start.plusSeconds(3600)));
+		if (day == 10) {
+			disruptions.advance(session.endAt().plusSeconds(1));
+			assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("IN_PROGRESS");
+		}
+		disruptions.advance(makeup.makeupSession().endAt());
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
+		assertThat(sessionStatus(makeup.makeupSession().id())).isEqualTo("COMPLETED");
+		assertThat(sessionStatus(session.id())).isEqualTo("CANCELLED_PENDING_MAKEUP");
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isZero();
+	}
+
+	@Test
+	void concurrentSchedulerRunsCommitOneCompletionAndOneRefund() throws Exception {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		disruptions.cancel(managerId, runId, session.id(), session.version());
+		CountDownLatch start = new CountDownLatch(1);
+		try (var pool = Executors.newFixedThreadPool(2)) {
+			java.util.concurrent.Callable<Object> advance = () -> { start.await(); return disruptions.advance(session.endAt().plusSeconds(1)); };
+			var first = pool.submit(advance); var second = pool.submit(advance);
+			start.countDown(); first.get(20, TimeUnit.SECONDS); second.get(20, TimeUnit.SECONDS);
+		}
+		disruptions.advance(session.endAt().plusSeconds(2));
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_COMPLETED'", Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_RUN_COMPLETED'", Long.class, runId)).isOne();
+	}
+
+	@Test
+	void completionNotificationFailureRollsBackSessionsRefundsAndRun() {
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		disruptions.cancel(managerId, runId, session.id(), session.version());
+		String constraint = "chk_test_reject_run_completion_notice";
+		db.execute("alter table notification_outbox add constraint " + constraint
+			+ " check (notification_type<>'COURSE_RUN_COMPLETED' or target_id<>'" + runId + "'::uuid) not valid");
+		try {
+			assertThatThrownBy(() -> disruptions.advance(session.endAt().plusSeconds(1))).rootCause().hasMessageContaining(constraint);
+			assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("CONFIRMED");
+			assertThat(sessionStatus(session.id())).isEqualTo("CANCELLED_PENDING_MAKEUP");
+			assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isZero();
+			assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_COMPLETED'", Long.class, runId)).isZero();
+		} finally { db.execute("alter table notification_outbox drop constraint " + constraint); }
+	}
+
+	@Test
+	void automaticallyCompletedRunStillRequiresManagerApprovalBeforeReceptionDisbursement() {
+		UUID receptionist = account(AccountRole.RECEPTIONIST, "Refund Reception").getId();
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		disruptions.cancel(managerId, runId, session.id(), session.version());
+		Instant afterEnd = session.endAt().plusSeconds(1);
+		when(clock.instant()).thenReturn(afterEnd);
+		disruptions.advance(afterEnd);
+		UUID obligation = db.queryForObject("select id from course_refund_obligations where course_run_id=?", UUID.class, runId);
+		var input = new CourseRefundApiModels.RefundDisbursement(0L, BigInteger.valueOf(100_000), "CASH", "receipt", "evidence");
+		assertThatThrownBy(() -> refunds.recordDisbursement(receptionist, obligation, "before-approval", input)).isInstanceOf(CourseRefundException.class);
+		var approved = refunds.approve(managerId, obligation, 0L, "Unserved unit");
+		assertThat(refunds.recordDisbursement(receptionist, obligation, "after-approval", new CourseRefundApiModels.RefundDisbursement(
+			approved.version(), approved.approvedAmountVnd(), "CASH", "receipt", "evidence")).status()).isEqualTo("DISBURSEMENT_RECORDED");
+	}
+
+	@Test
+	void completedRunRejectsNewSessions() {
+		db.update("update course_runs set status='COMPLETED',total_units=2 where id=?", runId);
+		assertThatThrownBy(() -> createSession(2, Instant.parse("2035-01-10T02:00:00Z"))).isInstanceOf(CourseException.class);
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=?", Long.class, runId)).isOne();
 	}
 
 	private void rescheduleAgain() {

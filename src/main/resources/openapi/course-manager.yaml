@@ -505,6 +505,7 @@ components:
       type: string
       enum: [DRAFT, PENDING_APPROVAL, REJECTED, PUBLISHED, INACTIVE, ARCHIVED]
     CourseRunStatus:
+      description: Run completion is automatic after all effective units end and refund obligations are recorded; COMPLETED does not mean refunds have been paid.
       type: string
       enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]
     CourseSessionStatus:

@@ -37,6 +37,7 @@ class CourseManagerOpenApiTests {
 		assertThat(document.at("/security/0/bearerAuth").isArray()).isTrue();
 		assertThat(document.at("/components/schemas/CourseStatus/enum").toString())
 			.isEqualTo("[\"DRAFT\",\"PENDING_APPROVAL\",\"REJECTED\",\"PUBLISHED\",\"INACTIVE\",\"ARCHIVED\"]");
+		assertThat(document.at("/components/schemas/CourseRunStatus/description").asText()).contains("automatic", "does not mean refunds have been paid");
 		assertThat(document.at("/components/schemas/CourseRunStatus/enum").toString())
 			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
 		assertThat(document.at("/components/schemas/CourseCreateRequest/required").toString())

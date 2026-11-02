@@ -13,7 +13,7 @@ Scope: backend and API contracts. The five sequential changes are access policy,
 - PostgreSQL tests cover ACTIVE versus pending/withdrawn/transferred/completed enrollment and cancelled Run eligibility.
 - Static and generated OpenAPI omit the retired submission operation. Legacy approval tests seed historical submissions directly.
 - Access policy has no schema change. No manual deployment.
-- Automatic completion, atomic reschedule, and Reception proxy actions follow in separate sequential PRs. Full smoke remains unverified: the user has no isolated test environment.
+- Atomic reschedule and Reception proxy actions follow in separate sequential PRs. Full smoke remains unverified: the user has no isolated test environment.
 
 ## Withdrawal snapshots and cancellation (G12-G13)
 - Every new withdrawal stores its cause, capture time, total/remaining units, refund basis, eligibility/reason, and refund amount in the submission transaction. Member, Reception, Manager, and schedule-change responses share the same writer. Existing 70%/80% and G10 exceptions remain unchanged.
@@ -35,3 +35,12 @@ Scope: backend and API contracts. The five sequential changes are access policy,
 - Upgrade tests cover a fresh DB and V67 to latest with legacy rows and paid refunds. Local PostgreSQL integration: `NOT_RUN_LOCAL_DOCKER`; both CI events must pass all four PostgreSQL shards before merge.
 - Apply migration with the compatible binary; old writers do not supply snapshots and will fail the new integrity checks. Do not overlap old/new writers or roll back to an old binary that does not understand CANCELLED. Forward-fix with a new migration; never modify an applied migration.
 - No manual deployment was performed. `SMOKE_UNVERIFIED` and `E2E_UNVERIFIED` remain explicit until an isolated environment and matching FE are available.
+
+## Automatic Run completion
+- The existing session-disruption scheduler processes at most 100 actionable Runs per transaction, locks Runs before sessions, and skips Runs already locked by another worker. Missing units and effective sessions that have not ended prevent completion, including legacy SETTLEMENT_PENDING Runs.
+- A replacement session supplies the effective end time, even if the makeup is earlier than its cancelled original. Removed tail units do not count toward the final schedule. Orphan active future sessions also prevent completion.
+- Unserved units are resolved under the existing policy and their consolidated UNRESOLVED_SESSIONS obligations are recorded before the Run becomes COMPLETED. Existing obligations, approval/payment state and enrollment lifecycle are preserved.
+- COMPLETED describes delivery of the Run, not payment of refunds. Manager approval and Reception disbursement remain mandatory; ordinary approved refunds can now proceed after automatic completion. G01 immediate sources remain unchanged.
+- Pending withdrawal snapshots do not block completion and remain reviewable afterwards. Do not hide historical attendance or disable its existing final-session time window merely because the Run is COMPLETED.
+- Completion emits one audit and one transactional outbox event per enrolled Member. Retry/concurrent execution does not duplicate completion effects. New sessions cannot be inserted into completed or cancelled Runs.
+- No schema migration or new endpoint is needed. Existing CourseRunStatus contracts now explain automatic completion. Operational rollback is a forward fix on the V68-compatible binary; completed Runs must not be reset just to restore the previous stuck state.
