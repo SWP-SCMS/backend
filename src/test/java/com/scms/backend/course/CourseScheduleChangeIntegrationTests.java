@@ -362,7 +362,7 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
-	void lastUnresolvedUnitCreatesOneConsolidatedObligationAndMovesRunToSettlement() {
+	void lastUnresolvedUnitCreatesOneConsolidatedObligationAndCompletesRun() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
 		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
 		Instant afterEnd = session.endAt().plusSeconds(1);
@@ -375,7 +375,7 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(db.queryForObject("select amount_vnd from course_refund_obligations where course_run_id=?",
 			java.math.BigDecimal.class, runId)).isEqualByComparingTo("100000");
 		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId))
-			.isEqualTo("SETTLEMENT_PENDING");
+			.isEqualTo("COMPLETED");
 
 		disruptions.advance(afterEnd.plusSeconds(1));
 		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?",
@@ -385,7 +385,7 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
-	void reducingStartedRunRemovesOnlyFutureTailAndStillReachesSettlement() {
+	void reducingStartedRunRemovesOnlyFutureTailAndStillCompletes() {
 		db.update("update course_runs set total_units=3,version=version+1 where id=?", runId);
 		CourseSessionResponse retained = createSession(2, Instant.parse("2035-01-07T02:00:00Z"));
 		CourseSessionResponse removed = createSession(3, Instant.parse("2035-01-08T02:00:00Z"));
@@ -410,7 +410,7 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(sessionStatus(retained.id())).isEqualTo("COMPLETED");
 		assertThat(sessionStatus(removed.id())).isEqualTo("REMOVED_BY_RUN_CHANGE");
 		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId))
-			.isEqualTo("SETTLEMENT_PENDING");
+			.isEqualTo("COMPLETED");
 	}
 
 	@Test
@@ -467,6 +467,33 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(affected.cause()).isEqualTo(CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT);
 		assertThat(unaffectedResponse.cause()).isEqualTo(CourseWithdrawalCause.VOLUNTARY);
 		assertThat(unaffectedResponse.cause()).isNotEqualTo(CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
+	}
+
+	@Test
+	void legacySettlementPendingCompletesWithoutWaitingForPayout() {
+		db.update("update course_runs set status='SETTLEMENT_PENDING' where id=?", runId);
+		db.update("update course_sessions set status='UNRESOLVED' where id=?", session.id());
+		db.update("update course_enrollment_sessions set disposition='UNRESOLVED' where course_run_id=?", runId);
+		disruptions.advance(session.endAt().plusSeconds(1));
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
+		assertThat(db.queryForObject("select status from course_refund_obligations where course_run_id=?", String.class, runId)).isEqualTo("PENDING_REVIEW");
+		disruptions.advance(session.endAt().plusSeconds(2));
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_COMPLETED'", Long.class, runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_RUN_COMPLETED'", Long.class, runId)).isOne();
+	}
+
+	@Test
+	void pendingSnapshotDoesNotBlockCompletionAndRemainsApprovable() {
+		UUID enrollment = db.queryForObject("select id from course_enrollments where course_run_id=? and member_account_id=?", UUID.class, runId, memberId);
+		var pending = withdrawals.createForMember(memberId, enrollment, "Review after completion");
+		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
+		Instant afterEnd = session.endAt().plusSeconds(1);
+		when(clock.instant()).thenReturn(afterEnd);
+		disruptions.advance(afterEnd);
+		assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("COMPLETED");
+		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class, enrollment)).isEqualTo("WITHDRAWAL_PENDING");
+		assertThat(withdrawals.approve(managerId, pending.id(), "Snapshot remains valid").refundAmountVnd()).isEqualTo(pending.refundAmountVnd());
 	}
 
 	private void rescheduleAgain() {
