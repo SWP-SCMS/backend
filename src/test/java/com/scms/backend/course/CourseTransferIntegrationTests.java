@@ -95,6 +95,50 @@ class CourseTransferIntegrationTests {
 	}
 
 	@Test
+	void receptionistRequestsAndAcceptsTransferWithCorrectActorThroughExistingCashPayment() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		String auth = "Bearer " + token(receptionist);
+		String base = "/api/v1/reception/members/" + memberId;
+		db.update("update course_runs set tuition_vnd=120000 where id=?", targetRunId);
+		mockMvc.perform(get(base + "/course-schedule-changes").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isOk());
+		mockMvc.perform(post(base + "/course-schedule-changes/{id}/response", responseId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth).contentType("application/json").content("{\"response\":\"REQUEST_TRANSFER\"}"))
+			.andExpect(status().isOk());
+		var request = currentRequest();
+		assertThat(db.queryForObject("select requester_account_id from course_transfer_requests where id=?", UUID.class, request.id())).isEqualTo(receptionist.getId());
+		var offer = transfers.approve(managerId, request.id(), targetRunId, "Reception transfer");
+		mockMvc.perform(get(base + "/course-transfer-offers").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isOk());
+		mockMvc.perform(post(base + "/course-transfer-offers/{id}/accept", offer.id()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-transfer")).andExpect(status().isOk());
+		UUID orderId = db.queryForObject("select difference_order_id from course_transfer_offers where id=?", UUID.class, offer.id());
+		assertThat(db.queryForObject("select actor_account_id from course_orders where id=?", UUID.class, orderId)).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select tuition_vnd_snapshot from course_orders where id=?", java.math.BigDecimal.class, orderId)).isEqualByComparingTo("20000");
+		Account cashier = account(AccountRole.RECEPTIONIST);
+		mockMvc.perform(post(base + "/course-orders/{id}/payments/cash", orderId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(cashier)).header("Idempotency-Key", "proxy-transfer-cash"))
+			.andExpect(status().isOk());
+		assertThat(db.queryForObject("select actor_account_id from course_enrollments where source_transfer_offer_id=?", UUID.class, offer.id())).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select processed_by_account_id from course_enrollments where source_transfer_offer_id=?", UUID.class, offer.id())).isEqualTo(cashier.getId());
+		assertThat(db.queryForObject("select status from course_transfer_offers where id=?", String.class, offer.id())).isEqualTo("COMPLETED");
+	}
+
+	@Test
+	void receptionistScheduleWithdrawalCapturesSnapshotAndActorOnce() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST);
+		String path = "/api/v1/reception/members/" + memberId + "/course-schedule-changes/" + responseId + "/response";
+		for (int retry = 0; retry < 2; retry++) mockMvc.perform(post(path).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).contentType("application/json")
+			.content("{\"response\":\"REQUEST_WITHDRAWAL\"}")).andExpect(status().isOk());
+		assertThat(db.queryForObject("select requester_account_id from course_withdrawal_requests where schedule_change_response_id=?", UUID.class, responseId)).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select snapshot_captured_at from course_withdrawal_requests where schedule_change_response_id=?", Timestamp.class, responseId).toInstant()).isEqualTo(NOW);
+		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class, sourceEnrollmentId)).isEqualTo("WITHDRAWAL_PENDING");
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SCHEDULE_CHANGE_RESPONDED' and target_id=?", Long.class, responseId)).isOne();
+		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_SCHEDULE_CHANGE_RESPONDED' and target_id=?", UUID.class, responseId)).isEqualTo(receptionist.getId());
+	}
+
+	@Test
 	void equalPriceOfferMovesEnrollmentOnceAndPreservesSourceHistory() {
 		enrollmentService.respondToScheduleChange(memberId, responseId,
 			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_TRANSFER"));

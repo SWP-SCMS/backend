@@ -84,6 +84,37 @@ class CourseOrderIntegrationTests {
 	}
 
 	@Test
+	void receptionistWaitlistUsesMemberEligibilityAndRecordsActualOrderActor() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile holder = member(AccountStatus.ACTIVE), waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "proxy-holder").andExpect(status().isCreated());
+		String base = "/api/v1/reception/members/" + waiting.getAccountId();
+		String auth = "Bearer " + token(receptionist);
+		UUID waitlistId = UUID.fromString(json(mockMvc.perform(post(base + "/course-runs/{id}/waitlist", fixture.runId())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isCreated()).andReturn()).path("id").asText());
+		mockMvc.perform(get(base + "/course-waitlists").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(waitlistId.toString()));
+		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_WAITLIST_JOINED' and target_id=?",
+			UUID.class, waitlistId)).isEqualTo(receptionist.getId());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?", holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+		MvcResult accepted = mockMvc.perform(post(base + "/course-waitlists/{id}/accept", waitlistId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-accept"))
+			.andExpect(status().isCreated()).andReturn();
+		UUID orderId = UUID.fromString(json(accepted).path("orderId").asText());
+		assertThat(db.queryForObject("select actor_account_id from course_orders where id=?", UUID.class, orderId)).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select member_account_id from course_orders where id=?", UUID.class, orderId)).isEqualTo(waiting.getAccountId());
+		mockMvc.perform(post(base + "/course-waitlists/{id}/accept", waitlistId).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-accept"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.orderId").value(orderId.toString()));
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_WAITLIST_ACCEPTED' and target_id=?", Long.class, waitlistId)).isOne();
+		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_WAITLIST_ACCEPTED' and target_id=?", UUID.class, waitlistId)).isEqualTo(receptionist.getId());
+	}
+
+	@Test
 	void createsAndReplaysTheSameCanonicalRequestButRejectsKeyReuse() throws Exception {
 		MemberProfile member = member(AccountStatus.ACTIVE);
 		RunFixture first = run(2, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
