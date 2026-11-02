@@ -31,8 +31,15 @@ class CourseAttendancePolicyTests {
 	}
 
 	@Test void inactiveRunIsNotWritable() {
-		assertThat(CourseAttendancePolicy.evaluate("SCHEDULED", "COMPLETED", START, END, START, true)
+		assertThat(CourseAttendancePolicy.evaluate("SCHEDULED", "CANCELLED", START, END, START, true)
 			.reason()).isEqualTo("COURSE_RUN_NOT_ACTIVE");
+	}
+
+	@Test void automaticCompletionPreservesThirtyMinuteAttendanceWindow() {
+		assertThat(CourseAttendancePolicy.evaluate("COMPLETED", "COMPLETED", START, END, END.plusSeconds(1799), true)
+			.writable()).isTrue();
+		assertThat(CourseAttendancePolicy.evaluate("COMPLETED", "COMPLETED", START, END, END.plusSeconds(1800), true)
+			.reason()).isEqualTo("WINDOW_CLOSED");
 	}
 
 	@Test void unassignedCoachIsHiddenByPolicy() {

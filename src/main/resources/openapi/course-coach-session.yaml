@@ -60,7 +60,7 @@ components:
         roomName: {type: string}
         sessionStatus: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}
         rosterCount: {type: integer, format: int64, minimum: 0}
-        attendanceWritable: {type: boolean}
+        attendanceWritable: {type: boolean, description: Assigned Coach may record attendance until end plus 30 minutes including automatically completed sessions and Runs.}
         attendanceWriteReason: {$ref: '#/components/schemas/AttendanceWriteReason'}
     AttendanceWriteReason: {type: string, enum: [WRITABLE, TOO_EARLY, WINDOW_CLOSED, SESSION_CANCELLED, NOT_ASSIGNED_COACH, COURSE_RUN_NOT_ACTIVE]}
     ApiProblem:

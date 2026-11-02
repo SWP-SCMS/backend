@@ -31,7 +31,7 @@ public final class CourseCoachSessionApiModels {
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) String roomName,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseSessionStatus sessionStatus,
 	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, minimum = "0") long rosterCount,
-	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean attendanceWritable,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Assigned Coach may record attendance until end plus 30 minutes, including automatically completed sessions and Runs.") boolean attendanceWritable,
 		@Schema(requiredMode = Schema.RequiredMode.REQUIRED) AttendanceWriteReason attendanceWriteReason) {}
 
 	public record CourseCoachSessionPage(

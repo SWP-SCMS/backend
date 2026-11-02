@@ -57,6 +57,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired CourseEnrollmentService members;
 	@Autowired CourseWithdrawalService withdrawals;
 	@Autowired CourseRefundObligationService refunds;
+	@Autowired CourseCoachSessionService coachSessions;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
@@ -509,6 +510,7 @@ class CourseScheduleChangeIntegrationTests {
 		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Long.class, runId)).isZero();
 		assertThat(members.memberEnrollments(memberId).getFirst().lifecycleStatus()).isEqualTo("ACTIVE");
 		when(clock.instant()).thenReturn(session.endAt().plusSeconds(1));
+		assertThat(coachSessions.detail(coachId, session.id()).attendanceWritable()).isTrue();
 		UUID enrollmentSession = db.queryForObject("select id from course_enrollment_sessions where course_run_id=?", UUID.class, runId);
 		assertThat(members.updateAttendance(coachId, session.id(), enrollmentSession,
 			new CourseEnrollmentApiModels.AttendanceUpdate(CourseAttendanceStatus.PRESENT)).attendanceStatus()).isEqualTo(CourseAttendanceStatus.PRESENT);
