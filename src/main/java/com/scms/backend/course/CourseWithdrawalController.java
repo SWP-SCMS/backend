@@ -41,6 +41,16 @@ class CourseWithdrawalController {
 		return ResponseEntity.status(HttpStatus.CREATED)
 			.body(service.createForReceptionist(subject(jwt), memberId, enrollmentId, reason(request)));
 	}
+	@PostMapping("/members/me/course-withdrawal-requests/{requestId}/cancel")
+	ResponseEntity<WithdrawalRequest> memberCancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId,
+			@RequestBody WithdrawalDecision request) {
+		return ResponseEntity.ok(service.cancelForMember(subject(jwt), requestId, decisionReason(request)));
+	}
+	@PostMapping("/reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel")
+	ResponseEntity<WithdrawalRequest> receptionCancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId,
+			@PathVariable UUID requestId, @RequestBody WithdrawalDecision request) {
+		return ResponseEntity.ok(service.cancelForReceptionist(subject(jwt), memberId, requestId, decisionReason(request)));
+	}
 	@GetMapping("/manager/course-withdrawal-requests")
 	ResponseEntity<List<WithdrawalRequest>> managerQueue(@AuthenticationPrincipal Jwt jwt) {
 		return ResponseEntity.ok(service.managerQueue(subject(jwt)));

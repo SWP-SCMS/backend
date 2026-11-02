@@ -96,7 +96,7 @@ class ReceptionCourseEnrollmentService {
 			rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"),
 			rs.getString("course_name"), rs.getObject("course_run_id", UUID.class), rs.getString("run_code"),
 			rs.getString("course_run_status"), rs.getObject("enrollment_id", UUID.class),
-			lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, eligible ? refund : null);
+			lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, eligible ? refund : null, "WITHDRAWAL_PENDING".equals(lifecycle));
 	}
 	private BigInteger amount(BigDecimal value) { return value == null ? BigInteger.ZERO : value.toBigIntegerExact(); }
 	private String status(String value) {

@@ -17,6 +17,11 @@ class CourseWithdrawalOpenApiTests {
 			assertThat(paths.has("/reception/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests")).isTrue();
 			assertThat(paths.has("/manager/course-withdrawal-requests/{requestId}/approve")).isTrue();
 			assertThat(paths.has("/manager/course-withdrawal-requests/{requestId}/reject")).isTrue();
+			for (String path : java.util.List.of("/members/me/course-withdrawal-requests/{requestId}/cancel",
+				"/reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel")) {
+				assertThat(paths.path(path).path("post").path("responses").has("409")).isTrue();
+				assertThat(paths.path(path).path("post").path("responses").path("200").toString()).contains("WithdrawalRequest");
+			}
 		}
 		try (var input = getClass().getResourceAsStream("/openapi/course-enrollment.yaml")) {
 			var paths = new ObjectMapper(new YAMLFactory()).readTree(input).path("paths");
@@ -28,7 +33,9 @@ class CourseWithdrawalOpenApiTests {
 			assertThat(schemas.path("WithdrawalRequest").path("properties").fieldNames()).toIterable()
 				.contains("memberCode", "courseCode", "runCode", "totalUnits", "remainingUnits", "estimatedRefundAmount",
 					"cause", "withdrawalEligible", "withdrawalReason", "refundBasisVnd", "refundAmountVnd",
-					"scheduleChangeResponseId", "changeEventId");
+					"scheduleChangeResponseId", "changeEventId", "snapshotCapturedAt", "snapshotSource",
+					"snapshotWithdrawalEligible", "snapshotWithdrawalReason", "cancelledAt", "cancelledByAccountId",
+					"cancellationReason", "canCancel", "learningSuspended");
 			assertThat(schemas.at("/WithdrawalRequest/properties/cause/enum").toString())
 				.contains("VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
 		}

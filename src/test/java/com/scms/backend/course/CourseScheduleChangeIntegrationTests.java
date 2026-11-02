@@ -55,6 +55,7 @@ class CourseScheduleChangeIntegrationTests {
 
 	@Autowired CourseManagementService managers;
 	@Autowired CourseEnrollmentService members;
+	@Autowired CourseWithdrawalService withdrawals;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
@@ -434,6 +435,16 @@ class CourseScheduleChangeIntegrationTests {
 		var retried = members.respondToScheduleChange(memberId, pending.id(),
 			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_WITHDRAWAL"));
 		assertThat(created.withdrawalRequestId()).isNotNull().isEqualTo(retried.withdrawalRequestId());
+		var saved = withdrawals.detailForMember(memberId, created.withdrawalRequestId());
+		assertThat(saved.snapshotCapturedAt()).isEqualTo(changedAt);
+		assertThat(saved.refundAmountVnd()).isEqualTo(BigInteger.valueOf(80_000));
+		withdrawals.cancelForMember(memberId, saved.id(), "Continue studying");
+		when(clock.instant()).thenReturn(pending.responseDeadline().plusSeconds(1));
+		var closedRetry = members.respondToScheduleChange(memberId, pending.id(),
+			new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_WITHDRAWAL"));
+		assertThat(closedRetry.withdrawalRequestId()).isEqualTo(saved.id());
+		assertThat(closedRetry.withdrawalEligible()).isFalse();
+		assertThat(withdrawals.detailForMember(memberId, saved.id()).status()).isEqualTo("CANCELLED");
 		assertThat(db.queryForObject("select count(*) from course_withdrawal_requests where schedule_change_response_id=?",
 			Long.class, pending.id())).isOne();
 	}

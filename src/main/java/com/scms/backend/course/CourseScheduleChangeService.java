@@ -196,6 +196,7 @@ class CourseScheduleChangeService {
 	private String select() {
 		return """
 			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd,
+			 w.status withdrawal_status,w.snapshot_captured_at,w.withdrawal_reason_snapshot,
 			 e.lifecycle_status,e.total_units_snapshot,e.amount_paid_vnd_snapshot,run.status course_run_status,
 			 u.remaining_units,u.unused_allocation
 			from course_schedule_change_responses r join course_enrollment_sessions es on es.id=r.enrollment_session_id
@@ -225,14 +226,19 @@ class CourseScheduleChangeService {
 				&& (!"PENDING".equals(rs.getString("status")) || !clock.instant().isBefore(rs.getTimestamp("response_deadline").toInstant()))) {
 			eligible = false; reason = "SCHEDULE_CHANGE_RESPONSE_CLOSED";
 		}
+		UUID withdrawalId = rs.getObject("withdrawal_request_id", UUID.class);
+		if (withdrawalId != null) {
+			eligible = "PENDING".equals(rs.getString("withdrawal_status")) && rs.getTimestamp("snapshot_captured_at") != null;
+			reason = eligible ? rs.getString("withdrawal_reason_snapshot") : "REQUEST_NOT_PENDING";
+		}
 		return new ScheduleChange(rs.getObject("id", UUID.class), rs.getObject("enrollment_session_id", UUID.class),
 			rs.getTimestamp("old_start_at").toInstant(), rs.getTimestamp("old_end_at").toInstant(),
 			rs.getTimestamp("new_start_at").toInstant(), rs.getTimestamp("new_end_at").toInstant(),
 			rs.getTimestamp("notification_sent_at").toInstant(), rs.getTimestamp("response_deadline").toInstant(),
 			rs.getString("status"), rs.getString("response"), rs.getTimestamp("responded_at") == null ? null : rs.getTimestamp("responded_at").toInstant(),
 			rs.getObject("change_event_id", UUID.class), cause, rs.getObject("withdrawal_request_id", UUID.class), eligible, reason,
-			rs.getBigDecimal("refund_basis_vnd") == null ? decision.refundBasisVnd() : rs.getBigDecimal("refund_basis_vnd").toBigIntegerExact(),
-			rs.getBigDecimal("refund_amount_vnd") == null ? decision.refundAmountVnd() : rs.getBigDecimal("refund_amount_vnd").toBigIntegerExact());
+			withdrawalId == null ? decision.refundBasisVnd() : rs.getBigDecimal("refund_basis_vnd") == null ? null : rs.getBigDecimal("refund_basis_vnd").toBigIntegerExact(),
+			withdrawalId == null ? decision.refundAmountVnd() : rs.getBigDecimal("refund_amount_vnd") == null ? null : rs.getBigDecimal("refund_amount_vnd").toBigIntegerExact());
 	}
 
 	private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }

@@ -114,6 +114,7 @@ class CourseRunClosureService {
 			runId);
 		db.update("update course_transfer_offers set status='CANCELLED' where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT')",
 			runId);
+		cancelPendingWithdrawals(actorId, runId, now);
 		db.update("""
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
 			 requester_account_id,request_reason)
@@ -128,6 +129,22 @@ class CourseRunClosureService {
 		for (UUID memberId : cancellationRecipients) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":course_run_cancelled",
 				memberId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
+		}
+	}
+
+	private void cancelPendingWithdrawals(UUID actorId, UUID runId, Instant now) {
+		for (Map<String, Object> request : db.queryForList("""
+			update course_withdrawal_requests set status='CANCELLED',cancelled_at=?,cancelled_by_account_id=?,
+			 cancellation_reason='COURSE_RUN_CANCELLED' where course_run_id=? and status='PENDING'
+			returning id,course_enrollment_id,member_account_id
+			""", Timestamp.from(now), actorId, runId)) {
+			UUID requestId = (UUID) request.get("id"), memberId = (UUID) request.get("member_account_id");
+			db.update("update course_enrollments set lifecycle_status='ACTIVE' where id=? and lifecycle_status='WITHDRAWAL_PENDING'",
+				request.get("course_enrollment_id"));
+			audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_WITHDRAWAL_CANCELLED", "COURSE_WITHDRAWAL_REQUEST",
+				requestId, "COURSE_RUN_CANCELLED", Map.of("status", "PENDING"), Map.of("status", "CANCELLED")));
+			notifications.write("course-withdrawal-cancelled:" + requestId, memberId, "COURSE_WITHDRAWAL_CANCELLED",
+				"COURSE_WITHDRAWAL_REQUEST", requestId, Map.of("reason", "COURSE_RUN_CANCELLED"));
 		}
 	}
 

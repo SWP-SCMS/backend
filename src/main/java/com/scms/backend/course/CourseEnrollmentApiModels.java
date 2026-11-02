@@ -14,7 +14,7 @@ public final class CourseEnrollmentApiModels {
 	public record MemberEnrollment(UUID enrollmentId, UUID courseRunId, String courseCode, String courseName,
 			String runCode, @Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseRunStatus courseRunStatus,
 			String lifecycleStatus, Instant enrolledAt,
-			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) MemberPaymentSummary payment, List<MemberSession> sessions) {}
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) MemberPaymentSummary payment, List<MemberSession> sessions, boolean learningSuspended) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record MemberPaymentSummary(
@@ -43,7 +43,7 @@ public final class CourseEnrollmentApiModels {
 		String courseCode, String courseName, UUID courseRunId, String runCode, String courseRunStatus,
 		UUID enrollmentId, String enrollmentStatus, Instant enrolledAt, int totalUnits, int remainingUnits,
 		boolean withdrawalEligible, CourseWithdrawalEligibilityReason withdrawalReason,
-		@Schema(description = "Null when withdrawalEligible is false.", nullable = true) BigInteger estimatedRefundAmount) {}
+		@Schema(description = "Null when withdrawalEligible is false.", nullable = true) BigInteger estimatedRefundAmount, boolean learningSuspended) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record ReceptionCourseEnrollmentPage(List<ReceptionCourseEnrollment> content, int page, int size,

@@ -89,7 +89,7 @@ class CourseEnrollmentService {
 			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
 			where es.course_session_id=? and es.disposition='ENROLLED'
-			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
+			  and e.lifecycle_status='ACTIVE'
 			order by a.full_name,a.id
 			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class),
 			rs.getString("member_code"), rs.getString("full_name"),
@@ -107,9 +107,13 @@ class CourseEnrollmentService {
 		if (request == null || request.status() == null || !CourseAttendanceStatus.writableValues().contains(request.status()))
 			throw CourseAttendanceException.invalid();
 		Map<String, Object> session = db.queryForList("""
-			select s.id,s.start_at,s.end_at,s.status from course_sessions s
-			where s.id=? and s.coach_account_id=? for update
-			""", sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
+			with eligible_run as materialized (
+				select r.id from course_runs r where r.id=(select course_run_id from course_sessions where id=?)
+				and r.status<>'CANCELLED' for update of r
+			)
+			select s.id,s.start_at,s.end_at,s.status from course_sessions s join eligible_run r on r.id=s.course_run_id
+			where s.id=? and s.coach_account_id=? for update of s
+			""", sessionId, sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		Instant now = clock.instant();
 		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), null,
 			instant(session, "start_at"), instant(session, "end_at"), now, true);
@@ -121,7 +125,7 @@ class CourseEnrollmentService {
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
 			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED'
-			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') for update of es
+			  and e.lifecycle_status='ACTIVE' for update of e,es
 			""", enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		CourseAttendanceStatus before = CourseAttendanceStatus.valueOf(text(row, "attendance_status"));
 		db.update("""
@@ -160,6 +164,6 @@ class CourseEnrollmentService {
 				new ArrayList<>());
 		}
 		MemberEnrollment response() { return new MemberEnrollment(id, runId, courseCode, courseName, runCode,
-			courseRunStatus, lifecycleStatus, enrolledAt, payment, List.copyOf(sessions)); }
+			courseRunStatus, lifecycleStatus, enrolledAt, payment, List.copyOf(sessions), "WITHDRAWAL_PENDING".equals(lifecycleStatus)); }
 	}
 }

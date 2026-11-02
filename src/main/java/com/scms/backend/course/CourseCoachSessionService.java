@@ -36,7 +36,7 @@ class CourseCoachSessionService {
 			coach.id coach_id,coach.full_name coach_name,
 			room.id room_id,room.name room_name,s.status session_status,
 			count(es.id) filter (where es.disposition='ENROLLED'
-				and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')) roster_count
+				and e.lifecycle_status='ACTIVE') roster_count
 		""";
 	private static final String GROUP_BY = """
 		 group by s.id,s.unit_number,s.start_at,s.end_at,c.id,c.code,c.name,

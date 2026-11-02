@@ -367,6 +367,8 @@ class GeneratedOpenApiTests {
 		"GET /reception/members/{memberId}/course-enrollments",
 		"GET /reception/members/{memberId}/course-enrollments/{enrollmentId}",
 		"POST /members/me/course-enrollments/{enrollmentId}/withdrawal-requests",
+		"POST /members/me/course-withdrawal-requests/{requestId}/cancel",
+		"POST /reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel",
 		"GET /members/me/course-withdrawal-requests",
 		"GET /members/me/course-withdrawal-requests/{requestId}",
 		"POST /reception/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests",
@@ -735,7 +737,9 @@ class GeneratedOpenApiTests {
 		assertThat(withdrawal.properties().stream().map(Map.Entry::getKey).toList())
 			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus",
 				"totalUnits", "remainingUnits", "estimatedRefundAmount", "cause", "withdrawalEligible",
-				"withdrawalReason", "refundBasisVnd", "refundAmountVnd", "scheduleChangeResponseId", "changeEventId")
+				"withdrawalReason", "refundBasisVnd", "refundAmountVnd", "scheduleChangeResponseId", "changeEventId",
+				"snapshotCapturedAt", "snapshotSource", "snapshotWithdrawalEligible", "snapshotWithdrawalReason",
+				"cancelledAt", "cancelledByAccountId", "cancellationReason", "canCancel", "learningSuspended")
 			.doesNotContain("email", "phone", "emergencyContactPhone");
 		assertThat(withdrawal.at("/cause/enum").toString())
 			.contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");

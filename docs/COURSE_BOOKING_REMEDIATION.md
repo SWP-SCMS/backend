@@ -12,5 +12,26 @@ Scope: backend and API contracts. The five sequential changes are access policy,
 - Regression first: Reception creation returned 201 instead of 403; the Course entry query lacked enrollment/Run guards.
 - PostgreSQL tests cover ACTIVE versus pending/withdrawn/transferred/completed enrollment and cancelled Run eligibility.
 - Static and generated OpenAPI omit the retired submission operation. Legacy approval tests seed historical submissions directly.
-- No schema change or data cleanup in this change. No manual deployment.
-- The remaining four changes are not implemented by this PR. The complete workflow is not accepted until all applicable CI and isolated smoke gates pass.
+- Access policy has no schema change. No manual deployment.
+- Automatic completion, atomic reschedule, and Reception proxy actions follow in separate sequential PRs. Full smoke remains unverified: the user has no isolated test environment.
+
+## Withdrawal snapshots and cancellation (G12-G13)
+- Every new withdrawal stores its cause, capture time, total/remaining units, refund basis, eligibility/reason, and refund amount in the submission transaction. Member, Reception, Manager, and schedule-change responses share the same writer. Existing 70%/80% and G10 exceptions remain unchanged.
+- Example: submit with 7/10 units remaining and 700,000 VND unused allocation: saved refund 560,000 VND. Review with 6/10 remaining, or after Run completion, still uses 560,000 VND. The last unit starting prevents new requests only.
+- `snapshotSource=REQUEST_TIME` identifies new immutable values. `LEGACY_APPROVAL` identifies historical approval values; `UNAVAILABLE` means no snapshot exists. Never replace unavailable values with today's estimate. `snapshotWithdrawalEligible`/`snapshotWithdrawalReason` describe the captured policy; `withdrawalEligible` and `canCancel` describe current request actions. The existing `estimatedRefundAmount` mirrors the saved amount while pending.
+- A pending request keeps the seat but immediately suspends Course check-in, roster participation and attendance. Enrollment timelines and Reception discovery expose `learningSuspended`. Preserve historical sessions and attendance in the UI.
+- Cancel with a nonblank `reason` (maximum 1,000 characters):
+  - `POST /members/me/course-withdrawal-requests/{requestId}/cancel`
+  - `POST /reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel`
+- Both return the updated withdrawal DTO (200). Repeat cancellation returns the original cancellation metadata; cancelling APPROVED/REJECTED returns `409 COURSE_WITHDRAWAL_INVALID_TRANSITION`. Wrong owner is 404; wrong role/inactive actor is denied.
+- Cancellation metadata: `cancelledAt`, `cancelledByAccountId`, `cancellationReason`. Cancellation/rejection restores learning from processing time and keeps the seat. No makeup is created and expired attendance windows stay closed. Approval alone releases the seat.
+- Decision transactions lock Member, Run, then request/enrollment and conditionally update PENDING. Audit, refund obligation and notification outbox commit together. Retrying cannot add another terminal effect.
+- Run cancellation closes pending requests with `COURSE_RUN_CANCELLED` and creates the existing Run-cancellation refund; it cannot also approve the pending withdrawal refund. The existing total-refund cap and payment workflow remain in force.
+
+## Migration V68 and rollout
+- `V68__course_withdrawal_snapshot_and_cancellation.sql` expands the schema, permits CANCELLED, requires complete snapshots for new writes, and prevents later snapshot mutation.
+- Existing PENDING requests missing a request-time snapshot become CANCELLED with `LEGACY_SNAPSHOT_MISSING`; restore the corresponding pending enrollment, preserve history, and write one audit/outbox message. Already approved/rejected requests, payments, attendance, and paid refunds are preserved. No historical snapshot is fabricated.
+- A retry of an old schedule response returns its closed request. Resubmission is a new withdrawal operation, subject to the current deadline and policy; FE must explain that the amount may differ.
+- Upgrade tests cover a fresh DB and V67 to latest with legacy rows and paid refunds. Local PostgreSQL integration: `NOT_RUN_LOCAL_DOCKER`; both CI events must pass all four PostgreSQL shards before merge.
+- Apply migration with the compatible binary; old writers do not supply snapshots and will fail the new integrity checks. Do not overlap old/new writers or roll back to an old binary that does not understand CANCELLED. Forward-fix with a new migration; never modify an applied migration.
+- No manual deployment was performed. `SMOKE_UNVERIFIED` and `E2E_UNVERIFIED` remain explicit until an isolated environment and matching FE are available.
