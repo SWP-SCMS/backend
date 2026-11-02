@@ -114,12 +114,15 @@ class CourseTransferIntegrationTests {
 		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SCHEDULE_CHANGE_RESPONDED' and target_id=?", Long.class, responseId)).isOne();
 	}
 
-	@Test
-	void proxyAcceptanceFailureRollsBackAcceptanceMarkerAndTargetEnrollment() throws Exception {
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "SOURCE_INACTIVE", "TARGET_SCHEDULE_INVALID" })
+	void proxyAcceptanceFailureRollsBackAcceptanceMarkerAndTargetEnrollment(String failure) throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		requestTransfer();
 		var offer = transfers.approve(managerId, currentRequest().id(), targetRunId, "Failure after offer issued");
-		db.update("update course_enrollments set lifecycle_status='WITHDRAWN' where id=?", sourceEnrollmentId);
+		if (failure.equals("SOURCE_INACTIVE"))
+			db.update("update course_enrollments set lifecycle_status='WITHDRAWN' where id=?", sourceEnrollmentId);
+		else db.update("update course_runs set total_units=2 where id=?", targetRunId);
 		mockMvc.perform(post("/api/v1/reception/members/{member}/course-transfer-offers/{id}/accept", memberId, offer.id())
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
 			.header("Idempotency-Key", "must-rollback")).andExpect(status().isConflict());

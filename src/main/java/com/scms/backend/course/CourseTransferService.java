@@ -49,14 +49,15 @@ public class CourseTransferService {
 		active(actorId, actorId.equals(memberId) ? AccountRole.MEMBER : AccountRole.RECEPTIONIST);
 		active(memberId, AccountRole.MEMBER);
 		Map<String, Object> source = rows("""
-			select e.id source_enrollment_id,e.course_run_id source_run_id
+			select e.id source_enrollment_id,e.course_run_id source_run_id,e.lifecycle_status
 			from course_schedule_change_responses response
 			join course_enrollment_sessions es on es.id=response.enrollment_session_id
 			join course_enrollments e on e.id=es.course_enrollment_id
-			where response.id=? and e.member_account_id=? and e.lifecycle_status='ACTIVE'
+			where response.id=? and e.member_account_id=?
 			""", responseId, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
 		TransferRequest existing = findRequestByResponse(responseId);
 		if (existing != null) return existing;
+		if (!"ACTIVE".equals(text(source, "lifecycle_status"))) throw CourseTransferException.notFound();
 		UUID requestId = UUID.randomUUID();
 		try {
 			db.update("""
@@ -193,12 +194,12 @@ public class CourseTransferService {
 			this::mapOffer, memberId);
 	}
 
-	@Transactional(noRollbackFor = CourseTransferException.class)
+	@Transactional(noRollbackFor = CourseTransferException.ExpiredOffer.class)
 	TransferOffer accept(UUID memberId, UUID offerId, String idempotencyKey) {
 		return accept(memberId, memberId, offerId, idempotencyKey);
 	}
 
-	@Transactional(noRollbackFor = CourseTransferException.class)
+	@Transactional(noRollbackFor = CourseTransferException.ExpiredOffer.class)
 	TransferOffer accept(UUID actorId, UUID memberId, UUID offerId, String idempotencyKey) {
 		if (!actorId.equals(memberId)) accounts.findByIdForUpdate(actorId)
 			.filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE)
@@ -217,7 +218,7 @@ public class CourseTransferService {
 		lockRuns(offer.sourceRunId(), offer.targetRunId());
 		if (!"OFFERED".equals(offer.status()) || !now.isBefore(offer.expiresAt())) {
 			expireOffer(offer, now);
-			throw CourseTransferException.conflict("COURSE_TRANSFER_OFFER_EXPIRED", "The transfer offer has expired.");
+			throw CourseTransferException.expiredOffer();
 		}
 		BigInteger currentCredit = unusedCredit(offer.sourceEnrollmentId(), now);
 		if (!currentCredit.equals(offer.creditVnd()))
