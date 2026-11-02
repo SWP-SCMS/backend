@@ -119,7 +119,7 @@ public class CourseController {
 	@io.swagger.v3.oas.annotations.Operation(description = "Atomically reschedule a Run and its sessions. Retry with the same Idempotency-Key and payload to retrieve the saved result; a different payload with the same key returns 409.")
 	@PostMapping("/course-runs/{runId}/reschedule")
 	ResponseEntity<CourseRunRescheduleResponse> rescheduleRun(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable UUID runId, @RequestHeader("Idempotency-Key") @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 100) String key,
+			@PathVariable UUID runId, @RequestHeader("Idempotency-Key") @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min = 1, max = 100) String key,
 			@Valid @RequestBody CourseRunRescheduleRequest request) {
 		return ResponseEntity.ok(reschedules.reschedule(accountId(jwt), runId, key, request));
 	}

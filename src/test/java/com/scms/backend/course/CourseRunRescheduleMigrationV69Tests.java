@@ -27,9 +27,18 @@ class CourseRunRescheduleMigrationV69Tests {
 	@Test void freshDatabaseEnforcesReplayKeyFingerprintAndForeignKeys() {
 		flyway(null).migrate(); fixture();
 		insert("key","a".repeat(64),event,"{}");
-		assertThatThrownBy(() -> insert("key","a".repeat(64),event,"{}" )).isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> insert("other","invalid",UUID.randomUUID(),"{}" )).isInstanceOf(DataIntegrityViolationException.class);
-		assertThatThrownBy(() -> insert("other","a".repeat(64),UUID.randomUUID(),"{}" )).isInstanceOf(DataIntegrityViolationException.class);
+		UUID spare=UUID.randomUUID();
+		db.update("""
+			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,old_planned_start_at,old_planned_end_at,
+			 new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
+			select ?,course_run_id,actor_account_id,cause_code,old_planned_start_at,old_planned_end_at,
+			 new_planned_start_at,new_planned_end_at,old_total_units,new_total_units from course_schedule_change_events where id=?
+			""",spare,event);
+		assertThatThrownBy(() -> insert("key","a".repeat(64),spare,"{}" )).rootCause().hasMessageContaining("course_run_reschedules_pkey");
+		assertThatThrownBy(() -> insert("other","invalid",spare,"{}" )).rootCause().hasMessageContaining("chk_course_reschedule_fingerprint");
+		assertThatThrownBy(() -> insert(" ","a".repeat(64),spare,"{}" )).rootCause().hasMessageContaining("chk_course_reschedule_key");
+		assertThatThrownBy(() -> insert("other","a".repeat(64),spare,"[]" )).rootCause().hasMessageContaining("chk_course_reschedule_response");
+		assertThatThrownBy(() -> insert("other","a".repeat(64),UUID.randomUUID(),"{}" )).rootCause().hasMessageContaining("course_run_reschedules_change_event_id_fkey");
 		assertThat(db.queryForObject("select count(*) from course_run_reschedules",Long.class)).isOne();
 		assertThatThrownBy(() -> db.update("delete from course_schedule_change_events where id=?",event)).isInstanceOf(DataIntegrityViolationException.class);
 	}

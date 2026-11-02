@@ -754,6 +754,10 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		JsonNode atomic = operation(document, "/manager/course-runs/{runId}/reschedule", "post");
 		assertThat(atomic.path("parameters").toString()).contains("Idempotency-Key", "header", "true");
+		for (JsonNode parameter : atomic.path("parameters")) if (parameter.path("name").asText().equals("Idempotency-Key")) {
+			assertThat(parameter.at("/schema/minLength").asInt()).isEqualTo(1);
+			assertThat(parameter.at("/schema/maxLength").asInt()).isEqualTo(100);
+		}
 		assertThat(atomic.at("/requestBody/content/application~1json/schema/$ref").asText()).endsWith("/CourseRunRescheduleRequest");
 		assertThat(document.at("/components/schemas/CourseRunRescheduleRequest/required").toString())
 			.contains("expectedVersion", "plannedStartAt", "plannedEndAt", "totalUnits", "sessions");
