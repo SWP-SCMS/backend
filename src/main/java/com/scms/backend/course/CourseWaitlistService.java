@@ -49,6 +49,14 @@ public class CourseWaitlistService {
 
 	@Transactional
 	CourseWaitlistResponse join(UUID memberId, UUID runId) {
+		return join(memberId, memberId, runId);
+	}
+
+	@Transactional
+	CourseWaitlistResponse join(UUID actorId, UUID memberId, UUID runId) {
+		if (!actorId.equals(memberId)) accounts.findByIdForUpdate(actorId)
+			.filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
 		lockActiveMember(memberId);
 		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseWaitlistException::unavailable);
 		Instant now = clock.instant();
@@ -62,22 +70,37 @@ public class CourseWaitlistService {
 				id, runId, memberId, Timestamp.from(now), Timestamp.from(now));
 		}
 		catch (DataIntegrityViolationException exception) { throw CourseWaitlistException.duplicate(); }
-		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "COURSE_WAITLIST_JOINED", "COURSE_WAITLIST", id,
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_WAITLIST_JOINED", "COURSE_WAITLIST", id,
 			Map.of("courseRunId", runId.toString())));
 		return find(id);
 	}
 
 	@Transactional
 	CourseWaitlistResponse leave(UUID memberId, UUID runId) {
+		return leave(memberId, memberId, runId);
+	}
+
+	@Transactional
+	CourseWaitlistResponse leave(UUID actorId, UUID memberId, UUID runId) {
+		if (!actorId.equals(memberId)) accounts.findByIdForUpdate(actorId)
+			.filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
 		lockActiveMember(memberId);
 		runs.findByIdForUpdate(runId).orElseThrow(CourseWaitlistException::notFound);
 		UUID id = activeId(memberId, runId);
 		Instant now = clock.instant();
 		db.update("update course_waitlists set status='LEFT',updated_at=? where id=? and status in ('WAITING','INVITED')",
 			Timestamp.from(now), id);
-		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "COURSE_WAITLIST_LEFT", "COURSE_WAITLIST", id,
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_WAITLIST_LEFT", "COURSE_WAITLIST", id,
 			Map.of("courseRunId", runId.toString())));
 		return find(id);
+	}
+
+	@Transactional(readOnly = true)
+	List<CourseWaitlistResponse> mineForReceptionist(UUID actorId, UUID memberId) {
+		if (!accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			throw new InvalidAuthenticatedAccountException();
+		return mine(memberId);
 	}
 
 	@Transactional(readOnly = true)
@@ -91,6 +114,14 @@ public class CourseWaitlistService {
 
 	@Transactional(noRollbackFor = CourseWaitlistException.class)
 	CourseOrderService.CreateResult accept(UUID memberId, UUID waitlistId, String idempotencyKey) {
+		return accept(memberId, memberId, waitlistId, idempotencyKey);
+	}
+
+	@Transactional(noRollbackFor = CourseWaitlistException.class)
+	CourseOrderService.CreateResult accept(UUID actorId, UUID memberId, UUID waitlistId, String idempotencyKey) {
+		if (!actorId.equals(memberId)) accounts.findByIdForUpdate(actorId)
+			.filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
 		lockActiveMember(memberId);
 		UUID runId = db.query("select course_run_id from course_waitlists where id=? and member_account_id=?",
 			(rs, row) -> rs.getObject(1, UUID.class), waitlistId, memberId).stream().findFirst()
@@ -108,10 +139,10 @@ public class CourseWaitlistService {
 			db.update("update course_waitlists set status='EXPIRED',updated_at=? where id=?", Timestamp.from(now), waitlistId);
 			throw CourseWaitlistException.invitationExpired();
 		}
-		CourseOrderService.CreateResult result = orders.createFromWaitlist(memberId, runId, idempotencyKey);
+		CourseOrderService.CreateResult result = orders.createFromWaitlist(actorId, memberId, runId, idempotencyKey);
 		db.update("update course_waitlists set status='ACCEPTED',accepted_order_id=?,updated_at=? where id=?",
 			result.response().orderId(), Timestamp.from(now), waitlistId);
-		audits.save(new AuditEvent(UUID.randomUUID(), memberId, "COURSE_WAITLIST_ACCEPTED", "COURSE_WAITLIST",
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_WAITLIST_ACCEPTED", "COURSE_WAITLIST",
 			waitlistId, Map.of("courseRunId", runId.toString(), "orderId", result.response().orderId().toString())));
 		return result;
 	}

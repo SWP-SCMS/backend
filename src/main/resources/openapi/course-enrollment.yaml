@@ -90,6 +90,31 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /reception/members/{memberId}/course-schedule-changes:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ScheduleChange'}}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+  /reception/members/{memberId}/course-schedule-changes/{responseId}/response:
+    post:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: responseId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ScheduleChangeResponse'}}}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/ScheduleChange'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+        '409': {description: Deadline, capacity, state or idempotency conflict}
 components:
   parameters:
     SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}

@@ -135,7 +135,9 @@ public class OpenApiConfiguration {
 			operation.getResponses().addApiResponse("404", reference("NotFound"));
 		}
 		if (method == HttpMethod.POST && (path.equals("/course-runs/{runId}/waitlist")
-				|| path.equals("/course-waitlists/{waitlistId}/accept"))) {
+				|| path.equals("/course-waitlists/{waitlistId}/accept")
+				|| path.equals("/reception/members/{memberId}/course-runs/{runId}/waitlist")
+				|| path.equals("/reception/members/{memberId}/course-waitlists/{waitlistId}/accept"))) {
 			ApiResponse ok = operation.getResponses().get("200");
 			operation.getResponses().addApiResponse("201",
 				new ApiResponse().description("Created").content(ok.getContent()));

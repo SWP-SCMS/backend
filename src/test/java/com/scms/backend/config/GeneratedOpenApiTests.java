@@ -264,6 +264,18 @@ class GeneratedOpenApiTests {
 	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+		"GET /reception/members/{memberId}/course-waitlists",
+		"POST /reception/members/{memberId}/course-runs/{runId}/waitlist",
+		"DELETE /reception/members/{memberId}/course-runs/{runId}/waitlist",
+		"POST /reception/members/{memberId}/course-waitlists/{waitlistId}/accept",
+		"GET /reception/members/{memberId}/course-schedule-changes",
+		"POST /reception/members/{memberId}/course-schedule-changes/{responseId}/response",
+		"GET /reception/members/{memberId}/course-transfer-offers",
+		"POST /reception/members/{memberId}/course-transfer-offers/{offerId}/accept",
+		"GET /reception/members/{memberId}/course-withdrawal-requests",
+		"GET /reception/members/{memberId}/course-withdrawal-requests/{requestId}",
+		"GET /reception/members/{memberId}/course-refund-obligations",
+		"GET /reception/members/{memberId}/course-refund-obligations/{obligationId}",
 		"POST /auth/login",
 		"POST /auth/refresh",
 		"POST /auth/logout",
@@ -590,6 +602,49 @@ class GeneratedOpenApiTests {
 	MockMvc mockMvc;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	@Test
+	void receptionProxyContractsMatchGeneratedResponsesAndMemberSchemas() throws Exception {
+		JsonNode generated = generatedDocument();
+		for (String[] contract : List.of(
+			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists", "get", "CourseWaitlistResponse", "true", "false" },
+			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "post", "CourseWaitlistResponse", "false", "false" },
+			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "delete", "CourseWaitlistResponse", "false", "false" },
+			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists/{waitlistId}/accept", "post", "CourseOrderResponse", "false", "true" },
+			new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes", "get", "ScheduleChange", "true", "false" },
+			new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes/{responseId}/response", "post", "ScheduleChange", "false", "false" },
+			new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers", "get", "TransferOffer", "true", "false" },
+			new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers/{offerId}/accept", "post", "TransferOffer", "false", "true" },
+			new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests", "get", "WithdrawalRequest", "true", "false" },
+			new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests/{requestId}", "get", "WithdrawalRequest", "false", "false" },
+			new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations", "get", "MemberRefundObligationPage", "false", "false" },
+			new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations/{obligationId}", "get", "MemberRefundObligation", "false", "false" })) {
+			JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/" + contract[0]));
+			String path = contract[1], method = contract[2];
+			JsonNode expected = operation(documented, path, method), actual = operation(generated, path, method);
+			assertThat(actual.isMissingNode()).as(path).isFalse();
+			assertThat(actual.path("responses").properties().stream().map(Map.Entry::getKey).toList())
+				.as(path).containsExactlyInAnyOrderElementsOf(expected.path("responses").properties().stream().map(Map.Entry::getKey).toList());
+			for (JsonNode document : List.of(documented, generated)) {
+				JsonNode operation = operation(document, path, method);
+				assertThat(operationHasRequiredParameter(document, operation, "memberId", "path")).isTrue();
+				assertThat(effectiveSecurity(document, operation)).isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+				JsonNode schema = response(document, path, method, "200").at("/content/application~1json/schema");
+				if (Boolean.parseBoolean(contract[4])) schema = schema.path("items");
+				assertThat(schema.path("$ref").asText()).as(path).endsWith("/" + contract[3]);
+				assertThat(resolve(document, schema).path("properties").properties().stream().map(Map.Entry::getKey).toList())
+					.doesNotContain("bankAccount", "evidenceReference", "trainingPlan", "trainingResults");
+				if (Boolean.parseBoolean(contract[5])) {
+					JsonNode key = parameter(document, path, method, "Idempotency-Key");
+					assertThat(key.path("required").asBoolean()).isTrue();
+					assertThat(key.at("/schema/minLength").asInt()).isOne();
+					assertThat(key.at("/schema/maxLength").asInt()).isEqualTo(100);
+				}
+			}
+			if (path.endsWith("/response")) assertThat(expected.at("/requestBody/content/application~1json/schema/$ref"))
+				.isEqualTo(actual.at("/requestBody/content/application~1json/schema/$ref"));
+		}
+	}
 
 	@Test
 	void controllerSuccessResponsesHaveConcreteJavaTypes() throws Exception {

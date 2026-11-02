@@ -100,6 +100,45 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void receptionHistoryRejectsInactiveBeneficiariesAndKeepsRefundPaginationValidation() throws Exception {
+		String base = "/api/v1/reception/members/" + memberId, auth = "Bearer " + token(receptionistId);
+		mockMvc.perform(get(base + "/course-refund-obligations").queryParam("size", "101").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isBadRequest());
+		db.update("update accounts set status='SUSPENDED' where id=?", memberId);
+		for (String suffix : java.util.List.of("/course-withdrawal-requests", "/course-refund-obligations",
+			"/course-withdrawal-requests/" + UUID.randomUUID(), "/course-refund-obligations/" + UUID.randomUUID())) {
+			mockMvc.perform(get(base + suffix).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isUnauthorized());
+		}
+	}
+
+	@Test
+	void receptionHistoryMatchesMemberDtoAndEnforcesBeneficiaryOwnership() throws Exception {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Front desk history");
+		String auth = "Bearer " + token(receptionistId);
+		String base = "/api/v1/reception/members/" + memberId;
+		mockMvc.perform(get(base + "/course-withdrawal-requests").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(request.id().toString()));
+		String expected = mockMvc.perform(get("/api/v1/members/me/course-withdrawal-requests/{id}", request.id())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(mockMvc.perform(get(base + "/course-withdrawal-requests/{id}", request.id()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).isEqualTo(expected);
+		mockMvc.perform(get("/api/v1/reception/members/{member}/course-withdrawal-requests/{id}", otherMemberId, request.id())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isNotFound());
+		withdrawals.approve(managerId, request.id(), "History approved");
+		UUID refund = db.queryForObject("select id from course_refund_obligations where course_enrollment_id=?", UUID.class, enrollmentId);
+		mockMvc.perform(get(base + "/course-refund-obligations").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.items[0].id").value(refund.toString()));
+		String memberRefund = mockMvc.perform(get("/api/v1/members/me/course-refund-obligations/{id}", refund)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		assertThat(mockMvc.perform(get(base + "/course-refund-obligations/{id}", refund).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).isEqualTo(memberRefund);
+		mockMvc.perform(get("/api/v1/reception/members/{member}/course-refund-obligations/{id}", otherMemberId, refund)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isNotFound());
+	}
+
+	@Test
 	void pendingKeepsCapacityAndExactSeventyPercentApprovalCreatesFlooredRefund() {
 		var request = withdrawals.createForMember(memberId, enrollmentId, "Schedule no longer works");
 		assertThat(request.status()).isEqualTo("PENDING");

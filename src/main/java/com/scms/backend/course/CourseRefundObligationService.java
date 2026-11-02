@@ -70,6 +70,18 @@ class CourseRefundObligationService {
 	}
 
 	@Transactional(readOnly = true)
+	MemberRefundObligationPage memberHistoryForReceptionist(UUID actorId, UUID memberId, int page, int size) {
+		active(actorId, AccountRole.RECEPTIONIST, false);
+		return listForMember(memberId, page, size);
+	}
+
+	@Transactional(readOnly = true)
+	MemberRefundObligation memberDetailForReceptionist(UUID actorId, UUID memberId, UUID obligationId) {
+		active(actorId, AccountRole.RECEPTIONIST, false);
+		return detailForMember(memberId, obligationId);
+	}
+
+	@Transactional(readOnly = true)
 	MemberRefundObligationPage listForMember(UUID memberId, int page, int size) {
 		active(memberId, AccountRole.MEMBER, false);
 		page(page, size);

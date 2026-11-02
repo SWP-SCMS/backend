@@ -62,8 +62,10 @@ class CourseWithdrawalService {
 	}
 
 	@Transactional
-	WithdrawalRequest createForScheduleChange(UUID memberId, UUID responseId) {
-		active(memberId, AccountRole.MEMBER, true);
+	WithdrawalRequest createForScheduleChange(UUID actorId, UUID memberId, UUID responseId) {
+		AccountRole actorRole = actorId.equals(memberId) ? AccountRole.MEMBER : AccountRole.RECEPTIONIST;
+		active(actorId, actorRole, true);
+		if (!actorId.equals(memberId)) active(memberId, AccountRole.MEMBER, true);
 		List<Map<String, Object>> response = db.queryForList("""
 			select r.id response_id,r.response,r.status,r.cause_code,r.change_event_id,
 				es.course_enrollment_id,e.course_run_id,e.member_account_id
@@ -103,9 +105,21 @@ class CourseWithdrawalService {
 			snapshot.totalUnits(), snapshot.unusedAllocation());
 		if (!decision.eligible()) throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED",
 			"Withdrawal is no longer allowed after the final unit has started.");
-		return insertRequest(memberId, AccountRole.MEMBER, memberId, enrollmentId, runId,
+		return insertRequest(actorId, actorRole, memberId, enrollmentId, runId,
 			"Withdrawal requested after a material schedule change", cause, responseId,
 			uuid(change, "change_event_id"), snapshot, now);
+	}
+
+	@Transactional(readOnly = true)
+	List<WithdrawalRequest> listForReceptionist(UUID actorId, UUID memberId) {
+		active(actorId, AccountRole.RECEPTIONIST, false);
+		return listForMember(memberId);
+	}
+
+	@Transactional(readOnly = true)
+	WithdrawalRequest detailForReceptionist(UUID actorId, UUID memberId, UUID requestId) {
+		active(actorId, AccountRole.RECEPTIONIST, false);
+		return detailForMember(memberId, requestId);
 	}
 
 	@Transactional(readOnly = true)
@@ -285,7 +299,7 @@ class CourseWithdrawalService {
 			"COURSE_WITHDRAWAL_REQUEST", requestId, normalizedReason, Map.of(), captured));
 		if (!requesterId.equals(memberId)) notifications.write("course-withdrawal-requested:" + requestId,
 			memberId, "COURSE_WITHDRAWAL_REQUESTED", "COURSE_WITHDRAWAL_REQUEST", requestId,
-			Map.of("requesterRole", requesterRole.name()));
+			Map.of("requesterRole", requesterRole.name(), "actorAccountId", requesterId.toString(), "memberAccountId", memberId.toString()));
 		for (UUID managerId : db.queryForList("select id from accounts where role='MANAGER' and status='ACTIVE' order by id",
 			UUID.class)) notifications.write("course-withdrawal-review:" + requestId + ":" + managerId, managerId,
 			"COURSE_WITHDRAWAL_REVIEW_REQUIRED", "COURSE_WITHDRAWAL_REQUEST", requestId,

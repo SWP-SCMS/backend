@@ -15,6 +15,8 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationWriter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,17 +32,18 @@ class CourseScheduleChangeService {
 	private final AccountRepository accounts;
 	private final Clock clock;
 	private final CourseWithdrawalService withdrawals;
+	private final AuditEventRepository audits;
 	@Autowired(required = false) private CourseTransferService transfers;
 
 	CourseScheduleChangeService(JdbcTemplate db, NotificationWriter notifications, AccountRepository accounts, Clock clock) {
-		this(db, notifications, accounts, clock, null);
+		this(db, notifications, accounts, clock, null, null);
 	}
 
 	@org.springframework.beans.factory.annotation.Autowired
 	CourseScheduleChangeService(JdbcTemplate db, NotificationWriter notifications, AccountRepository accounts,
-			Clock clock, CourseWithdrawalService withdrawals) {
+			Clock clock, CourseWithdrawalService withdrawals, AuditEventRepository audits) {
 		this.db = db; this.notifications = notifications; this.accounts = accounts; this.clock = clock;
-		this.withdrawals = withdrawals;
+		this.withdrawals = withdrawals; this.audits = audits;
 	}
 
 	@Transactional
@@ -97,6 +100,13 @@ class CourseScheduleChangeService {
 	}
 
 	@Transactional(readOnly = true)
+	List<ScheduleChange> listForReceptionist(UUID actorId, UUID memberId) {
+		if (!accounts.existsByIdAndRoleAndStatus(actorId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
+			throw new InvalidAuthenticatedAccountException();
+		return list(memberId);
+	}
+
+	@Transactional(readOnly = true)
 	List<ScheduleChange> list(UUID memberId) {
 		activeMember(memberId);
 		Timestamp now = Timestamp.from(clock.instant());
@@ -106,6 +116,14 @@ class CourseScheduleChangeService {
 
 	@Transactional
 	ScheduleChange respond(UUID memberId, UUID responseId, String choice) {
+		return respond(memberId, memberId, responseId, choice);
+	}
+
+	@Transactional
+	ScheduleChange respond(UUID actorId, UUID memberId, UUID responseId, String choice) {
+		if (!actorId.equals(memberId)) accounts.findByIdForUpdate(actorId)
+			.filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE)
+			.orElseThrow(InvalidAuthenticatedAccountException::new);
 		activeMember(memberId);
 		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
 			throw CourseException.invalidResponse();
@@ -127,11 +145,11 @@ class CourseScheduleChangeService {
 		if (current.response() != null) {
 			if (current.response().equals(choice)) {
 				if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
-					withdrawals.createForScheduleChange(memberId, responseId);
+					withdrawals.createForScheduleChange(actorId, memberId, responseId);
 					return reload(memberId, responseId);
 				}
 				if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
-					transfers.requestFromScheduleChange(memberId, responseId,
+					transfers.requestFromScheduleChange(actorId, memberId, responseId,
 						current.respondedAt() == null ? clock.instant() : current.respondedAt());
 				return current;
 			}
@@ -145,12 +163,15 @@ class CourseScheduleChangeService {
 				"Withdrawal is not allowed for the current Enrollment or CourseRun state.");
 		db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?",
 			choice, Timestamp.from(now), responseId);
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_SCHEDULE_CHANGE_RESPONDED",
+			"COURSE_SCHEDULE_CHANGE_RESPONSE", responseId, Map.of("memberAccountId", memberId.toString(), "response", choice)));
+
 		if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
-			withdrawals.createForScheduleChange(memberId, responseId);
+			withdrawals.createForScheduleChange(actorId, memberId, responseId);
 			return reload(memberId, responseId);
 		}
 		if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
-			transfers.requestFromScheduleChange(memberId, responseId, now);
+			transfers.requestFromScheduleChange(actorId, memberId, responseId, now);
 		return reload(memberId, responseId);
 	}
 

@@ -13,7 +13,7 @@ Scope: backend and API contracts. The five sequential changes are access policy,
 - PostgreSQL tests cover ACTIVE versus pending/withdrawn/transferred/completed enrollment and cancelled Run eligibility.
 - Static and generated OpenAPI omit the retired submission operation. Legacy approval tests seed historical submissions directly.
 - Access policy has no schema change. No manual deployment.
-- Reception proxy actions follow in the final sequential PR. Full smoke remains unverified: the user has no isolated test environment.
+- Reception proxy actions are described below. Full smoke remains unverified: the user has no isolated test environment.
 
 ## Withdrawal snapshots and cancellation (G12-G13)
 - Every new withdrawal stores its cause, capture time, total/remaining units, refund basis, eligibility/reason, and refund amount in the submission transaction. Member, Reception, Manager, and schedule-change responses share the same writer. Existing 70%/80% and G10 exceptions remain unchanged.
@@ -58,3 +58,58 @@ Scope: backend and API contracts. The five sequential changes are access policy,
 ```
 - V69 adds only `course_run_reschedules` (fingerprint, event link, saved result). Existing data and PATCH callers remain compatible. Keep this table and replay keys on rollback; do not roll back earlier than the V68-compatible binary. Forward-fix schema issues with a new migration. Migration tests cover fresh creation and upgrade from V68; the existing historical payment/attendance/refund preservation test also upgrades through V69.
 - Full backend smoke and UI/E2E remain unverified until an isolated deployment with the merged source SHA and updated FE is available. FE must replace the temporary expand–move–shrink sequence with this endpoint.
+
+## Reception actions (G14)
+
+All paths below start with `/reception/members/{memberId}` (under the deployment's `/api/v1` prefix). The authenticated account must be an active RECEPTIONIST; the beneficiary must be an active MEMBER. Use the beneficiary UUID from existing Member discovery. Never substitute the Reception UUID into a Member self-service URL.
+
+| Method and suffix | Result / behavior |
+| --- | --- |
+| `GET /course-waitlists` | Same list of `CourseWaitlistResponse` as the Member history |
+| `POST /course-runs/{runId}/waitlist` | 201; join only when the Run is full and waitlisting is open |
+| `DELETE /course-runs/{runId}/waitlist` | 200; leave the beneficiary's WAITING/INVITED entry |
+| `POST /course-waitlists/{waitlistId}/accept` | `Idempotency-Key`; 201 for a new Course order, 200 for its replay |
+| `GET /course-schedule-changes` | Same `ScheduleChange[]` as Member self-service |
+| `POST /course-schedule-changes/{responseId}/response` | 200; body `{"response":"CONTINUE"}`, `REQUEST_WITHDRAWAL`, or `REQUEST_TRANSFER` |
+| `GET /course-transfer-offers` | Same `TransferOffer[]` as Member self-service |
+| `POST /course-transfer-offers/{offerId}/accept` | `Idempotency-Key`; 200 with completed offer or difference order |
+| `GET /course-withdrawal-requests` | Same immutable snapshot/history DTOs as Member self-service |
+| `GET /course-withdrawal-requests/{requestId}` | Same `WithdrawalRequest`; wrong beneficiary is 404 |
+| `GET /course-refund-obligations?page=0&size=20` | Same redacted `MemberRefundObligationPage` (size 1–100, page >= 0) |
+| `GET /course-refund-obligations/{obligationId}` | Same redacted `MemberRefundObligation`; wrong beneficiary is 404 |
+
+Existing Reception withdrawal create/cancel endpoints remain the shared G12/G13 workflow. The refund history includes all workflow states, while `/reception/course-refunds` remains the approved disbursement queue. History does not expose bank/evidence data or staff verification details. None of these actions grants Manager review/approval privileges or access to training plans/results.
+
+- Reception and Member actions use the same ownership, deadline, capacity and enrollment checks. Wrong role: 403. Inactive actor or beneficiary: 401 `INVALID_TOKEN` under the existing active-account policy. An ID owned by a different beneficiary: 404. Invalid pagination/body/key: 400. State/deadline/capacity/key conflict: 409. Render the returned `code`; do not infer success from a timeout.
+- Waitlist join/leave do not use a key. A duplicate join remains `COURSE_WAITLIST_DUPLICATE`; repeating a completed leave has no active entry (404). An accepted invitation always returns its existing order; retries never create another order. The order key is scoped to the acting account, and reuse for another Member/Run is rejected by existing Course order validation.
+- Schedule responses use the response ID and choice for retry. The same choice returns the recorded result, another choice returns `COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT`. New responses must precede `responseDeadline`. A withdrawal response records the Reception requester and the immutable submission snapshot in the same transaction. Its PENDING enrollment retains a seat and immediately suspends Course learning.
+- Transfer acceptance requires a nonblank key of 1–100 characters. Retry with the same key returns the saved offer/order; another key after acceptance returns `COURSE_TRANSFER_IDEMPOTENCY_CONFLICT`. A zero/lower price target completes without a new payment. Any excess credit uses the existing refund obligation workflow.
+- If `status=PENDING_PAYMENT`, use the returned `differenceOrderId`. Reuse `GET /reception/members/{memberId}/course-orders/{orderId}` and `POST .../payments/sepay` or `POST .../payments/cash` with their existing keys. Charge only `differenceVnd`; do not create another full tuition order. Cash/SePay deadline, replay and fulfillment rules remain unchanged.
+- Audits and new orders identify the actual acting Reception account. Target enrollments retain that initiating actor even when a different cashier completes payment. `processed_by_account_id` is the cashier, or null for the automatic SePay webhook. Member IDs/notification recipients remain the beneficiary. Transfer completion payloads add `actorAccountId` (nullable for the webhook), `initiatorAccountId`, and `memberAccountId`; existing target IDs remain.
+- PR5 adds no migration and uses the existing actor/audit/outbox columns. Legacy records are preserved, without assigning invented historical actors. Disable the new UI actions before a binary rollback; keep V68/V69 and their compatible readers/writers.
+
+## Atomic schedule notification payload for FE
+
+The atomic endpoint sends one `COURSE_SCHEDULE_CHANGED` notification per affected Member, targeting `COURSE_RUN`. It carries `changeEventId`, `courseCode`, `runCode`, and `changes[]`. Each item has `courseSessionId`, nullable `recordId`, `oldStartAt`, `oldEndAt`, `newStartAt`, `newEndAt`, `cause`, and nullable `responseDeadline`. A null `recordId` means no response is required for that item. Use each non-null record to load/respond through the Member or Reception schedule-change API. Existing single-session PATCH notifications continue to use their original payload. Render instants in `Asia/Ho_Chi_Minh` and never show an intermediate expand/move/shrink timetable.
+
+## Final smoke checklist and acceptance boundary
+
+**Current environment result: `SMOKE_UNVERIFIED` / `E2E_UNVERIFIED`.** The user has no isolated smoke deployment. Local PostgreSQL execution is `NOT_RUN_LOCAL_DOCKER`; PostgreSQL migration/concurrency tests run in the required CI shards. Unit/contract/integration CI is evidence for backend behavior, not a claim that deployment, browser screens or real bank transactions have been accepted.
+
+Before running this checklist, verify the deployed source SHA equals the final merged squash SHA, record the deployment ID, and use an isolated database with fake data plus Manager, Reception, Coach and two distinct Member accounts. Never target the business/production database. Use synthetic cash and a mock/sandbox SePay callback; no live payment is required.
+
+| Check | Expected evidence | Current result |
+| --- | --- | --- |
+| Identity/version | Source SHA, deployment ID, schema through V69 and account roles recorded | NOT_RUN — no environment |
+| Course creation/access | Reception direct create 403/no side effects; Manager creates; Membership entry independent | NOT_RUN |
+| Withdrawal snapshot | Submit at 7/10, approve at 6/10 or after Run completion: saved 560,000 on 700,000 basis; new late request blocked | NOT_RUN |
+| Pending/cancel/reject | Seat held, check-in/attendance blocked; cancel/reject restores learning without makeup; concurrent decision produces one terminal result | NOT_RUN |
+| Run cancellation/legacy | Pending requests close; no duplicate refund; V68 legacy cancellation retains history and requires a new eligible request | NOT_RUN |
+| Completion | Effective makeup/end times honored; obligations precede COMPLETED; scheduler retry leaves one effect; Manager approval still required for disbursement | NOT_RUN |
+| Atomic reschedule | Multi-session time swap, final resource conflicts, Member conflict cause, stale version, deadline and injected failure; rollback leaves no partial schedule/event/outbox | NOT_RUN |
+| Retry after lost response | Same key/payload returns saved Run/event; another payload conflicts; one summary notification per Member | NOT_RUN |
+| Reception equivalence | Proxy waitlist, response, transfer and history match Member rules; wrong Member/role and inactive accounts denied; actual actor retained | NOT_RUN |
+| Difference payment | Only difference charged; mock callback/cash retry creates one enrollment; initiator/cashier/automatic processor distinguished | NOT_RUN |
+| UI/E2E | Updated FE handles all fields, errors, suspension, notification summary and atomic endpoint; four-role flows verified in browser | NOT_RUN — FE outside this implementation |
+
+The Git completion state may be recorded as `MERGED + MAIN_CI_PASS + SMOKE_UNVERIFIED` only after all five PRs and their exact-squash Main CI/security gates succeed. Backend acceptance additionally needs the API smoke above; full product acceptance additionally needs the FE/UI checks. No manual deploy, production configuration change or database reset is part of this work.

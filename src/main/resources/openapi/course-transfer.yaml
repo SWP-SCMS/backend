@@ -37,6 +37,31 @@ paths:
         - {name: offerId, in: path, required: true, schema: {type: string, format: uuid}}
         - {name: Idempotency-Key, in: header, required: true, schema: {type: string, maxLength: 100}}
       responses: {'200': {description: Completed transfer or difference-payment order, content: {application/json: {schema: {$ref: '#/components/schemas/TransferOffer'}}}}, '409': {$ref: '#/components/responses/Conflict'}}
+  /reception/members/{memberId}/course-transfer-offers:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/TransferOffer'}}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+  /reception/members/{memberId}/course-transfer-offers/{offerId}/accept:
+    post:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: offerId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/TransferOffer'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+        '409': {description: Deadline, capacity, state or idempotency conflict}
 components:
   parameters:
     RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
