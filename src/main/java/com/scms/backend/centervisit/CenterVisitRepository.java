@@ -26,20 +26,25 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 	Optional<UUID> findCurrentMembership(@Param("memberId") UUID memberId, @Param("at") Instant at);
 
 	@Query(value = """
+		with eligible_run as materialized (
+			select run.id from course_runs run
+			where run.id = (select course_run_id from course_sessions where id = :sessionId)
+			and run.status <> 'CANCELLED'
+			for update of run
+		)
 		select e.id from course_enrollment_sessions es
 		join course_enrollments e on e.id = es.course_enrollment_id
 		join course_sessions s on s.id = es.course_session_id
-		join course_runs run on run.id = e.course_run_id
+		join eligible_run run on run.id = e.course_run_id
 		where e.member_account_id = :memberId
 		and s.id = :sessionId
 		and es.disposition = 'ENROLLED'
 		and e.lifecycle_status = 'ACTIVE'
-		and run.status <> 'CANCELLED'
 		and s.status in ('SCHEDULED', 'MAKEUP_SCHEDULED', 'COMPLETED')
 		and :at >= s.start_at - interval '30 minutes'
 		and :at < s.end_at + interval '30 minutes'
 		limit 1
-		for update of e, s, run
+		for update of e, s
 		""", nativeQuery = true)
 	Optional<UUID> findEligibleCourseEnrollmentId(@Param("memberId") UUID memberId,
 		@Param("sessionId") UUID sessionId, @Param("at") Instant at);
