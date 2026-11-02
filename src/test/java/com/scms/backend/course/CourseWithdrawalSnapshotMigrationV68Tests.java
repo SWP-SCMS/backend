@@ -35,8 +35,8 @@ class CourseWithdrawalSnapshotMigrationV68Tests {
 		UUID rejected = legacyRequest("REJECTED");
 		UUID pending = legacyRequest("PENDING");
 		db.update("update course_enrollments set lifecycle_status='WITHDRAWAL_PENDING' where id=?", enrollmentId);
-		db.update("update course_enrollment_sessions set attendance_status='PRESENT',attendance_recorded_at=? where course_enrollment_id=? and unit_number=1",
-			Timestamp.from(NOW), enrollmentId);
+		db.update("update course_enrollment_sessions set attendance_status='PRESENT',attendance_recorded_at=?,attendance_updated_at=?,attendance_recorded_by=? where course_enrollment_id=? and unit_number=1",
+			Timestamp.from(NOW), Timestamp.from(NOW), coachId, enrollmentId);
 		fixture();
 		UUID approved = legacyRequest("APPROVED");
 		db.update("update course_enrollments set lifecycle_status='WITHDRAWN' where id=?", enrollmentId);

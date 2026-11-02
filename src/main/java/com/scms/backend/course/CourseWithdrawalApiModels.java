@@ -13,7 +13,7 @@ final class CourseWithdrawalApiModels {
 	record WithdrawalDecision(String reason) { }
 	@Schema(description = "Immutable request-time refund snapshot; legacy snapshotSource identifies approval-time or unavailable values.")
 	record WithdrawalRequest(UUID id, UUID enrollmentId, UUID courseRunId, UUID memberAccountId,
-		UUID requesterAccountId, String status, String requestReason, String decisionReason,
+		UUID requesterAccountId, @Schema(allowableValues = {"PENDING", "APPROVED", "REJECTED", "CANCELLED"}) String status, String requestReason, String decisionReason,
 		CourseWithdrawalCause cause, boolean withdrawalEligible, String withdrawalReason,
 		Instant requestedAt, UUID decidedByAccountId, Instant decidedAt, Integer totalUnits,
 		Integer remainingUnits, BigInteger refundBasisVnd, BigInteger refundAmountVnd,

@@ -741,6 +741,8 @@ class GeneratedOpenApiTests {
 				"snapshotCapturedAt", "snapshotSource", "snapshotWithdrawalEligible", "snapshotWithdrawalReason",
 				"cancelledAt", "cancelledByAccountId", "cancellationReason", "canCancel", "learningSuspended")
 			.doesNotContain("email", "phone", "emergencyContactPhone");
+		assertThat(withdrawal.at("/status/enum").toString()).contains("PENDING", "APPROVED", "REJECTED", "CANCELLED");
+		assertThat(withdrawal.at("/snapshotSource/enum").toString()).contains("REQUEST_TIME", "LEGACY_APPROVAL", "UNAVAILABLE");
 		assertThat(withdrawal.at("/cause/enum").toString())
 			.contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
 	}
