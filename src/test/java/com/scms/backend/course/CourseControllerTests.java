@@ -43,6 +43,19 @@ class CourseControllerTests {
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
 
 	@Test
+	void managerCanSubmitAtomicRunReschedule() throws Exception {
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule", UUID.randomUUID())
+			.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", "MANAGER"))
+				.authorities(new SimpleGrantedAuthority("ROLE_MANAGER")))
+			.header("Idempotency-Key", "atomic-regression").contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"expectedVersion":1,"plannedStartAt":"2035-01-06T02:00:00Z",
+				 "plannedEndAt":"2035-01-06T03:00:00Z","totalUnits":1,"sessions":[]}
+				"""))
+			.andExpect(status().isOk());
+	}
+
+	@Test
 	void managerCreatesCourse() throws Exception {
 		UUID managerId = UUID.randomUUID();
 		UUID courseId = UUID.randomUUID();

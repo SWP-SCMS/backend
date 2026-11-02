@@ -111,6 +111,27 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
+	void atomicRescheduleMovesRunAndSessionWithoutTemporaryWindow() throws Exception {
+		Instant movedStart = session.startAt().plusSeconds(8 * 86400), movedEnd = session.endAt().plusSeconds(8 * 86400);
+		String body = """
+			{"expectedVersion":%d,"plannedStartAt":"%s","plannedEndAt":"%s","totalUnits":1,
+			 "sessions":[{"sessionId":"%s","expectedVersion":%d,"startAt":"%s","endAt":"%s"}]}
+			""".formatted(runVersion(), movedStart, movedEnd, session.id(), session.version(), movedStart, movedEnd);
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule", runId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(accounts.findById(managerId).orElseThrow()))
+			.header("Idempotency-Key", "atomic-move").contentType("application/json").content(body))
+			.andExpect(status().isOk());
+		assertThat(db.queryForObject("select planned_start_at from course_runs where id=?", java.sql.Timestamp.class, runId).toInstant()).isEqualTo(movedStart);
+		assertThat(db.queryForObject("select start_at from course_sessions where id=?", java.sql.Timestamp.class, session.id()).toInstant()).isEqualTo(movedStart);
+		assertThat(db.queryForObject("select count(*) from course_schedule_change_events where course_run_id=? and actor_account_id=?", Long.class, runId, managerId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_SCHEDULE_CHANGED'", Long.class, runId)).isOne();
+		var response = members.scheduleChanges(memberId).stream().filter(change -> change.status().equals("PENDING")).findFirst().orElseThrow();
+		assertThat(response.oldStartAt()).isEqualTo(session.startAt());
+		assertThat(response.newStartAt()).isEqualTo(movedStart);
+		assertThat(response.cause()).isEqualTo(CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
+	}
+
+	@Test
 	void outboxFailureRollsBackSessionVersionResponseAndAudit() {
 		CourseSessionResponse before = session;
 		String constraint = "chk_test_reject_schedule_notification";
