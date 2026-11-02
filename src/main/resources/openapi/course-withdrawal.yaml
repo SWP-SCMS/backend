@@ -23,6 +23,32 @@ paths:
         - {$ref: '#/components/parameters/EnrollmentId'}
       requestBody: {$ref: '#/components/requestBodies/Create'}
       responses: {'201': {description: Pending withdrawal request}, '409': {$ref: '#/components/responses/Conflict'}}
+  /members/me/course-withdrawal-requests/{requestId}/cancel:
+    post:
+      operationId: cancelMyCourseWithdrawal
+      description: Cancel PENDING only; a repeated cancellation returns the saved result. Restore learning without makeup or releasing the seat.
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses:
+        '200': {description: Cancelled withdrawal, content: {application/json: {schema: {$ref: '#/components/schemas/WithdrawalRequest'}}}}
+        '400': {description: Invalid reason}
+        '401': {description: Authentication required}
+        '403': {description: Role or inactive account denied}
+        '404': {description: Hidden or missing request}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel:
+    post:
+      operationId: cancelCourseWithdrawalForMember
+      description: Cancel PENDING only; a repeated cancellation returns the saved result. Restore learning without makeup or releasing the seat.
+      parameters: [{$ref: '#/components/parameters/MemberId'}, {$ref: '#/components/parameters/RequestId'}]
+      requestBody: {$ref: '#/components/requestBodies/Decision'}
+      responses:
+        '200': {description: Cancelled withdrawal, content: {application/json: {schema: {$ref: '#/components/schemas/WithdrawalRequest'}}}}
+        '400': {description: Invalid reason}
+        '401': {description: Authentication required}
+        '403': {description: Role or inactive account denied}
+        '404': {description: Hidden or missing request}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/course-withdrawal-requests:
     get: {operationId: listCourseWithdrawalRequests, responses: {'200': {description: Manager withdrawal queue}}}
   /manager/course-withdrawal-requests/{requestId}:
@@ -57,6 +83,7 @@ components:
     MemberId: {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
     WithdrawalRequest:
+      description: New requests contain an immutable request-time snapshot. Legacy records explicitly identify unavailable or approval-time data. estimatedRefundAmount mirrors the saved amount only while the request is pending.
       type: object
       additionalProperties: false
       properties:
@@ -65,7 +92,7 @@ components:
         courseRunId: {type: string, format: uuid}
         memberAccountId: {type: string, format: uuid}
         requesterAccountId: {type: string, format: uuid}
-        status: {type: string}
+        status: {type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED]}
         requestReason: {type: string}
         decisionReason: {type: [string, 'null']}
         requestedAt: {type: string, format: date-time}
@@ -89,6 +116,15 @@ components:
         refundBasisVnd: {type: [integer, 'null']}
         scheduleChangeResponseId: {type: [string, 'null'], format: uuid}
         changeEventId: {type: [string, 'null'], format: uuid}
+        snapshotCapturedAt: {type: [string, 'null'], format: date-time}
+        snapshotSource: {type: string, enum: [REQUEST_TIME, LEGACY_APPROVAL, UNAVAILABLE]}
+        snapshotWithdrawalEligible: {type: [boolean, 'null']}
+        snapshotWithdrawalReason: {type: [string, 'null']}
+        cancelledAt: {type: [string, 'null'], format: date-time}
+        cancelledByAccountId: {type: [string, 'null'], format: uuid}
+        cancellationReason: {type: [string, 'null']}
+        canCancel: {type: boolean}
+        learningSuspended: {type: boolean}
     Create:
       type: object
       additionalProperties: false

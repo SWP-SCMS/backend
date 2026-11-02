@@ -109,7 +109,7 @@ components:
     ReceptionCourseEnrollment:
       type: object
       additionalProperties: false
-      required: [memberId, memberCode, memberName, courseId, courseCode, courseName, courseRunId, runCode, courseRunStatus, enrollmentId, enrollmentStatus, enrolledAt, totalUnits, remainingUnits, withdrawalEligible, withdrawalReason, estimatedRefundAmount]
+      required: [memberId, memberCode, memberName, courseId, courseCode, courseName, courseRunId, runCode, courseRunStatus, enrollmentId, enrollmentStatus, enrolledAt, totalUnits, remainingUnits, withdrawalEligible, withdrawalReason, estimatedRefundAmount, learningSuspended]
       properties:
         memberId: {type: string, format: uuid}
         memberCode: {type: string}
@@ -121,6 +121,7 @@ components:
         runCode: {type: string}
         courseRunStatus: {$ref: '#/components/schemas/CourseRunStatus'}
         enrollmentId: {type: string, format: uuid}
+        learningSuspended: {type: boolean, description: Pending withdrawal temporarily suspends learning and attendance while retaining the seat.}
         enrollmentStatus: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}
         enrolledAt: {type: string, format: date-time}
         totalUnits: {type: integer}
@@ -193,7 +194,7 @@ components:
       type: object
       additionalProperties: false
       required: [enrollmentId, courseRunId, courseCode, courseName, runCode, courseRunStatus, lifecycleStatus,
-        enrolledAt, payment, sessions]
+        enrolledAt, payment, sessions, learningSuspended]
       properties:
         enrollmentId: {type: string, format: uuid}
         courseRunId: {type: string, format: uuid}
@@ -201,6 +202,7 @@ components:
         courseName: {type: string}
         runCode: {type: string}
         courseRunStatus: {$ref: '#/components/schemas/CourseRunStatus'}
+        learningSuspended: {type: boolean, description: Pending withdrawal temporarily suspends learning and attendance while retaining the seat.}
         lifecycleStatus: {type: string, enum: [ACTIVE, TRANSFERRED, COMPLETED, WITHDRAWAL_PENDING, WITHDRAWN]}
         enrolledAt: {type: string, format: date-time}
         payment: {$ref: '#/components/schemas/MemberPaymentSummary'}
