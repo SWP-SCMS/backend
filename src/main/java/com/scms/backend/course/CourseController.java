@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,10 +26,12 @@ public class CourseController {
 
 	private final CourseManagementService service;
 	private final CourseSessionDisruptionService disruptions;
+	private final CourseRunRescheduleService reschedules;
 
-	CourseController(CourseManagementService service, CourseSessionDisruptionService disruptions) {
+	CourseController(CourseManagementService service, CourseSessionDisruptionService disruptions, CourseRunRescheduleService reschedules) {
 		this.service = service;
 		this.disruptions = disruptions;
+		this.reschedules = reschedules;
 	}
 
 	@GetMapping("/courses")
@@ -111,6 +114,14 @@ public class CourseController {
 	ResponseEntity<CourseRunResponse> cancelRun(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId,
 			@Valid @RequestBody VersionRequest request) {
 		return ResponseEntity.ok(service.cancelRun(accountId(jwt), runId, request));
+	}
+
+	@io.swagger.v3.oas.annotations.Operation(description = "Atomically reschedule a Run and its sessions. Retry with the same Idempotency-Key and payload to retrieve the saved result; a different payload with the same key returns 409.")
+	@PostMapping("/course-runs/{runId}/reschedule")
+	ResponseEntity<CourseRunRescheduleResponse> rescheduleRun(@AuthenticationPrincipal Jwt jwt,
+			@PathVariable UUID runId, @RequestHeader("Idempotency-Key") @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(min = 1, max = 100) String key,
+			@Valid @RequestBody CourseRunRescheduleRequest request) {
+		return ResponseEntity.ok(reschedules.reschedule(accountId(jwt), runId, key, request));
 	}
 
 	@GetMapping("/course-runs/{runId}/sessions")

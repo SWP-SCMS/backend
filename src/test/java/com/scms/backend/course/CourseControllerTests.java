@@ -40,7 +40,44 @@ class CourseControllerTests {
 	@Autowired MockMvc mockMvc;
 	@MockitoBean CourseManagementService service;
 	@MockitoBean CourseSessionDisruptionService disruptions;
+	@MockitoBean CourseRunRescheduleService reschedules;
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
+
+	@Test
+	void managerCanSubmitAtomicRunReschedule() throws Exception {
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule", UUID.randomUUID())
+			.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", "MANAGER"))
+				.authorities(new SimpleGrantedAuthority("ROLE_MANAGER")))
+			.header("Idempotency-Key", "atomic-regression").contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{"expectedVersion":1,"plannedStartAt":"2035-01-06T02:00:00Z",
+				 "plannedEndAt":"2035-01-06T03:00:00Z","totalUnits":1,"sessions":[]}
+				"""))
+			.andExpect(status().isOk());
+	}
+
+	@Test
+	void atomicRescheduleRequiresKeyAndValidSessionVersions() throws Exception {
+		String body="""
+			{"expectedVersion":1,"plannedStartAt":"2035-01-06T02:00:00Z","plannedEndAt":"2035-01-06T03:00:00Z",
+			"totalUnits":1,"sessions":[{"sessionId":"%s","expectedVersion":-1,"startAt":"2035-01-06T02:00:00Z","endAt":"2035-01-06T03:00:00Z"}]}
+			""".formatted(UUID.randomUUID());
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule",UUID.randomUUID()).with(manager(UUID.randomUUID()))
+			.contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule",UUID.randomUUID()).with(manager(UUID.randomUUID()))
+			.header("Idempotency-Key","invalid-version").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+		verifyNoInteractions(reschedules);
+	}
+
+	@Test
+	void receptionCannotRescheduleRunDirectly() throws Exception {
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule",UUID.randomUUID())
+			.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role","RECEPTIONIST"))
+				.authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST")))
+			.header("Idempotency-Key","forbidden").contentType(MediaType.APPLICATION_JSON).content("{}"))
+			.andExpect(status().isForbidden());
+		verifyNoInteractions(reschedules);
+	}
 
 	@Test
 	void managerCreatesCourse() throws Exception {

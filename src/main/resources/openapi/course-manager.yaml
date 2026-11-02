@@ -278,6 +278,29 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /manager/course-runs/{runId}/reschedule:
+    post:
+      summary: Atomically reschedule a Run and its sessions
+      description: Validate the final timetable and save it with one event. Repeat the same key and payload to receive the stored result; a changed payload with the same key returns COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT. Unlisted sessions keep their schedule.
+      parameters:
+        - {$ref: '#/components/parameters/RunId'}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CourseRunRescheduleRequest'}
+      responses:
+        '200':
+          description: Committed or replayed result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CourseRunRescheduleResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /manager/course-runs/{runId}/schedule:
     patch:
       summary: Apply a versioned Course Run schedule change
@@ -627,6 +650,32 @@ components:
       properties:
         expectedVersion: { type: integer, format: int64, minimum: 0 }
         minimumEnrollment: { type: integer, minimum: 1 }
+    CourseRunRescheduleRequest:
+      type: object
+      required: [expectedVersion, plannedStartAt, plannedEndAt, totalUnits, sessions]
+      properties:
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        plannedStartAt: {type: string, format: date-time}
+        plannedEndAt: {type: string, format: date-time}
+        totalUnits: {type: integer, format: int32, minimum: 1}
+        sessions: {type: array, items: {$ref: '#/components/schemas/CourseSessionRescheduleRequest'}}
+    CourseSessionRescheduleRequest:
+      type: object
+      required: [sessionId, expectedVersion, startAt, endAt]
+      properties:
+        sessionId: {type: string, format: uuid}
+        expectedVersion: {type: integer, format: int64, minimum: 0}
+        startAt: {type: string, format: date-time}
+        endAt: {type: string, format: date-time}
+        roomId: {type: string, format: uuid, description: Omit to retain the current room.}
+        coachId: {type: string, format: uuid, description: Omit to retain the current Coach.}
+    CourseRunRescheduleResponse:
+      type: object
+      required: [run, sessions, changeEventId]
+      properties:
+        run: {$ref: '#/components/schemas/CourseRunResponse'}
+        sessions: {type: array, items: {$ref: '#/components/schemas/CourseSessionResponse'}}
+        changeEventId: {type: string, format: uuid}
     CourseRunScheduleRequest:
       type: object
       additionalProperties: false
@@ -772,7 +821,7 @@ components:
           enum: [VALIDATION_ERROR, MALFORMED_REQUEST, UNAUTHENTICATED, INVALID_TOKEN, FORBIDDEN,
             COURSE_VALIDATION_ERROR, COURSE_NOT_FOUND, COURSE_CODE_CONFLICT, COURSE_INVALID_TRANSITION,
             COURSE_CHANGED, COURSE_RUN_NOT_FOUND, COURSE_RUN_CODE_CONFLICT, COURSE_RUN_INVALID_OPENING,
-            COURSE_RUN_INVALID_TRANSITION, COURSE_RUN_IMMUTABLE, COURSE_RUN_CHANGED,
+            COURSE_RUN_INVALID_TRANSITION, COURSE_RUN_IMMUTABLE, COURSE_RUN_CHANGED, COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT,
             COURSE_SESSION_NOT_FOUND, COURSE_SESSION_INVALID, COURSE_SESSION_RESOURCE_CONFLICT,
             COURSE_SESSION_ROOM_CAPACITY_CONFLICT, COURSE_SESSION_CHANGED,
             COURSE_SESSION_DISRUPTION_CONFLICT, COURSE_APPROVAL_INVALID_TRANSITION,

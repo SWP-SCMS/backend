@@ -62,6 +62,11 @@ public class CourseException extends RuntimeException {
 			"The course run was changed by another request.");
 	}
 
+	static CourseException rescheduleIdempotencyConflict() {
+		return new CourseException(HttpStatus.CONFLICT, "COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT",
+			"This Idempotency-Key was already used with a different reschedule payload.");
+	}
+
 	static CourseException sessionNotFound() {
 		return new CourseException(HttpStatus.NOT_FOUND, "COURSE_SESSION_NOT_FOUND",
 			"The requested course session was not found.");

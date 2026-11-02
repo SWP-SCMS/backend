@@ -165,6 +165,26 @@ record CourseRunOpenRequest(
 	@NotNull @PositiveOrZero Long expectedVersion,
 	@NotBlank @Size(max = 100) String policyVersion) { }
 
+record CourseRunRescheduleRequest(
+	@NotNull @PositiveOrZero Long expectedVersion,
+	@NotNull Instant plannedStartAt,
+	@NotNull Instant plannedEndAt,
+	@NotNull @Positive Integer totalUnits,
+	@Schema(description = "Final schedule for listed sessions; unlisted sessions retain their schedule and assignment.")
+	@NotNull List<@NotNull @jakarta.validation.Valid CourseSessionRescheduleRequest> sessions) { }
+
+record CourseSessionRescheduleRequest(
+	@NotNull UUID sessionId,
+	@NotNull @PositiveOrZero Long expectedVersion,
+	@NotNull Instant startAt,
+	@NotNull Instant endAt,
+	UUID roomId, UUID coachId) { }
+
+record CourseRunRescheduleResponse(
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) CourseRunResponse run,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<CourseSessionResponse> sessions,
+	@Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID changeEventId) { }
+
 record CourseSessionCreateRequest(
 	@Positive int unitNumber,
 	@NotNull UUID roomId,

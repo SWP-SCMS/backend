@@ -61,7 +61,7 @@ class GeneratedOpenApiTests {
 		"VALIDATION_ERROR", "MALFORMED_REQUEST", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN",
 		"COURSE_VALIDATION_ERROR", "COURSE_NOT_FOUND", "COURSE_CODE_CONFLICT", "COURSE_INVALID_TRANSITION",
 		"COURSE_CHANGED", "COURSE_RUN_NOT_FOUND", "COURSE_RUN_CODE_CONFLICT", "COURSE_RUN_INVALID_OPENING",
-		"COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED",
+		"COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED", "COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT",
 		"COURSE_SESSION_NOT_FOUND", "COURSE_SESSION_INVALID", "COURSE_SESSION_RESOURCE_CONFLICT",
 		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED",
 		"COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
@@ -92,6 +92,7 @@ class GeneratedOpenApiTests {
 		new CourseOperationContract("/manager/course-runs/{runId}", "patch", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/open-registration", "post", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/schedule", "patch", MUTATE_ITEM_RESPONSES),
+		new CourseOperationContract("/manager/course-runs/{runId}/reschedule", "post", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/cancel", "post", MUTATE_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post",
@@ -468,6 +469,7 @@ class GeneratedOpenApiTests {
 		"PATCH /manager/course-runs/{runId}",
 		"POST /manager/course-runs/{runId}/open-registration",
 		"PATCH /manager/course-runs/{runId}/schedule",
+		"POST /manager/course-runs/{runId}/reschedule",
 		"POST /manager/course-runs/{runId}/cancel",
 		"GET /manager/course-runs/{runId}/sessions",
 		"POST /manager/course-runs/{runId}/sessions",
@@ -750,6 +752,19 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedManagerScheduleChangesExposeVersionedRequestsAndRemovedUnitState() throws Exception {
 		JsonNode document = generatedDocument();
+		JsonNode atomic = operation(document, "/manager/course-runs/{runId}/reschedule", "post");
+		assertThat(atomic.path("parameters").toString()).contains("Idempotency-Key", "header", "true");
+		for (JsonNode parameter : atomic.path("parameters")) if (parameter.path("name").asText().equals("Idempotency-Key")) {
+			assertThat(parameter.at("/schema/minLength").asInt()).isEqualTo(1);
+			assertThat(parameter.at("/schema/maxLength").asInt()).isEqualTo(100);
+		}
+		assertThat(atomic.at("/requestBody/content/application~1json/schema/$ref").asText()).endsWith("/CourseRunRescheduleRequest");
+		assertThat(document.at("/components/schemas/CourseRunRescheduleRequest/required").toString())
+			.contains("expectedVersion", "plannedStartAt", "plannedEndAt", "totalUnits", "sessions");
+		assertThat(document.at("/components/schemas/CourseSessionRescheduleRequest/required").toString())
+			.contains("sessionId", "expectedVersion", "startAt", "endAt").doesNotContain("roomId", "coachId");
+		assertThat(document.at("/components/schemas/CourseRunRescheduleResponse/required").toString())
+			.contains("run", "sessions", "changeEventId");
 		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/description").asText())
 			.contains("automatic", "does not mean refunds have been paid");
 		assertThat(operation(document, "/manager/course-runs/{runId}/schedule", "patch")

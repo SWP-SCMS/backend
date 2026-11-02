@@ -58,6 +58,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Autowired CourseWithdrawalService withdrawals;
 	@Autowired CourseRefundObligationService refunds;
 	@Autowired CourseCoachSessionService coachSessions;
+	@Autowired CourseRunRescheduleService reschedules;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
@@ -108,6 +109,27 @@ class CourseScheduleChangeIntegrationTests {
 		session = changed;
 		responseId = db.queryForObject("select id from course_schedule_change_responses where enrollment_session_id in "
 			+ "(select id from course_enrollment_sessions where course_session_id=?)", UUID.class, session.id());
+	}
+
+	@Test
+	void atomicRescheduleMovesRunAndSessionWithoutTemporaryWindow() throws Exception {
+		Instant movedStart = session.startAt().plusSeconds(8 * 86400), movedEnd = session.endAt().plusSeconds(8 * 86400);
+		String body = """
+			{"expectedVersion":%d,"plannedStartAt":"%s","plannedEndAt":"%s","totalUnits":1,
+			 "sessions":[{"sessionId":"%s","expectedVersion":%d,"startAt":"%s","endAt":"%s"}]}
+			""".formatted(runVersion(), movedStart, movedEnd, session.id(), session.version(), movedStart, movedEnd);
+		mockMvc.perform(post("/manager/course-runs/{runId}/reschedule", runId)
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(accounts.findById(managerId).orElseThrow()))
+			.header("Idempotency-Key", "atomic-move").contentType("application/json").content(body))
+			.andExpect(status().isOk());
+		assertThat(db.queryForObject("select planned_start_at from course_runs where id=?", java.sql.Timestamp.class, runId).toInstant()).isEqualTo(movedStart);
+		assertThat(db.queryForObject("select start_at from course_sessions where id=?", java.sql.Timestamp.class, session.id()).toInstant()).isEqualTo(movedStart);
+		assertThat(db.queryForObject("select count(*) from course_schedule_change_events where course_run_id=? and actor_account_id=?", Long.class, runId, managerId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_SCHEDULE_CHANGED'", Long.class, runId)).isOne();
+		var response = members.scheduleChanges(memberId).stream().filter(change -> change.status().equals("PENDING")).findFirst().orElseThrow();
+		assertThat(response.oldStartAt()).isEqualTo(session.startAt());
+		assertThat(response.newStartAt()).isEqualTo(movedStart);
+		assertThat(response.cause()).isEqualTo(CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
 	}
 
 	@Test
@@ -599,6 +621,254 @@ class CourseScheduleChangeIntegrationTests {
 		db.update("update course_runs set status='COMPLETED',total_units=2 where id=?", runId);
 		assertThatThrownBy(() -> createSession(2, Instant.parse("2035-01-10T02:00:00Z"))).isInstanceOf(CourseException.class);
 		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=?", Long.class, runId)).isOne();
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(ints = {-2, 20})
+	void atomicRescheduleSupportsEarlierAndLaterFinalWindows(int days) {
+		Instant start=session.startAt().plusSeconds(days*86400L), end=start.plusSeconds(3600);
+		var request=new CourseRunRescheduleRequest(runVersion(),start,end,1,
+			java.util.List.of(atomicChange(session,start)));
+		var result=reschedules.reschedule(managerId,runId,"move",request);
+		assertThat(result.run().plannedStartAt()).isEqualTo(start);
+		assertThat(result.sessions()).singleElement().satisfies(value -> assertThat(value.startAt()).isEqualTo(start));
+		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList())
+			.singleElement().satisfies(value -> {
+				assertThat(value.oldStartAt()).isEqualTo(session.startAt());
+				assertThat(value.newStartAt()).isEqualTo(start);
+			});
+	}
+
+	@Test
+	void atomicSwapChecksFinalPositionsAndSendsOneSummary() {
+		var second=secondEnrolledSession();
+		var request=atomicRequest(java.util.List.of(atomicChange(session,second.startAt()),atomicChange(second,session.startAt())));
+		var result=reschedules.reschedule(managerId,runId,"swap",request);
+		assertThat(result.sessions().stream().filter(s -> s.id().equals(session.id())).findFirst().orElseThrow().startAt()).isEqualTo(second.startAt());
+		assertThat(result.sessions().stream().filter(s -> s.id().equals(second.id())).findFirst().orElseThrow().startAt()).isEqualTo(session.startAt());
+		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList())
+			.hasSize(2).allSatisfy(r -> assertThat(r.cause()).isEqualTo(CourseWithdrawalCause.VOLUNTARY));
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_SCHEDULE_CHANGED'",Long.class,runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_RESCHEDULED'",Long.class,runId)).isOne();
+	}
+
+	@Test
+	void atomicRetryAfterLostResponseAndConcurrentDuplicateReturnStoredResult() throws Exception {
+		var request=atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(86400))));
+		CountDownLatch start=new CountDownLatch(1);
+		CourseRunRescheduleResponse first;
+		try (var pool=Executors.newFixedThreadPool(2)) {
+			java.util.concurrent.Callable<CourseRunRescheduleResponse> call=() -> { start.await(); return reschedules.reschedule(managerId,runId,"retry",request); };
+			var a=pool.submit(call); var b=pool.submit(call); start.countDown();
+			first=a.get(20,TimeUnit.SECONDS); assertThat(b.get(20,TimeUnit.SECONDS)).isEqualTo(first);
+		}
+		assertThat(reschedules.reschedule(managerId,runId,"retry",request)).isEqualTo(first);
+		var different=atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(172800))));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"retry",different))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT"));
+		assertThat(db.queryForObject("select count(*) from course_run_reschedules where course_run_id=?",Long.class,runId)).isOne();
+		assertThat(db.queryForObject("select count(*) from course_schedule_change_events where course_run_id=? and actor_account_id=?",Long.class,runId,managerId)).isOne();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_SCHEDULE_CHANGED'",Long.class,runId)).isOne();
+	}
+
+	@Test
+	void atomicMemberConflictUsesFinalScheduleAndPreservesPendingWithdrawalSnapshot() {
+		UUID enrollment=db.queryForObject("select id from course_enrollments where course_run_id=?",UUID.class,runId);
+		var pending=withdrawals.createForMember(memberId,enrollment,"Snapshot before move");
+		var before=db.queryForMap("select snapshot_captured_at,refund_basis_vnd,refund_amount_vnd,remaining_units_snapshot from course_withdrawal_requests where id=?",pending.id());
+		Instant target=session.startAt().plusSeconds(86400);
+		seedGymBooking(memberId,target,target.plusSeconds(3600));
+		var result=reschedules.reschedule(managerId,runId,"member-conflict",atomicRequest(java.util.List.of(atomicChange(session,target))));
+		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList())
+			.singleElement().satisfies(r -> assertThat(r.cause()).isEqualTo(CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT));
+		assertThat(db.queryForMap("select snapshot_captured_at,refund_basis_vnd,refund_amount_vnd,remaining_units_snapshot from course_withdrawal_requests where id=?",pending.id())).isEqualTo(before);
+		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?",String.class,enrollment)).isEqualTo("WITHDRAWAL_PENDING");
+	}
+
+	@Test
+	void atomicFailureInOutboxRollsBackScheduleAuditResponsesAndRetryRecord() {
+		Long beforeVersion=runVersion();
+		String constraint="chk_test_atomic_schedule_notice";
+		db.execute("alter table notification_outbox add constraint "+constraint+" check (target_id<>'"+runId+"'::uuid) not valid");
+		try {
+			assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"rollback",atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(86400))))))
+				.rootCause().hasMessageContaining(constraint);
+			assertAtomicRunUnchanged(beforeVersion);
+			assertThat(db.queryForObject("select status from course_schedule_change_responses where id=?",String.class,responseId)).isEqualTo("PENDING");
+		} finally { db.execute("alter table notification_outbox drop constraint "+constraint); }
+	}
+
+	@Test
+	void atomicStaleVersionsAndUnlistedOutOfWindowSessionsLeaveEverythingUnchanged() {
+		Long version=runVersion();
+		var change=atomicChange(session,session.startAt().plusSeconds(86400));
+		var normal=atomicRequest(java.util.List.of(change));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"stale-run",new CourseRunRescheduleRequest(version+1,
+			normal.plannedStartAt(),normal.plannedEndAt(),1,normal.sessions()))).isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_RUN_CHANGED"));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"stale-session",atomicRequest(java.util.List.of(
+			new CourseSessionRescheduleRequest(session.id(),session.version()+1,change.startAt(),change.endAt(),null,null)))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_CHANGED"));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"unlisted",new CourseRunRescheduleRequest(version,change.startAt(),change.endAt(),1,java.util.List.of())))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_VALIDATION_ERROR"));
+		assertAtomicRunUnchanged(version);
+	}
+
+	@Test
+	void atomicStartedSessionAndExpiredResponseWindowAreRejected() {
+		Long version=runVersion();
+		when(clock.instant()).thenReturn(session.startAt());
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"started",atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(86400))))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_INVALID"));
+		when(clock.instant()).thenReturn(session.startAt().minusSeconds(3600));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"deadline",atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(3600))))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE"));
+		assertAtomicRunUnchanged(version);
+	}
+
+	@Test
+	void atomicReductionPreservesOriginalMakeupLinksAndRemovesOnlyFutureTail() {
+		var second=secondEnrolledSession();
+		var cancelled=disruptions.cancel(managerId,runId,second.id(),second.version());
+		var makeup=disruptions.scheduleMakeup(managerId,runId,second.id(),new CourseMakeupRequest(cancelled.version(),second.roomId(),coachId,
+			second.startAt().plusSeconds(86400),second.endAt().plusSeconds(86400)));
+		var run=managers.getRun(managerId,runId);
+		var result=reschedules.reschedule(managerId,runId,"reduce",new CourseRunRescheduleRequest(run.version(),run.plannedStartAt(),run.plannedEndAt(),1,java.util.List.of()));
+		assertThat(result.run().totalUnits()).isEqualTo(1);
+		assertThat(sessionStatus(second.id())).isEqualTo("REMOVED_BY_RUN_CHANGE");
+		assertThat(sessionStatus(makeup.makeupSession().id())).isEqualTo("REMOVED_BY_RUN_CHANGE");
+		assertThat(db.queryForObject("select replacement_session_id from course_sessions where id=?",UUID.class,second.id())).isEqualTo(makeup.makeupSession().id());
+		assertThat(db.queryForObject("select disposition from course_enrollment_sessions where course_run_id=? and unit_number=2",String.class,runId)).isEqualTo("REMOVED_BY_RUN_CHANGE");
+		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList())
+			.hasSize(2).allSatisfy(r -> assertThat(r.cause()).isEqualTo(CourseWithdrawalCause.REDUCED_UNIT_COUNT));
+	}
+
+	@Test
+	void atomicInternalResourceConflictAndInactiveManagerCannotWrite() {
+		var second=secondEnrolledSession();
+		Long version=runVersion();
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"overlap",atomicRequest(java.util.List.of(atomicChange(session,second.startAt())))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_RESOURCE_CONFLICT"));
+		var request=atomicRequest(java.util.List.of(atomicChange(session,session.startAt().plusSeconds(86400))));
+		assertThatThrownBy(() -> reschedules.reschedule(memberId,runId,"wrong-role",request)).isInstanceOf(com.scms.backend.auth.InvalidAuthenticatedAccountException.class);
+		db.update("update accounts set status='INACTIVE' where id=?",managerId);
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"inactive",request)).isInstanceOf(com.scms.backend.auth.InvalidAuthenticatedAccountException.class);
+		assertAtomicRunUnchanged(version);
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = {"ROOM_SUSPENSION", "COACH_LEAVE", "GYM", "OTHER_COURSE"})
+	void atomicFinalScheduleRejectsExternalResourceConflicts(String kind) {
+		Instant start=session.startAt().plusSeconds(86400), end=start.plusSeconds(3600);
+		Long version=runVersion();
+		switch (kind) {
+			case "ROOM_SUSPENSION" -> db.update("insert into room_suspensions(id,room_id,start_time,end_time,reason,created_by_account_id) values(?,?,?,?,?,?)",
+				UUID.randomUUID(),session.roomId(),java.sql.Timestamp.from(start),java.sql.Timestamp.from(end),"Unavailable",managerId);
+			case "COACH_LEAVE" -> db.update("insert into coach_leave_requests(id,coach_account_id,start_time,end_time,reason,status,reviewed_by_account_id,reviewed_at) values(?,?,?,?,?,'APPROVED',?,?)",
+				UUID.randomUUID(),coachId,java.sql.Timestamp.from(start),java.sql.Timestamp.from(end),"Leave",managerId,java.sql.Timestamp.from(NOW));
+			case "GYM" -> {
+				seedGymBooking(memberId,start,end);
+				db.update("update class_sessions set room_id=? where id=(select class_session_id from bookings where member_account_id=?)",session.roomId(),memberId);
+			}
+			case "OTHER_COURSE" -> {
+				var run=managers.getRun(managerId,runId);
+				var other=managers.createRun(managerId,new CourseRunCreateRequest("OTHER-"+shortId(),run.courseId(),coachId,BigInteger.valueOf(100000),10,1,
+					run.registrationOpensAt(),run.registrationClosesAt(),run.plannedStartAt(),run.plannedEndAt(),1,true));
+				managers.createSession(managerId,other.id(),new CourseSessionCreateRequest(1,session.roomId(),coachId,start,end,BigInteger.valueOf(100000)));
+			}
+		}
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"external",atomicRequest(java.util.List.of(atomicChange(session,start)))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_RESOURCE_CONFLICT"));
+		assertAtomicRunUnchanged(version);
+	}
+
+	@Test
+	void atomicMakeupMoveKeepsOriginalLinkAndIgnoresCancelledOriginalBounds() {
+		var cancelled=disruptions.cancel(managerId,runId,session.id(),session.version());
+		var makeup=disruptions.scheduleMakeup(managerId,runId,session.id(),new CourseMakeupRequest(cancelled.version(),session.roomId(),coachId,
+			session.startAt().plusSeconds(86400),session.endAt().plusSeconds(86400)));
+		Instant start=makeup.makeupSession().startAt().plusSeconds(86400);
+		var result=reschedules.reschedule(managerId,runId,"move-makeup",new CourseRunRescheduleRequest(runVersion(),start,start.plusSeconds(3600),1,
+			java.util.List.of(atomicChange(makeup.makeupSession(),start))));
+		assertThat(result.sessions().stream().filter(s -> s.id().equals(makeup.makeupSession().id())).findFirst().orElseThrow().originalSessionId()).isEqualTo(session.id());
+		assertThat(db.queryForObject("select course_session_id from course_enrollment_sessions where course_run_id=?",UUID.class,runId)).isEqualTo(makeup.makeupSession().id());
+	}
+
+	@Test
+	void atomicAssignmentChangeUsesNewRoomAndCoachAndValidatesCapacity() {
+		UUID newCoach=account(AccountRole.COACH,"Replacement Coach").getId(),room=UUID.randomUUID();
+		db.update("insert into rooms(id,name,capacity,usage_mode,status) values(?,?,5,'EXCLUSIVE','ACTIVE')",room,"Replacement "+room);
+		var change=new CourseSessionRescheduleRequest(session.id(),session.version(),session.startAt(),session.endAt(),room,newCoach);
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"capacity",atomicRequest(java.util.List.of(change))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_ROOM_CAPACITY_CONFLICT"));
+		db.update("update rooms set capacity=10 where id=?",room);
+		var result=reschedules.reschedule(managerId,runId,"capacity",atomicRequest(java.util.List.of(change)));
+		assertThat(result.sessions()).singleElement().satisfies(s -> {
+			assertThat(s.roomId()).isEqualTo(room); assertThat(s.coachId()).isEqualTo(newCoach);
+		});
+	}
+
+	@Test
+	void concurrentAtomicRunsCannotClaimTheSameFinalResourceSlot() throws Exception {
+		var source=managers.getRun(managerId,runId);
+		var other=managers.createRun(managerId,new CourseRunCreateRequest("RACE-"+shortId(),source.courseId(),coachId,BigInteger.valueOf(100000),10,1,
+			source.registrationOpensAt(),source.registrationClosesAt(),source.plannedStartAt(),source.plannedEndAt(),1,true));
+		var otherSession=managers.createSession(managerId,other.id(),new CourseSessionCreateRequest(1,session.roomId(),coachId,
+			session.startAt().plusSeconds(86400),session.endAt().plusSeconds(86400),BigInteger.valueOf(100000)));
+		Instant target=session.startAt().plusSeconds(2*86400);
+		var firstRequest=atomicRequest(java.util.List.of(atomicChange(session,target)));
+		var secondRequest=new CourseRunRescheduleRequest(other.version(),other.plannedStartAt(),other.plannedEndAt(),1,java.util.List.of(atomicChange(otherSession,target)));
+		CountDownLatch start=new CountDownLatch(1); AtomicInteger succeeded=new AtomicInteger(),conflicted=new AtomicInteger();
+		try (var pool=Executors.newFixedThreadPool(2)) {
+			var first=pool.submit(() -> atomicRace(start,runId,firstRequest,succeeded,conflicted));
+			var second=pool.submit(() -> atomicRace(start,other.id(),secondRequest,succeeded,conflicted));
+			start.countDown(); first.get(20,TimeUnit.SECONDS); second.get(20,TimeUnit.SECONDS);
+		}
+		assertThat(succeeded.get()).isOne(); assertThat(conflicted.get()).isOne();
+		assertThat(db.queryForObject("select count(*) from course_sessions where coach_account_id=? and start_at=?",Long.class,coachId,java.sql.Timestamp.from(target))).isOne();
+		assertThat(db.queryForObject("select count(*) from course_run_reschedules where course_run_id in (?,?)",Long.class,runId,other.id())).isOne();
+	}
+
+	private void atomicRace(CountDownLatch start,UUID targetRun,CourseRunRescheduleRequest request,AtomicInteger succeeded,AtomicInteger conflicted) {
+		await(start);
+		try { reschedules.reschedule(managerId,targetRun,"race",request); succeeded.incrementAndGet(); }
+		catch (CourseException e) { assertThat(e.getCode()).isEqualTo("COURSE_SESSION_RESOURCE_CONFLICT"); conflicted.incrementAndGet(); }
+	}
+
+	@Test
+	void atomicDuplicateAndForeignSessionIdsAndBlankKeyCannotWrite() {
+		var change=atomicChange(session,session.startAt().plusSeconds(86400));
+		Long version=runVersion();
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"duplicate",atomicRequest(java.util.List.of(change,change))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_VALIDATION_ERROR"));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId,"foreign",atomicRequest(java.util.List.of(
+			new CourseSessionRescheduleRequest(UUID.randomUUID(),0L,change.startAt(),change.endAt(),null,null)))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_SESSION_NOT_FOUND"));
+		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId," ",atomicRequest(java.util.List.of(change))))
+			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_VALIDATION_ERROR"));
+		assertAtomicRunUnchanged(version);
+	}
+
+	private CourseSessionResponse secondEnrolledSession() {
+		db.update("update course_runs set total_units=2 where id=?",runId);
+		db.update("update course_enrollments set total_units_snapshot=2 where course_run_id=?",runId);
+		db.update("update course_enrollment_sessions set allocation_vnd=50000 where course_run_id=?",runId);
+		var second=createSession(2,session.startAt().plusSeconds(7*86400));
+		seedEnrollmentSession(db.queryForObject("select id from course_enrollments where course_run_id=?",UUID.class,runId),second,2,BigInteger.valueOf(50000));
+		return second;
+	}
+	private CourseSessionRescheduleRequest atomicChange(CourseSessionResponse value,Instant start) {
+		return new CourseSessionRescheduleRequest(value.id(),value.version(),start,start.plusSeconds(3600),null,null);
+	}
+	private CourseRunRescheduleRequest atomicRequest(java.util.List<CourseSessionRescheduleRequest> changes) {
+		var run=managers.getRun(managerId,runId);
+		return new CourseRunRescheduleRequest(run.version(),run.plannedStartAt(),run.plannedEndAt(),run.totalUnits(),changes);
+	}
+	private void assertAtomicRunUnchanged(Long version) {
+		assertThat(runVersion()).isEqualTo(version);
+		assertThat(db.queryForObject("select start_at from course_sessions where id=?",java.sql.Timestamp.class,session.id()).toInstant()).isEqualTo(session.startAt());
+		assertThat(db.queryForObject("select count(*) from course_run_reschedules where course_run_id=?",Long.class,runId)).isZero();
+		assertThat(db.queryForObject("select count(*) from course_schedule_change_events where course_run_id=? and actor_account_id=?",Long.class,runId,managerId)).isZero();
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_RESCHEDULED'",Long.class,runId)).isZero();
 	}
 
 	private void rescheduleAgain() {
