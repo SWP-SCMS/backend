@@ -61,9 +61,9 @@ public class CourseSessionService {
 				|| allocationVnd.toString().length() > 19) {
 			throw CourseException.invalidSession();
 		}
-		CourseRun run = runs.findById(runId).orElseThrow(CourseException::invalidSession);
-		if (unitNumber > run.getTotalUnits()) throw CourseException.invalidSession();
 		resourceLocks.lock(List.of(coachId), List.of(roomId));
+		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseException::invalidSession);
+		if (unitNumber > run.getTotalUnits()) throw CourseException.invalidSession();
 		Account coach = accounts.findById(coachId).orElseThrow(CourseException::resourceConflict);
 		Room room = rooms.findById(roomId).orElseThrow(CourseException::resourceConflict);
 		validateResources(run, coach, room, startAt, endAt, null);
@@ -116,6 +116,8 @@ public class CourseSessionService {
 	private void validateResources(CourseRun run, Account coach, Room room, Instant startAt, Instant endAt,
 			UUID excludeSessionId) {
 		if (startAt == null || endAt == null || !startAt.isBefore(endAt)) throw CourseException.invalidSession();
+		if (run.getStatus() == CourseRunStatus.COMPLETED || run.getStatus() == CourseRunStatus.CANCELLED
+				|| run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING) throw CourseException.invalidSession();
 		if (run.getPlannedStartAt() != null && (startAt.isBefore(run.getPlannedStartAt())
 				|| endAt.isAfter(run.getPlannedEndAt()))) throw CourseException.invalidSession();
 		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE

@@ -750,6 +750,8 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedManagerScheduleChangesExposeVersionedRequestsAndRemovedUnitState() throws Exception {
 		JsonNode document = generatedDocument();
+		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/description").asText())
+			.contains("automatic", "does not mean refunds have been paid");
 		assertThat(operation(document, "/manager/course-runs/{runId}/schedule", "patch")
 			.at("/requestBody/content/application~1json/schema/$ref").asText())
 			.isEqualTo("#/components/schemas/CourseRunScheduleRequest");

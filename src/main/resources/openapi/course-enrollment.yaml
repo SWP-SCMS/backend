@@ -94,7 +94,7 @@ components:
   parameters:
     SessionId: {name: sessionId, in: path, required: true, schema: {type: string, format: uuid}}
   schemas:
-    CourseRunStatus: {type: string, enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]}
+    CourseRunStatus: {description: "Run completion is automatic after all effective units end and refund obligations are recorded; COMPLETED does not mean refunds have been paid.", type: string, enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]}
     CourseSessionStatus: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND, REMOVED_BY_RUN_CHANGE]}
     ReceptionCourseEnrollmentPage:
       type: object
