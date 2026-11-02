@@ -4,6 +4,7 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -193,6 +194,72 @@ class CourseScheduleChangeService {
 			.stream().findFirst().orElseThrow(CourseException::responseNotFound);
 	}
 
+	List<AtomicResponse> prepareAtomicRunResponses(UUID runId, CourseWithdrawalCause cause, boolean runChanged,
+			List<CourseRunRescheduleService.PlannedSession> plan, Instant now) {
+		Map<UUID,CourseRunRescheduleService.PlannedSession> byId = new LinkedHashMap<>();
+		for (var item : plan) byId.put(item.session().getId(),item);
+		List<Map<String,Object>> members = db.queryForList("""
+			select es.id enrollment_session_id,es.course_session_id,e.member_account_id
+			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
+			where e.course_run_id=? and es.disposition='ENROLLED'
+			 and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by es.id
+			""",runId);
+		Map<UUID,List<Map<String,Object>>> membersBySession = members.stream().collect(java.util.stream.Collectors.groupingBy(row -> (UUID)row.get("course_session_id")));
+		Map<UUID,List<CourseRunRescheduleService.PlannedSession>> memberSessions = new LinkedHashMap<>();
+		for (var member : members) memberSessions.computeIfAbsent((UUID)member.get("member_account_id"),ignored -> new ArrayList<>())
+			.add(byId.get(member.get("course_session_id")));
+		List<AtomicResponse> responses = new ArrayList<>();
+		for (var item : plan) {
+			if ((!runChanged && !item.changed()) || !item.startAt().isAfter(now)) continue;
+			Set<UUID> conflicts = item.removed() ? Set.of()
+				: conflictingEnrollmentSessions(runId,item.session().getId(),item.startAt(),item.endAt(),true);
+			for (var member : membersBySession.getOrDefault(item.session().getId(),List.of())) {
+				boolean conflict = conflicts.contains(member.get("enrollment_session_id"));
+				if (!item.removed()) for (var other : memberSessions.get(member.get("member_account_id"))) {
+					if (other!=item && !other.removed() && CourseRunRescheduleService.active(other.session())
+							&& CourseRunRescheduleService.overlaps(item,other)) conflict=true;
+				}
+				CourseWithdrawalCause memberCause = cause==CourseWithdrawalCause.VOLUNTARY && conflict
+					? CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT : cause;
+				boolean responseRequired = runChanged || conflict || item.removed() || CourseScheduleChangePolicy.isMaterial(
+					item.session().getStartAt(),item.session().getEndAt(),item.startAt(),item.endAt());
+				responses.add(new AtomicResponse((UUID)member.get("enrollment_session_id"),(UUID)member.get("member_account_id"),
+					item.session().getId(),item.session().getStartAt(),item.session().getEndAt(),item.startAt(),item.endAt(),
+					memberCause,responseRequired ? UUID.randomUUID() : null,null));
+			}
+		}
+		Instant nextStart = responses.stream().filter(r -> r.responseId()!=null).map(AtomicResponse::newStart)
+			.min(Instant::compareTo).orElse(null);
+		Instant deadline = nextStart==null ? null : CourseScheduleChangePolicy.deadline(now,nextStart);
+		if (deadline!=null && !deadline.isAfter(now)) throw CourseException.responseDeadline();
+		return responses.stream().map(r -> new AtomicResponse(r.enrollmentSessionId(),r.memberId(),r.sessionId(),r.oldStart(),r.oldEnd(),
+			r.newStart(),r.newEnd(),r.cause(),r.responseId(),r.responseId()==null ? null : deadline)).toList();
+	}
+
+	void writeAtomicRunResponses(UUID eventId, CourseRun run, List<AtomicResponse> responses, Instant now) {
+		Map<UUID,List<Map<String,Object>>> notices = new LinkedHashMap<>();
+		for (var r : responses) {
+			db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING' and enrollment_session_id=?",r.enrollmentSessionId());
+			if (r.responseId()!=null) db.update("""
+				insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
+				 new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id) values(?,?,?,?,?,?,?,?,?,?)
+				""",r.responseId(),r.enrollmentSessionId(),timestamp(r.oldStart()),timestamp(r.oldEnd()),timestamp(r.newStart()),timestamp(r.newEnd()),
+				timestamp(now),timestamp(r.deadline()),r.cause().name(),eventId);
+			Map<String,Object> change = new LinkedHashMap<>();
+			change.put("courseSessionId",r.sessionId()); change.put("recordId",r.responseId());
+			change.put("oldStartAt",r.oldStart().toString()); change.put("oldEndAt",r.oldEnd().toString());
+			change.put("newStartAt",r.newStart().toString()); change.put("newEndAt",r.newEnd().toString());
+			change.put("cause",r.cause().name()); change.put("responseDeadline",r.deadline()==null ? null : r.deadline().toString());
+			notices.computeIfAbsent(r.memberId(),ignored -> new ArrayList<>()).add(change);
+		}
+		for (var notice : notices.entrySet()) notifications.write("COURSE_RUN_RESCHEDULED:"+eventId+":"+notice.getKey(),notice.getKey(),
+			"COURSE_SCHEDULE_CHANGED","COURSE_RUN",run.getId(),Map.of("changeEventId",eventId,"courseCode",run.getCourse().getCode(),
+				"runCode",run.getRunCode(),"changes",notice.getValue()));
+	}
+
+	record AtomicResponse(UUID enrollmentSessionId, UUID memberId, UUID sessionId, Instant oldStart, Instant oldEnd,
+		Instant newStart, Instant newEnd, CourseWithdrawalCause cause, UUID responseId, Instant deadline) { }
+
 	private String select() {
 		return """
 			select r.*,w.id withdrawal_request_id,w.refund_basis_vnd,w.refund_amount_vnd,
@@ -244,6 +311,10 @@ class CourseScheduleChangeService {
 	private static Timestamp timestamp(Instant value) { return value == null ? null : Timestamp.from(value); }
 
 	private Set<UUID> conflictingEnrollmentSessions(UUID runId, UUID sessionId, Instant startAt, Instant endAt) {
+		return conflictingEnrollmentSessions(runId,sessionId,startAt,endAt,false);
+	}
+
+	private Set<UUID> conflictingEnrollmentSessions(UUID runId, UUID sessionId, Instant startAt, Instant endAt, boolean excludeCurrentRun) {
 		return new HashSet<>(db.queryForList("""
 			select distinct current_es.id
 			from course_enrollment_sessions current_es
@@ -257,6 +328,7 @@ class CourseScheduleChangeService {
 				join course_enrollments other_enrollment on other_enrollment.id=other_es.course_enrollment_id
 				join course_sessions other_session on other_session.id=other_es.course_session_id
 				where other_enrollment.member_account_id=current_enrollment.member_account_id
+				and (?=false or other_enrollment.course_run_id<>current_enrollment.course_run_id)
 				and other_es.course_session_id<>current_es.course_session_id and other_es.disposition='ENROLLED'
 				and other_enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
 				and other_session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
@@ -266,7 +338,7 @@ class CourseScheduleChangeService {
 				where b.member_account_id=current_enrollment.member_account_id and b.status='BOOKED'
 				and gym.start_time < coalesce(cast(? as timestamptz),current_session.end_at)
 				and gym.end_time > coalesce(cast(? as timestamptz),current_session.start_at)))
-			""", UUID.class, runId, sessionId, sessionId, timestamp(endAt), timestamp(startAt), timestamp(endAt), timestamp(startAt)));
+			""", UUID.class, runId, sessionId, sessionId, excludeCurrentRun, timestamp(endAt), timestamp(startAt), timestamp(endAt), timestamp(startAt)));
 	}
 
 	private void activeMember(UUID id) {

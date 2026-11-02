@@ -26,6 +26,7 @@ class CourseManagerOpenApiTests {
 			"/manager/courses/{courseId}/archive", "/manager/course-runs",
 			"/manager/course-runs/{runId}", "/manager/course-runs/{runId}/open-registration",
 			"/manager/course-runs/{runId}/schedule",
+			"/manager/course-runs/{runId}/reschedule",
 			"/manager/course-runs/{runId}/cancel", "/manager/course-runs/{runId}/sessions",
 			"/manager/course-runs/{runId}/sessions/{sessionId}",
 			"/manager/course-runs/{runId}/sessions/{sessionId}/cancel",

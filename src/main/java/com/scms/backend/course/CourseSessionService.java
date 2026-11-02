@@ -120,13 +120,18 @@ public class CourseSessionService {
 				|| run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING) throw CourseException.invalidSession();
 		if (run.getPlannedStartAt() != null && (startAt.isBefore(run.getPlannedStartAt())
 				|| endAt.isAfter(run.getPlannedEndAt()))) throw CourseException.invalidSession();
-		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE
-				|| room.getStatus() != RoomStatus.ACTIVE) throw CourseException.resourceConflict();
-		if (run.getCapacity() > room.getCapacity()) throw CourseException.roomCapacityConflict();
+		validateAssignment(run.getCapacity(), coach, room, startAt, endAt);
 		boolean overlap = excludeSessionId == null
 			? sessions.existsResourceOverlap(coach.getId(), room.getId(), startAt, endAt)
 			: sessions.existsResourceOverlapExcluding(excludeSessionId, coach.getId(), room.getId(), startAt, endAt);
-		if (overlap || gymSessions.existsOverlap(coach.getId(), room.getId(), startAt, endAt)
+		if (overlap) throw CourseException.resourceConflict();
+	}
+
+	void validateAssignment(int capacity, Account coach, Room room, Instant startAt, Instant endAt) {
+		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE
+				|| room.getStatus() != RoomStatus.ACTIVE) throw CourseException.resourceConflict();
+		if (capacity > room.getCapacity()) throw CourseException.roomCapacityConflict();
+		if (gymSessions.existsOverlap(coach.getId(), room.getId(), startAt, endAt)
 				|| leaves.existsApprovedOverlap(coach.getId(), startAt, endAt)
 				|| rooms.existsSuspensionOverlap(room.getId(), startAt, endAt)) {
 			throw CourseException.resourceConflict();
