@@ -100,6 +100,18 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void receptionHistoryRejectsInactiveBeneficiariesAndKeepsRefundPaginationValidation() throws Exception {
+		String base = "/api/v1/reception/members/" + memberId, auth = "Bearer " + token(receptionistId);
+		mockMvc.perform(get(base + "/course-refund-obligations").queryParam("size", "101").contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isBadRequest());
+		db.update("update accounts set status='SUSPENDED' where id=?", memberId);
+		for (String suffix : java.util.List.of("/course-withdrawal-requests", "/course-refund-obligations",
+			"/course-withdrawal-requests/" + UUID.randomUUID(), "/course-refund-obligations/" + UUID.randomUUID())) {
+			mockMvc.perform(get(base + suffix).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isUnauthorized());
+		}
+	}
+
+	@Test
 	void receptionHistoryMatchesMemberDtoAndEnforcesBeneficiaryOwnership() throws Exception {
 		var request = withdrawals.createForMember(memberId, enrollmentId, "Front desk history");
 		String auth = "Bearer " + token(receptionistId);

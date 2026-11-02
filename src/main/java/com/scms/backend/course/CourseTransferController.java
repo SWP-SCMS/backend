@@ -48,6 +48,8 @@ class CourseTransferController {
 	}
 	@PostMapping("/members/me/course-transfer-offers/{offerId}/accept")
 	ResponseEntity<TransferOffer> accept(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID offerId,
+			@io.swagger.v3.oas.annotations.Parameter(required = true, schema = @io.swagger.v3.oas.annotations.media.Schema(minLength = 1, maxLength = 100))
+			@jakarta.validation.constraints.Size(min = 1, max = 100)
 			@RequestHeader(value = "Idempotency-Key", required = false) String key) {
 		return ResponseEntity.ok(service.accept(subject(jwt), offerId, key));
 	}

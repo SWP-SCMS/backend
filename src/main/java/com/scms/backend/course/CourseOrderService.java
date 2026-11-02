@@ -70,10 +70,11 @@ class CourseOrderService {
 		return create(actorId, member, request, normalizeKey(idempotencyKey), false);
 	}
 
-	CreateResult createFromWaitlist(UUID memberId, UUID runId, String idempotencyKey) {
-		Account actor = lockActive(memberId, AccountRole.MEMBER);
-		MemberProfile member = profiles.findById(actor.getId()).orElseThrow(InvalidAuthenticatedAccountException::new);
-		return create(memberId, member, new CourseOrderCreateRequest(runId), normalizeKey(idempotencyKey), true);
+	CreateResult createFromWaitlist(UUID actorId, UUID memberId, UUID runId, String idempotencyKey) {
+		lockActive(actorId, actorId.equals(memberId) ? AccountRole.MEMBER : AccountRole.RECEPTIONIST);
+		lockActiveMember(memberId);
+		MemberProfile member = profiles.findById(memberId).orElseThrow(InvalidAuthenticatedAccountException::new);
+		return create(actorId, member, new CourseOrderCreateRequest(runId), normalizeKey(idempotencyKey), true);
 	}
 
 	@Transactional

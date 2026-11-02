@@ -18,6 +18,8 @@ class CourseEnrollmentOpenApiTests {
 		}
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList())
 			.containsExactlyInAnyOrder("/members/me/course-enrollments", "/members/me/course-schedule-changes",
+				"/reception/members/{memberId}/course-schedule-changes",
+				"/reception/members/{memberId}/course-schedule-changes/{responseId}/response",
 				"/reception/members/{memberId}/course-enrollments",
 				"/reception/members/{memberId}/course-enrollments/{enrollmentId}",
 				"/members/me/course-schedule-changes/{responseId}/response", "/coach/course-sessions/{sessionId}/roster",

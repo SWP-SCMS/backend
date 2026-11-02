@@ -93,12 +93,62 @@ paths:
       description: Returns a redacted obligation only when it belongs to the authenticated Member.
       parameters: [{$ref: '#/components/parameters/ObligationId'}]
       responses: {'200': {description: Redacted owned refund detail}, '404': {description: Missing or not owned}}
+  /reception/members/{memberId}/course-refund-obligations:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: page, in: query, required: false, schema: {type: integer, format: int32, default: 0}}
+        - {name: size, in: query, required: false, schema: {type: integer, format: int32, default: 20}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/MemberRefundObligationPage'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+  /reception/members/{memberId}/course-refund-obligations/{obligationId}:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: obligationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/MemberRefundObligation'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
 components:
   parameters:
     ObligationId: {name: obligationId, in: path, required: true, schema: {type: string, format: uuid}}
     RefundId: {name: refundId, in: path, required: true, schema: {type: string, format: uuid}}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
   schemas:
+    MemberRefundObligation:
+      type: object
+      description: Redacted Member history, excluding staff, bank and evidence details.
+      properties:
+        id: {type: string, format: uuid}
+        enrollmentId: {type: string, format: uuid}
+        courseRunId: {type: string, format: uuid}
+        source: {type: string}
+        status: {type: string}
+        grossObligationVnd: {type: integer}
+        approvedAmountVnd: {type: integer}
+        disbursedAmountVnd: {type: integer}
+        verifiedAmountVnd: {type: integer}
+        currencyCode: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+        version: {type: integer, format: int64}
+    MemberRefundObligationPage:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/MemberRefundObligation'}}
+        page: {type: integer, format: int32}
+        size: {type: integer, format: int32}
+        totalElements: {type: integer, format: int64}
+        totalPages: {type: integer, format: int32}
     Status:
       type: string
       enum: [PENDING_REVIEW, APPROVED, DISBURSEMENT_RECORDED, PENDING_VERIFICATION, COMPLETED, REJECTED, FAILED, RETURNED]

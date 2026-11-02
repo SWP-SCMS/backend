@@ -84,6 +84,76 @@ class CourseOrderIntegrationTests {
 	}
 
 	@Test
+	void proxyWaitlistCannotBypassCapacityOwnershipKeysOrInvitationExpiry() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile holder = member(AccountStatus.ACTIVE), waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		String base = "/api/v1/reception/members/" + waiting.getAccountId(), auth = "Bearer " + token(receptionist);
+		String memberCode = json(joinWaitlist(waiting, fixture.runId()).andExpect(status().isConflict()).andReturn()).path("code").asText();
+		mockMvc.perform(post(base + "/course-runs/{id}/waitlist", fixture.runId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value(memberCode));
+		createSelf(holder, fixture.runId(), "proxy-expiry-holder").andExpect(status().isCreated());
+		UUID id = UUID.fromString(json(joinWaitlist(waiting, fixture.runId()).andExpect(status().isCreated()).andReturn()).path("id").asText());
+		mockMvc.perform(post("/api/v1/reception/members/{member}/course-waitlists/{id}/accept", holder.getAccountId(), id)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "wrong-owner"))
+			.andExpect(status().isNotFound());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?", holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+		mockMvc.perform(post(base + "/course-waitlists/{id}/accept", id).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
+			.andExpect(status().isBadRequest());
+		db.update("update course_waitlists set invitation_expires_at=? where id=?", Timestamp.from(NOW), id);
+		mockMvc.perform(post(base + "/course-waitlists/{id}/accept", id).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "expired"))
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("COURSE_WAITLIST_INVITATION_EXPIRED"));
+		assertThat(db.queryForObject("select status from course_waitlists where id=?", String.class, id)).isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select count(*) from course_orders where member_account_id=?", Long.class, waiting.getAccountId())).isZero();
+	}
+
+	@Test
+	void proxyWaitlistLeaveAuditsActorAndRejectsInactiveBeneficiaryAndStaff() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile holder = member(AccountStatus.ACTIVE), waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "proxy-leave-holder").andExpect(status().isCreated());
+		UUID id = UUID.fromString(json(joinWaitlist(waiting, fixture.runId()).andExpect(status().isCreated()).andReturn()).path("id").asText());
+		String base = "/api/v1/reception/members/" + waiting.getAccountId(), auth = "Bearer " + token(receptionist);
+		mockMvc.perform(delete(base + "/course-runs/{id}/waitlist", fixture.runId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("LEFT"));
+		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_WAITLIST_LEFT' and target_id=?", UUID.class, id)).isEqualTo(receptionist.getId());
+		db.update("update accounts set status='SUSPENDED' where id=?", waiting.getAccountId());
+		mockMvc.perform(get(base + "/course-waitlists").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isUnauthorized());
+		mockMvc.perform(post(base + "/course-runs/{id}/waitlist", fixture.runId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isUnauthorized());
+		db.update("update accounts set status='ACTIVE' where id=?", waiting.getAccountId());
+		db.update("update accounts set status='INACTIVE' where id=?", receptionist.getId());
+		mockMvc.perform(get(base + "/course-waitlists").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isUnauthorized());
+		assertThat(db.queryForObject("select count(*) from course_waitlists where member_account_id=?", Long.class, waiting.getAccountId())).isOne();
+	}
+
+	@Test
+	void simultaneousMemberAndReceptionAcceptanceCreatesOneOrderWithWinningActor() throws Exception {
+		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
+		MemberProfile holder = member(AccountStatus.ACTIVE), waiting = member(AccountStatus.ACTIVE);
+		RunFixture fixture = run(1, NOW.minusSeconds(1), NOW.plusSeconds(3600), "PUBLISHED",
+			"OPEN_FOR_REGISTRATION", NOW.plusSeconds(7200));
+		createSelf(holder, fixture.runId(), "concurrent-proxy-holder").andExpect(status().isCreated());
+		UUID id = UUID.fromString(json(joinWaitlist(waiting, fixture.runId()).andExpect(status().isCreated()).andReturn()).path("id").asText());
+		db.update("update course_reservations set status='EXPIRED' where member_account_id=? and course_run_id=?", holder.getAccountId(), fixture.runId());
+		waitlists.promote(fixture.runId(), NOW);
+		var results = concurrent(() -> acceptWaitlist(waiting, id, "both-accept").andReturn(),
+			() -> mockMvc.perform(post("/api/v1/reception/members/{member}/course-waitlists/{id}/accept", waiting.getAccountId(), id)
+				.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
+				.header("Idempotency-Key", "both-accept")).andReturn());
+		assertThat(results.stream().map(result -> result.getResponse().getStatus()).toList()).containsExactlyInAnyOrder(200, 201);
+		assertThat(json(results.getFirst()).path("orderId")).isEqualTo(json(results.getLast()).path("orderId"));
+		UUID orderActor = db.queryForObject("select actor_account_id from course_orders where member_account_id=?", UUID.class, waiting.getAccountId());
+		assertThat(orderActor).isIn(waiting.getAccountId(), receptionist.getId());
+		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_WAITLIST_ACCEPTED' and target_id=?", UUID.class, id)).isEqualTo(orderActor);
+		assertThat(db.queryForObject("select count(*) from course_orders where member_account_id=?", Long.class, waiting.getAccountId())).isOne();
+	}
+
+	@Test
 	void receptionistWaitlistUsesMemberEligibilityAndRecordsActualOrderActor() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile holder = member(AccountStatus.ACTIVE), waiting = member(AccountStatus.ACTIVE);

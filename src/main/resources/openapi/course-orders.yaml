@@ -158,6 +158,62 @@ paths:
         '403': { $ref: '#/components/responses/Problem' }
         '404': { $ref: '#/components/responses/Problem' }
         '409': { $ref: '#/components/responses/Problem' }
+  /reception/members/{memberId}/course-waitlists:
+    get:
+      security: [{bearerAuth: []}]
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/CourseWaitlistResponse'}}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+  /reception/members/{memberId}/course-runs/{runId}/waitlist:
+    post:
+      security: [{bearerAuth: []}]
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: runId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/CourseWaitlistResponse'}}}}
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/CourseWaitlistResponse'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+        '409': {description: Deadline, capacity, state or idempotency conflict}
+    delete:
+      security: [{bearerAuth: []}]
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: runId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/CourseWaitlistResponse'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+        '409': {description: Deadline, capacity, state or idempotency conflict}
+  /reception/members/{memberId}/course-waitlists/{waitlistId}/accept:
+    post:
+      security: [{bearerAuth: []}]
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: waitlistId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/CourseOrderResponse'}}}}
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/CourseOrderResponse'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+        '409': {description: Deadline, capacity, state or idempotency conflict}
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }

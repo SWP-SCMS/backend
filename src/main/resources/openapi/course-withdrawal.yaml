@@ -76,6 +76,29 @@ paths:
         - {$ref: '#/components/parameters/EnrollmentId'}
       requestBody: {$ref: '#/components/requestBodies/Create'}
       responses: {'201': {description: Pending request eligible for self-approval}}
+  /reception/members/{memberId}/course-withdrawal-requests:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/WithdrawalRequest'}}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
+  /reception/members/{memberId}/course-withdrawal-requests/{requestId}:
+    get:
+      description: Requires active RECEPTIONIST and active beneficiary MEMBER; uses the same ownership, deadline and capacity rules as Member actions.
+      parameters:
+        - {name: memberId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned result or saved replay, content: {application/json: {schema: {$ref: '#/components/schemas/WithdrawalRequest'}}}}
+        '400': {description: Invalid request}
+        '401': {description: Authentication required or inactive account}
+        '403': {description: Wrong role}
+        '404': {description: Missing or not owned by the beneficiary}
 components:
   parameters:
     RequestId: {name: requestId, in: path, required: true, schema: {type: string, format: uuid}}
