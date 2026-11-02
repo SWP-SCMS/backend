@@ -57,6 +57,8 @@ class CourseWithdrawalIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
+	@Autowired com.scms.backend.centervisit.CenterVisitRepository visits;
+	@Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
 	@Autowired MockMvc mockMvc;
 	@Autowired JwtEncoder jwtEncoder;
 	@MockitoBean Clock clock;
@@ -233,6 +235,53 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(withdrawals.managerDetail(managerId, request.id()).status()).isIn("APPROVED", "REJECTED");
 		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_enrollment_id=? "
 			+ "and source_type='MEMBER_WITHDRAWAL'", Long.class, enrollmentId)).isBetween(0L, 1L);
+	}
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void courseEntryRequiresActiveEnrollmentAndUncancelledRun() {
+		UUID sessionId = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).contains(enrollmentId);
+		for (String state : java.util.List.of("WITHDRAWAL_PENDING", "WITHDRAWN", "TRANSFERRED", "COMPLETED")) {
+			db.update("update course_enrollments set lifecycle_status=? where id=?", state, enrollmentId);
+			assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).as(state).isEmpty();
+		}
+		db.update("update course_enrollments set lifecycle_status='ACTIVE' where id=?", enrollmentId);
+		db.update("update course_runs set status='CANCELLED' where id=?", runId);
+		assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).isEmpty();
+	}
+
+	@Test
+	void courseEntryWaitsForConcurrentRunCancellationAndRechecksEligibility() throws Exception {
+		UUID sessionId = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		var transactions = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
+		CountDownLatch locked = new CountDownLatch(1), release = new CountDownLatch(1), checking = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var cancellation = executor.submit(() -> transactions.execute(status -> {
+				db.update("update course_runs set status='CANCELLED' where id=?", runId);
+				locked.countDown();
+				try {
+					if (!release.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("Release timed out");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(interrupted);
+				}
+				return null;
+			}));
+			try {
+				assertThat(locked.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+				var eligibility = executor.submit(() -> transactions.execute(status -> {
+					checking.countDown();
+					return visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW);
+				}));
+				assertThat(checking.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+				assertThatThrownBy(() -> eligibility.get(200, java.util.concurrent.TimeUnit.MILLISECONDS))
+					.isInstanceOf(java.util.concurrent.TimeoutException.class);
+				release.countDown();
+				cancellation.get(10, java.util.concurrent.TimeUnit.SECONDS);
+				assertThat(eligibility.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEmpty();
+			} finally { release.countDown(); }
+		}
 	}
 
 	private Object decide(CountDownLatch start, java.util.concurrent.Callable<Object> decision) {

@@ -17,7 +17,7 @@ class CourseManagerOpenApiTests {
 		JsonNode document = new ObjectMapper(new YAMLFactory()).readTree(source);
 		assertThat(document.path("openapi").asText()).isEqualTo("3.1.0");
 		assertThat(document.path("paths").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains(
-			"/reception/courses", "/manager/course-approval-requests",
+			"/manager/course-approval-requests",
 			"/manager/course-approval-requests/{courseId}",
 			"/manager/course-approval-requests/{courseId}/approve",
 			"/manager/course-approval-requests/{courseId}/reject",

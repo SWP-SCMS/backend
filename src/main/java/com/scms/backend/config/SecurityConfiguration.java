@@ -135,7 +135,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/reception/members/*/receipts")
 					.hasAnyRole("RECEPTIONIST", "MANAGER")
 				.requestMatchers(HttpMethod.GET, "/reception/class-sessions").hasRole("RECEPTIONIST")
-				.requestMatchers(HttpMethod.POST, "/reception/courses").hasRole("RECEPTIONIST")
+				.requestMatchers(HttpMethod.POST, "/reception/courses").denyAll()
 				.requestMatchers("/reception/email-verification/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/members/**").hasRole("RECEPTIONIST")
 				.requestMatchers("/reception/center-visits/**").hasRole("RECEPTIONIST")
