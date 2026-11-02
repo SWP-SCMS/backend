@@ -145,7 +145,7 @@ class CourseTransferIntegrationTests {
 		for (int retry = 0; retry < 2; retry++) mockMvc.perform(post(base + "/course-orders/{id}/payments/sepay", orderId)
 			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-bank-payment"))
 			.andExpect(status().isOk());
-		String reference = db.queryForObject("select bank_transfer_content from course_payments where course_order_id=?", String.class, orderId);
+		String reference = db.queryForObject("select payment_reference from course_payments where course_order_id=?", String.class, orderId);
 		String webhook = """
 			{"id":830001,"code":"%s","content":"%s","transferAmount":20000,"transferType":"in","accountNumber":"123456789"}
 			""".formatted(reference, reference);

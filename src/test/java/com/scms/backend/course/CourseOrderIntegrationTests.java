@@ -102,7 +102,8 @@ class CourseOrderIntegrationTests {
 		waitlists.promote(fixture.runId(), NOW);
 		mockMvc.perform(post(base + "/course-waitlists/{id}/accept", id).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth))
 			.andExpect(status().isBadRequest());
-		db.update("update course_waitlists set invitation_expires_at=? where id=?", Timestamp.from(NOW), id);
+		db.update("update course_waitlists set invitation_expires_at=? where id=?", Timestamp.from(NOW.plusSeconds(1)), id);
+		when(clock.instant()).thenReturn(NOW.plusSeconds(1));
 		mockMvc.perform(post(base + "/course-waitlists/{id}/accept", id).contextPath("/api/v1")
 			.header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "expired"))
 			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("COURSE_WAITLIST_INVITATION_EXPIRED"));
