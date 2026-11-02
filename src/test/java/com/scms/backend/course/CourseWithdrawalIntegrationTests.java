@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
@@ -54,6 +55,7 @@ class CourseWithdrawalIntegrationTests {
 	@Autowired CourseManagementService management;
 	@Autowired CourseWithdrawalService withdrawals;
 	@Autowired CourseOrderService orders;
+	@Autowired CourseEnrollmentService enrollments;
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
@@ -101,7 +103,7 @@ class CourseWithdrawalIntegrationTests {
 	void pendingKeepsCapacityAndExactSeventyPercentApprovalCreatesFlooredRefund() {
 		var request = withdrawals.createForMember(memberId, enrollmentId, "Schedule no longer works");
 		assertThat(request.status()).isEqualTo("PENDING");
-		assertThat(request.refundAmountVnd()).isNull();
+		assertThat(request.refundAmountVnd()).isEqualTo(BigInteger.valueOf(560_000));
 		assertThat(request.estimatedRefundAmount()).isEqualTo(BigInteger.valueOf(560_000));
 		assertThatThrownBy(() -> withdrawals.createForMember(memberId, enrollmentId, "Duplicate"))
 			.isInstanceOfSatisfying(CourseWithdrawalException.class,
@@ -282,6 +284,48 @@ class CourseWithdrawalIntegrationTests {
 				assertThat(eligibility.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEmpty();
 			} finally { release.countDown(); }
 		}
+	}
+
+	@Test
+	void approvalUsesRequestTimeSnapshotEvenAfterAnotherUnitStarts() {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Snapshot at seven units");
+		when(clock.instant()).thenReturn(NOW.plusSeconds(86400));
+		var approved = withdrawals.approve(managerId, request.id(), "Review next day");
+		assertThat(approved.remainingUnits()).isEqualTo(7);
+		assertThat(approved.refundAmountVnd()).isEqualTo(BigInteger.valueOf(560_000));
+	}
+
+	@Test
+	void validRequestCanBeApprovedAfterRunCompletes() {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Submitted before final unit");
+		when(clock.instant()).thenReturn(NOW.plusSeconds(86400 * 8));
+		db.update("update course_runs set status='COMPLETED' where id=?", runId);
+		assertThat(withdrawals.approve(managerId, request.id(), "Late review").refundAmountVnd())
+			.isEqualTo(BigInteger.valueOf(560_000));
+	}
+
+	@Test
+	void pendingWithdrawalSuspendsRosterAndAttendance() {
+		UUID sessionId = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		UUID enrollmentSessionId = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?",
+			UUID.class, enrollmentId, sessionId);
+		assertThat(enrollments.roster(coachId, sessionId)).hasSize(1);
+		withdrawals.createForMember(memberId, enrollmentId, "Suspend learning");
+		assertThat(enrollments.roster(coachId, sessionId)).isEmpty();
+		assertThatThrownBy(() -> enrollments.updateAttendance(coachId, sessionId, enrollmentSessionId,
+			new CourseEnrollmentApiModels.AttendanceUpdate(CourseAttendanceStatus.PRESENT))).isInstanceOf(CourseAttendanceException.class);
+	}
+
+	@Test
+	void memberCanCancelPendingRequestAndRetryWithoutDuplicatingEffects() throws Exception {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Cancel later");
+		for (int retry = 0; retry < 2; retry++) mockMvc.perform(post("/api/v1/members/me/course-withdrawal-requests/{requestId}/cancel", request.id())
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId))
+			.contentType("application/json").content("{\"reason\":\"Continue studying\"}"))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"));
+		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class, enrollmentId)).isEqualTo("ACTIVE");
+		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_WITHDRAWAL_CANCELLED'", Long.class, request.id())).isOne();
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_enrollment_id=?", Long.class, enrollmentId)).isZero();
 	}
 
 	private Object decide(CountDownLatch start, java.util.concurrent.Callable<Object> decision) {
