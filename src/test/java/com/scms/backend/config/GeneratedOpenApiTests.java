@@ -73,7 +73,6 @@ class GeneratedOpenApiTests {
 	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
 	private static final Set<String> MUTATE_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404", "409");
 	private static final List<CourseOperationContract> COURSE_OPERATION_CONTRACTS = List.of(
-		new CourseOperationContract("/reception/courses", "post", CREATE_RESPONSES),
 		new CourseOperationContract("/manager/course-approval-requests", "get", READ_COLLECTION_RESPONSES),
 		new CourseOperationContract("/manager/course-approval-requests/{courseId}", "get", READ_ITEM_RESPONSES),
 		new CourseOperationContract("/manager/course-approval-requests/{courseId}/approve", "post",
@@ -450,7 +449,6 @@ class GeneratedOpenApiTests {
 		"POST /manager/disciplines",
 		"GET /manager/disciplines/{disciplineId}",
 		"PATCH /manager/disciplines/{disciplineId}",
-		"POST /reception/courses",
 		"GET /manager/course-approval-requests",
 		"GET /manager/course-approval-requests/{courseId}",
 		"POST /manager/course-approval-requests/{courseId}/approve",

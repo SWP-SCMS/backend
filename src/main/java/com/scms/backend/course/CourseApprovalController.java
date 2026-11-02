@@ -5,7 +5,6 @@ import java.util.UUID;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -23,12 +22,6 @@ class CourseApprovalController {
 
 	CourseApprovalController(CourseManagementService service) {
 		this.service = service;
-	}
-
-	@PostMapping("/reception/courses")
-	ResponseEntity<CourseApprovalResponse> submit(@AuthenticationPrincipal Jwt jwt,
-			@Valid @RequestBody CourseCreateRequest request) {
-		return ResponseEntity.status(HttpStatus.CREATED).body(service.submitCourse(accountId(jwt), request));
 	}
 
 	@GetMapping("/manager/course-approval-requests")

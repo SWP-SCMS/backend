@@ -57,6 +57,7 @@ class CourseWithdrawalIntegrationTests {
 	@Autowired AccountRepository accounts;
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
+	@Autowired com.scms.backend.centervisit.CenterVisitRepository visits;
 	@Autowired MockMvc mockMvc;
 	@Autowired JwtEncoder jwtEncoder;
 	@MockitoBean Clock clock;
@@ -233,6 +234,20 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(withdrawals.managerDetail(managerId, request.id()).status()).isIn("APPROVED", "REJECTED");
 		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_enrollment_id=? "
 			+ "and source_type='MEMBER_WITHDRAWAL'", Long.class, enrollmentId)).isBetween(0L, 1L);
+	}
+
+	@Test
+	@org.springframework.transaction.annotation.Transactional
+	void courseEntryRequiresActiveEnrollmentAndUncancelledRun() {
+		UUID sessionId = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).contains(enrollmentId);
+		for (String state : java.util.List.of("WITHDRAWAL_PENDING", "WITHDRAWN", "TRANSFERRED", "COMPLETED")) {
+			db.update("update course_enrollments set lifecycle_status=? where id=?", state, enrollmentId);
+			assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).as(state).isEmpty();
+		}
+		db.update("update course_enrollments set lifecycle_status='ACTIVE' where id=?", enrollmentId);
+		db.update("update course_runs set status='CANCELLED' where id=?", runId);
+		assertThat(visits.findEligibleCourseEnrollmentId(memberId, sessionId, NOW)).isEmpty();
 	}
 
 	private Object decide(CountDownLatch start, java.util.concurrent.Callable<Object> decision) {

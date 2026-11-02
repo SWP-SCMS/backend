@@ -27,7 +27,8 @@ class CourseCenterVisitContractTests {
 		String sql = query("findEligibleCourseEnrollmentId");
 
 		assertThat(sql).contains(":at >= s.start_at - interval '30 minutes'",
-			":at < s.end_at + interval '30 minutes'", "'COMPLETED'", "for update of e, s");
+			":at < s.end_at + interval '30 minutes'", "'COMPLETED'", "for update of e, s",
+			"e.lifecycle_status = 'ACTIVE'", "run.status <> 'CANCELLED'");
 	}
 
 	@Test

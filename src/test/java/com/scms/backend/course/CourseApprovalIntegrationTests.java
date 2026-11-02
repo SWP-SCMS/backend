@@ -49,8 +49,8 @@ class CourseApprovalIntegrationTests {
 	}
 
 	@Test
-	void receptionistSubmissionWaitsForManagerApprovalBeforeUsingExistingPublishFlow() {
-		CourseApprovalResponse submitted = service.submitCourse(receptionistId, request("APPROVE-101"));
+	void legacySubmissionCanStillBeApprovedAndPublished() {
+		CourseApprovalResponse submitted = legacySubmission("APPROVE-101");
 
 		assertThat(submitted.status()).isEqualTo(CourseStatus.PENDING_APPROVAL);
 		assertThat(submitted.submittedByAccountId()).isEqualTo(receptionistId);
@@ -68,13 +68,13 @@ class CourseApprovalIntegrationTests {
 		assertThat(approved.reviewReason()).isEqualTo("Catalog details verified");
 		assertThat(service.publishCourse(managerId, approved.id(), new VersionRequest(approved.version())).status())
 			.isEqualTo(CourseStatus.PUBLISHED);
-		assertThat(auditCount("COURSE_SUBMITTED_FOR_APPROVAL", submitted.id())).isOne();
+		assertThat(auditCount("COURSE_SUBMITTED_FOR_APPROVAL", submitted.id())).isZero();
 		assertThat(auditCount("COURSE_APPROVED", submitted.id())).isOne();
 	}
 
 	@Test
 	void rejectionIsTerminalAndStaleOrRepeatedDecisionsDoNotOverwriteEvidence() {
-		CourseApprovalResponse submitted = service.submitCourse(receptionistId, request("REJECT-101"));
+		CourseApprovalResponse submitted = legacySubmission("REJECT-101");
 
 		assertThatThrownBy(() -> service.rejectCourse(managerId, submitted.id(),
 			new CourseApprovalDecision(submitted.version() + 1, "Stale")))
@@ -100,6 +100,13 @@ class CourseApprovalIntegrationTests {
 		assertThat(queue.content()).extracting(CourseApprovalResponse::id).doesNotContain(created.id());
 		assertThat(db.queryForObject("select submitted_by_account_id is null from courses where id=?",
 			Boolean.class, created.id())).isTrue();
+	}
+
+	private CourseApprovalResponse legacySubmission(String code) {
+		CourseResponse created = service.createCourse(managerId, request(code));
+		db.update("update courses set status='PENDING_APPROVAL',submitted_by_account_id=?,submitted_at=current_timestamp where id=?",
+			receptionistId, created.id());
+		return service.getCourseApproval(managerId, created.id());
 	}
 
 	private CourseCreateRequest request(String code) {

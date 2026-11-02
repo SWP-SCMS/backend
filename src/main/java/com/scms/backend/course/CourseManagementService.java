@@ -81,13 +81,7 @@ class CourseManagementService {
 	@Transactional
 	CourseResponse createCourse(UUID managerId, CourseCreateRequest request) {
 		ensureActiveManager(managerId);
-		return CourseResponse.from(createCourse(managerId, request, false));
-	}
-
-	@Transactional
-	CourseApprovalResponse submitCourse(UUID receptionistId, CourseCreateRequest request) {
-		ensureActiveReceptionist(receptionistId);
-		return CourseApprovalResponse.from(createCourse(receptionistId, request, true));
+		return CourseResponse.from(createDraftCourse(managerId, request));
 	}
 
 	@Transactional(readOnly = true)
@@ -113,7 +107,7 @@ class CourseManagementService {
 		return decideCourse(managerId, courseId, request, false);
 	}
 
-	private Course createCourse(UUID actorId, CourseCreateRequest request, boolean submittedForApproval) {
+	private Course createDraftCourse(UUID actorId, CourseCreateRequest request) {
 		if (request == null) throw CourseException.validation("request", "must be a JSON object");
 		String code = required(request.code(), 50, "code").toUpperCase(java.util.Locale.ROOT);
 		String name = required(request.name(), 200, "name");
@@ -128,18 +122,15 @@ class CourseManagementService {
 		if (courses.existsByCode(code)) throw CourseException.duplicateCode();
 		String description = optional(request.description(), CourseFieldLimits.DESCRIPTION, "description");
 		String imageUrl = optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl");
-		Course course = submittedForApproval
-			? Course.submittedForApproval(UUID.randomUUID(), code, name, description, discipline, imageUrl,
-				request.defaultMinimumEnrollment(), actorId)
-			: new Course(UUID.randomUUID(), code, name, description, discipline, imageUrl,
-				request.defaultMinimumEnrollment());
+		Course course = new Course(UUID.randomUUID(), code, name, description, discipline, imageUrl,
+			request.defaultMinimumEnrollment());
 		try {
 			courses.saveAndFlush(course);
 		}
 		catch (DataIntegrityViolationException exception) {
 			throw CourseException.duplicateCode();
 		}
-		audit(actorId, submittedForApproval ? "COURSE_SUBMITTED_FOR_APPROVAL" : "COURSE_CREATED",
+		audit(actorId, "COURSE_CREATED",
 			"COURSE", course.getId(), null, snapshot(course));
 		return course;
 	}
@@ -455,13 +446,6 @@ class CourseManagementService {
 			throw new InvalidAuthenticatedAccountException();
 		}
 	}
-
-	private void ensureActiveReceptionist(UUID receptionistId) {
-		if (!accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)) {
-			throw new InvalidAuthenticatedAccountException();
-		}
-	}
-
 	private void validateRun(CourseRunCreateRequest request) {
 		BigInteger tuition = request.tuitionVnd();
 		if (tuition == null || tuition.signum() <= 0 || tuition.toString().length() > 19) {

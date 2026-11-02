@@ -42,11 +42,9 @@ class CourseApprovalControllerTests {
 	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
 
 	@Test
-	void receptionistSubmitsCourseForApproval() throws Exception {
+	void receptionistCannotSubmitCourseAndServiceIsNotInvoked() throws Exception {
 		UUID receptionistId = UUID.randomUUID();
 		UUID disciplineId = UUID.randomUUID();
-		CourseApprovalResponse response = response(CourseStatus.PENDING_APPROVAL, receptionistId);
-		when(service.submitCourse(eq(receptionistId), any())).thenReturn(response);
 
 		mockMvc.perform(post("/api/v1/reception/courses").contextPath("/api/v1")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -55,9 +53,8 @@ class CourseApprovalControllerTests {
 					 "defaultMinimumEnrollment":3}
 					""".formatted(disciplineId))
 				.with(actor(receptionistId, "RECEPTIONIST")))
-			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.status").value("PENDING_APPROVAL"))
-			.andExpect(jsonPath("$.submittedByAccountId").value(receptionistId.toString()));
+			.andExpect(status().isForbidden());
+		verifyNoInteractions(service);
 	}
 
 	@Test
