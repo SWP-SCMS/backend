@@ -106,6 +106,175 @@ class PaymentFlowIntegrationTests {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Test
+	void courseReconciliationQueuePaymentAndPrivateResultHaveCorrectOwnership() throws Exception {
+		Account manager=account(AccountRole.MANAGER), reception=account(AccountRole.RECEPTIONIST);
+		MemberProfile member=member();
+		CoursePaymentFixture course=coursePayment(member,clock.instant().plusSeconds(300));
+		getAuthorized(manager,"/api/v1/course-payments/reconciliation-queue?query="+course.reference())
+			.andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+			.andExpect(jsonPath("$.content[0].paymentId").value(course.paymentId().toString()));
+		getAuthorized(reception,"/api/v1/course-payments/"+course.paymentId()).andExpect(status().isOk())
+			.andExpect(jsonPath("$.canConfirmPaid").value(true)).andExpect(jsonPath("$.bankAccountNumber").value("123456789"));
+		String body=paidReconciliation(500000,course.reference(),"course-manual-"+course.paymentId());
+		String first=courseReconcile(reception,course,"retry",body).andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("PAID")).andExpect(jsonPath("$.enrollment.enrollmentId").isNotEmpty())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(courseReconcile(reception,course,"retry",body).andExpect(status().isOk()).andReturn()
+			.getResponse().getContentAsString()).isEqualTo(first);
+		courseReconcile(manager,course,"second-actor",body).andExpect(status().isOk());
+		courseReconcile(reception,course,"retry",body.replace("manual confirmation","changed reason")).andExpect(status().isConflict());
+		getAuthorized(member.getAccount(),"/api/v1/course-payments/"+course.paymentId()+"/result").andExpect(status().isOk())
+			.andExpect(jsonPath("$.bankAccountNumber").doesNotExist()).andExpect(jsonPath("$.evidence").doesNotExist());
+		getAuthorized(member().getAccount(),"/api/v1/course-payments/"+course.paymentId()+"/result").andExpect(status().isForbidden());
+		getAuthorized(member.getAccount(),"/api/v1/course-payments/"+course.paymentId()).andExpect(status().isForbidden());
+		assertCoursePaidOnce(course);
+		assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_RECONCILED' and target_id=?",course.paymentId())).isOne();
+		assertThat(db.queryForObject("select processed_by_account_id from course_payments where id=?",UUID.class,course.paymentId())).isEqualTo(reception.getId());
+	}
+
+	@Test
+	void courseReconciliationRejectsInvalidMoneyRolesKeysAndTerminalChanges() throws Exception {
+		Account manager=account(AccountRole.MANAGER);
+		CoursePaymentFixture course=coursePayment(member(),clock.instant().plusSeconds(300));
+		String body=paidReconciliation(500000,course.reference(),"strict-"+course.paymentId());
+		for (Account wrong:List.of(account(AccountRole.COACH),member().getAccount()))
+			courseReconcile(wrong,course,"wrong-role",body).andExpect(status().isForbidden());
+		mockMvc.perform(post("/api/v1/course-payments/{id}/reconcile",course.paymentId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION,bearer(manager)).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+		courseReconcile(manager,course,"amount",paidReconciliation(499999,course.reference(),"strict-amount")).andExpect(status().isBadRequest());
+		courseReconcile(manager,course,"reference",paidReconciliation(500000,"OTHER","strict-reference")).andExpect(status().isBadRequest());
+		courseReconcile(manager,course,"evidence",body.replace("bank statement","")).andExpect(status().isBadRequest());
+		courseReconcile(manager,course,"early-fail","{\"status\":\"FAILED\",\"evidence\":\"checked\",\"reason\":\"unpaid\"}").andExpect(status().isConflict());
+		assertThat(count("select count(*) from course_payment_reconciliations where course_payment_id=?",course.paymentId())).isZero();
+		courseReconcile(manager,course,"paid",body).andExpect(status().isOk());
+		courseReconcile(manager,course,"different-tx",paidReconciliation(500000,course.reference(),"other-tx")).andExpect(status().isConflict());
+		assertCoursePaidOnce(course);
+	}
+
+	@Test
+	void courseReconciliationNeverRevivesExpiredReservationsAndFailureReplays() throws Exception {
+		Account manager=account(AccountRole.MANAGER);
+		CoursePaymentFixture course=coursePayment(member(),clock.instant().minusSeconds(1));
+		courseReconcile(manager,course,"late",paidReconciliation(500000,course.reference(),"late-"+course.paymentId())).andExpect(status().isConflict());
+		getAuthorized(manager,"/api/v1/course-payments/"+course.paymentId()).andExpect(status().isOk())
+			.andExpect(jsonPath("$.canConfirmPaid").value(false)).andExpect(jsonPath("$.canConfirmFailed").value(true))
+			.andExpect(jsonPath("$.blockedReason").value("PAYMENT_WINDOW_EXPIRED"));
+		String body="{\"status\":\"FAILED\",\"evidence\":\"checked\",\"reason\":\"unpaid\"}";
+		courseReconcile(manager,course,"fail",body).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("FAILED"))
+			.andExpect(jsonPath("$.reservationStatus").value("EXPIRED"));
+		courseReconcile(manager,course,"fail",body).andExpect(status().isOk());
+		courseReconcile(manager,course,"new-fail",body).andExpect(status().isConflict());
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?",course.orderId())).isZero();
+		assertThat(count("select count(*) from course_payment_reconciliations where course_payment_id=?",course.paymentId())).isOne();
+	}
+
+	@Test
+	void courseReconciliationAuditFailureRollsBackTheEntireDecision() throws Exception {
+		CoursePaymentFixture course=coursePayment(member(),clock.instant().plusSeconds(300));
+		Account manager=account(AccountRole.MANAGER);
+		String body=paidReconciliation(500000,course.reference(),"rollback-"+course.paymentId());
+		db.execute("alter table audit_events add constraint chk_test_course_reconcile_audit check(action <> 'COURSE_PAYMENT_RECONCILED') not valid");
+		try { courseReconcile(manager,course,"rollback",body).andExpect(status().isInternalServerError()); }
+		finally { db.execute("alter table audit_events drop constraint chk_test_course_reconcile_audit"); }
+		assertCourseFulfillmentRolledBack(course,"rollback-"+course.paymentId());
+		assertThat(count("select count(*) from course_payment_reconciliations where course_payment_id=?",course.paymentId())).isZero();
+		courseReconcile(manager,course,"rollback",body).andExpect(status().isOk());
+		assertCoursePaidOnce(course);
+	}
+
+	@Test
+	void concurrentCourseReconciliationAndWebhookOnlyFulfillOnce() throws Exception {
+		Account manager=account(AccountRole.MANAGER);
+		CoursePaymentFixture course=coursePayment(member(),clock.instant().plusSeconds(300));
+		long tx=107990;
+		try (var pool=Executors.newFixedThreadPool(2)) {
+			var barrier=new java.util.concurrent.CyclicBarrier(2);
+			var manual=pool.submit(()->{barrier.await();return courseReconcile(manager,course,"race",paidReconciliation(500000,course.reference(),Long.toString(tx))).andReturn().getResponse().getStatus();});
+			var automatic=pool.submit(()->{barrier.await();return webhook("hook-secret",webhookBody(tx,course.reference(),"PAY "+course.reference(),500000,"in","123456789")).andReturn().getResponse().getStatus();});
+			assertThat(manual.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+			assertThat(automatic.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+		}
+		assertCoursePaidOnce(course);
+	}
+
+	@Test
+	void concurrentStaffCourseReconciliationSerializesKeysAndProviderClaims() throws Exception {
+		Account manager=account(AccountRole.MANAGER), reception=account(AccountRole.RECEPTIONIST);
+		CoursePaymentFixture course=coursePayment(member(),clock.instant().plusSeconds(300));
+		String body=paidReconciliation(500000,course.reference(),"staff-race-"+course.paymentId());
+		try (var pool=Executors.newFixedThreadPool(2)) {
+			var barrier=new java.util.concurrent.CyclicBarrier(2);
+			var first=pool.submit(()->{barrier.await();return courseReconcile(manager,course,"same",body).andReturn().getResponse().getStatus();});
+			var second=pool.submit(()->{barrier.await();return courseReconcile(reception,course,"same",body).andReturn().getResponse().getStatus();});
+			assertThat(first.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+			assertThat(second.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+		}
+		assertCoursePaidOnce(course);
+		assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_RECONCILED' and target_id=?",course.paymentId())).isOne();
+	}
+
+	@Test
+	void manualCourseTransactionCannotBeReusedByMembershipOrAnotherCourse() throws Exception {
+		Account manager=account(AccountRole.MANAGER);
+		CoursePaymentFixture first=coursePayment(member(),clock.instant().plusSeconds(300));
+		String tx="cross-manual-"+first.paymentId();
+		courseReconcile(manager,first,"one",paidReconciliation(500000,first.reference(),tx)).andExpect(status().isOk());
+		CoursePaymentFixture second=coursePayment(member(),clock.instant().plusSeconds(300));
+		courseReconcile(manager,second,"two",paidReconciliation(500000,second.reference(),tx)).andExpect(status().isConflict());
+		MemberProfile member=member();
+		UUID offer=offer(manager,"BASIC",12000,false);
+		UUID order=order(member.getAccountId(),member.getAccountId(),offer,12000,false,clock.instant().plusSeconds(300));
+		UUID payment=pendingPaymentWithDestinationSnapshot(order,12000,"OTHER-"+order);
+		reconcile(manager,payment,paidReconciliation(12000,"OTHER-"+order,tx)).andExpect(status().isConflict());
+	}
+
+	@Test
+	void concurrentCourseCashAndReconciliationDoNotDuplicateEnrollment() throws Exception {
+		Account receptionist=account(AccountRole.RECEPTIONIST), manager=account(AccountRole.MANAGER);
+		MemberProfile member=member();
+		CoursePaymentFixture course=coursePayment(member,clock.instant().plusSeconds(300));
+		try(var pool=Executors.newFixedThreadPool(2)) {
+			var barrier=new java.util.concurrent.CyclicBarrier(2);
+			var manual=pool.submit(()->{barrier.await();return courseReconcile(manager,course,"cash-race",paidReconciliation(500000,course.reference(),"cash-race-"+course.paymentId())).andReturn().getResponse().getStatus();});
+			var cash=pool.submit(()->{barrier.await();return mockMvc.perform(post("/api/v1/reception/members/{member}/course-orders/{order}/payments/cash",member.getAccountId(),course.orderId())
+				.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,bearer(receptionist)).header("Idempotency-Key","cash-race"))
+				.andReturn().getResponse().getStatus();});
+			assertThat(manual.get(20,TimeUnit.SECONDS)).isIn(200,409);
+			assertThat(cash.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+		}
+		assertCoursePaidOnce(course);
+	}
+
+	@Test
+	void concurrentCourseExpiryAndFailedReconciliationExpireOnlyOnce() throws Exception {
+		Account manager=account(AccountRole.MANAGER);
+		MemberProfile member=member();
+		CoursePaymentFixture course=coursePayment(member,clock.instant().minusSeconds(1));
+		try(var pool=Executors.newFixedThreadPool(2)) {
+			var barrier=new java.util.concurrent.CyclicBarrier(2);
+			var manual=pool.submit(()->{barrier.await();return courseReconcile(manager,course,"expiry-race","{\"status\":\"FAILED\",\"evidence\":\"checked\",\"reason\":\"unpaid\"}")
+				.andReturn().getResponse().getStatus();});
+			var expiry=pool.submit(()->{barrier.await();return getAuthorized(member.getAccount(),"/api/v1/members/me/course-orders/"+course.orderId()).andReturn().getResponse().getStatus();});
+			assertThat(manual.get(20,TimeUnit.SECONDS)).isIn(200,409);
+			assertThat(expiry.get(20,TimeUnit.SECONDS)).isEqualTo(200);
+		}
+		assertThat(db.queryForObject("select status from course_payments where id=?",String.class,course.paymentId())).isEqualTo("FAILED");
+		assertThat(count("select count(*) from audit_events where action='COURSE_RESERVATION_EXPIRED' and target_id in (select id from course_reservations where course_order_id=?)",course.orderId())).isOne();
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?",course.orderId())).isZero();
+	}
+
+	private org.springframework.test.web.servlet.ResultActions courseReconcile(Account actor,CoursePaymentFixture course,String key,String body) throws Exception {
+		return mockMvc.perform(post("/api/v1/course-payments/{id}/reconcile",course.paymentId()).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION,bearer(actor)).header("Idempotency-Key",key)
+			.contentType(MediaType.APPLICATION_JSON).content(body));
+	}
+	private void assertCoursePaidOnce(CoursePaymentFixture course) {
+		assertThat(count("select count(*) from course_enrollments where course_order_id=?",course.orderId())).isOne();
+		assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_PAID' and target_id in (select id from course_enrollments where course_order_id=?)",course.orderId())).isOne();
+		assertThat(count("select count(*) from notification_outbox where event_key like 'COURSE_ENROLLMENT_CREATED:%' and target_id in (select id from course_enrollments where course_order_id=?)",course.orderId())).isOne();
+	}
+
+	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
 		Account manager = account(AccountRole.MANAGER);
 		UUID offer = offer(manager, "BASIC", 12000, false);

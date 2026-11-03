@@ -1,0 +1,501 @@
+openapi: 3.1.0
+info:
+  title: SCMS Course Payment Reconciliation
+  version: 1.0.0
+  description: 'G15. Active Manager/Reception reconcile live Course payments; expired
+    holds are never revived. Errors: PAYMENT_VALIDATION_ERROR (400), PAYMENT_FORBIDDEN
+    (403), PAYMENT_NOT_FOUND (404), PAYMENT_CONFLICT (409). Key scope is actor/payment/reconcile.
+    Member result omits destination and evidence.'
+servers:
+- url: /api/v1
+security:
+- bearerAuth: []
+paths:
+  /course-payments/{paymentId}/reconcile:
+    post:
+      tags:
+      - course-reconciliation-controller
+      description: Active Manager/Reception. PAID requires a live hold and exact amount/reference;
+        FAILED requires an expired pending payment. Same actor/payment/key/payload
+        replays the saved result; changed payload returns 409.
+      operationId: reconcile_1
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentActionRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CourseReconciliationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /course-payments/{paymentId}:
+    get:
+      tags:
+      - course-reconciliation-controller
+      description: Active Manager/Reception only. Persisted destination and current
+        reconciliation eligibility.
+      operationId: detail_2
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CourseReconciliationDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /course-payments/{paymentId}/result:
+    get:
+      tags:
+      - course-reconciliation-controller
+      description: Active Manager/Reception or owning Member. Does not expose destination
+        or reconciliation evidence.
+      operationId: result_1
+      parameters:
+      - name: paymentId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CourseReconciliationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /course-payments/reconciliation-queue:
+    get:
+      tags:
+      - course-reconciliation-controller
+      description: Active Manager/Reception only. Course payments awaiting reconciliation;
+        expired reservations are never revived.
+      operationId: queue_2
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          default: ALL
+          enum:
+          - ALL
+          - PENDING
+          - EXPIRED_WINDOW
+      - name: query
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CourseReconciliationPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  responses:
+    Forbidden:
+      description: The authenticated account is not allowed to perform this operation
+        (FORBIDDEN).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiProblem'
+    Unauthorized:
+      description: Authentication failed (UNAUTHENTICATED, INVALID_TOKEN, INVALID_CREDENTIALS,
+        INVALID_REFRESH_TOKEN, INVALID_PENDING_SESSION, INVALID_PASSWORD_RESET_SESSION,
+        or PAYMENT_UNAUTHORIZED).
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/UnauthorizedProblem'
+    BadRequest:
+      description: The request is invalid.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiProblem'
+    NotFound:
+      description: The requested resource was not found.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiProblem'
+    Conflict:
+      description: The request conflicts with current resource state.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ApiProblem'
+  schemas:
+    ApiProblem:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        affectedSessionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        requiredBenefitCodes:
+          type: array
+          items:
+            type: string
+        missingBenefitCodes:
+          type: array
+          items:
+            type: string
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId:
+                type: string
+                format: uuid
+              classId:
+                type: string
+                format: uuid
+              className:
+                type: string
+              startTime:
+                type: string
+                format: date-time
+              endTime:
+                type: string
+                format: date-time
+        traceId:
+          type: string
+      required:
+      - code
+      - detail
+      - instance
+      - status
+      - title
+    UnauthorizedProblem:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          enum:
+          - UNAUTHENTICATED
+          - INVALID_TOKEN
+          - INVALID_CREDENTIALS
+          - INVALID_REFRESH_TOKEN
+          - INVALID_PENDING_SESSION
+          - INVALID_PASSWORD_RESET_SESSION
+          - PAYMENT_UNAUTHORIZED
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        affectedSessionIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        requiredBenefitCodes:
+          type: array
+          items:
+            type: string
+        missingBenefitCodes:
+          type: array
+          items:
+            type: string
+        affectedSessions:
+          type: array
+          items:
+            type: object
+            properties:
+              sessionId:
+                type: string
+                format: uuid
+              classId:
+                type: string
+                format: uuid
+              className:
+                type: string
+              startTime:
+                type: string
+                format: date-time
+              endTime:
+                type: string
+                format: date-time
+        traceId:
+          type: string
+      required:
+      - code
+      - detail
+      - instance
+      - status
+      - title
+    CourseReconciliationPage:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseReconciliationQueueItem'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    CourseReconciliationQueueItem:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        reservationId:
+          type: string
+          format: uuid
+        courseRunId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        memberCode:
+          type: string
+        memberName:
+          type: string
+        orderReference:
+          type: string
+        paymentReference:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+        deadlineAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    CourseReconciliationResult:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        reservationId:
+          type: string
+          format: uuid
+        courseRunId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        orderReference:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+        status:
+          type: string
+        orderStatus:
+          type: string
+        reservationStatus:
+          type: string
+        method:
+          type: string
+        deadlineAt:
+          type: string
+          format: date-time
+        enrollment:
+          $ref: '#/components/schemas/CourseEnrollmentResponse'
+    CourseEnrollmentResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        enrollmentId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        memberId:
+          type: string
+          format: uuid
+        courseRunId:
+          type: string
+          format: uuid
+        amountPaidVnd:
+          type: integer
+          maximum: 9999999999999999999
+          minimum: 1
+        totalUnits:
+          type: integer
+          format: int32
+          minimum: 1
+        enrolledAt:
+          type: string
+          format: date-time
+      required:
+      - amountPaidVnd
+      - courseRunId
+      - enrolledAt
+      - enrollmentId
+      - memberId
+      - orderId
+      - totalUnits
+    CourseReconciliationDetail:
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/CourseReconciliationResult'
+        bankCode:
+          type: string
+        bankAccountNumber:
+          type: string
+        bankAccountName:
+          type: string
+        transferContent:
+          type: string
+        canConfirmPaid:
+          type: boolean
+        canConfirmFailed:
+          type: boolean
+        blockedReason:
+          type: string
+    PaymentActionRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - PAID
+          - FAILED
+        receivedAmount:
+          type: integer
+        transferContent:
+          type: string
+        providerTransactionId:
+          type: string
+        evidence:
+          type: string
+        reason:
+          type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

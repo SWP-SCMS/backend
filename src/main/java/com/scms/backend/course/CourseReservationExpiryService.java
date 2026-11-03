@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-class CourseReservationExpiryService {
+public class CourseReservationExpiryService {
 
 	private final JdbcTemplate db;
 	private final AuditEventRepository audits;
@@ -32,7 +32,7 @@ class CourseReservationExpiryService {
 	}
 
 	@Transactional
-	boolean expireReservation(UUID reservationId, Instant now) {
+	public boolean expireReservation(UUID reservationId, Instant now) {
 		List<Map<String, Object>> rows = db.queryForList("""
 			select course_order_id,member_account_id,course_run_id
 			from course_reservations where id=?

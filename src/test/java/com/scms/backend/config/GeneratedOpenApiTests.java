@@ -264,6 +264,10 @@ class GeneratedOpenApiTests {
 	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+		"GET /course-payments/reconciliation-queue",
+		"GET /course-payments/{paymentId}",
+		"GET /course-payments/{paymentId}/result",
+		"POST /course-payments/{paymentId}/reconcile",
 		"GET /reception/members/{memberId}/course-waitlists",
 		"POST /reception/members/{memberId}/course-runs/{runId}/waitlist",
 		"DELETE /reception/members/{memberId}/course-runs/{runId}/waitlist",
@@ -602,6 +606,27 @@ class GeneratedOpenApiTests {
 	MockMvc mockMvc;
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	@Test
+	void courseReconciliationContractExistsIndependentlyOfMembership() throws Exception {
+		JsonNode document = objectMapper.readTree(mockMvc.perform(get("/v3/api-docs"))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		java.nio.file.Files.writeString(java.nio.file.Path.of("target/course-reconciliation-openapi.json"), document.toPrettyString());
+		JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-payment-reconciliation.yaml"));
+		contract.path("paths").properties().forEach(entry -> {
+			assertThat(document.path("paths").path(entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+		});
+		contract.path("components").path("schemas").properties().forEach(entry -> {
+			assertThat(document.path("components").path("schemas").path(entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
+		});
+		for (String path : List.of("/course-payments/reconciliation-queue", "/course-payments/{paymentId}",
+				"/course-payments/{paymentId}/result")) {
+			assertThat(document.path("paths").path(path).has("get")).as(path).isTrue();
+		}
+		JsonNode reconcile = document.path("paths").path("/course-payments/{paymentId}/reconcile").path("post");
+		assertThat(reconcile.isMissingNode()).isFalse();
+		assertThat(reconcile.path("parameters").toString()).contains("Idempotency-Key", "true");
+	}
 
 	@Test
 	void receptionProxyContractsMatchGeneratedResponsesAndMemberSchemas() throws Exception {
