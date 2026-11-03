@@ -100,6 +100,33 @@ class CourseTransferIntegrationTests {
 	}
 
 	@Test
+	void manualReconciliationCompletesHigherPriceTransferAndPreservesBothActors() throws Exception {
+		Account receptionist=account(AccountRole.RECEPTIONIST);
+		db.update("update course_runs set tuition_vnd=120000 where id=?",targetRunId);
+		requestTransfer();
+		var offer=transfers.approve(managerId,currentRequest().id(),targetRunId,"Manual difference payment");
+		transfers.accept(receptionist.getId(),memberId,offer.id(),"manual-transfer");
+		UUID orderId=db.queryForObject("select difference_order_id from course_transfer_offers where id=?",UUID.class,offer.id());
+		mockMvc.perform(post("/api/v1/reception/members/{member}/course-orders/{id}/payments/sepay",memberId,orderId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionist)).header("Idempotency-Key","difference"))
+			.andExpect(status().isOk());
+		UUID paymentId=db.queryForObject("select id from course_payments where course_order_id=?",UUID.class,orderId);
+		String reference=db.queryForObject("select payment_reference from course_payments where id=?",String.class,paymentId);
+		String body="""
+			{"status":"PAID","receivedAmount":20000,"transferContent":"%s","providerTransactionId":"%s","evidence":"QA statement","reason":"QA reconciliation"}
+			""".formatted(reference,"transfer-"+paymentId);
+		for(int retry=0;retry<2;retry++) mockMvc.perform(post("/api/v1/course-payments/{id}/reconcile",paymentId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(accounts.findById(managerId).orElseThrow()))
+			.header("Idempotency-Key","manual-difference").contentType("application/json").content(body)).andExpect(status().isOk());
+		assertThat(db.queryForObject("select status from course_transfer_offers where id=?",String.class,offer.id())).isEqualTo("COMPLETED");
+		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?",String.class,sourceEnrollmentId)).isEqualTo("TRANSFERRED");
+		assertThat(db.queryForObject("select actor_account_id from course_enrollments where source_transfer_offer_id=?",UUID.class,offer.id())).isEqualTo(receptionist.getId());
+		assertThat(db.queryForObject("select processed_by_account_id from course_enrollments where source_transfer_offer_id=?",UUID.class,offer.id())).isEqualTo(managerId);
+		assertThat(db.queryForObject("select count(*) from course_enrollments where source_transfer_offer_id=?",Long.class,offer.id())).isOne();
+		assertThat(db.queryForObject("select cash_paid_vnd from course_enrollments where source_transfer_offer_id=?",BigInteger.class,offer.id())).isEqualTo(BigInteger.valueOf(20000));
+	}
+
+	@Test
 	void completedTransferKeepsScheduleResponseRetryIdempotentForReception() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		requestTransfer();

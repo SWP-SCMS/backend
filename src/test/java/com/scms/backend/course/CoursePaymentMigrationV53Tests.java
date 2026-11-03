@@ -30,6 +30,25 @@ class CoursePaymentMigrationV53Tests {
 	}
 
 	@Test
+	void v70UpgradePreservesPaymentSnapshotsAndCreatesEmptyDecisionLedger() {
+		Flyway.configure().dataSource(postgres.getJdbcUrl(),postgres.getUsername(),postgres.getPassword())
+			.target("69").load().migrate();
+		JdbcTemplate db=db();
+		Fixture fixture=fixture(db);
+		UUID payment=insertCoursePayment(db,fixture,fixture.memberId(),fixture.actorId(),fixture.reference(),
+			500000,fixture.expiresAt(),"MB","123456789","SCMS GYM");
+		String before=snapshot(db,"course_payments",payment);
+		String orderBefore=snapshot(db,"course_orders",fixture.orderId());
+		String reservationBefore=snapshot(db,"course_reservations",fixture.reservationId());
+		flyway().migrate();
+		assertThat(snapshot(db,"course_payments",payment)).isEqualTo(before);
+		assertThat(snapshot(db,"course_orders",fixture.orderId())).isEqualTo(orderBefore);
+		assertThat(snapshot(db,"course_reservations",fixture.reservationId())).isEqualTo(reservationBefore);
+		assertThat(db.queryForObject("select count(*) from course_payment_reconciliations",Long.class)).isZero();
+		assertThat(flyway().migrate().migrationsExecuted).isZero();
+	}
+
+	@Test
 	void freshSchemaEnforcesCoursePaymentOwnershipReferenceDeadlineAndDestination() {
 		flyway().migrate();
 		JdbcTemplate db = db();
@@ -149,7 +168,7 @@ class CoursePaymentMigrationV53Tests {
 		assertThat(db.queryForObject("select course_payment_id from payment_provider_events where id=?",
 			UUID.class, event)).isNull();
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(69);
+			Integer.class)).isEqualTo(70);
 	}
 
 	private Fixture fixture(JdbcTemplate db) {
