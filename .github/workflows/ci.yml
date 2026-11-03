@@ -73,3 +73,12 @@ jobs:
           done
           test_pattern=$(IFS=,; printf '%s' "${shard_classes[*]}")
           ./mvnw -ntp -Dtest="$test_pattern" test
+
+      - name: Upload integration failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-failure-${{ github.event_name }}-${{ matrix.shard }}
+          path: |
+            target/surefire-reports/
+            target/course-qa/

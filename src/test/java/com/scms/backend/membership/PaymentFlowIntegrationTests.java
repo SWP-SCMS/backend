@@ -226,6 +226,10 @@ class PaymentFlowIntegrationTests {
 		UUID order=order(member.getAccountId(),member.getAccountId(),offer,12000,false,clock.instant().plusSeconds(300));
 		UUID payment=pendingPaymentWithDestinationSnapshot(order,12000,"OTHER-"+order);
 		reconcile(manager,payment,paidReconciliation(12000,"OTHER-"+order,tx)).andExpect(status().isConflict());
+  assertThat(count("select count(*) from course_enrollments where course_order_id=?",second.orderId())).isZero();
+  assertThat(count("select count(*) from memberships where order_id=?",order)).isZero();
+  assertThat(db.queryForObject("select status from payments where id=?",String.class,payment)).isEqualTo("PENDING");
+  assertCoursePaidOnce(first);
 	}
 
 	@Test
@@ -273,6 +277,57 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_PAID' and target_id in (select id from course_enrollments where course_order_id=?)",course.orderId())).isOne();
 		assertThat(count("select count(*) from notification_outbox where event_key like 'COURSE_ENROLLMENT_CREATED:%' and target_id in (select id from course_enrollments where course_order_id=?)",course.orderId())).isOne();
 	}
+
+ @org.junit.jupiter.params.ParameterizedTest
+ @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
+ void courseWebhookAndManualReconciliationPreserveEitherFirstWinner(boolean manualFirst) throws Exception {
+  var manager=account(AccountRole.MANAGER);
+  var course=coursePayment(member(),clock.instant().plusSeconds(300));
+  long tx=manualFirst?790001:790002;
+  String body=paidReconciliation(500000,course.reference(),Long.toString(tx));
+  if(manualFirst) courseReconcile(manager,course,"ordered",body).andExpect(status().isOk());
+  webhook("hook-secret",webhookBody(tx,course.reference(),"PAY "+course.reference(),500000,"in","123456789")).andExpect(status().isOk());
+  courseReconcile(manager,course,"ordered",body).andExpect(status().isOk());
+  assertCoursePaidOnce(course);
+  assertThat(count("select count(*) from audit_events where action='COURSE_PAYMENT_RECONCILED' and target_id=?",course.paymentId())).isEqualTo(manualFirst?1:0);
+ }
+ @org.junit.jupiter.params.ParameterizedTest
+ @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
+ void courseCashAndManualReconciliationPreserveEitherFirstWinner(boolean manualFirst) throws Exception {
+  var manager=account(AccountRole.MANAGER);var receptionist=account(AccountRole.RECEPTIONIST);var member=member();
+  var course=coursePayment(member,clock.instant().plusSeconds(300));
+  String body=paidReconciliation(500000,course.reference(),"ordered-"+course.paymentId());
+  if(manualFirst) courseReconcile(manager,course,"ordered",body).andExpect(status().isOk());
+  mockMvc.perform(post("/api/v1/reception/members/{member}/course-orders/{order}/payments/cash",member.getAccountId(),course.orderId())
+   .contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,bearer(receptionist)).header("Idempotency-Key","ordered-cash")).andExpect(status().isOk());
+  courseReconcile(manager,course,"ordered",body).andExpect(manualFirst?status().isOk():status().isConflict());
+  assertCoursePaidOnce(course);
+ }
+ @org.junit.jupiter.params.ParameterizedTest
+ @org.junit.jupiter.params.provider.ValueSource(booleans={true,false})
+ void courseExpiryAndManualFailurePreserveEitherFirstWinner(boolean manualFirst) throws Exception {
+  var manager=account(AccountRole.MANAGER);var member=member();var course=coursePayment(member,clock.instant().minusSeconds(1));
+  String body="{\"status\":\"FAILED\",\"evidence\":\"QA receipt\",\"reason\":\"Expired unpaid\"}";
+  if(manualFirst) courseReconcile(manager,course,"ordered",body).andExpect(status().isOk());
+  getAuthorized(member.getAccount(),"/api/v1/members/me/course-orders/"+course.orderId()).andExpect(status().isOk());
+  courseReconcile(manager,course,"ordered",body).andExpect(manualFirst?status().isOk():status().isConflict());
+  assertThat(count("select count(*) from course_enrollments where course_order_id=?",course.orderId())).isZero();
+  assertThat(count("select count(*) from audit_events where action='COURSE_RESERVATION_EXPIRED' and target_id in (select id from course_reservations where course_order_id=?)",course.orderId())).isOne();
+ }
+ @org.junit.jupiter.params.ParameterizedTest
+ @org.junit.jupiter.params.provider.ValueSource(strings={"course_enrollment_sessions","notification_outbox"})
+ void manualCourseAllocationOrOutboxFailureRollsBackThenRetries(String table) throws Exception {
+  var manager=account(AccountRole.MANAGER);var course=coursePayment(member(),clock.instant().plusSeconds(300));
+  String transaction="qa-rollback-"+course.paymentId();String body=paidReconciliation(500000,course.reference(),transaction);
+  UUID run=db.queryForObject("select course_run_id from course_orders where id=?",UUID.class,course.orderId());
+  String condition=table.equals("course_enrollment_sessions")?"course_run_id <> '"+run+"'":"notification_type <> 'COURSE_ENROLLMENT_CREATED' or payload->>'orderId' <> '"+course.orderId()+"'";
+  db.execute("alter table "+table+" add constraint qa_reject_artifact check ("+condition+") not valid");
+  try {courseReconcile(manager,course,"rollback-artifact",body).andExpect(status().isInternalServerError());}
+  finally {db.execute("alter table "+table+" drop constraint qa_reject_artifact");}
+  assertCourseFulfillmentRolledBack(course,transaction);
+  assertThat(count("select count(*) from course_payment_reconciliations where course_payment_id=?",course.paymentId())).isZero();
+  courseReconcile(manager,course,"rollback-artifact",body).andExpect(status().isOk());assertCoursePaidOnce(course);
+ }
 
 	@Test
 	void offerPatchIsPartialRejectsEmptyAndCannotChangePlan() throws Exception {
@@ -2228,6 +2283,9 @@ class PaymentFlowIntegrationTests {
 		assertThat(count("select count(*) from payment_provider_events where provider_transaction_id=?",
 			transactionId)).isZero();
 		assertThat(count("select count(*) from course_enrollments where course_order_id=?", course.orderId())).isZero();
+  assertThat(count("select count(*) from course_enrollment_sessions where course_run_id=(select course_run_id from course_orders where id=?)",course.orderId())).isZero();
+  assertThat(count("select count(*) from notification_outbox where payload->>'orderId'=?",course.orderId().toString())).isZero();
+  if(course.paymentId()!=null) assertThat(db.queryForObject("select provider_transaction_id from course_payments where id=?",String.class,course.paymentId())).isNull();
 	}
 
 	private void awaitPlanStatusLock() throws InterruptedException {
