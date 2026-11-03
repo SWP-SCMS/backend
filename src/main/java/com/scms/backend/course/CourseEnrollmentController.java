@@ -70,6 +70,7 @@ class CourseEnrollmentController {
 				@PathVariable UUID sessionId) {
 			return ResponseEntity.ok(service.roster(UUID.fromString(jwt.getSubject()), sessionId));
 		}
+		@io.swagger.v3.oas.annotations.Operation(description = "Assigned active Coach only. Requires ACTIVE enrollment, Run CONFIRMED/IN_PROGRESS/COMPLETED and an effective session within [startAt,endAt+30 minutes). Inactive Run or closed window returns 409 COURSE_ATTENDANCE_WINDOW_CLOSED; cancelled Run or wrong assignment returns 404.")
 		@PatchMapping("/{enrollmentSessionId}/attendance")
 		ResponseEntity<RosterEntry> attendance(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID sessionId,
 				@PathVariable UUID enrollmentSessionId, @RequestBody AttendanceUpdate request) {

@@ -45,6 +45,18 @@ class CourseEnrollmentServiceTests {
 		when(accounts.existsByIdAndRoleAndStatus(coach, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
 	}
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings={"DRAFT","OPEN_FOR_REGISTRATION","SETTLEMENT_PENDING","CANCELLED"})
+	void inactiveRunCannotBypassCoachAttendancePolicy(String runStatus) {
+		var sessionData=new java.util.HashMap<>(session(now,now.plusSeconds(3600)));
+		sessionData.put("run_status",runStatus);
+		when(db.queryForList(anyString(),any(Object[].class))).thenReturn(List.of(sessionData)).thenReturn(List.of(roster()));
+		assertThatThrownBy(()->service.updateAttendance(coach,session,row,new AttendanceUpdate(CourseAttendanceStatus.PRESENT)))
+			.isInstanceOf(CourseAttendanceException.class).extracting("code").isEqualTo("COURSE_ATTENDANCE_WINDOW_CLOSED");
+		verify(db,never()).update(anyString(),any(Object[].class));
+		verify(audits,never()).save(any());
+	}
+
 	@Test void notRecordedCannotBeWritten() {
 		assertThatThrownBy(() -> service.updateAttendance(coach, session, row,
 			new AttendanceUpdate(CourseAttendanceStatus.NOT_RECORDED)))
@@ -77,7 +89,7 @@ class CourseEnrollmentServiceTests {
 
 	private Map<String, Object> session(Instant start, Instant end) {
 		return Map.of("id", session, "start_at", Timestamp.from(start), "end_at", Timestamp.from(end),
-			"status", "SCHEDULED");
+			"status", "SCHEDULED", "run_status", "CONFIRMED");
 	}
 
 	private Map<String, Object> roster() {

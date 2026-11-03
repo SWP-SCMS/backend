@@ -612,8 +612,14 @@ class CourseScheduleChangeIntegrationTests {
 		var input = new CourseRefundApiModels.RefundDisbursement(0L, BigInteger.valueOf(100_000), "CASH", "receipt", "evidence");
 		assertThatThrownBy(() -> refunds.recordDisbursement(receptionist, obligation, "before-approval", input)).isInstanceOf(CourseRefundException.class);
 		var approved = refunds.approve(managerId, obligation, 0L, "Unserved unit");
-		assertThat(refunds.recordDisbursement(receptionist, obligation, "after-approval", new CourseRefundApiModels.RefundDisbursement(
-			approved.version(), approved.approvedAmountVnd(), "CASH", "receipt", "evidence")).status()).isEqualTo("DISBURSEMENT_RECORDED");
+		var recorded = refunds.recordDisbursement(receptionist, obligation, "after-approval", new CourseRefundApiModels.RefundDisbursement(
+			approved.version(), approved.approvedAmountVnd(), "CASH", "receipt", "evidence"));
+		assertThat(recorded.status()).isEqualTo("DISBURSEMENT_RECORDED");
+		var verification = new CourseRefundApiModels.RefundVerification(recorded.version(), approved.approvedAmountVnd(),
+			"receipt", "evidence", "QA ordinary payout verification");
+		assertThat(refunds.verify(managerId, obligation, verification).status()).isEqualTo("COMPLETED");
+		refunds.verify(managerId, obligation, verification);
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_REFUND_VERIFIED' and target_id=?", Long.class, obligation)).isOne();
 	}
 
 	@Test

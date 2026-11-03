@@ -108,14 +108,14 @@ class CourseEnrollmentService {
 			throw CourseAttendanceException.invalid();
 		Map<String, Object> session = db.queryForList("""
 			with eligible_run as materialized (
-				select r.id from course_runs r where r.id=(select course_run_id from course_sessions where id=?)
+				select r.id,r.status run_status from course_runs r where r.id=(select course_run_id from course_sessions where id=?)
 				and r.status<>'CANCELLED' for update of r
 			)
-			select s.id,s.start_at,s.end_at,s.status from course_sessions s join eligible_run r on r.id=s.course_run_id
+			select s.id,s.start_at,s.end_at,s.status,r.run_status from course_sessions s join eligible_run r on r.id=s.course_run_id
 			where s.id=? and s.coach_account_id=? for update of s
 			""", sessionId, sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		Instant now = clock.instant();
-		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), null,
+		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), text(session,"run_status"),
 			instant(session, "start_at"), instant(session, "end_at"), now, true);
 		if (!attendance.writable())
 			throw CourseAttendanceException.closed();
