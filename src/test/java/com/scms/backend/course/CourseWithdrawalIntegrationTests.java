@@ -100,6 +100,66 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void courseOnlyCheckInAndAttendancePersistThroughApiWithTimeAndAssignmentGuards() throws Exception {
+		UUID session=db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3",UUID.class,runId);
+		UUID row=db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?",UUID.class,enrollmentId,session);
+		db.update("update member_profiles set profile_image_url='/qa/member.png' where account_id=?",memberId);
+		db.update("update course_runs set status='IN_PROGRESS' where id=?",runId);
+		String memberCode=db.queryForObject("select member_code from member_profiles where account_id=?",String.class,memberId);
+		assertThat(db.queryForObject("select count(*) from memberships where member_account_id=?",Long.class,memberId)).isZero();
+		String body="{\"memberId\":\""+memberCode+"\",\"identityVerified\":true,\"courseSessionId\":\""+session+"\"}";
+		mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionistId))
+			.header("Idempotency-Key","course-only").contentType("application/json").content(body)).andExpect(status().isCreated())
+			.andExpect(jsonPath("$.source").value("COURSE")).andExpect(jsonPath("$.courseEnrollmentId").value(enrollmentId.toString()));
+		mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionistId))
+			.header("Idempotency-Key","course-only").contentType("application/json").content(body)).andExpect(status().isOk());
+		assertThat(db.queryForObject("select count(*) from center_visits where course_enrollment_id=?",Long.class,enrollmentId)).isOne();
+
+		var pending=withdrawals.createForMember(memberId,enrollmentId,"QA temporary suspension");
+		mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionistId))
+			.header("Idempotency-Key","pending-course-entry").contentType("application/json").content(body)).andExpect(status().isConflict())
+			.andExpect(jsonPath("$.code").value("COURSE_CHECK_IN_NOT_ELIGIBLE"));
+		withdrawals.cancelForMember(memberId,pending.id(),"QA restore rights");
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=?",Long.class,runId)).isEqualTo(10);
+		String path="/api/v1/coach/course-sessions/"+session+"/roster/"+row+"/attendance";
+		when(clock.instant()).thenReturn(NOW.minusSeconds(1));
+		attendanceApi(coachId,path,"PRESENT").andExpect(status().isConflict());
+		when(clock.instant()).thenReturn(NOW);
+		attendanceApi(account(AccountRole.COACH).getId(),path,"PRESENT").andExpect(status().isNotFound());
+		attendanceApi(coachId,path,"PRESENT").andExpect(status().isOk());
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?",String.class,row)).isEqualTo("PRESENT");
+		when(clock.instant()).thenReturn(NOW.plusSeconds(5399));
+		attendanceApi(coachId,path,"ABSENT").andExpect(status().isOk());
+		when(clock.instant()).thenReturn(NOW.plusSeconds(5400));
+		attendanceApi(coachId,path,"PRESENT").andExpect(status().isConflict());
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?",String.class,row)).isEqualTo("ABSENT");
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_ATTENDANCE_CHANGED' and target_id=?",Long.class,row)).isEqualTo(2);
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings={"DRAFT","OPEN_FOR_REGISTRATION","SETTLEMENT_PENDING"})
+	void attendanceApiCannotWriteForInactiveRunEvenInsideSessionWindow(String state) throws Exception {
+		UUID session=db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3",UUID.class,runId);
+		UUID row=db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?",UUID.class,enrollmentId,session);
+		db.update("update course_runs set status=? where id=?",state,runId);
+		attendanceApi(coachId,"/api/v1/coach/course-sessions/"+session+"/roster/"+row+"/attendance","PRESENT")
+			.andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("COURSE_ATTENDANCE_WINDOW_CLOSED"));
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?",String.class,row)).isEqualTo("NOT_RECORDED");
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_ATTENDANCE_CHANGED' and target_id=?",Long.class,row)).isZero();
+	}
+
+	private org.springframework.test.web.servlet.ResultActions attendanceApi(UUID actor,String path,String state) throws Exception {
+		return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(path).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION,"Bearer "+tokenAtClock(actor)).contentType("application/json").content("{\"status\":\""+state+"\"}"));
+	}
+	private String tokenAtClock(UUID id) {
+		Account account=accounts.findById(id).orElseThrow();
+		JwtClaimsSet claims=JwtClaimsSet.builder().issuer("scms-backend").issuedAt(clock.instant().minusSeconds(60)).expiresAt(clock.instant().plusSeconds(3600))
+			.subject(id.toString()).claim("role",account.getRole().name()).claim("account_status",account.getStatus().name()).build();
+		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(),claims)).getTokenValue();
+	}
+
+	@Test
 	void receptionHistoryRejectsInactiveBeneficiariesAndKeepsRefundPaginationValidation() throws Exception {
 		String base = "/api/v1/reception/members/" + memberId, auth = "Bearer " + token(receptionistId);
 		mockMvc.perform(get(base + "/course-refund-obligations").queryParam("size", "101").contextPath("/api/v1")

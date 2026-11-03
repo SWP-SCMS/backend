@@ -78,6 +78,31 @@ class CourseRefundObligationIntegrationTests {
 		seedEnrollment(BigInteger.valueOf(1_000_000));
 	}
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings={"verify","return"})
+	void bankTransferRefundHttpWorkflowRequiresCorrectRolesEvidenceAndTerminalState(String terminal) throws Exception {
+		UUID id=writer.create(enrollmentId,runId,CourseRefundSource.TRANSFER_CREDIT_EXCESS,BigInteger.valueOf(30000),managerId,"QA bank transfer");
+		var approved=refunds.approve(managerId,id,0L,"QA approved");
+		String payout="""
+			{"expectedVersion":%d,"amountVnd":30000,"method":"BANK_TRANSFER","reference":"QA-BANK","evidenceReference":"QA-SIMULATED-NO-REAL-MONEY"}
+			""".formatted(approved.version());
+		String disburse="/api/v1/reception/course-refund-obligations/"+id+"/disburse";
+		for (int retry=0;retry<2;retry++) mockMvc.perform(post(disburse).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionistId)).header("Idempotency-Key","qa-bank")
+			.contentType("application/json").content(payout)).andExpect(status().isOk());
+		var recorded=refunds.detail(managerId,id);
+		String body=terminal.equals("verify") ? """
+			{"expectedVersion":%d,"amountVnd":30000,"disbursementReference":"QA-BANK","evidenceReference":"QA-SIMULATED-NO-REAL-MONEY","reason":"QA verified"}
+			""".formatted(recorded.version()) : "{\"expectedVersion\":"+recorded.version()+",\"reason\":\"QA returned\"}";
+		String path="/api/v1/manager/course-refund-obligations/"+id+"/"+terminal;
+		mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION,"Bearer "+token(receptionistId))
+			.contentType("application/json").content(body)).andExpect(status().isForbidden());
+		for (int retry=0;retry<2;retry++) mockMvc.perform(post(path).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION,"Bearer "+token(managerId)).contentType("application/json").content(body)).andExpect(status().isOk());
+		assertThat(refunds.detail(managerId,id).status()).isEqualTo(terminal.equals("verify") ? "COMPLETED" : "RETURNED");
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_REFUND_DISBURSED' and target_id=?",Long.class,id)).isOne();
+	}
+
 	@Test
 	void managerApprovesZeroAmountAndSameDecisionReplayIsIdempotent() {
 		UUID obligationId = writer.create(enrollmentId, runId, CourseRefundSource.MATERIAL_CHANGE,

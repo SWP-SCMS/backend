@@ -75,6 +75,7 @@ paths:
   /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance:
     patch:
       operationId: updateCourseAttendance
+      description: Assigned active Coach only. Requires ACTIVE enrollment, Run CONFIRMED/IN_PROGRESS/COMPLETED and an effective session within [startAt,endAt+30 minutes). Inactive Run or closed window returns 409 COURSE_ATTENDANCE_WINDOW_CLOSED; cancelled Run or wrong assignment returns 404.
       parameters:
         - {$ref: '#/components/parameters/SessionId'}
         - {name: enrollmentSessionId, in: path, required: true, schema: {type: string, format: uuid}}
