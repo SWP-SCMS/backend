@@ -38,7 +38,7 @@ class ManagerMemberControllerTests {
 	@Test
 	void exposesListDetailAndPatchRoutes() throws Exception {
 		MemberAccountResponse member = response();
-		when(service.search(eq(managerId), eq("member"), eq(AccountStatus.ACTIVE), any(Pageable.class)))
+		when(service.search(eq(managerId), eq("member"), eq(AccountStatus.ACTIVE), eq(null), any(Pageable.class)))
 			.thenReturn(new MemberAccountPageResponse(List.of(member), 0, 20, 1, 1));
 		when(service.get(managerId, memberId)).thenReturn(member);
 		when(service.update(eq(managerId), eq(memberId), any())).thenReturn(member);

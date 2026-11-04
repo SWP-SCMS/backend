@@ -108,7 +108,10 @@ final class CourseFieldLimits {
 	private CourseFieldLimits() { }
 }
 
-record VersionRequest(@NotNull @PositiveOrZero Long expectedVersion) { }
+record VersionRequest(@NotNull @PositiveOrZero Long expectedVersion,
+    @jakarta.validation.constraints.Size(min = 5, max = 1000) String reason) {
+    VersionRequest(Long expectedVersion) { this(expectedVersion, null); }
+}
 
 record CourseApprovalDecision(
 	@NotNull @PositiveOrZero Long expectedVersion,

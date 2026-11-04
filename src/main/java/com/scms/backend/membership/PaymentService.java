@@ -165,6 +165,7 @@ class PaymentService {
 			payment.get("order_id"));
 		audits.save(new AuditEvent(UUID.randomUUID(),actor,"PAYMENT_RECONCILED","PAYMENT",paymentId,
 			request.reason().trim(),Map.of("status","PENDING"),Map.of("status","FAILED","evidence",request.evidence().trim())));
+        fulfillment.notifyFailedReconciliation(paymentId, payment);
 		return new PaymentResultResponse(paymentId,(UUID)payment.get("order_id"),"FAILED",
 			PaymentFulfillmentService.string(payment,"payment_method"),null,null,null,
 			PaymentFulfillmentService.fulfillmentMode(payment),

@@ -128,7 +128,10 @@ public class ClassSessionService {
 			builder.equal(root.get("status"), status));
 
 		var page = sessions.findAll(filters, pageable);
-		return new ClassSessionPageResponse(page.getContent().stream().map(ClassSessionResponse::from).toList(),
+        Map<UUID, Long> counts = new java.util.HashMap<>();
+        if (!page.isEmpty()) sessions.countBookedBySessionIds(page.getContent().stream().map(ClassSession::getId).toList())
+            .forEach(row -> counts.put(row.getSessionId(), row.getBookedCount()));
+		return new ClassSessionPageResponse(page.getContent().stream().map(s -> ClassSessionResponse.from(s).withBookedCount(counts.getOrDefault(s.getId(), 0L))).toList(),
 			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 

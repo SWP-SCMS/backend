@@ -351,6 +351,8 @@ class CourseManagementService {
 		if (request == null || request.expectedVersion() == null) {
 			throw CourseException.validation("expectedVersion", "is required");
 		}
+        if (request.reason() != null && (request.reason().trim().length() < 5 || request.reason().length() > 1000))
+            throw CourseException.validation("reason", "must contain between 5 and 1000 characters");
 		CourseRun run = lockRun(runId);
 		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
 		Map<String, Object> before = snapshot(run);
@@ -359,9 +361,20 @@ class CourseManagementService {
 		runClosure.cancelEffects(managerId, run);
 		Map<String, Object> after = snapshot(run);
 		after.put("reasonCode", "MANAGER_CANCELLED");
+        if (request.reason() != null) after.put("reason", request.reason().trim());
 		audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, before, after);
 		return CourseRunResponse.from(run);
 	}
+
+    @Transactional(readOnly = true)
+    Map<String, Object> cancellationImpact(UUID managerId, UUID runId) {
+        ensureActiveManager(managerId);
+        if (!runs.existsById(runId)) throw CourseException.runNotFound();
+        return db.queryForMap("""
+            select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')) as "enrollmentCount",
+                   (select count(*) from course_orders where course_run_id=? and status='PENDING_PAYMENT') as "pendingOrderCount"
+            """, runId, runId);
+    }
 
 	@Transactional(readOnly = true)
 	List<CourseSessionResponse> listSessions(UUID managerId, UUID runId) {
