@@ -28,6 +28,6 @@ JDK 21:
 
 Chrome với BE local thật: T15 lọc Premium/reload đúng; T20 số đã đặt đúng; T19 đọc tác động modal đúng; upload/xem ảnh đúng, duplicate cùng ảnh chỉ một bản, file giả 400, hội viên đọc ảnh 403. Migration V73 đã chạy trên DB cấu hình local khi restart. T21 lưu UI trong giờ và đọc lại PRESENT; thông báo nghỉ HLV thật dẫn đúng trang.
 
-E2E PAYMENT_FAILED chưa hoàn tất: automatic approval review chặn xác nhận đối soát thật; payment vẫn PENDING. Unit test nhánh notification và retry đã đạt. Không thay API/công cụ để vượt chặn.
+E2E chốt ngày 05/11/2026 sau xác nhận của người dùng: **PASS**. Chrome xác nhận hủy đợt QA `de06eb85-adf5-4379-9678-0e6738a369c5` (0 đăng ký/0 đơn): GET lại trả CANCELLED/version 1. Chrome xác nhận không hợp lệ payment `092bc9a1-751b-4f43-b4e2-8cdaf35b3051`: GET result FAILED, không membership/receipt; queue bỏ hàng, chứng từ ảnh vẫn xem được. Hội viên MB-100023 nhận đúng một PAYMENT_FAILED (ID `f949fdd9-6690-41dd-82a2-0ed0116d3521`), bấm thông báo tới `/member/plan` và đánh dấu đã đọc. Không chuyển tiền thật. Hai ca từng bị automatic approval review chặn đã được hoàn tất; không sửa code trong lượt chốt này.
 
 Không commit thư mục `data/`, `.env`, log hay báo cáo sinh trong `target/`.
