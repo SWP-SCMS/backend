@@ -427,6 +427,27 @@ components:
           type: [string, 'null']
           pattern: '^0[0-9]{9}$'
           description: Final-state paired with emergencyContactName; null clears the value.
+        gender:
+          type: [string, 'null']
+          maxLength: 16
+          enum: [MALE, FEMALE, null]
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        address:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        physicalConditionNotes:
+          type: [string, 'null']
+          maxLength: 2000
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        emergencyContactRelationship:
+          type: [string, 'null']
+          maxLength: 100
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        emergencyContactTimeNotes:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
     MemberProfileResponse:
       type: object
       additionalProperties: false
@@ -443,6 +464,12 @@ components:
         - fitnessGoal
         - emergencyContactName
         - emergencyContactPhone
+        - gender
+        - address
+        - physicalConditionNotes
+        - emergencyContactRelationship
+        - emergencyContactTimeNotes
+        - createdAt
       properties:
         accountId:
           type: string
@@ -479,6 +506,32 @@ components:
           type: [string, 'null']
         emergencyContactPhone:
           type: [string, 'null']
+        gender:
+          type: [string, 'null']
+          maxLength: 16
+          enum: [MALE, FEMALE, null]
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        address:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        physicalConditionNotes:
+          type: [string, 'null']
+          maxLength: 2000
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        emergencyContactRelationship:
+          type: [string, 'null']
+          maxLength: 100
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        emergencyContactTimeNotes:
+          type: [string, 'null']
+          maxLength: 500
+          description: Optional; trimmed and non-blank when provided. Null clears the value.
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Account creation timestamp (date joined).
     ProblemDetail:
       type: object
       required:

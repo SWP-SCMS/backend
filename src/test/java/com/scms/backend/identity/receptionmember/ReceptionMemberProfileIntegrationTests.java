@@ -231,7 +231,10 @@ class ReceptionMemberProfileIntegrationTests {
 			  "profileImageUrl":" https://cdn.example/new.png ",
 			  "fitnessGoal":" Run a marathon ",
 			  "emergencyContactName":" Emergency Person ",
-			  "emergencyContactPhone":" 0911111131 "
+			  "emergencyContactPhone":" 0911111131 ",
+			  "gender":"MALE", "address":" New address ",
+			  "physicalConditionNotes":" Knee injury ",
+			  "emergencyContactRelationship":" Parent ", "emergencyContactTimeNotes":" Evening "
 			}
 			""")
 			.andExpect(status().isOk())
@@ -245,6 +248,11 @@ class ReceptionMemberProfileIntegrationTests {
 			.andExpect(jsonPath("$.fitnessGoal").value("Run a marathon"))
 			.andExpect(jsonPath("$.emergencyContactName").value("Emergency Person"))
 			.andExpect(jsonPath("$.emergencyContactPhone").value("0911111131"))
+			.andExpect(jsonPath("$.gender").value("MALE"))
+			.andExpect(jsonPath("$.address").value("New address"))
+			.andExpect(jsonPath("$.physicalConditionNotes").value("Knee injury"))
+			.andExpect(jsonPath("$.emergencyContactRelationship").value("Parent"))
+			.andExpect(jsonPath("$.emergencyContactTimeNotes").value("Evening"))
 			.andExpect(jsonPath("$.role").value("MEMBER"))
 			.andExpect(jsonPath("$.status").value("ACTIVE"))
 			.andExpect(jsonPath("$.passwordHash").doesNotExist())

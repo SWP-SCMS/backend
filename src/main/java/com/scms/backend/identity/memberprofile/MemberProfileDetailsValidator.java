@@ -82,6 +82,14 @@ public class MemberProfileDetailsValidator {
 		return normalized;
 	}
 
+	public String normalizeGender(String value) {
+		String normalized = normalizeOptional(value, "gender", 16);
+		if (normalized != null && !java.util.Set.of("MALE", "FEMALE").contains(normalized)) {
+			throw invalid("gender", "must be MALE, FEMALE or null");
+		}
+		return normalized;
+	}
+
 	public String normalizeOptionalPersonName(String value, String field, Integer maxLength) {
 		if (value == null) return null;
 		return normalizePersonName(value, field, maxLength == null ? Integer.MAX_VALUE : maxLength);

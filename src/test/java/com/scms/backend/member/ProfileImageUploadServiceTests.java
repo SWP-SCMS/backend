@@ -108,7 +108,7 @@ class ProfileImageUploadServiceTests {
 		when(memberService.getProfile(accountId)).thenReturn(new MemberProfileResponse(accountId, "MB-123", "Member",
 			"0901234567", "member@example.com", java.time.LocalDate.of(2000, 1, 1),
 			com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE,
-			stored.url(), null, null, null));
+			stored.url(), null, null, null, null, null, null, null, null, null));
 
 		TransactionSynchronizationManager.initSynchronization();
 		try {
@@ -138,7 +138,7 @@ class ProfileImageUploadServiceTests {
 		when(memberService.getProfile(accountId)).thenReturn(new MemberProfileResponse(accountId, "MB-123", "Member",
 			"0901234567", "member@example.com", java.time.LocalDate.of(2000, 1, 1),
 			com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE,
-			stored.url(), null, null, null));
+			stored.url(), null, null, null, null, null, null, null, null, null));
 
 		TransactionSynchronizationManager.initSynchronization();
 		try {

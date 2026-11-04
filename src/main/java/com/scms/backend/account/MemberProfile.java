@@ -45,6 +45,21 @@ public class MemberProfile {
 	@Column(name = "emergency_contact_phone", length = 32)
 	private String emergencyContactPhone;
 
+	@Column(name = "gender", length = 16)
+	private String gender;
+
+	@Column(name = "address", length = 500)
+	private String address;
+
+	@Column(name = "physical_condition_notes", length = 2000)
+	private String physicalConditionNotes;
+
+	@Column(name = "emergency_contact_relationship", length = 100)
+	private String emergencyContactRelationship;
+
+	@Column(name = "emergency_contact_time_notes", length = 500)
+	private String emergencyContactTimeNotes;
+
 	@Generated(event = EventType.INSERT)
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
@@ -105,6 +120,35 @@ public class MemberProfile {
 
 	public String getEmergencyContactPhone() {
 		return emergencyContactPhone;
+	}
+
+	public void updateAdditionalDetails(String gender, String address, String physicalConditionNotes,
+			String emergencyContactRelationship, String emergencyContactTimeNotes) {
+		this.gender = gender;
+		this.address = address;
+		this.physicalConditionNotes = physicalConditionNotes;
+		this.emergencyContactRelationship = emergencyContactRelationship;
+		this.emergencyContactTimeNotes = emergencyContactTimeNotes;
+	}
+
+	public String getGender() {
+		return gender;
+	}
+
+	public String getAddress() {
+		return address;
+	}
+
+	public String getPhysicalConditionNotes() {
+		return physicalConditionNotes;
+	}
+
+	public String getEmergencyContactRelationship() {
+		return emergencyContactRelationship;
+	}
+
+	public String getEmergencyContactTimeNotes() {
+		return emergencyContactTimeNotes;
 	}
 
 	public Instant getCreatedAt() {

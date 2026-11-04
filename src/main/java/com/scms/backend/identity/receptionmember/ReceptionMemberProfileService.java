@@ -113,12 +113,30 @@ public class ReceptionMemberProfileService {
 			? validator.normalizeOptionalPhone(request.emergencyContactPhone())
 			: profile.getEmergencyContactPhone();
 
+		String gender = request.hasGender()
+			? validator.normalizeGender(request.gender())
+			: profile.getGender();
+		String address = request.hasAddress()
+			? validator.normalizeOptional(request.address(), "address", 500)
+			: profile.getAddress();
+		String physicalConditionNotes = request.hasPhysicalConditionNotes()
+			? validator.normalizeOptional(request.physicalConditionNotes(), "physicalConditionNotes", 2000)
+			: profile.getPhysicalConditionNotes();
+		String emergencyContactRelationship = request.hasEmergencyContactRelationship()
+			? validator.normalizeOptional(request.emergencyContactRelationship(), "emergencyContactRelationship", 100)
+			: profile.getEmergencyContactRelationship();
+		String emergencyContactTimeNotes = request.hasEmergencyContactTimeNotes()
+			? validator.normalizeOptional(request.emergencyContactTimeNotes(), "emergencyContactTimeNotes", 500)
+			: profile.getEmergencyContactTimeNotes();
+
 		validator.validateEmergencyContact(emergencyContactName, emergencyContactPhone);
 		identifierAvailability.ensureAvailableForUpdate(account.getId(), account.getEmail(), account.getPhone(),
 			email, phone);
 
 		account.updateMemberProfileDetails(fullName, phone, email, birthDate);
 		profile.updateDetails(profileImageUrl, fitnessGoal, emergencyContactName, emergencyContactPhone);
+		profile.updateAdditionalDetails(gender, address, physicalConditionNotes, emergencyContactRelationship,
+			emergencyContactTimeNotes);
 		try {
 			accountRepository.flush();
 		}
@@ -207,6 +225,8 @@ public class ReceptionMemberProfileService {
 		return new MemberProfileResponse(account.getId(), profile.getMemberCode(), account.getFullName(),
 			account.getPhone(), account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus(),
 			profile.getProfileImageUrl(), profile.getFitnessGoal(), profile.getEmergencyContactName(),
-			profile.getEmergencyContactPhone());
+			profile.getEmergencyContactPhone(), profile.getGender(), profile.getAddress(),
+			profile.getPhysicalConditionNotes(), profile.getEmergencyContactRelationship(),
+			profile.getEmergencyContactTimeNotes(), account.getCreatedAt());
 	}
 }

@@ -316,6 +316,44 @@ class MemberProfileIntegrationTests {
 		performLogin("0908000001").andExpect(status().isUnauthorized());
 	}
 
+	@Test
+	void additionalDetailsPersistAcrossReloadAndSupportPartialPatchAndClear() throws Exception {
+		MemberProfile profile = createMember("Details Member", "0908100001", "details@example.com");
+		String token = accessToken(profile.getAccount());
+		String createdAt = profile.getAccount().getCreatedAt().toString();
+		patchProfile(token, """
+			{"gender":"FEMALE","address":" 123 Nguyễn Trãi ",
+			 "physicalConditionNotes":" Chấn thương đầu gối ",
+			 "emergencyContactRelationship":" Chị gái ","emergencyContactTimeNotes":" Sau 18:00 "}
+			""").andExpect(status().isOk());
+		entityManager.flush();
+		entityManager.clear();
+		getProfile(token).andExpect(status().isOk())
+			.andExpect(jsonPath("$.gender").value("FEMALE"))
+			.andExpect(jsonPath("$.address").value("123 Nguyễn Trãi"))
+			.andExpect(jsonPath("$.physicalConditionNotes").value("Chấn thương đầu gối"))
+			.andExpect(jsonPath("$.emergencyContactRelationship").value("Chị gái"))
+			.andExpect(jsonPath("$.emergencyContactTimeNotes").value("Sau 18:00"))
+			.andExpect(jsonPath("$.createdAt").value(createdAt));
+		patchProfile(token, "{\"address\":\"New address\"}")
+			.andExpect(status().isOk()).andExpect(jsonPath("$.gender").value("FEMALE"));
+		patchProfile(token, """
+			{"gender":null,"address":null,"physicalConditionNotes":null,
+			 "emergencyContactRelationship":null,"emergencyContactTimeNotes":null}
+			""").andExpect(status().isOk());
+		entityManager.flush();
+		entityManager.clear();
+		getProfile(token).andExpect(status().isOk())
+			.andExpect(jsonPath("$.gender").doesNotExist())
+			.andExpect(jsonPath("$.address").doesNotExist())
+			.andExpect(jsonPath("$.physicalConditionNotes").doesNotExist())
+			.andExpect(jsonPath("$.emergencyContactRelationship").doesNotExist())
+			.andExpect(jsonPath("$.emergencyContactTimeNotes").doesNotExist());
+		assertValidation(token, "{\"gender\":\"UNKNOWN\"}", "gender");
+		assertValidation(token, "{\"gender\":\"OTHER\"}", "gender");
+		assertValidation(token, "{\"address\":\" \"}", "address");
+	}
+
 	private MemberProfile createMember(String fullName, String phone, String email) {
 		UUID id = UUID.randomUUID();
 		Account account = accountRepository.saveAndFlush(new Account(id, AccountRole.MEMBER, AccountStatus.ACTIVE,

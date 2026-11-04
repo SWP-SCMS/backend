@@ -74,6 +74,91 @@ public final class MemberProfilePatchRequest {
 		this.emergencyContactPhone = emergencyContactPhone;
 	}
 
+	private boolean genderPresent;
+	private String gender;
+
+	@JsonSetter("gender")
+	public void setGender(String gender) {
+		this.genderPresent = true;
+		this.gender = gender;
+	}
+
+	public boolean hasGender() {
+		return genderPresent;
+	}
+
+	public String gender() {
+		return gender;
+	}
+
+	private boolean addressPresent;
+	private String address;
+
+	@JsonSetter("address")
+	public void setAddress(String address) {
+		this.addressPresent = true;
+		this.address = address;
+	}
+
+	public boolean hasAddress() {
+		return addressPresent;
+	}
+
+	public String address() {
+		return address;
+	}
+
+	private boolean physicalConditionNotesPresent;
+	private String physicalConditionNotes;
+
+	@JsonSetter("physicalConditionNotes")
+	public void setPhysicalConditionNotes(String physicalConditionNotes) {
+		this.physicalConditionNotesPresent = true;
+		this.physicalConditionNotes = physicalConditionNotes;
+	}
+
+	public boolean hasPhysicalConditionNotes() {
+		return physicalConditionNotesPresent;
+	}
+
+	public String physicalConditionNotes() {
+		return physicalConditionNotes;
+	}
+
+	private boolean emergencyContactRelationshipPresent;
+	private String emergencyContactRelationship;
+
+	@JsonSetter("emergencyContactRelationship")
+	public void setEmergencyContactRelationship(String emergencyContactRelationship) {
+		this.emergencyContactRelationshipPresent = true;
+		this.emergencyContactRelationship = emergencyContactRelationship;
+	}
+
+	public boolean hasEmergencyContactRelationship() {
+		return emergencyContactRelationshipPresent;
+	}
+
+	public String emergencyContactRelationship() {
+		return emergencyContactRelationship;
+	}
+
+	private boolean emergencyContactTimeNotesPresent;
+	private String emergencyContactTimeNotes;
+
+	@JsonSetter("emergencyContactTimeNotes")
+	public void setEmergencyContactTimeNotes(String emergencyContactTimeNotes) {
+		this.emergencyContactTimeNotesPresent = true;
+		this.emergencyContactTimeNotes = emergencyContactTimeNotes;
+	}
+
+	public boolean hasEmergencyContactTimeNotes() {
+		return emergencyContactTimeNotesPresent;
+	}
+
+	public String emergencyContactTimeNotes() {
+		return emergencyContactTimeNotes;
+	}
+
 	@JsonAnySetter
 	public void rejectUnknownField(String fieldName, Object ignoredValue) {
 		throw new IllegalArgumentException("Unknown member profile field: " + fieldName);
