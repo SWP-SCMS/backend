@@ -221,7 +221,8 @@ class CourseManagementService {
 		if (request == null) throw CourseException.validation("request", "must be a JSON object");
 		String code = required(request.runCode(), 50, "runCode").toUpperCase(java.util.Locale.ROOT);
 		validateRun(request);
-		Course course = courses.findDetailedById(request.courseId()).orElseThrow(CourseException::notFound);
+		// Serialize creation with course deactivation so a new run cannot escape the cascade.
+		Course course = lockCourse(request.courseId());
 		if (course.getStatus() != CourseStatus.PUBLISHED) {
 			throw CourseException.validation("courseId", "must identify a published course");
 		}
@@ -269,11 +270,37 @@ class CourseManagementService {
 		CourseRun run = lockRun(runId);
 		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
 		Map<String, Object> before = snapshot(run);
+		validateOpeningSchedule(run);
 		run.openForRegistration(request.policyVersion());
 		runs.saveAndFlush(run);
 		audit(managerId, "COURSE_RUN_OPENED", "COURSE_RUN", runId, before, snapshot(run));
 		return CourseRunResponse.from(run);
 	}
+
+    private void validateOpeningSchedule(CourseRun run) {
+        if (run.getCourse().getStatus() != CourseStatus.PUBLISHED)
+            throw CourseException.validation("courseId", "Khóa học phải đang công khai trước khi mở đăng ký.");
+        var schedule = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId());
+        if (schedule.size() != run.getTotalUnits())
+            throw CourseException.validation("sessions", "Phải xếp đủ lịch cho tất cả buổi học trước khi mở đăng ký.");
+        var numbers = new java.util.HashSet<Integer>();
+        Instant previousEnd = null;
+        Instant now = clock.instant();
+        for (var session : schedule) {
+            if (session.isMakeup() || session.getReplacementSession() != null
+                    || session.getStatus() != CourseSessionStatus.SCHEDULED
+                    || session.getUnitNumber() < 1 || session.getUnitNumber() > run.getTotalUnits()
+                    || !numbers.add(session.getUnitNumber())
+                    || !session.getStartAt().isBefore(session.getEndAt())
+                    || !session.getStartAt().isAfter(now)
+                    || session.getStartAt().isBefore(run.getPlannedStartAt())
+                    || session.getEndAt().isAfter(run.getPlannedEndAt())
+                    || (previousEnd != null && session.getStartAt().isBefore(previousEnd))) {
+                throw CourseException.validation("sessions", "Lịch học phải đủ số buổi, không trùng giờ và nằm trong thời gian dự kiến.");
+            }
+            previousEnd = session.getEndAt();
+        }
+    }
 
 	@Transactional
 	CourseRunResponse patchRunSchedule(UUID managerId, UUID runId, CourseRunScheduleRequest request) {
@@ -330,6 +357,8 @@ class CourseManagementService {
 					+ "where course_run_id=? and unit_number=? and disposition='ENROLLED'", runId, session.getUnitNumber());
 			}
 		}
+		sessions.flush();
+		if (request.totalUnits() < oldUnits) CourseUnitRefunds.reduced(db, runId, eventId, managerId, clock.instant());
 		if (scheduleChanges != null) scheduleChanges.createRunScheduleResponses(eventId, run, cause);
 		Map<String, Object> after = snapshot(run);
 		after.put("changeEventId", eventId.toString());
@@ -351,6 +380,8 @@ class CourseManagementService {
 		if (request == null || request.expectedVersion() == null) {
 			throw CourseException.validation("expectedVersion", "is required");
 		}
+        if (request.reason() != null && (request.reason().trim().length() < 5 || request.reason().length() > 1000))
+            throw CourseException.validation("reason", "must contain between 5 and 1000 characters");
 		CourseRun run = lockRun(runId);
 		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
 		Map<String, Object> before = snapshot(run);
@@ -359,9 +390,20 @@ class CourseManagementService {
 		runClosure.cancelEffects(managerId, run);
 		Map<String, Object> after = snapshot(run);
 		after.put("reasonCode", "MANAGER_CANCELLED");
+        if (request.reason() != null) after.put("reason", request.reason().trim());
 		audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, before, after);
 		return CourseRunResponse.from(run);
 	}
+
+    @Transactional(readOnly = true)
+    Map<String, Object> cancellationImpact(UUID managerId, UUID runId) {
+        ensureActiveManager(managerId);
+        if (!runs.existsById(runId)) throw CourseException.runNotFound();
+        return db.queryForMap("""
+            select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')) as "enrollmentCount",
+                   (select count(*) from course_orders where course_run_id=? and status='PENDING_PAYMENT') as "pendingOrderCount"
+            """, runId, runId);
+    }
 
 	@Transactional(readOnly = true)
 	List<CourseSessionResponse> listSessions(UUID managerId, UUID runId) {
@@ -429,8 +471,35 @@ class CourseManagementService {
 		Map<String, Object> before = snapshot(course);
 		transition.accept(course);
 		courses.saveAndFlush(course);
-		audit(managerId, action, "COURSE", courseId, before, snapshot(course));
+		Map<String, Object> after = snapshot(course);
+		if (course.getStatus() == CourseStatus.INACTIVE || course.getStatus() == CourseStatus.ARCHIVED) {
+			after.put("cancelledRunIds", cancelUnstartedRuns(managerId, courseId, action));
+		}
+		audit(managerId, action, "COURSE", courseId, before, after);
 		return CourseResponse.from(course);
+	}
+
+	private List<String> cancelUnstartedRuns(UUID managerId, UUID courseId, String reasonCode) {
+		var cancelledIds = new java.util.ArrayList<String>();
+		for (UUID runId : runs.findIdsByCourseId(courseId)) {
+			CourseRun run = lockRun(runId);
+			// Check after locking, including the wall-clock boundary if the scheduler is late.
+			Instant now = clock.instant();
+			if (!run.getPlannedStartAt().isAfter(now)
+					|| (run.getStatus() != CourseRunStatus.DRAFT
+						&& run.getStatus() != CourseRunStatus.OPEN_FOR_REGISTRATION
+						&& run.getStatus() != CourseRunStatus.CONFIRMED)) continue;
+			Map<String, Object> beforeRun = snapshot(run);
+			run.cancel();
+			runs.saveAndFlush(run);
+			runClosure.cancelEffects(managerId, run, now);
+			Map<String, Object> afterRun = snapshot(run);
+			afterRun.put("reasonCode", reasonCode);
+			afterRun.put("courseId", courseId.toString());
+			audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, beforeRun, afterRun);
+			cancelledIds.add(runId.toString());
+		}
+		return cancelledIds;
 	}
 
 	private Course lockCourse(UUID id) {

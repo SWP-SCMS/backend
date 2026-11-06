@@ -233,7 +233,7 @@ class GeneratedOpenApiTests {
 			new CatalogPropertyContract("allocationVnd", Set.of("integer"), null, "1", "9999999999999999999",
 				Set.of(), null),
 			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
-				Set.of("SCHEDULED", "CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED",
+				Set.of("SCHEDULED", "CANCELLED", "CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED",
 					"RESOLVED_BY_REFUND"), null)
 		)),
 		new CatalogSchemaContract("CatalogCourseRunDetailResponse", List.of(
@@ -264,6 +264,14 @@ class GeneratedOpenApiTests {
 	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+		"POST /manager/course-runs/with-schedule",
+		"GET /manager/course-runs/{runId}/cancellation-impact",
+		"POST /payments/{paymentId}/evidence-images",
+		"GET /payments/{paymentId}/evidence-images/{evidenceId}",
+		"POST /manager/course-runs/preview-schedule",
+		"POST /manager/courses/images",
+		"GET /payments/{paymentId}/evidence-images",
+
 		"GET /course-payments/reconciliation-queue",
 		"GET /course-payments/{paymentId}",
 		"GET /course-payments/{paymentId}/result",
@@ -2221,7 +2229,9 @@ class GeneratedOpenApiTests {
 				.map(controller -> Arrays.stream(controller.getDeclaredConstructors())
 					.max(Comparator.comparingInt(constructor -> constructor.getParameterCount()))
 					.orElseThrow())
-				.flatMap(constructor -> Arrays.stream(constructor.getParameterTypes()))
+				.flatMap(constructor -> Arrays.stream(constructor.getParameters()))
+				.filter(parameter -> !parameter.isAnnotationPresent(org.springframework.beans.factory.annotation.Value.class))
+				.map(java.lang.reflect.Parameter::getType)
 				.distinct()
 				.filter(dependency -> beanFactory.getBeanNamesForType(dependency, false, false).length == 0)
 				.forEach(dependency -> beanFactory.registerSingleton(dependency.getName(), mock(dependency)));

@@ -49,10 +49,88 @@ class CourseRunClosureIntegrationTests {
 	@Autowired MemberProfileRepository profiles;
 	@Autowired JdbcTemplate db;
 	@Autowired PlatformTransactionManager transactionManager;
+	@Autowired CourseSessionRepository sessions;
 
 	private UUID managerId;
 	private UUID coachId;
 	private UUID disciplineId;
+
+	@Test
+	void courseDeactivationUsesRunRefundAndSessionCancellationWithoutDuplicatingOnArchive() {
+		CourseRunResponse run = openRun(2);
+		seedCancellationSessions(run.id());
+		paidEnrollment(run.id());
+		UUID pending = heldOrder(run.id());
+		CourseResponse course = management.getCourse(managerId, run.courseId());
+		CourseResponse inactive = management.deactivateCourse(managerId, course.id(), new VersionRequest(course.version()));
+		assertThat(status(run.id())).isEqualTo("CANCELLED");
+		assertThat(status("course_orders", pending)).isEqualTo("EXPIRED");
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and status='CANCELLED'",
+			Integer.class, run.id())).isEqualTo(3);
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Integer.class, run.id())).isOne();
+		management.archiveCourse(managerId, course.id(), new VersionRequest(inactive.version()));
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Integer.class, run.id())).isOne();
+		assertThat(auditCount("COURSE_RUN_CANCELLED", run.id())).isOne();
+	}
+
+	@Test
+	void courseAuditFailureRollsBackTheEntireCancellationCascade() {
+		CourseRunResponse run = openRun(2);
+		seedCancellationSessions(run.id());
+		paidEnrollment(run.id());
+		CourseResponse course = management.getCourse(managerId, run.courseId());
+		String constraint = "chk_test_reject_course_deactivation";
+		db.execute("alter table audit_events add constraint " + constraint + " check (action <> 'COURSE_DEACTIVATED') not valid");
+		try {
+			assertThatThrownBy(() -> management.deactivateCourse(managerId, course.id(), new VersionRequest(course.version())))
+				.rootCause().hasMessageContaining(constraint);
+			assertThat(management.getCourse(managerId, course.id()).status()).isEqualTo(CourseStatus.PUBLISHED);
+			assertThat(status(run.id())).isEqualTo("OPEN_FOR_REGISTRATION");
+			assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and status='CANCELLED'", Integer.class, run.id())).isZero();
+			assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Integer.class, run.id())).isZero();
+		} finally {
+			db.execute("alter table audit_events drop constraint " + constraint);
+		}
+	}
+
+	@Test
+	void managerCancelsUnservedSessionsAndReleasesResourcesButPreservesHistory() {
+		CourseRunResponse run = openRun(2);
+		UUID roomId = seedCancellationSessions(run.id());
+		Instant start = Instant.parse("2030-02-01T10:00:00Z"), end = start.plusSeconds(3600);
+		assertThat(sessions.existsResourceOverlap(coachId, roomId, start, end)).isTrue();
+		management.cancelRun(managerId, run.id(), new VersionRequest(run.version()));
+		assertThat(db.queryForList("select status from course_sessions where course_run_id=? order by unit_number",
+			String.class, run.id())).containsExactly("CANCELLED", "CANCELLED", "CANCELLED", "COMPLETED", "RESOLVED_BY_REFUND");
+		assertThat(sessions.existsResourceOverlap(coachId, roomId, start, end)).isFalse();
+		assertThat(management.listSessions(managerId, run.id())).hasSize(5);
+	}
+
+	@Test
+	void minimumEnrollmentCancellationAlsoCancelsSessions() {
+		CourseRunResponse run = openRun(2);
+		seedCancellationSessions(run.id());
+		assertThat(closure.closeAtRegistration(run.id(), CLOSE)).isTrue();
+		assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and status='CANCELLED'",
+			Integer.class, run.id())).isEqualTo(3);
+	}
+
+	private UUID seedCancellationSessions(UUID runId) {
+		UUID roomId = UUID.randomUUID();
+		db.update("insert into rooms(id,name,capacity,status) values (?, ?, 20, 'ACTIVE')", roomId, "Cancel QA " + roomId);
+		String[] states = {"SCHEDULED", "MAKEUP_SCHEDULED", "CANCELLED_PENDING_MAKEUP", "COMPLETED", "RESOLVED_BY_REFUND"};
+		for (int index = 0; index < states.length; index++) {
+			Instant start = Instant.parse("2030-02-01T10:00:00Z").plusSeconds(index * 86400L);
+			db.update("""
+				insert into course_sessions(id,course_run_id,unit_number,room_id,coach_account_id,start_at,end_at,
+				 original_start_at,original_end_at,allocation_vnd,status,is_makeup)
+				values (?,?,?,?,?,?,?,?,?,1000,?,?)
+				""", UUID.randomUUID(), runId, index + 1, roomId, coachId,
+				java.sql.Timestamp.from(start), java.sql.Timestamp.from(start.plusSeconds(3600)),
+				java.sql.Timestamp.from(start), java.sql.Timestamp.from(start.plusSeconds(3600)), states[index], index == 1);
+		}
+		return roomId;
+	}
 
 	@BeforeEach
 	void setUp() {
@@ -159,6 +237,7 @@ class CourseRunClosureIntegrationTests {
 	@Test
 	void auditFailureRollsBackEveryCancellationArtifact() {
 		CourseRunResponse run = openRun(2);
+		seedCancellationSessions(run.id());
 		paidEnrollment(run.id());
 		UUID heldOrder = heldOrder(run.id());
 		UUID waiting = waitlist(run.id(), "WAITING");
@@ -169,6 +248,8 @@ class CourseRunClosureIntegrationTests {
 			assertThatThrownBy(() -> closure.closeAtRegistration(run.id(), CLOSE))
 				.rootCause().hasMessageContaining(constraint);
 			assertThat(status(run.id())).isEqualTo("OPEN_FOR_REGISTRATION");
+			assertThat(db.queryForObject("select count(*) from course_sessions where course_run_id=? and status='CANCELLED'",
+				Integer.class, run.id())).isZero();
 			assertThat(status("course_reservations", heldOrder)).isEqualTo("HELD");
 			assertThat(status("course_orders", heldOrder)).isEqualTo("PENDING_PAYMENT");
 			assertThat(status("course_payments", heldOrder)).isEqualTo("PENDING");
@@ -315,7 +396,9 @@ class CourseRunClosureIntegrationTests {
 			"CLOSE-" + UUID.randomUUID().toString().substring(0, 8), course.id(), coachId,
 			BigInteger.valueOf(1_000_000), 10, minimum, Instant.parse("2020-01-01T00:00:00Z"), CLOSE,
 			Instant.parse("2030-02-01T00:00:00Z"), Instant.parse("2030-03-01T00:00:00Z"), 10, true));
-		return management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "policy-v1"));
+		// Seed the historical open state; opening validation has dedicated management tests.
+        db.update("update course_runs set status='OPEN_FOR_REGISTRATION',policy_version_snapshot='policy-v1' where id=?", run.id());
+        return management.getRun(managerId, run.id());
 	}
 
 	private UUID paidEnrollment(UUID runId) {
@@ -343,6 +426,24 @@ class CourseRunClosureIntegrationTests {
 			+ "member_account_id,actor_account_id,processed_by_account_id,course_run_id,amount_paid_vnd_snapshot,"
 			+ "total_units_snapshot,enrolled_at) values(?,?,?,?,?,?,?,?,1000000,10,?)", enrollmentId, orderId,
 			reservationId, paymentId, member.getId(), managerId, managerId, runId, java.sql.Timestamp.from(created));
+		// Real fulfillment always snapshots a row per purchased unit.
+		if (db.queryForObject("select count(*) from course_sessions where course_run_id=?", Integer.class, runId) == 0) {
+			UUID room = UUID.randomUUID();
+			db.update("insert into rooms(id,name,capacity,status) values(?,?,20,'ACTIVE')", room, "Refund fixture " + room);
+			for (int unit = 1; unit <= 10; unit++) {
+				Instant start = Instant.parse("2030-02-01T10:00:00Z").plusSeconds(unit * 86400L);
+				db.update("""
+					insert into course_sessions(id,course_run_id,unit_number,room_id,coach_account_id,start_at,end_at,
+					original_start_at,original_end_at,allocation_vnd,status,is_makeup)
+					values(?,?,?,?,?,?,?,?,?,100000,'SCHEDULED',false)
+					""", UUID.randomUUID(), runId, unit, room, coachId, java.sql.Timestamp.from(start),
+					java.sql.Timestamp.from(start.plusSeconds(3600)), java.sql.Timestamp.from(start), java.sql.Timestamp.from(start.plusSeconds(3600)));
+			}
+		}
+		db.update("""
+			insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,unit_number,allocation_vnd,disposition)
+			select gen_random_uuid(),?,s.id,s.course_run_id,s.unit_number,100000,'ENROLLED' from course_sessions s where s.course_run_id=?
+			""", enrollmentId, runId);
 		return member.getId();
 	}
 

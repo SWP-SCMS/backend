@@ -4,7 +4,14 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record ClassSessionResponse(UUID id, UUID classId, UUID coachId, UUID roomId,
-		Instant startTime, Instant endTime, int capacity, ClassSessionStatus status, long version) {
+		Instant startTime, Instant endTime, int capacity, ClassSessionStatus status, long version, Long bookedCount) {
+    public ClassSessionResponse(UUID id, UUID classId, UUID coachId, UUID roomId,
+            Instant startTime, Instant endTime, int capacity, ClassSessionStatus status, long version) {
+        this(id, classId, coachId, roomId, startTime, endTime, capacity, status, version, null);
+    }
+    ClassSessionResponse withBookedCount(long count) {
+        return new ClassSessionResponse(id, classId, coachId, roomId, startTime, endTime, capacity, status, version, count);
+    }
 
 	static ClassSessionResponse from(ClassSession session) {
 		return new ClassSessionResponse(session.getId(), session.getSportClass().getId(),

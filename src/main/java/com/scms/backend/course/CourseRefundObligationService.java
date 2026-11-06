@@ -203,7 +203,9 @@ class CourseRefundObligationService {
 			throw transition();
 		}
 		if (!IMMEDIATE_DISBURSEMENT_SOURCES.contains(obligation.source())
-				&& !CourseRunStatus.COMPLETED.name().equals(context.courseRunStatus())) {
+				&& !CourseRunStatus.COMPLETED.name().equals(context.courseRunStatus())
+				&& !(CourseRefundSource.REDUCED_SESSION_COUNT.name().equals(obligation.source())
+					&& CourseRunStatus.CANCELLED.name().equals(context.courseRunStatus()))) {
 			throw CourseRefundException.conflict("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE",
 				"The Course Run must be completed before this refund can be disbursed.");
 		}
@@ -440,7 +442,7 @@ class CourseRefundObligationService {
 			  refund.status,case
 			   when run.id is null then 'COURSE_RUN_NOT_FOUND'
 			   when refund.source_type in ('COURSE_RUN_CANCELLED','PAYMENT_EXCEPTION','TRANSFER_CREDIT_EXCESS')
-			    or run.status='COMPLETED' then 'ELIGIBLE'
+			    or run.status='COMPLETED' or (refund.source_type='REDUCED_SESSION_COUNT' and run.status='CANCELLED') then 'ELIGIBLE'
 			   else 'AWAITING_COURSE_COMPLETION'
 			  end disbursement_eligibility_reason
 			 from course_refund_obligations refund

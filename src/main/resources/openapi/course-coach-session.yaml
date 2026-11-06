@@ -8,7 +8,7 @@ paths:
       parameters:
         - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
-        - {name: status, in: query, required: false, schema: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}}
+        - {name: status, in: query, required: false, schema: {type: string, enum: [SCHEDULED, CANCELLED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}}
         - {name: page, in: query, required: false, schema: {type: integer, format: int32, minimum: 0, default: 0}}
         - {name: size, in: query, required: false, schema: {type: integer, format: int32, minimum: 1, maximum: 100, default: 20}}
         - {name: sort, in: query, required: false, schema: {type: array, items: {type: string}, example: [startsAt,desc]}}
@@ -58,7 +58,7 @@ components:
         roomId: {type: string, format: uuid}
         roomCode: {type: [string, 'null']}
         roomName: {type: string}
-        sessionStatus: {type: string, enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}
+        sessionStatus: {type: string, enum: [SCHEDULED, CANCELLED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]}
         rosterCount: {type: integer, format: int64, minimum: 0}
         attendanceWritable: {type: boolean, description: Assigned Coach may record attendance until end plus 30 minutes including automatically completed sessions and Runs.}
         attendanceWriteReason: {$ref: '#/components/schemas/AttendanceWriteReason'}

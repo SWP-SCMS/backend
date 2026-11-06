@@ -32,10 +32,10 @@ class CourseRefundObligationWriter {
 		db.update("""
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
 			 requester_account_id,request_reason) values(?,?,?,?,?,?,?)
-			on conflict(course_enrollment_id,source_type) do nothing
+			on conflict(course_enrollment_id,source_type,source_event_id) do nothing
 			""", id, enrollment.get("id"), runId, source.name(), amount, requesterId, reason.trim());
 		Map<String, Object> stored = db.queryForMap("select id,course_run_id,amount_vnd from course_refund_obligations "
-			+ "where course_enrollment_id=? and source_type=? for update", enrollmentId, source.name());
+			+ "where course_enrollment_id=? and source_type=? and source_event_id is null for update", enrollmentId, source.name());
 		BigInteger storedAmount = new BigDecimal(stored.get("amount_vnd").toString()).toBigIntegerExact();
 		if (!runId.equals(stored.get("course_run_id")) || !amount.equals(storedAmount)) {
 			throw CourseRefundException.conflict("COURSE_REFUND_SOURCE_CONFLICT",

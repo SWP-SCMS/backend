@@ -32,13 +32,14 @@ public class ManagerMemberController {
 	@GetMapping
 	ResponseEntity<MemberAccountPageResponse> search(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(required = false) String query, @RequestParam(required = false) AccountStatus status,
+            @RequestParam(required = false) String planCode,
 			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		if (page < 0 || size < 1 || size > 100) {
 			throw new StaffAccountValidationException("page", "page must be >= 0 and size must be between 1 and 100");
 		}
 		Pageable pageable = PageRequest.of(page, size,
 			Sort.by("account.fullName").ascending().and(Sort.by("accountId")));
-		return ResponseEntity.ok(service.search(accountId(jwt), query, status, pageable));
+		return ResponseEntity.ok(service.search(accountId(jwt), query, status, planCode, pageable));
 	}
 
 	@GetMapping("/{id}")

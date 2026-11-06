@@ -10,6 +10,15 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.query.Param;
 
 public interface MemberProfileRepository extends JpaRepository<MemberProfile, UUID>, JpaSpecificationExecutor<MemberProfile> {
+    interface ActivePlanView { UUID getMemberAccountId(); String getPlanCode(); }
+
+    @Query(value = """
+        select member_account_id as "memberAccountId", plan_code_snapshot as "planCode"
+        from memberships where member_account_id in (:ids) and status='ACTIVE'
+        and starts_at <= :now and ends_at > :now
+        """, nativeQuery = true)
+    java.util.List<ActivePlanView> findActivePlans(@Param("ids") Collection<UUID> ids,
+        @Param("now") java.time.Instant now);
 
 	@Query("""
 		select profile from MemberProfile profile

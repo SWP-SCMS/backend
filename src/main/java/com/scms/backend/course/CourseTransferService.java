@@ -302,7 +302,7 @@ public class CourseTransferService {
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
 			 requester_account_id,request_reason)
 			values(?,?,?,'TRANSFER_CREDIT_EXCESS',?,?,'Unused Course transfer credit refund')
-			on conflict(course_enrollment_id,source_type) do nothing
+			on conflict(course_enrollment_id,source_type,source_event_id) do nothing
 			""", UUID.randomUUID(), offer.sourceEnrollmentId(), offer.sourceRunId(),
 			offer.creditVnd().subtract(offer.targetTuitionVnd()), actorId);
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_TRANSFER_COMPLETED", "COURSE_TRANSFER_OFFER",
@@ -367,7 +367,7 @@ public class CourseTransferService {
 	private BigInteger unusedCredit(UUID enrollmentId, Instant now) {
 		List<CourseTransferPolicy.UnitAllocation> units = db.query("""
 			select s.start_at,es.allocation_vnd from course_enrollment_sessions es
-			join course_sessions s on s.id=es.course_session_id where es.course_enrollment_id=?
+			join course_sessions s on s.id=es.course_session_id where es.course_enrollment_id=? and not exists (select 1 from course_refund_unit_claims c where c.enrollment_session_id=es.id)
 			""", (rs, n) -> new CourseTransferPolicy.UnitAllocation(rs.getTimestamp(1).toInstant(), rs.getBigDecimal(2).toBigIntegerExact()), enrollmentId);
 		return CourseTransferPolicy.unusedCredit(units, now);
 	}

@@ -27,6 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 class PaymentFulfillmentService {
+    void notifyFailedReconciliation(UUID paymentId, Map<String, Object> payment) {
+        notifications.write("PAYMENT_FAILED:" + paymentId, uuid(payment, "member_account_id"),
+            "PAYMENT_FAILED", "PAYMENT", paymentId,
+            Map.of("orderId", uuid(payment, "order_id").toString(), "status", "FAILED"));
+    }
 	private static final Logger log = LoggerFactory.getLogger(PaymentFulfillmentService.class);
 	private final JdbcTemplate db;
 	private final MembershipLifecycleService lifecycle;
