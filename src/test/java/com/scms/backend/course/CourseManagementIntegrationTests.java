@@ -34,6 +34,7 @@ class CourseManagementIntegrationTests {
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
 	@Autowired CourseManagementService service;
+	@Autowired CourseWeeklyRunService weekly;
 	@Autowired CourseRepository courses;
 	@Autowired CourseRunRepository runs;
 	@Autowired CourseSessionRepository sessions;
@@ -52,6 +53,57 @@ class CourseManagementIntegrationTests {
 		jdbc.update("insert into disciplines(id,name,status) values (?,?,'ACTIVE')",
 			disciplineId, "Course discipline " + disciplineId);
 	}
+
+    @Test
+    void weeklyCreationPersistsCalculatedCalendarAndCanOpen() {
+        var course = createPublishedCourse("WEEKLY-" + UUID.randomUUID().toString().substring(0,8));
+        UUID room = UUID.randomUUID();
+        jdbc.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,20,'EXCLUSIVE','ACTIVE')", room, "Weekly " + room);
+        var request = weeklyRequest(course.id(), room, "WEEKLY-RUN-" + UUID.randomUUID().toString().substring(0,8));
+        var result = weekly.create(managerId, request);
+        assertThat(result.run().status()).isEqualTo(CourseRunStatus.DRAFT);
+        assertThat(result.sessions()).hasSize(4);
+        assertThat(result.run().plannedStartAt()).isEqualTo(Instant.parse("2030-02-04T11:00:00Z"));
+        assertThat(result.run().plannedEndAt()).isEqualTo(Instant.parse("2030-02-11T12:00:00Z"));
+        assertThat(result.sessions()).extracting(CourseSessionResponse::allocationVnd)
+            .containsExactly(BigInteger.valueOf(250), BigInteger.valueOf(250), BigInteger.valueOf(250), BigInteger.valueOf(251));
+        var opened = service.openRun(managerId, result.run().id(), new CourseRunOpenRequest(result.run().version(), "WEEKLY-V1"));
+        assertThat(opened.status()).isEqualTo(CourseRunStatus.OPEN_FOR_REGISTRATION);
+        assertThatThrownBy(() -> weekly.create(managerId, request)).isInstanceOf(CourseException.class);
+    }
+
+    @Test
+    void weeklyConflictOnSecondSessionRollsBackRunFirstSessionAndAudits() {
+        var course = createPublishedCourse("BLOCK-" + UUID.randomUUID().toString().substring(0,8));
+        UUID room = UUID.randomUUID();
+        jdbc.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,20,'EXCLUSIVE','ACTIVE')", room, "Blocked " + room);
+        var blocker = service.createRun(managerId, runRequest(course.id(), "BLOCKER-" + UUID.randomUUID().toString().substring(0,8)));
+        service.createSession(managerId, blocker.id(), new CourseSessionCreateRequest(1, room, coachId,
+            Instant.parse("2030-02-06T11:00:00Z"), Instant.parse("2030-02-06T12:00:00Z"), BigInteger.TEN));
+        long runCount = runs.count(), sessionCount = sessions.count();
+        long auditCount = jdbc.queryForObject("select count(*) from audit_events", Long.class);
+        assertThatThrownBy(() -> weekly.create(managerId, weeklyRequest(course.id(), room, "FAIL-WEEKLY")))
+            .isInstanceOf(CourseException.class);
+        assertThat(runs.count()).isEqualTo(runCount);
+        assertThat(sessions.count()).isEqualTo(sessionCount);
+        assertThat(jdbc.queryForObject("select count(*) from audit_events", Long.class)).isEqualTo(auditCount);
+    }
+
+    @Test
+    void oldManualRunCannotOpenUntilEverySessionExists() {
+        var course = createPublishedCourse("EMPTY-" + UUID.randomUUID().toString().substring(0,8));
+        var run = service.createRun(managerId, runRequest(course.id(), "EMPTY-RUN"));
+        assertThatThrownBy(() -> service.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "P1")))
+            .isInstanceOf(CourseException.class);
+        assertThat(service.getRun(managerId, run.id()).status()).isEqualTo(CourseRunStatus.DRAFT);
+    }
+
+    private CourseWeeklyRunCreateRequest weeklyRequest(UUID course, UUID room, String code) {
+        return new CourseWeeklyRunCreateRequest(code, course, coachId, room, BigInteger.valueOf(1001), 10, 1,
+            Instant.parse("2030-01-01T00:00:00Z"), Instant.parse("2030-02-01T00:00:00Z"), true,
+            new CourseWeeklyScheduleRequest(LocalDate.of(2030,2,4), java.util.List.of(1,3,5),
+                java.time.LocalTime.of(18,0), java.time.LocalTime.of(19,0), 4));
+    }
 
 	@Test
 	void rejectsStaleUpdatesAndDuplicateCourseAndRunCodes() {

@@ -172,7 +172,7 @@ class CourseWithdrawalService {
 		db.update("""
 			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
 			 requester_account_id,request_reason)
-			values(?,?,?, ?,?,?,?) on conflict(course_enrollment_id,source_type) do nothing
+			values(?,?,?, ?,?,?,?) on conflict(course_enrollment_id,source_type,source_event_id) do nothing
 			""", UUID.randomUUID(), request.enrollmentId(), request.courseRunId(),
 			request.cause() == CourseWithdrawalCause.VOLUNTARY ? "MEMBER_WITHDRAWAL" : "MATERIAL_CHANGE", refund,
 			request.requesterAccountId(), request.requestReason());
@@ -311,7 +311,7 @@ class CourseWithdrawalService {
 		List<Map<String, Object>> units = db.queryForList("""
 			select s.start_at,es.allocation_vnd from course_enrollment_sessions es
 			join course_sessions s on s.id=es.course_session_id
-			where es.course_enrollment_id=? order by es.unit_number for update of es
+			where es.course_enrollment_id=? and not exists (select 1 from course_refund_unit_claims c where c.enrollment_session_id=es.id) order by es.unit_number for update of es
 			""", enrollmentId);
 		int remaining = 0;
 		BigInteger unused = BigInteger.ZERO;

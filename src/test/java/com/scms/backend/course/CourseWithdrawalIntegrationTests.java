@@ -95,7 +95,9 @@ class CourseWithdrawalIntegrationTests {
 		CourseRunResponse run = management.createRun(managerId, new CourseRunCreateRequest("WD-RUN-" + shortId(),
 			course.id(), coachId, BigInteger.valueOf(1_000_000), 1, 1, NOW.minusSeconds(86400),
 			NOW.plusSeconds(86400), NOW.plusSeconds(86400 * 2), NOW.plusSeconds(86400 * 30), 10, true));
-		runId = management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "WITHDRAWAL-POLICY")).id();
+		runId = run.id();
+        // Historical fixture includes already-started sessions; do not reopen it through the new scheduling guard.
+        db.update("update course_runs set status='OPEN_FOR_REGISTRATION',policy_version_snapshot='WITHDRAWAL-POLICY' where id=?", runId);
 		seedEnrollment();
 	}
 

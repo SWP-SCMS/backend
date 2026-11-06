@@ -155,6 +155,7 @@ paths:
   /manager/courses/{courseId}/deactivate:
     post:
       summary: Deactivate a published course
+      description: Atomically cancels DRAFT, OPEN_FOR_REGISTRATION and CONFIRMED runs whose planned start is still in the future, including their unserved sessions, holds and pending orders. Paid enrollments follow the existing refund-obligation workflow. Started runs are preserved. Republishing does not restore cancelled runs.
       parameters: [{ $ref: '#/components/parameters/CourseId' }]
       requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
       responses:
@@ -167,6 +168,7 @@ paths:
   /manager/courses/{courseId}/archive:
     post:
       summary: Archive a draft or inactive course
+      description: Also cancels any remaining unstarted runs and their unserved sessions using the normal run cancellation workflow. Started runs and history are preserved.
       parameters: [{ $ref: '#/components/parameters/CourseId' }]
       requestBody: { $ref: '#/components/requestBodies/VersionRequest' }
       responses:
@@ -533,7 +535,7 @@ components:
       enum: [DRAFT, OPEN_FOR_REGISTRATION, CONFIRMED, IN_PROGRESS, SETTLEMENT_PENDING, COMPLETED, CANCELLED]
     CourseSessionStatus:
       type: string
-      enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND, REMOVED_BY_RUN_CHANGE]
+      enum: [SCHEDULED, CANCELLED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND, REMOVED_BY_RUN_CHANGE]
     VersionRequest:
       type: object
       additionalProperties: false

@@ -156,6 +156,7 @@ class CourseRunRescheduleService {
 			}
 		}
 		runs.saveAndFlush(run); sessions.flush();
+		if (cause == CourseWithdrawalCause.REDUCED_UNIT_COUNT) CourseUnitRefunds.reduced(db, runId, eventId, actorId, now);
 		scheduleChanges.writeAtomicRunResponses(eventId,run,responses,now);
 		Map<UUID,UUID> originals = new LinkedHashMap<>();
 		for (CourseSession s : current) if (s.getReplacementSession()!=null) originals.put(s.getReplacementSession().getId(),s.getId());

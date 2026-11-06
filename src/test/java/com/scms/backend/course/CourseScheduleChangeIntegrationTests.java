@@ -95,13 +95,13 @@ class CourseScheduleChangeIntegrationTests {
 			Instant.parse("2034-12-15T00:00:00Z"), Instant.parse("2035-01-01T00:00:00Z"),
 			Instant.parse("2035-02-01T00:00:00Z"), 1, true));
 		runId = run.id();
-		managers.openRun(managerId, runId, new CourseRunOpenRequest(run.version(), "POLICY-1"));
 		UUID roomId = UUID.randomUUID();
 		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
 			roomId, "Schedule room " + roomId);
 		Instant startAt = Instant.parse("2035-01-05T02:00:00Z");
 		session = managers.createSession(managerId, runId,
 			new CourseSessionCreateRequest(1, roomId, coachId, startAt, startAt.plusSeconds(3600), BigInteger.TEN));
+		managers.openRun(managerId, runId, new CourseRunOpenRequest(run.version(), "POLICY-1"));
 		seedEnrollment(memberId);
 		CourseSessionResponse changed = managers.patchSession(managerId, runId, session.id(),
 			new CourseSessionPatchRequest(session.version(), null, null, startAt.plusSeconds(7200),
@@ -852,6 +852,55 @@ class CourseScheduleChangeIntegrationTests {
 		assertThatThrownBy(() -> reschedules.reschedule(managerId,runId," ",atomicRequest(java.util.List.of(change))))
 			.isInstanceOfSatisfying(CourseException.class,e -> assertThat(e.getCode()).isEqualTo("COURSE_VALIDATION_ERROR"));
 		assertAtomicRunUnchanged(version);
+	}
+
+	@Test
+	void reductionThenCancellationRefundsNineOriginalUnitsAndNeverRepricesOrDuplicates() {
+		seedTenOriginalUnits();
+		var run = managers.getRun(managerId, runId);
+		var request = new CourseRunRescheduleRequest(run.version(), run.plannedStartAt(), run.plannedEndAt(), 8, java.util.List.of());
+		reschedules.reschedule(managerId, runId, "ten-to-eight", request);
+		reschedules.reschedule(managerId, runId, "ten-to-eight", request);
+		assertRefundAmount("REDUCED_SESSION_COUNT", 200000);
+		assertThat(db.queryForObject("select count(*) from course_refund_unit_claims where course_enrollment_id in (select id from course_enrollments where course_run_id=?)", Integer.class, runId)).isEqualTo(2);
+		db.update("update course_sessions set status='COMPLETED' where id=?", session.id());
+		db.update("update course_runs set status='IN_PROGRESS' where id=?", runId);
+		managers.cancelRun(managerId, runId, new VersionRequest(runVersion()));
+		assertRefundAmount("COURSE_RUN_CANCELLED", 700000);
+		assertRefundAmount("REDUCED_SESSION_COUNT", 200000);
+		assertThat(db.queryForObject("select sum(amount_vnd) from course_refund_obligations where course_run_id=?", BigInteger.class, runId)).isEqualTo(BigInteger.valueOf(900000));
+		assertThat(db.queryForList("select distinct allocation_vnd from course_enrollment_sessions where course_run_id=?", BigInteger.class, runId)).containsExactly(BigInteger.valueOf(100000));
+	}
+
+	@Test
+	void repeatedReductionsCreateSeparateClaimsAndSettlementDoesNotDuplicateThem() {
+		seedTenOriginalUnits();
+		for (int remaining : new int[] {9, 8}) {
+			var run = managers.getRun(managerId, runId);
+			reschedules.reschedule(managerId, runId, "reduce-to-" + remaining,
+				new CourseRunRescheduleRequest(run.version(), run.plannedStartAt(), run.plannedEndAt(), remaining, java.util.List.of()));
+		}
+		assertRefundAmount("REDUCED_SESSION_COUNT", 200000);
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Integer.class, runId)).isEqualTo(2);
+		db.update("update course_sessions set status='COMPLETED' where course_run_id=? and unit_number<=8", runId);
+		transactions.executeWithoutResult(status -> CourseUnitRefunds.settled(db, runId, NOW.plusSeconds(100 * 86400L)));
+		assertRefundAmount("REDUCED_SESSION_COUNT", 200000);
+		assertThat(db.queryForObject("select count(*) from course_refund_obligations where course_run_id=?", Integer.class, runId)).isEqualTo(2);
+	}
+
+	private void assertRefundAmount(String source, int amount) {
+		assertThat(db.queryForObject("select sum(amount_vnd) from course_refund_obligations where course_run_id=? and source_type=?", BigInteger.class, runId, source)).isEqualTo(BigInteger.valueOf(amount));
+	}
+
+	private void seedTenOriginalUnits() {
+		db.update("update course_runs set total_units=10,tuition_vnd=1000000 where id=?", runId);
+		db.update("update course_enrollments set total_units_snapshot=10,amount_paid_vnd_snapshot=1000000 where course_run_id=?", runId);
+		db.update("update course_payments set amount=1000000 where course_order_id in (select id from course_orders where course_run_id=?)", runId);
+		UUID enrollment = db.queryForObject("select id from course_enrollments where course_run_id=?", UUID.class, runId);
+		for (int unit = 2; unit <= 10; unit++) {
+			var next = createSession(unit, session.startAt().plusSeconds((unit - 1) * 86400L));
+			seedEnrollmentSession(enrollment, next, unit, BigInteger.valueOf(100000));
+		}
 	}
 
 	private CourseSessionResponse secondEnrolledSession() {

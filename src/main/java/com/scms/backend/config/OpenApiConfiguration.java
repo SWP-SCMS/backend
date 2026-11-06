@@ -98,6 +98,7 @@ public class OpenApiConfiguration {
 	private void applyKnownResponseVariants(String path, HttpMethod method, Operation operation) {
 		if (method == HttpMethod.POST && (path.equals("/manager/courses")
 				|| path.equals("/manager/course-runs")
+				|| path.equals("/manager/course-runs/with-schedule")
 				|| path.equals("/manager/course-runs/{runId}/sessions"))) {
 			ApiResponse ok = operation.getResponses().get("200");
 			operation.getResponses().remove("200");
