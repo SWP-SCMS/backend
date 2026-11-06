@@ -88,6 +88,11 @@ class CourseTransferIntegrationTests {
 		targetRunId = openRun(course.id(), "TGT-" + shortId(), BigInteger.valueOf(100_000));
 		UUID sourceSession = session(sourceRunId, Instant.parse("2035-02-01T02:00:00Z"));
 		session(targetRunId, Instant.parse("2035-02-02T02:00:00Z"));
+
+        for (UUID id : java.util.List.of(sourceRunId, targetRunId)) {
+            var ready = management.getRun(managerId, id);
+            management.openRun(managerId, id, new CourseRunOpenRequest(ready.version(), "TRANSFER-POLICY"));
+        }
 		seedEnrollment(sourceSession);
 		responseId = UUID.randomUUID();
 		UUID enrollmentSessionId = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=?", UUID.class, sourceEnrollmentId);
@@ -414,7 +419,7 @@ class CourseTransferIntegrationTests {
 		CourseRunResponse run = management.createRun(managerId, new CourseRunCreateRequest(code, courseId, coachId,
 			tuition, 5, 1, NOW.minusSeconds(3600), NOW.plusSeconds(86400 * 10), NOW.plusSeconds(86400 * 20),
 			NOW.plusSeconds(86400 * 60), 1, true));
-		return management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "TRANSFER-POLICY")).id();
+		return run.id();
 	}
 
 	private UUID session(UUID runId, Instant start) {

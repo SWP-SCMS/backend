@@ -116,6 +116,11 @@ public class CourseController {
 		return ResponseEntity.ok(service.cancelRun(accountId(jwt), runId, request));
 	}
 
+    @GetMapping("/course-runs/{runId}/cancellation-impact")
+    ResponseEntity<java.util.Map<String, Object>> cancellationImpact(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID runId) {
+        return ResponseEntity.ok(service.cancellationImpact(accountId(jwt), runId));
+    }
+
 	@io.swagger.v3.oas.annotations.Operation(description = "Atomically reschedule a Run and its sessions. Retry with the same Idempotency-Key and payload to retrieve the saved result; a different payload with the same key returns 409.")
 	@PostMapping("/course-runs/{runId}/reschedule")
 	ResponseEntity<CourseRunRescheduleResponse> rescheduleRun(@AuthenticationPrincipal Jwt jwt,

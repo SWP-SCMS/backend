@@ -64,12 +64,14 @@ class CourseCoachSessionIntegrationTests {
 		CourseRunResponse run = management.createRun(managerId, new CourseRunCreateRequest("RUN-" + shortId(), course.id(),
 			coachId, BigInteger.valueOf(100_000), 10, 1, NOW.minusSeconds(7200), NOW.minusSeconds(3600),
 			NOW.minusSeconds(1800), NOW.plusSeconds(7200), 1, true));
-		run = management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "DISCOVERY-POLICY"));
 		UUID roomId = UUID.randomUUID();
 		db.update("insert into rooms(id,name,capacity,usage_mode,status) values(?,?,10,'EXCLUSIVE','ACTIVE')",
 			roomId, "Discovery room " + roomId);
 		CourseSessionResponse session = management.createSession(managerId, run.id(),
 			new CourseSessionCreateRequest(1, roomId, coachId, NOW.minusSeconds(600), NOW.plusSeconds(600), BigInteger.TEN));
+		when(clock.instant()).thenReturn(NOW.minusSeconds(7200));
+		run = management.openRun(managerId, run.id(), new CourseRunOpenRequest(run.version(), "DISCOVERY-POLICY"));
+		when(clock.instant()).thenReturn(NOW);
 		db.update("update course_runs set status='IN_PROGRESS' where id=?", run.id());
 
 		var page = discovery.list(coachId, NOW.minusSeconds(3600), NOW.plusSeconds(3600), "SCHEDULED", 0, 20,

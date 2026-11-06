@@ -44,12 +44,111 @@ class CourseManagementServiceTests {
 		disciplines, accounts, audits, sessionService, runClosure);
 	private UUID managerId;
 
+	@Test
+	void deactivatingCourseCancelsOnlyUnstartedRunsAndPreservesExactStartBoundary() {
+		Instant now = Instant.parse("2029-01-01T00:00:00Z");
+		var cascadeService = new CourseManagementService(courses, runs, sessions, disciplines, accounts, audits,
+			sessionService, runClosure, null, null, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC));
+		Course course = run(0L, 1).getCourse();
+		course.publish();
+		ReflectionTestUtils.setField(course, "version", 0L);
+		when(courses.findByIdForUpdate(course.getId())).thenReturn(Optional.of(course));
+		var children = new java.util.ArrayList<CourseRun>();
+		var states = new CourseRunStatus[]{CourseRunStatus.DRAFT, CourseRunStatus.OPEN_FOR_REGISTRATION,
+			CourseRunStatus.CONFIRMED, CourseRunStatus.IN_PROGRESS, CourseRunStatus.COMPLETED, CourseRunStatus.CANCELLED,
+			CourseRunStatus.CONFIRMED, CourseRunStatus.OPEN_FOR_REGISTRATION};
+		for (int i = 0; i < states.length; i++) {
+			CourseRun child = run(0L, 1);
+			ReflectionTestUtils.setField(child, "course", course);
+			ReflectionTestUtils.setField(child, "status", states[i]);
+			ReflectionTestUtils.setField(child, "plannedStartAt", i == 6 ? now : i == 7 ? now.minusSeconds(1) : now.plusSeconds(60));
+			when(runs.findByIdForUpdate(child.getId())).thenReturn(Optional.of(child));
+			children.add(child);
+		}
+		when(runs.findIdsByCourseId(course.getId())).thenReturn(children.stream().map(CourseRun::getId).toList());
+		cascadeService.deactivateCourse(managerId, course.getId(), new VersionRequest(0L));
+		assertThat(course.getStatus()).isEqualTo(CourseStatus.INACTIVE);
+		for (int i = 0; i < children.size(); i++) {
+			CourseRun child = children.get(i);
+			if (i < 3) {
+				assertThat(child.getStatus()).isEqualTo(CourseRunStatus.CANCELLED);
+				verify(runClosure).cancelEffects(managerId, child, now);
+			} else {
+				assertThat(child.getStatus()).isEqualTo(states[i]);
+				verify(runClosure, never()).cancelEffects(managerId, child, now);
+			}
+		}
+		cascadeService.publishCourse(managerId, course.getId(), new VersionRequest(0L));
+		assertThat(children.subList(0, 3)).allMatch(r -> r.getStatus() == CourseRunStatus.CANCELLED);
+	}
+
+	@Test
+	void archivingInactiveCourseCancelsRemainingFutureRuns() {
+		CourseRun child = run(0L, 1);
+		Course course = child.getCourse();
+		course.publish(); course.deactivate();
+		ReflectionTestUtils.setField(course, "version", 0L);
+		ReflectionTestUtils.setField(child, "plannedStartAt", Instant.now().plusSeconds(86400));
+		when(courses.findByIdForUpdate(course.getId())).thenReturn(Optional.of(course));
+		when(runs.findIdsByCourseId(course.getId())).thenReturn(java.util.List.of(child.getId()));
+		when(runs.findByIdForUpdate(child.getId())).thenReturn(Optional.of(child));
+		service.archiveCourse(managerId, course.getId(), new VersionRequest(0L));
+		assertThat(course.getStatus()).isEqualTo(CourseStatus.ARCHIVED);
+		assertThat(child.getStatus()).isEqualTo(CourseRunStatus.CANCELLED);
+	}
+
 	@BeforeEach
 	void activeManager() {
 		managerId = UUID.randomUUID();
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE))
 			.thenReturn(true);
 	}
+
+    @Test
+    void refusesOpeningWithoutCompleteScheduleAndDoesNotWrite() {
+        CourseRun run = run(1L, 3);
+        run.getCourse().publish();
+        when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+        when(sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId())).thenReturn(java.util.List.of());
+        assertThatThrownBy(() -> service.openRun(managerId, run.getId(), new CourseRunOpenRequest(1L, "P1")))
+            .isInstanceOf(CourseException.class);
+        assertThat(run.getStatus()).isEqualTo(CourseRunStatus.DRAFT);
+        verify(runs, never()).saveAndFlush(any());
+        verifyNoInteractions(audits);
+    }
+
+    @Test
+    void opensOnlyCompleteNonOverlappingNumberedSchedule() {
+        CourseRun run = run(1L, 3);
+        run.getCourse().publish();
+        when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+        var values = new java.util.ArrayList<CourseSession>();
+        for (int i = 1; i <= run.getTotalUnits(); i++) {
+            Instant start = run.getPlannedStartAt().plusSeconds(i * 3600L);
+            values.add(new CourseSession(UUID.randomUUID(), run, i, mock(Room.class), run.getPrimaryCoach(),
+                start, start.plusSeconds(1800), BigInteger.TEN));
+        }
+        when(sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId())).thenReturn(values);
+        service.openRun(managerId, run.getId(), new CourseRunOpenRequest(1L, "P1"));
+        assertThat(run.getStatus()).isEqualTo(CourseRunStatus.OPEN_FOR_REGISTRATION);
+    }
+
+    @Test
+    void refusesDuplicateUnitNumbersEvenWhenCountMatches() {
+        CourseRun run = run(1L, 3);
+        run.getCourse().publish();
+        when(runs.findByIdForUpdate(run.getId())).thenReturn(Optional.of(run));
+        var values = new java.util.ArrayList<CourseSession>();
+        for (int i = 1; i <= run.getTotalUnits(); i++) {
+            Instant start = run.getPlannedStartAt().plusSeconds(i * 3600L);
+            values.add(new CourseSession(UUID.randomUUID(), run, 1, mock(Room.class), run.getPrimaryCoach(),
+                start, start.plusSeconds(1800), BigInteger.TEN));
+        }
+        when(sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId())).thenReturn(values);
+        assertThatThrownBy(() -> service.openRun(managerId, run.getId(), new CourseRunOpenRequest(1L, "P1")))
+            .isInstanceOf(CourseException.class);
+        assertThat(run.getStatus()).isEqualTo(CourseRunStatus.DRAFT);
+    }
 
 	@Test
 	void createsDraftCourseAndWritesSanitizedAudit() {

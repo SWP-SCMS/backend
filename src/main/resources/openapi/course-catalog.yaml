@@ -165,7 +165,7 @@ components:
         allocationVnd: {type: integer, minimum: 1, maximum: 9999999999999999999}
         status:
           type: string
-          enum: [SCHEDULED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
+          enum: [SCHEDULED, CANCELLED, CANCELLED_PENDING_MAKEUP, MAKEUP_SCHEDULED, COMPLETED, UNRESOLVED, RESOLVED_BY_REFUND]
     CatalogCourseRunDetailResponse:
       type: object
       required: [id, runCode, courseId, courseCode, courseName, primaryCoachId, primaryCoachName,

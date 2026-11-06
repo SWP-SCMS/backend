@@ -105,6 +105,6 @@ class ProfileImageUploadControllerTests {
 	private MemberProfileResponse response(UUID accountId) {
 		return new MemberProfileResponse(accountId, "MB-123", "Member", "0901234567", "member@example.com",
 			LocalDate.of(2000, 1, 1), AccountRole.MEMBER, AccountStatus.ACTIVE, "/profile-images/new.png", null,
-			null, null);
+			null, null, null, null, null, null, null, null);
 	}
 }

@@ -293,7 +293,7 @@ class CourseScheduleChangeService {
 			left join lateral (select count(*) filter(where s.start_at>?) remaining_units,
 			 coalesce(sum(unit.allocation_vnd) filter(where s.start_at>?),0) unused_allocation
 			 from course_enrollment_sessions unit join course_sessions s on s.id=unit.course_session_id
-			 where unit.course_enrollment_id=e.id) u on true
+			 where unit.course_enrollment_id=e.id and not exists (select 1 from course_refund_unit_claims c where c.enrollment_session_id=unit.id)) u on true
 			""";
 	}
 

@@ -213,15 +213,7 @@ class CourseSessionDisruptionService {
 			+ "from course_sessions session where enrollment_session.course_session_id=session.id "
 			+ "and session.course_run_id=? and session.status='UNRESOLVED' and enrollment_session.disposition='ENROLLED'",
 			runId);
-		db.update("""
-			insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
-			 request_reason)
-			select gen_random_uuid(),course_enrollment_id,course_run_id,'UNRESOLVED_SESSIONS',sum(allocation_vnd),
-			 'Unresolved Course sessions refund'
-			from course_enrollment_sessions where course_run_id=? and disposition='UNRESOLVED'
-			group by course_enrollment_id,course_run_id
-			on conflict (course_enrollment_id,source_type) do nothing
-			""", runId);
+		CourseUnitRefunds.settled(db, runId, now);
 		int obligationCount = db.queryForObject("select count(*) from course_refund_obligations "
 			+ "where course_run_id=? and source_type='UNRESOLVED_SESSIONS'", Integer.class, runId);
 		if (db.update("update course_runs set status='SETTLEMENT_PENDING',version=version+1,updated_at=? "

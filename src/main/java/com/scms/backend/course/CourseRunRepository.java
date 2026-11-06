@@ -15,6 +15,9 @@ public interface CourseRunRepository extends JpaRepository<CourseRun, UUID> {
 
 	boolean existsByRunCode(String runCode);
 
+	@Query("select run.id from CourseRun run where run.course.id = :courseId order by run.id")
+	java.util.List<UUID> findIdsByCourseId(@Param("courseId") UUID courseId);
+
 	@EntityGraph(attributePaths = { "course", "course.discipline", "primaryCoach" })
 	Page<CourseRun> findAll(Pageable pageable);
 

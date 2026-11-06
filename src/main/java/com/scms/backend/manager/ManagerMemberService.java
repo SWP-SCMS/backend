@@ -40,7 +40,14 @@ class ManagerMemberService {
 
 	@Transactional(readOnly = true)
 	MemberAccountPageResponse search(UUID managerId, String query, AccountStatus status, Pageable pageable) {
+        return search(managerId, query, status, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    MemberAccountPageResponse search(UUID managerId, String query, AccountStatus status, String planCode, Pageable pageable) {
 		ensureActiveManager(managerId);
+        var now = java.time.Instant.now();
+        if (planCode != null && planCode.length() > 50) throw new StaffAccountValidationException("planCode", "must be at most 50 characters");
 		String normalizedQuery = normalizeQuery(query);
 		Specification<MemberProfile> filters = (root, ignored, builder) ->
 			builder.equal(root.get("account").get("role"), AccountRole.MEMBER);
@@ -56,8 +63,25 @@ class ManagerMemberService {
 				builder.like(builder.lower(root.get("account").get("email")), pattern),
 				builder.like(root.get("account").get("phone"), pattern)));
 		}
+        if (planCode != null && !planCode.isBlank()) {
+            filters = filters.and((root, criteria, builder) -> {
+                var sub = criteria.subquery(UUID.class);
+                var membership = sub.from(com.scms.backend.membership.Membership.class);
+                sub.select(membership.get("memberAccountId")).where(
+                    builder.equal(membership.get("memberAccountId"), root.get("accountId")),
+                    builder.equal(membership.get("status"), com.scms.backend.membership.MembershipStatus.ACTIVE),
+                    builder.lessThanOrEqualTo(membership.get("startsAt"), now),
+                    builder.greaterThan(membership.get("endsAt"), now),
+                    builder.equal(membership.get("planCodeSnapshot"), planCode.trim()));
+                return builder.exists(sub);
+            });
+        }
 		Page<MemberProfile> members = memberProfileRepository.findAll(filters, pageable);
-		return new MemberAccountPageResponse(members.getContent().stream().map(this::toResponse).toList(),
+        java.util.Map<UUID, String> plans = new java.util.HashMap<>();
+        if (!members.isEmpty()) memberProfileRepository.findActivePlans(
+            members.getContent().stream().map(p -> p.getAccount().getId()).toList(), now)
+            .forEach(p -> plans.put(p.getMemberAccountId(), p.getPlanCode()));
+		return new MemberAccountPageResponse(members.getContent().stream().map(p -> toResponse(p).withActivePlan(plans.get(p.getAccount().getId()))).toList(),
 			members.getNumber(), members.getSize(), members.getTotalElements(), members.getTotalPages());
 	}
 
