@@ -121,6 +121,16 @@ class CoachLeaveService {
 		return result.stream().map(this::response).toList();
 	}
 
+
+    @Transactional
+    org.springframework.data.domain.Page<CoachLeaveResponse> managerPage(UUID managerId, CoachLeaveStatus status, int page, int size) {
+        activeAccount(managerId, AccountRole.MANAGER);
+        catchUp();
+        var pageable = org.springframework.data.domain.PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)),
+            org.springframework.data.domain.Sort.by("createdAt", "id"));
+        return (status == null ? leaves.findAll(pageable) : leaves.findByStatus(status, pageable)).map(this::response);
+    }
+
 	@Transactional
 	CoachLeaveResponse approve(UUID managerId, UUID requestId, CoachLeaveReviewRequest request) {
 		return review(managerId, requestId, request, true);

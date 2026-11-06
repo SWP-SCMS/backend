@@ -32,6 +32,21 @@ class ProfileImageUploadServiceTests {
 	@TempDir
 	Path directory;
 
+    @Test
+    void rejectsOversizedDimensionsBeforeDecodingAndCleansTemporaryFile() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB), "png", bytes);
+        byte[] png = bytes.toByteArray();
+        java.nio.ByteBuffer.wrap(png).putInt(16, 100_000).putInt(20, 100_000);
+        var crc = new java.util.zip.CRC32();
+        crc.update(png, 12, 17);
+        java.nio.ByteBuffer.wrap(png).putInt(29, (int) crc.getValue());
+        var storage = new LocalProfileImageStorage(directory.toString(), 5 * 1024 * 1024);
+        assertThatThrownBy(() -> storage.store(new MockMultipartFile("file", "large.png", "image/png", png)))
+            .isInstanceOf(MemberProfileValidationException.class).hasMessageContaining("pixels");
+        try (var files = Files.list(directory)) { assertThat(files.count()).isZero(); }
+    }
+
 	@Test
 	void storesDecodedJpegWithUuidFilenameAndIgnoresClientMetadata() throws Exception {
 		LocalProfileImageStorage storage = new LocalProfileImageStorage(directory.toString(), 5 * 1024 * 1024);

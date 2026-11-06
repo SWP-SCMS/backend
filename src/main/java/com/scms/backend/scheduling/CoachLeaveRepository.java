@@ -11,6 +11,12 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CoachLeaveRepository extends JpaRepository<CoachLeaveRequest, UUID> {
+    @EntityGraph(attributePaths = "coach")
+    org.springframework.data.domain.Page<CoachLeaveRequest> findAll(org.springframework.data.domain.Pageable pageable);
+
+    @EntityGraph(attributePaths = "coach")
+    org.springframework.data.domain.Page<CoachLeaveRequest> findByStatus(CoachLeaveStatus status, org.springframework.data.domain.Pageable pageable);
+
 	@Override
 	@EntityGraph(attributePaths = "coach")
 	List<CoachLeaveRequest> findAll();

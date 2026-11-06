@@ -37,11 +37,18 @@ class CoachLeaveController {
 	ResponseEntity<CoachLeaveResponse> cancel(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
 		return ResponseEntity.ok(service.cancel(subject(jwt), requestId));
 	}
-	@GetMapping("/manager/coach-leave-requests")
+	@GetMapping(value = "/manager/coach-leave-requests", params = "!page")
 	ResponseEntity<List<CoachLeaveResponse>> list(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(required = false) CoachLeaveStatus status) {
 		return ResponseEntity.ok(service.managerList(subject(jwt), status));
 	}
+
+    @GetMapping(value = "/manager/coach-leave-requests", params = "page")
+    ResponseEntity<org.springframework.data.domain.Page<CoachLeaveResponse>> page(@AuthenticationPrincipal Jwt jwt,
+            @RequestParam(required = false) CoachLeaveStatus status,
+            @RequestParam int page, @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(service.managerPage(subject(jwt), status, page, size));
+    }
 	@PatchMapping("/manager/coach-leave-requests/{requestId}/approve")
 	ResponseEntity<CoachLeaveResponse> approve(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId,
 			@RequestBody(required = false) CoachLeaveReviewRequest request) {
