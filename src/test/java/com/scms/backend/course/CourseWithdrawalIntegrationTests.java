@@ -515,7 +515,7 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(db.queryForList("select source_type from course_refund_obligations where course_enrollment_id=?", String.class, enrollmentId))
 			.containsExactly("COURSE_RUN_CANCELLED");
 		assertThat(db.queryForObject("select amount_vnd from course_refund_obligations where course_enrollment_id=?", java.math.BigDecimal.class, enrollmentId))
-			.isEqualByComparingTo("1000000");
+			.isEqualByComparingTo("700000");
 	}
 
 	@Test

@@ -80,6 +80,10 @@ class CourseScheduleChangeIntegrationTests {
 
 	@BeforeEach
 	void setUp() {
+		initializeFixture(BigInteger.valueOf(100_000));
+	}
+
+	private void initializeFixture(BigInteger paidAmount) {
 		when(clock.instant()).thenReturn(NOW);
 		managerId = account(AccountRole.MANAGER, "Schedule Manager").getId();
 		coachId = account(AccountRole.COACH, "Schedule Coach").getId();
@@ -91,7 +95,7 @@ class CourseScheduleChangeIntegrationTests {
 			new CourseCreateRequest("SCH-" + shortId(), "Schedule course", null, disciplineId, null, 1));
 		course = managers.publishCourse(managerId, course.id(), new VersionRequest(course.version()));
 		CourseRunResponse run = managers.createRun(managerId, new CourseRunCreateRequest("SCH-RUN-" + shortId(),
-			course.id(), coachId, BigInteger.valueOf(100_000), 10, 1, Instant.parse("2034-12-01T00:00:00Z"),
+			course.id(), coachId, paidAmount, 10, 1, Instant.parse("2034-12-01T00:00:00Z"),
 			Instant.parse("2034-12-15T00:00:00Z"), Instant.parse("2035-01-01T00:00:00Z"),
 			Instant.parse("2035-02-01T00:00:00Z"), 1, true));
 		runId = run.id();
@@ -102,7 +106,7 @@ class CourseScheduleChangeIntegrationTests {
 		session = managers.createSession(managerId, runId,
 			new CourseSessionCreateRequest(1, roomId, coachId, startAt, startAt.plusSeconds(3600), BigInteger.TEN));
 		managers.openRun(managerId, runId, new CourseRunOpenRequest(run.version(), "POLICY-1"));
-		seedEnrollment(memberId);
+		seedEnrollment(memberId, paidAmount);
 		CourseSessionResponse changed = managers.patchSession(managerId, runId, session.id(),
 			new CourseSessionPatchRequest(session.version(), null, null, startAt.plusSeconds(7200),
 				startAt.plusSeconds(10800)));
@@ -893,9 +897,10 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	private void seedTenOriginalUnits() {
+		// Seed matching order/payment amounts from the start; never rewrite a paid tuple.
+		initializeFixture(BigInteger.valueOf(1_000_000));
 		db.update("update course_runs set total_units=10,tuition_vnd=1000000 where id=?", runId);
 		db.update("update course_enrollments set total_units_snapshot=10,amount_paid_vnd_snapshot=1000000 where course_run_id=?", runId);
-		db.update("update course_payments set amount=1000000 where course_order_id in (select id from course_orders where course_run_id=?)", runId);
 		UUID enrollment = db.queryForObject("select id from course_enrollments where course_run_id=?", UUID.class, runId);
 		for (int unit = 2; unit <= 10; unit++) {
 			var next = createSession(unit, session.startAt().plusSeconds((unit - 1) * 86400L));
@@ -949,13 +954,17 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	private UUID seedEnrollment(UUID enrolledMemberId) {
+		return seedEnrollment(enrolledMemberId, BigInteger.valueOf(100_000));
+	}
+
+	private UUID seedEnrollment(UUID enrolledMemberId, BigInteger paidAmount) {
 		UUID enrollmentId = UUID.randomUUID(), enrollmentSessionId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID(), reservationId = UUID.randomUUID(), paymentId = UUID.randomUUID();
 		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase();
 		Instant expiresAt = Instant.parse("2034-12-15T00:00:00Z");
 		db.update("insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,"
-			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key) values(?,?,?,?,?,100000,'VND','PAID',?)",
-			orderId, reference, enrolledMemberId, enrolledMemberId, runId, UUID.randomUUID().toString());
+			+ "tuition_vnd_snapshot,currency_code,status,idempotency_key) values(?,?,?,?,?,?,'VND','PAID',?)",
+			orderId, reference, enrolledMemberId, enrolledMemberId, runId, paidAmount, UUID.randomUUID().toString());
 		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at) "
 			+ "values(?,?,?,?,'ENROLLED',?)", reservationId, orderId, enrolledMemberId, runId,
 			java.sql.Timestamp.from(expiresAt));
@@ -963,13 +972,13 @@ class CourseScheduleChangeIntegrationTests {
 			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,
 			payment_reference,amount,currency_code,status,deadline_at,bank_code_snapshot,bank_account_number_snapshot,
 			bank_account_name_snapshot,method,paid_at)
-			values(?,?,?,?,?,?,100000,'VND','PAID',?,'CASH','CASH','CASH','CASH',current_timestamp)
-			""", paymentId, orderId, reservationId, enrolledMemberId, enrolledMemberId, reference,
+			values(?,?,?,?,?,?,?,'VND','PAID',?,'CASH','CASH','CASH','CASH',current_timestamp)
+			""", paymentId, orderId, reservationId, enrolledMemberId, enrolledMemberId, reference, paidAmount,
 			java.sql.Timestamp.from(expiresAt));
 		db.update("insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,"
 			+ "member_account_id,actor_account_id,course_run_id,amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at) "
-			+ "values(?,?,?,?,?,?,?,100000,1,current_timestamp)", enrollmentId, orderId, reservationId, paymentId,
-			enrolledMemberId, enrolledMemberId, runId);
+			+ "values(?,?,?,?,?,?,?,?,1,current_timestamp)", enrollmentId, orderId, reservationId, paymentId,
+			enrolledMemberId, enrolledMemberId, runId, paidAmount);
 		db.update("insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,"
 			+ "unit_number,allocation_vnd,disposition) values(?,?,?,?,1,100000,'ENROLLED')", enrollmentSessionId,
 			enrollmentId, session.id(), runId);

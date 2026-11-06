@@ -51,6 +51,8 @@ class CourseWithdrawalSnapshotMigrationV68Tests {
 		var payments = db.queryForList("select * from course_payments order by id");
 		var attendance = db.queryForList("select * from course_enrollment_sessions order by id");
 		var refunds = db.queryForList("select * from course_refund_obligations order by id");
+		// V75 adds a nullable event key; every existing historical value must remain unchanged.
+		refunds.forEach(row -> row.put("source_event_id", null));
 		var approvedBefore = db.queryForMap("select status,requested_at,decided_at,refund_amount_vnd,refund_basis_vnd from course_withdrawal_requests where id=?", approved);
 
 		flyway(null).migrate();
