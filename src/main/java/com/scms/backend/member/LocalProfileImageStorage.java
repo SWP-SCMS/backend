@@ -132,6 +132,11 @@ public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConf
 			ImageReader reader = readers.next();
 			try {
 				format = reader.getFormatName().toLowerCase(Locale.ROOT);
+                reader.setInput(input);
+                long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
+                if (pixels <= 0 || pixels > 20_000_000) {
+                    throw invalid("must contain at most 20000000 pixels");
+                }
 			}
 			finally {
 				reader.dispose();

@@ -43,6 +43,18 @@ class CoachLeaveServiceTests {
 			Clock.fixed(now, ZoneOffset.UTC));
 	}
 
+    @Test void managerPageCapsSizeAndUsesStableOrdering() {
+        Account manager = account(AccountRole.MANAGER);
+        when(accounts.findById(manager.getId())).thenReturn(Optional.of(manager));
+        var pageable = org.springframework.data.domain.PageRequest.of(0, 100,
+            org.springframework.data.domain.Sort.by("createdAt", "id"));
+        when(leaves.findByStatus(CoachLeaveStatus.PENDING, pageable))
+            .thenReturn(org.springframework.data.domain.Page.empty(pageable));
+        assertThat(service.managerPage(manager.getId(), CoachLeaveStatus.PENDING, -1, 500).getSize()).isEqualTo(100);
+        verify(leaves).findByStatus(CoachLeaveStatus.PENDING, pageable);
+        org.mockito.Mockito.verify(leaves, org.mockito.Mockito.never()).findAll();
+    }
+
 	@Test void coachSubmitsNonOverlappingFutureLeave() {
 		Account coach = account(AccountRole.COACH); Account manager = account(AccountRole.MANAGER);
 		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
