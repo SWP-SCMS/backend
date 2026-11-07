@@ -165,13 +165,13 @@ class TrainingBenefitEligibilityIntegrationTests {
 		createPlan("CUSTOM_SESSION_RESULT", "CLASS_BOOKING", "TRAINING_RESULT");
 		createPlan("CUSTOM_BOOKING_ONLY", "CLASS_BOOKING");
 		UUID eligibleMembership = createMembership(eligible.getId(), manager.getId(), "CUSTOM_SESSION_RESULT",
-			now.minusSeconds(3600), now.plusSeconds(86400));
+			now.minusSeconds(86400), now.plusSeconds(86400));
 		UUID ineligibleMembership = createMembership(ineligible.getId(), manager.getId(), "CUSTOM_BOOKING_ONLY",
-			now.minusSeconds(3600), now.plusSeconds(86400));
+			now.minusSeconds(86400), now.plusSeconds(86400));
 		UUID eligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), eligible.getId(),
-			eligibleMembership, now.plusSeconds(3600));
+			eligibleMembership, now.minusSeconds(10800));
 		UUID ineligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), ineligible.getId(),
-			ineligibleMembership, now.plusSeconds(7200));
+			ineligibleMembership, now.minusSeconds(7200));
 
 		SessionTrainingResultResponse created = sessionResults.create(coach.getId(), eligibleSession,
 			eligible.getId(), new SessionTrainingResultRequest(now, Map.of("reps", 10)));
@@ -192,13 +192,13 @@ class TrainingBenefitEligibilityIntegrationTests {
 		createPlan("CUSTOM_SESSION_ALL", "CLASS_BOOKING", "TRAINING_RESULT", "TRAINING_FEEDBACK");
 		createPlan("CUSTOM_RESULT_ONLY", "CLASS_BOOKING", "TRAINING_RESULT");
 		UUID eligibleMembership = createMembership(eligible.getId(), manager.getId(), "CUSTOM_SESSION_ALL",
-			now.minusSeconds(3600), now.plusSeconds(86400));
+			now.minusSeconds(86400), now.plusSeconds(86400));
 		UUID ineligibleMembership = createMembership(ineligible.getId(), manager.getId(), "CUSTOM_RESULT_ONLY",
-			now.minusSeconds(3600), now.plusSeconds(86400));
+			now.minusSeconds(86400), now.plusSeconds(86400));
 		UUID eligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), eligible.getId(),
-			eligibleMembership, now.plusSeconds(3600));
+			eligibleMembership, now.minusSeconds(10800));
 		UUID ineligibleSession = createBookedYogaSession(manager.getId(), coach.getId(), ineligible.getId(),
-			ineligibleMembership, now.plusSeconds(7200));
+			ineligibleMembership, now.minusSeconds(7200));
 		SessionTrainingResultResponse eligibleResult = sessionResults.create(coach.getId(), eligibleSession,
 			eligible.getId(), new SessionTrainingResultRequest(now, Map.of("reps", 10)));
 		SessionTrainingResultResponse ineligibleResult = sessionResults.create(coach.getId(), ineligibleSession,

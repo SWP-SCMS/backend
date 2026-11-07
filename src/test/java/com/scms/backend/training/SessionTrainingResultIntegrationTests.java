@@ -29,6 +29,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 class SessionTrainingResultIntegrationTests {
 
+	private static final Instant SESSION_END = Instant.now().minusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+
 	static {
 		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
 	}
@@ -48,7 +50,7 @@ class SessionTrainingResultIntegrationTests {
 		Account otherCoach = createAccount(AccountRole.COACH, "Other Coach US46");
 		Account member = createAccount(AccountRole.MEMBER, "Member US46");
 		UUID sessionId = createBookedYogaSession(manager.getId(), coach.getId(), member.getId());
-		Instant activityAt = Instant.parse("2030-01-01T03:00:00Z");
+		Instant activityAt = SESSION_END;
 
 		SessionTrainingResultResponse created = results.create(coach.getId(), sessionId, member.getId(),
 			new SessionTrainingResultRequest(activityAt, Map.of("posesCompleted", 8)));
@@ -92,8 +94,8 @@ class SessionTrainingResultIntegrationTests {
 		UUID offerId = UUID.randomUUID();
 		UUID orderId = UUID.randomUUID();
 		UUID membershipId = UUID.randomUUID();
-		Instant startsAt = Instant.parse("2029-01-01T00:00:00Z");
-		Instant endsAt = Instant.parse("2031-01-01T00:00:00Z");
+		Instant startsAt = SESSION_END.minusSeconds(86400);
+		Instant endsAt = SESSION_END.plusSeconds(86400);
 
 		jdbc.update("insert into member_profiles(account_id) values (?)", memberId);
 		jdbc.update("insert into disciplines(id, name, status) values (?, ?, 'ACTIVE')",
@@ -104,8 +106,9 @@ class SessionTrainingResultIntegrationTests {
 			roomId, "Studio " + roomId);
 		jdbc.update("insert into class_sessions(id, sport_class_id, teaching_coach_account_id, room_id, "
 			+ "start_time, end_time, capacity, status, created_by_account_id) "
-			+ "values (?, ?, ?, ?, '2030-01-01T02:00:00Z', '2030-01-01T03:00:00Z', 12, 'SCHEDULED', ?)",
-			sessionId, classId, coachId, roomId, managerId);
+			+ "values (?, ?, ?, ?, ?, ?, 12, 'SCHEDULED', ?)",
+			sessionId, classId, coachId, roomId, Timestamp.from(SESSION_END.minusSeconds(3600)),
+			Timestamp.from(SESSION_END), managerId);
 		jdbc.update("insert into membership_offers(id, plan_code, name, description, price_amount, "
 			+ "duration_days, status, created_by_account_id) "
 			+ "values (?, 'PLUS', ?, 'US46 integration offer', 1000, 365, 'ACTIVE', ?)",

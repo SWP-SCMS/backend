@@ -264,6 +264,9 @@ class GeneratedOpenApiTests {
 	);
 
 	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
+		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-summary",
+		"DELETE /staff/me/profile/image",
+		"POST /manager/course-runs/resource-availability",
 		"POST /manager/course-runs/with-schedule",
 		"GET /manager/course-runs/{runId}/cancellation-impact",
 		"POST /payments/{paymentId}/evidence-images",

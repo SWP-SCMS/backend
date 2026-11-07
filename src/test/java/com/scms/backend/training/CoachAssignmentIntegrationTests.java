@@ -60,8 +60,8 @@ class CoachAssignmentIntegrationTests {
 		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Reminder Manager");
 		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "Reminder Member");
 		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Reminder Coach");
-		jdbc.update("insert into member_profiles(account_id,member_code) values(?,?) on conflict(account_id) do nothing",
-			member.getId(), "MB-" + member.getId().toString().substring(0,8));
+		jdbc.update("insert into member_profiles(account_id) values(?) on conflict(account_id) do nothing",
+			member.getId());
 		Instant now = Instant.now();
 		UUID membership = createMembership(member.getId(), manager.getId(), "PLUS", now.minusSeconds(60), now.plusSeconds(86400));
 		var reminder = new CoachAssignmentReminder(jdbc, java.time.Clock.fixed(now, ZoneOffset.UTC));
