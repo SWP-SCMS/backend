@@ -170,10 +170,54 @@ class SessionTrainingResultServiceTests {
 		assertThat(audit.getValue().getAfterData().get("content")).isEqualTo(Map.of("notes", "After"));
 	}
 
+
+	@Test void rejectsCreateAndUpdateBeforeStart() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		ClassSession session = mock(ClassSession.class);
+		lenient().when(session.getEndTime()).thenReturn(now.plusSeconds(7200));
+		when(session.getStatus()).thenReturn(com.scms.backend.scheduling.ClassSessionStatus.SCHEDULED);
+		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)).thenReturn(Optional.of(session));
+		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		assertThatThrownBy(() -> service.update(coachId, sessionId, memberId, UUID.randomUUID(), request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		verify(results, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test void rejectsCreateAndUpdateDuringSession() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		ClassSession session = mock(ClassSession.class);
+		lenient().when(session.getEndTime()).thenReturn(now.plusSeconds(1));
+		when(session.getStatus()).thenReturn(com.scms.backend.scheduling.ClassSessionStatus.IN_PROGRESS);
+		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)).thenReturn(Optional.of(session));
+		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		assertThatThrownBy(() -> service.update(coachId, sessionId, memberId, UUID.randomUUID(), request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		verify(results, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test void rejectsCreateAndUpdateCancelledSession() {
+		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
+		ClassSession session = mock(ClassSession.class);
+		lenient().when(session.getEndTime()).thenReturn(now.plusSeconds(-1));
+		when(session.getStatus()).thenReturn(com.scms.backend.scheduling.ClassSessionStatus.CANCELLED);
+		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)).thenReturn(Optional.of(session));
+		assertThatThrownBy(() -> service.create(coachId, sessionId, memberId, request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		assertThatThrownBy(() -> service.update(coachId, sessionId, memberId, UUID.randomUUID(), request("Denied")))
+			.isInstanceOfSatisfying(TrainingResultException.class, e -> assertThat(e.getCode()).isEqualTo("SESSION_TRAINING_NOT_AVAILABLE"));
+		verify(results, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
 	private void permitTeachingCoach() {
 		when(accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)).thenReturn(true);
 		ClassSession session = mock(ClassSession.class);
 		lenient().when(session.getStartTime()).thenReturn(now);
+		lenient().when(session.getEndTime()).thenReturn(now);
 		when(sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId))
 			.thenReturn(Optional.of(session));
 	}

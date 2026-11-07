@@ -59,6 +59,22 @@ class StaffProfileImageUploadServiceTests {
 		verify(fixture.storage).delete(fixture.stored.url());
 	}
 
+    @Test
+    void removalDeletesFileOnlyAfterCommitAndPreservesItOnRollback() {
+        for (int status : new int[] { TransactionSynchronization.STATUS_COMMITTED, TransactionSynchronization.STATUS_ROLLED_BACK }) {
+            Fixture fixture = fixture();
+            when(fixture.staffService.replaceProfileImage(fixture.accountId, null)).thenReturn("/profile-images/old.jpg");
+            TransactionSynchronizationManager.initSynchronization();
+            try {
+                fixture.service.removeForStaff(fixture.accountId);
+                verify(fixture.storage, Mockito.never()).delete(Mockito.any());
+                TransactionSynchronizationManager.getSynchronizations().get(0).afterCompletion(status);
+                verify(fixture.storage, Mockito.times(status == TransactionSynchronization.STATUS_COMMITTED ? 1 : 0))
+                    .delete("/profile-images/old.jpg");
+            } finally { TransactionSynchronizationManager.clearSynchronization(); }
+        }
+    }
+
 	private Fixture fixture() {
 		ProfileImageStorage storage = Mockito.mock(ProfileImageStorage.class);
 		MemberProfileService memberService = Mockito.mock(MemberProfileService.class);

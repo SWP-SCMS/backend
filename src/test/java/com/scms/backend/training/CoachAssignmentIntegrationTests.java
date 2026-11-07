@@ -55,6 +55,38 @@ class CoachAssignmentIntegrationTests {
 	@Autowired
 	private JdbcTemplate jdbc;
 
+	@Test
+	void assignmentReminderOnlyNotifiesForEligibleUnassignedMembersAndDeduplicates() {
+		Account manager = createAccount(AccountRole.MANAGER, AccountStatus.ACTIVE, "Reminder Manager");
+		Account member = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "Reminder Member");
+		Account coach = createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "Reminder Coach");
+		jdbc.update("insert into member_profiles(account_id) values(?) on conflict(account_id) do nothing",
+			member.getId());
+		Instant now = Instant.now();
+		UUID membership = createMembership(member.getId(), manager.getId(), "PLUS", now.minusSeconds(60), now.plusSeconds(86400));
+		var reminder = new CoachAssignmentReminder(jdbc, java.time.Clock.fixed(now, ZoneOffset.UTC));
+		// An expired membership cannot generate an assignment request.
+		jdbc.update("update memberships set ends_at=? where id=?", Timestamp.from(now.minusSeconds(1)), membership);
+		reminder.notifyManagers();
+		assertThat(reminderCount(manager.getId(), member.getId())).isZero();
+		jdbc.update("update memberships set ends_at=? where id=?", Timestamp.from(now.plusSeconds(86400)), membership);
+		reminder.notifyManagers();
+		reminder.notifyManagers();
+		assertThat(reminderCount(manager.getId(), member.getId())).isEqualTo(1);
+		service.assign(manager.getId(), member.getId(), new CoachAssignmentAssignRequest(coach.getId(), "Assign"));
+		reminder.notifyManagers();
+		assertThat(reminderCount(manager.getId(), member.getId())).isEqualTo(1);
+		service.endAssignment(manager.getId(), member.getId(), new CoachAssignmentEndRequest("Needs another coach"));
+		reminder.notifyManagers();
+		reminder.notifyManagers();
+		assertThat(reminderCount(manager.getId(), member.getId())).isEqualTo(2);
+	}
+
+	private int reminderCount(UUID manager, UUID member) {
+		return jdbc.queryForObject("select count(*) from notification_outbox where recipient_account_id=? and target_id=? and notification_type='PT_ASSIGNMENT_REQUIRED'",
+			Integer.class, manager, member);
+	}
+
 	@Autowired
 	private NotificationOutboxDispatcher notificationOutboxDispatcher;
 

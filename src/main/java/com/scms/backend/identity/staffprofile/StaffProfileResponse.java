@@ -12,4 +12,13 @@ public record StaffProfileResponse(UUID accountId, String fullName, String phone
 		LocalDate birthDate, AccountRole role, AccountStatus status,
 		@Schema(types = {"string", "null"}, requiredMode = Schema.RequiredMode.REQUIRED) String profileImageUrl,
 		boolean pendingEmailChange,
-		String pendingEmailMasked, Instant pendingEmailOtpExpiresAt, Instant pendingEmailResendAvailableAt) { }
+		String pendingEmailMasked, Instant pendingEmailOtpExpiresAt, Instant pendingEmailResendAvailableAt,
+        String emergencyContactName, String emergencyContactPhone, String emergencyContactRelationship) {
+    public StaffProfileResponse(UUID accountId, String fullName, String phone, String email,
+            LocalDate birthDate, AccountRole role, AccountStatus status, String profileImageUrl,
+            boolean pendingEmailChange, String pendingEmailMasked, Instant pendingEmailOtpExpiresAt,
+            Instant pendingEmailResendAvailableAt) {
+        this(accountId, fullName, phone, email, birthDate, role, status, profileImageUrl, pendingEmailChange,
+            pendingEmailMasked, pendingEmailOtpExpiresAt, pendingEmailResendAvailableAt, null, null, null);
+    }
+}

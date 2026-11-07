@@ -86,8 +86,13 @@ public class SessionTrainingFeedbackService {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
 			throw TrainingFeedbackException.actorNotActiveCoach();
 		}
-		return sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
+		ClassSession session = sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId)
 			.orElseThrow(TrainingFeedbackException::sessionNotFound);
+		if (session.getStatus() == com.scms.backend.scheduling.ClassSessionStatus.CANCELLED
+				|| session.getEndTime() == null || clock.instant().isBefore(session.getEndTime())) {
+			throw TrainingFeedbackException.sessionNotEnded();
+		}
+		return session;
 	}
 
 	private void requireOwnedGroupOrYogaSessionForRead(UUID coachId, UUID sessionId) {

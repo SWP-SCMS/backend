@@ -66,13 +66,25 @@ public class StaffProfileService {
 		}
 		LocalDate birthDate = request.birthDate() == null ? account.getBirthDate()
 			: validator.validateBirthDate(request.birthDate());
+		String contactName = request.emergencyContactName() == null ? account.getStaffEmergencyContactName()
+			: validator.normalizeOptionalPersonName(blankToNull(request.emergencyContactName()), "emergencyContactName", 200);
+		String contactPhone = request.emergencyContactPhone() == null ? account.getStaffEmergencyContactPhone()
+			: validator.normalizeOptionalPhone(blankToNull(request.emergencyContactPhone()));
+		String contactRelationship = request.emergencyContactRelationship() == null ? account.getStaffEmergencyContactRelationship()
+			: validator.normalizeOptional(blankToNull(request.emergencyContactRelationship()), "emergencyContactRelationship", 100);
+		validator.validateEmergencyContact(contactName, contactPhone);
 		identifiers.ensureAvailableForUpdate(accountId, account.getEmail(), account.getPhone(), email, phone);
 		if (Objects.equals(fullName, account.getFullName()) && Objects.equals(phone, account.getPhone())
-				&& Objects.equals(email, account.getEmail()) && Objects.equals(birthDate, account.getBirthDate())) {
+				&& Objects.equals(email, account.getEmail()) && Objects.equals(birthDate, account.getBirthDate())
+                && Objects.equals(contactName, account.getStaffEmergencyContactName())
+                && Objects.equals(contactPhone, account.getStaffEmergencyContactPhone())
+                && Objects.equals(contactRelationship, account.getStaffEmergencyContactRelationship())) {
 			return toResponse(account);
 		}
 		Map<String, Object> beforeData = snapshot(account.getFullName(), account.getPhone(), account.getEmail(),
 			account.getBirthDate());
+        beforeData.put("hasEmergencyContact", account.getStaffEmergencyContactName() != null);
+		account.updateStaffEmergencyContact(contactName, contactPhone, contactRelationship);
 		account.updateMemberProfileDetails(fullName, phone, email, birthDate);
 		try {
 			accounts.flush();
@@ -80,10 +92,14 @@ public class StaffProfileService {
 		catch (DataIntegrityViolationException exception) {
 			throw identifiers.fromDatabase(exception);
 		}
+        Map<String, Object> afterData = snapshot(fullName, phone, email, birthDate);
+        afterData.put("hasEmergencyContact", contactName != null);
 		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "STAFF_SELF_PROFILE_UPDATED", "ACCOUNT", accountId,
-			null, beforeData, snapshot(fullName, phone, email, birthDate)));
+			null, beforeData, afterData));
 		return toResponse(account);
 	}
+
+    private String blankToNull(String value) { return value.isBlank() ? null : value; }
 
 	private Map<String, Object> snapshot(String fullName, String phone, String email, LocalDate birthDate) {
 		Map<String, Object> data = new LinkedHashMap<>();
@@ -107,6 +123,8 @@ public class StaffProfileService {
 		var pending = emailChanges.status(account.getId());
 		return new StaffProfileResponse(account.getId(), account.getFullName(), account.getPhone(), account.getEmail(),
 			account.getBirthDate(), account.getRole(), account.getStatus(), account.getProfileImageUrl(),
-			pending.pending(), pending.maskedEmail(), pending.otpExpiresAt(), pending.resendAvailableAt());
+			pending.pending(), pending.maskedEmail(), pending.otpExpiresAt(), pending.resendAvailableAt(),
+            account.getStaffEmergencyContactName(), account.getStaffEmergencyContactPhone(),
+            account.getStaffEmergencyContactRelationship());
 	}
 }

@@ -94,9 +94,9 @@ public class ClassSession {
 	Account getTeachingCoach() { return teachingCoach; }
 	Room getRoom() { return room; }
 	public Instant getStartTime() { return startTime; }
-	Instant getEndTime() { return endTime; }
+	public Instant getEndTime() { return endTime; }
 	int getCapacity() { return capacity; }
-	ClassSessionStatus getStatus() { return status; }
+	public ClassSessionStatus getStatus() { return status; }
 	Instant getCancelledAt() { return cancelledAt; }
 	String getCancellationReason() { return cancellationReason; }
 	UUID getCreatedBy() { return createdBy; }

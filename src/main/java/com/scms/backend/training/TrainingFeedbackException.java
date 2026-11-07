@@ -58,6 +58,11 @@ public class TrainingFeedbackException extends RuntimeException {
 				"The Session Training Feedback was not found for this Member and Session.");
 	}
 
+	static TrainingFeedbackException sessionNotEnded() {
+		return new TrainingFeedbackException(HttpStatus.CONFLICT, "SESSION_TRAINING_NOT_AVAILABLE",
+				"Results and feedback can only be recorded after a non-cancelled session ends.");
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 }

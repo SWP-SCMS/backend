@@ -29,7 +29,8 @@ public final class CourseEnrollmentApiModels {
 			CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt,
 			@Schema(requiredMode = Schema.RequiredMode.REQUIRED) boolean isMakeup,
 			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID originalSessionId,
-			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID replacementSessionId) {}
+			@Schema(requiredMode = Schema.RequiredMode.REQUIRED, types = { "string", "null" }) UUID replacementSessionId,
+			String roomName, String coachName) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record RosterEntry(UUID enrollmentSessionId, String memberCode, String fullName,

@@ -172,6 +172,7 @@ public class SecurityConfiguration {
 					.hasRole("COACH")
 				.requestMatchers("/coach/class-sessions/*/attendance", "/coach/class-sessions/*/attendance/*")
 					.hasRole("COACH")
+				.requestMatchers(HttpMethod.PUT, "/coach/class-sessions/*/members/*/training-summary").hasRole("COACH")
 				.requestMatchers(HttpMethod.POST, "/coach/class-sessions/*/members/*/training-results")
 					.hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/coach/class-sessions/*/members/*/training-results")
@@ -248,6 +249,7 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/manager/coach-assignments/candidates",
 					"/manager/coaches/assignment-workloads").hasRole("MANAGER")
 				.requestMatchers("/manager/members/**").hasRole("MANAGER")
+				.requestMatchers(HttpMethod.DELETE, "/staff/me/profile/image").hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers(HttpMethod.POST, "/staff/me/profile/image")
 					.hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers("/staff/me/profile").hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
