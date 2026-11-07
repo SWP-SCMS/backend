@@ -54,10 +54,12 @@ class CourseEnrollmentService {
 				e.lifecycle_status,e.enrolled_at,e.amount_paid_vnd_snapshot,p.status payment_status,p.method payment_method,
 				es.id enrollment_session_id,es.course_session_id,es.unit_number,s.start_at,s.end_at,
 				es.disposition,s.status session_status,s.is_makeup,s.replacement_session_id,original.id original_session_id,
-				es.attendance_status,es.attendance_recorded_at
+				es.attendance_status,es.attendance_recorded_at,room.name room_name,coach.full_name coach_name
 			from course_enrollments e join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
 			join course_enrollment_sessions es on es.course_enrollment_id=e.id
 			join course_sessions s on s.id=es.course_session_id
+			left join rooms room on room.id=s.room_id
+			left join accounts coach on coach.id=s.coach_account_id
 			left join course_payments p on p.id=e.course_payment_id
 			left join course_sessions original on original.replacement_session_id=s.id
 			where e.member_account_id=? order by e.enrolled_at desc,e.id,es.unit_number
@@ -74,7 +76,7 @@ class CourseEnrollmentService {
 				instant(row, "end_at"), text(row, "disposition"), CourseSessionStatus.valueOf(text(row, "session_status")),
 				CourseAttendanceStatus.valueOf(text(row, "attendance_status")), instant(row, "attendance_recorded_at"),
 				Boolean.TRUE.equals(row.get("is_makeup")), uuid(row, "original_session_id"),
-				uuid(row, "replacement_session_id")));
+				uuid(row, "replacement_session_id"), text(row, "room_name"), text(row, "coach_name")));
 		}
 		return grouped.values().stream().map(EnrollmentBuilder::response).toList();
 	}

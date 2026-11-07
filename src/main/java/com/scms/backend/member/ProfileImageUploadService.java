@@ -81,6 +81,14 @@ public class ProfileImageUploadService {
 		}
 	}
 
+    @Transactional
+    StaffProfileResponse removeForStaff(UUID accountId) {
+        String oldUrl = staffProfileService.replaceProfileImage(accountId, null);
+        StaffProfileResponse response = staffProfileService.getProfile(accountId);
+        cleanupAfterCommit(null, oldUrl);
+        return response;
+    }
+
 	private void cleanupAfterCommit(String newUrl, String oldUrl) {
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -101,6 +109,7 @@ public class ProfileImageUploadService {
 	}
 
 	private void deleteQuietly(String url) {
+        if (url == null) return;
 		try {
 			storage.delete(url);
 		}

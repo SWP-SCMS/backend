@@ -93,6 +93,26 @@ class StaffProfileImageUploadControllerTests {
 			.andExpect(jsonPath("$.profileImageUrl").value(nullValue()));
 	}
 
+    @ParameterizedTest
+    @MethodSource("staffRoles")
+    void staffCanRemoveOwnImage(AccountRole role) throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.removeForStaff(id)).thenReturn(response(id, role));
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image")
+            .with(jwt().jwt(jwt -> jwt.subject(id.toString()).claim("role", role.name()))
+                .authorities(new SimpleGrantedAuthority("ROLE_" + role.name()))))
+            .andExpect(status().isOk());
+        verify(service).removeForStaff(id);
+    }
+
+    @Test
+    void memberCannotRemoveStaffImage() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image")
+            .with(jwt().jwt(jwt -> jwt.subject(UUID.randomUUID().toString()).claim("role", "MEMBER"))
+                .authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
+            .andExpect(status().isForbidden());
+    }
+
 	private StaffProfileResponse response(UUID accountId, AccountRole role) {
 		return new StaffProfileResponse(accountId, "Staff", "0901234567", "staff@example.com",
 			LocalDate.of(1990, 1, 1), role, AccountStatus.ACTIVE, "/profile-images/staff.png", false,

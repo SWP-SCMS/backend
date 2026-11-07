@@ -141,6 +141,49 @@ class StaffProfileServiceTests {
 		verify(audits, never()).save(any());
 	}
 
+	@Test
+	void contactCanBeSavedPreservedAndClearedWithRealValidation() {
+        service = new StaffProfileService(accounts, identifiers,
+            new MemberProfileDetailsValidator(java.time.Clock.systemUTC()), audits, emailChanges);
+        UUID id = UUID.randomUUID(); Account account = account(id);
+        when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
+        var saved = service.updateProfile(id, new StaffProfilePatchRequest(null, null, null, null,
+            " Nguyen Van B ", "0901234567", " Anh trai "));
+        assertThat(saved.emergencyContactName()).isEqualTo("Nguyen Van B");
+        assertThat(saved.emergencyContactRelationship()).isEqualTo("Anh trai");
+        assertThat(service.updateProfile(id, new StaffProfilePatchRequest("New Name", null, null, null))
+            .emergencyContactPhone()).isEqualTo("0901234567");
+        var cleared = service.updateProfile(id, new StaffProfilePatchRequest(null, null, null, null, "", "", ""));
+        assertThat(cleared.emergencyContactName()).isNull();
+        assertThat(cleared.emergencyContactPhone()).isNull();
+        assertThat(cleared.emergencyContactRelationship()).isNull();
+    }
+
+    @Test
+    void invalidOrIncompleteContactDoesNotMutateAccount() {
+        service = new StaffProfileService(accounts, identifiers,
+            new MemberProfileDetailsValidator(java.time.Clock.systemUTC()), audits, emailChanges);
+        UUID id = UUID.randomUUID(); Account account = account(id);
+        when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
+        for (String phone : new String[] { "", "bad-number" }) {
+            assertThatThrownBy(() -> service.updateProfile(id, new StaffProfilePatchRequest("New Name", null,
+                null, null, "Nguyen Van B", phone, "Anh")))
+                .isInstanceOf(com.scms.backend.identity.memberprofile.MemberProfileValidationException.class);
+        }
+        assertThat(account.getFullName()).isEqualTo("Old");
+        assertThat(account.getStaffEmergencyContactName()).isNull();
+        verify(accounts, never()).flush();
+    }
+
+    @Test
+    void staffImageCanBeRemoved() {
+        UUID id = UUID.randomUUID(); Account account = account(id);
+        account.replaceStaffProfileImage("/profile-images/old.png");
+        when(accounts.findById(id)).thenReturn(java.util.Optional.of(account));
+        assertThat(service.replaceProfileImage(id, null)).isEqualTo("/profile-images/old.png");
+        assertThat(service.getProfile(id).profileImageUrl()).isNull();
+    }
+
 	private Account account(UUID id) {
 		return new Account(id, AccountRole.COACH, AccountStatus.ACTIVE, "Old", "0900000001",
 			"old@example.com", LocalDate.of(1990, 1, 1), "hash");

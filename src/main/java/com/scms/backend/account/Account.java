@@ -49,6 +49,24 @@ public class Account {
 	@Column(name = "profile_image_url", columnDefinition = "text")
 	private String profileImageUrl;
 
+	@Column(name = "staff_emergency_contact_name", length = 200)
+	private String staffEmergencyContactName;
+	@Column(name = "staff_emergency_contact_phone", length = 32)
+	private String staffEmergencyContactPhone;
+	@Column(name = "staff_emergency_contact_relationship", length = 100)
+	private String staffEmergencyContactRelationship;
+
+	public String getStaffEmergencyContactName() { return staffEmergencyContactName; }
+	public String getStaffEmergencyContactPhone() { return staffEmergencyContactPhone; }
+	public String getStaffEmergencyContactRelationship() { return staffEmergencyContactRelationship; }
+
+	public void updateStaffEmergencyContact(String name, String phone, String relationship) {
+		if (role == AccountRole.MEMBER) throw new IllegalStateException("Staff contact requested for member");
+		staffEmergencyContactName = name;
+		staffEmergencyContactPhone = phone;
+		staffEmergencyContactRelationship = relationship;
+	}
+
 	@Column(name = "email_verified_at")
 	private Instant emailVerifiedAt;
 
@@ -117,7 +135,7 @@ public class Account {
 			throw new IllegalStateException("Member accounts store profile images in member profiles");
 		}
 		String previous = this.profileImageUrl;
-		this.profileImageUrl = Objects.requireNonNull(profileImageUrl);
+		this.profileImageUrl = profileImageUrl;
 		return previous;
 	}
 

@@ -10,6 +10,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -41,6 +42,11 @@ public class ProfileImageUploadController {
 			@RequestPart("file") MultipartFile file) {
 		return ResponseEntity.ok(service.uploadForStaff(accountId(jwt), file));
 	}
+
+    @DeleteMapping("/staff/me/profile/image")
+    ResponseEntity<StaffProfileResponse> removeStaffProfileImage(@AuthenticationPrincipal Jwt jwt) {
+        return ResponseEntity.ok(service.removeForStaff(accountId(jwt)));
+    }
 
 	private UUID accountId(Jwt jwt) {
 		return UUID.fromString(jwt.getSubject());

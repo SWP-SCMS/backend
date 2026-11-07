@@ -53,6 +53,11 @@ public class TrainingResultException extends RuntimeException {
 				"The Session Training Result was not found for this Member.");
 	}
 
+	static TrainingResultException sessionNotEnded() {
+		return new TrainingResultException(HttpStatus.CONFLICT, "SESSION_TRAINING_NOT_AVAILABLE",
+				"Results and feedback can only be recorded after a non-cancelled session ends.");
+	}
+
 	public HttpStatus getStatus() { return status; }
 	public String getCode() { return code; }
 }
