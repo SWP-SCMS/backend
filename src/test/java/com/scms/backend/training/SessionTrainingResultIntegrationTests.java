@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Clock;
+import static org.mockito.Mockito.doReturn;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.TimeZone;
@@ -29,7 +32,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 class SessionTrainingResultIntegrationTests {
 
-	private static final Instant SESSION_END = Instant.now().minusSeconds(3600).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+	private static final Instant SESSION_END = Instant.now().plusSeconds(7200).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
 
 	static {
 		TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
@@ -42,6 +45,7 @@ class SessionTrainingResultIntegrationTests {
 	@Autowired SessionTrainingResultService results;
 	@Autowired AccountRepository accounts;
 	@Autowired JdbcTemplate jdbc;
+	@MockitoSpyBean Clock clock;
 
 	@Test
 	void teachingCoachCreatesAndUpdatesSessionResultWithoutPersonalAssignment() {
@@ -50,6 +54,8 @@ class SessionTrainingResultIntegrationTests {
 		Account otherCoach = createAccount(AccountRole.COACH, "Other Coach US46");
 		Account member = createAccount(AccountRole.MEMBER, "Member US46");
 		UUID sessionId = createBookedYogaSession(manager.getId(), coach.getId(), member.getId());
+		// Book while the session is in the future, then advance the application clock.
+		doReturn(SESSION_END.plusSeconds(120)).when(clock).instant();
 		Instant activityAt = SESSION_END;
 
 		SessionTrainingResultResponse created = results.create(coach.getId(), sessionId, member.getId(),
