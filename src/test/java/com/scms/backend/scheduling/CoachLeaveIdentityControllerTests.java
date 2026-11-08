@@ -1,8 +1,11 @@
 package com.scms.backend.scheduling;
 
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,12 +18,37 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.http.MediaType;
 
 @WebMvcTest(controllers = CoachLeaveController.class)
 class CoachLeaveIdentityControllerTests {
 
 	@Autowired MockMvc mockMvc;
 	@MockitoBean CoachLeaveService service;
+
+	@Test
+	void createAcceptsIsoInstantsWithoutAmbiguousDayMonthParsing() throws Exception {
+		UUID coachId = UUID.randomUUID();
+		var request = new CoachLeaveCreateRequest(Instant.parse("2030-11-09T01:00:00Z"), Instant.parse("2030-11-09T02:00:00Z"), "Leave");
+		mockMvc.perform(post("/api/v1/coach/leave-requests").contextPath("/api/v1")
+			.with(jwt().jwt(token -> token.subject(coachId.toString()).claim("role", "COACH")))
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("{\"startTime\":\"2030-11-09T01:00:00.000Z\",\"endTime\":\"2030-11-09T02:00:00.000Z\",\"reason\":\"Leave\"}"))
+			.andExpect(status().isCreated());
+		verify(service).create(coachId, request);
+	}
+
+	@Test
+	void createRejectsSlashFormattedDatesRatherThanGuessingDayAndMonth() throws Exception {
+		for (String date : List.of("11/09/2030 08:00", "09/11/2030 08:00")) {
+			mockMvc.perform(post("/api/v1/coach/leave-requests").contextPath("/api/v1")
+				.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", "COACH")))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{\"startTime\":\"" + date + "\",\"endTime\":\"2030-11-09T02:00:00Z\",\"reason\":\"Leave\"}"))
+				.andExpect(status().isBadRequest());
+		}
+		verifyNoInteractions(service);
+	}
 
 	@Test
 	void managerListReturnsCoachIdentityWithoutAdditionalRequests() throws Exception {

@@ -20,7 +20,8 @@ public record MemberTrainingResultResponse(
 	Instant sessionStartTime,
 	String className,
 	Instant createdAt,
-	Instant updatedAt
+	Instant updatedAt,
+	UUID courseSessionId
 ) {
 	static MemberTrainingResultResponse from(TrainingResultRepository.MemberTrainingResultHistoryView view) {
 		TrainingResult result = view.getResult();
@@ -29,6 +30,6 @@ public record MemberTrainingResultResponse(
 			result.getActivityAt(), result.getContent(), result.getCreatedByAccountId(), view.getCoachName(),
 			view.getSessionName(), view.getSessionStartTime(),
 			view.getClassType() == SportClassType.PT_1_1 ? null : view.getSessionName(),
-			result.getCreatedAt(), result.getUpdatedAt());
+			result.getCreatedAt(), result.getUpdatedAt(), result.getCourseSessionId());
 	}
 }

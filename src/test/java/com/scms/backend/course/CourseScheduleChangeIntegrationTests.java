@@ -164,7 +164,7 @@ class CourseScheduleChangeIntegrationTests {
 			assertThat(original.replacementSessionId()).isNull();
 		});
 
-		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		CourseSessionResponse cancelled = seedPreviouslyCancelledSession(session.id());
 		CourseSessionDisruptionService.CourseMakeupResponse makeup = disruptions.scheduleMakeup(managerId, runId, session.id(),
 			new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId,
 				Instant.parse("2035-01-10T02:00:00Z"), Instant.parse("2035-01-10T03:00:00Z")));
@@ -290,12 +290,10 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
-	void cancellationAndMakeupMoveEnrollmentWithoutChangingUnitOrAllocation() {
+	void historicalCancellationMakeupMovesEnrollmentWithoutChangingUnitOrAllocation() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		CourseSessionResponse cancelled = seedPreviouslyCancelledSession(session.id());
 		assertThat(cancelled.status()).isEqualTo(CourseSessionStatus.CANCELLED_PENDING_MAKEUP);
-		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type=? "
-			+ "and target_id=? and recipient_account_id=?", Long.class, "COURSE_SESSION_CANCELLED", session.id(), memberId)).isOne();
 
 		UUID roomId = UUID.randomUUID();
 		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
@@ -348,26 +346,20 @@ class CourseScheduleChangeIntegrationTests {
 	}
 
 	@Test
-	void outboxFailureRollsBackCancellationAndAudit() {
+	void enrolledSessionCannotBeCancelledAndKeepsEnrollmentAuditAndOutboxUnchanged() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		String constraint = "chk_test_reject_course_session_cancel_notice";
-		db.execute("alter table notification_outbox add constraint " + constraint
-			+ " check (notification_type <> 'COURSE_SESSION_CANCELLED') not valid");
-		try {
-			assertThatThrownBy(() -> disruptions.cancel(managerId, runId, session.id(), session.version()))
-				.rootCause().hasMessageContaining(constraint);
-			assertThat(db.queryForObject("select status from course_sessions where id=?", String.class, session.id()))
-				.isEqualTo("SCHEDULED");
-			assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SESSION_CANCELLED' "
-				+ "and target_id=?", Long.class, session.id())).isZero();
-		}
-		finally { db.execute("alter table notification_outbox drop constraint " + constraint); }
+		assertThatThrownBy(() -> disruptions.cancelFromEndpoint(managerId, runId, session.id(), session.version()))
+			.isInstanceOfSatisfying(CourseException.class, error -> assertThat(error.getCode()).isEqualTo("SESSION_HAS_MEMBERS"));
+		assertThat(db.queryForObject("select status from course_sessions where id=?", String.class, session.id())).isEqualTo("SCHEDULED");
+		assertThat(db.queryForObject("select course_session_id from course_enrollment_sessions where course_run_id=?", UUID.class, runId)).isEqualTo(session.id());
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SESSION_CANCELLED' and target_id=?", Long.class, session.id())).isZero();
+		assertThat(db.queryForObject("select count(*) from notification_outbox where notification_type='COURSE_SESSION_CANCELLED' and target_id=?", Long.class, session.id())).isZero();
 	}
 
 	@Test
 	void makeupNotificationFailureRollsBackReplacementAndEnrollmentMove() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		CourseSessionResponse cancelled = seedPreviouslyCancelledSession(session.id());
 		UUID roomId = UUID.randomUUID();
 		db.update("insert into rooms(id,name,capacity,usage_mode,status) values (?,?,10,'EXCLUSIVE','ACTIVE')",
 			roomId, "Rollback makeup room " + roomId);
@@ -392,7 +384,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Test
 	void lastUnresolvedUnitCreatesOneConsolidatedObligationAndCompletesRun() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		CourseSessionResponse cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		CourseSessionResponse cancelled = seedPreviouslyCancelledSession(session.id());
 		Instant afterEnd = session.endAt().plusSeconds(1);
 
 		assertThat(disruptions.advance(afterEnd)).isEmpty();
@@ -556,7 +548,7 @@ class CourseScheduleChangeIntegrationTests {
 	@org.junit.jupiter.params.provider.ValueSource(ints = {3, 10})
 	void completionUsesEffectiveMakeupEndEvenWhenEarlierThanCancelledOriginal(int day) {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		var cancelled = disruptions.cancel(managerId, runId, session.id(), session.version());
+		var cancelled = seedPreviouslyCancelledSession(session.id());
 		Instant start = Instant.parse("2035-01-01T02:00:00Z").plusSeconds((day - 1L) * 86400);
 		var makeup = disruptions.scheduleMakeup(managerId, runId, session.id(),
 			new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId, start, start.plusSeconds(3600)));
@@ -574,7 +566,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Test
 	void concurrentSchedulerRunsCommitOneCompletionAndOneRefund() throws Exception {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		disruptions.cancel(managerId, runId, session.id(), session.version());
+		seedPreviouslyCancelledSession(session.id());
 		CountDownLatch start = new CountDownLatch(1);
 		try (var pool = Executors.newFixedThreadPool(2)) {
 			java.util.concurrent.Callable<Object> advance = () -> { start.await(); return disruptions.advance(session.endAt().plusSeconds(1)); };
@@ -591,7 +583,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Test
 	void completionNotificationFailureRollsBackSessionsRefundsAndRun() {
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		disruptions.cancel(managerId, runId, session.id(), session.version());
+		seedPreviouslyCancelledSession(session.id());
 		String constraint = "chk_test_reject_run_completion_notice";
 		db.execute("alter table notification_outbox add constraint " + constraint
 			+ " check (notification_type<>'COURSE_RUN_COMPLETED' or target_id<>'" + runId + "'::uuid) not valid");
@@ -608,7 +600,7 @@ class CourseScheduleChangeIntegrationTests {
 	void automaticallyCompletedRunStillRequiresManagerApprovalBeforeReceptionDisbursement() {
 		UUID receptionist = account(AccountRole.RECEPTIONIST, "Refund Reception").getId();
 		db.update("update course_runs set status='CONFIRMED' where id=?", runId);
-		disruptions.cancel(managerId, runId, session.id(), session.version());
+		seedPreviouslyCancelledSession(session.id());
 		Instant afterEnd = session.endAt().plusSeconds(1);
 		when(clock.instant()).thenReturn(afterEnd);
 		disruptions.advance(afterEnd);
@@ -738,7 +730,7 @@ class CourseScheduleChangeIntegrationTests {
 	@Test
 	void atomicReductionPreservesOriginalMakeupLinksAndRemovesOnlyFutureTail() {
 		var second=secondEnrolledSession();
-		var cancelled=disruptions.cancel(managerId,runId,second.id(),second.version());
+		var cancelled=seedPreviouslyCancelledSession(second.id());
 		var makeup=disruptions.scheduleMakeup(managerId,runId,second.id(),new CourseMakeupRequest(cancelled.version(),second.roomId(),coachId,
 			second.startAt().plusSeconds(86400),second.endAt().plusSeconds(86400)));
 		var run=managers.getRun(managerId,runId);
@@ -793,7 +785,7 @@ class CourseScheduleChangeIntegrationTests {
 
 	@Test
 	void atomicMakeupMoveKeepsOriginalLinkAndIgnoresCancelledOriginalBounds() {
-		var cancelled=disruptions.cancel(managerId,runId,session.id(),session.version());
+		var cancelled=seedPreviouslyCancelledSession(session.id());
 		var makeup=disruptions.scheduleMakeup(managerId,runId,session.id(),new CourseMakeupRequest(cancelled.version(),session.roomId(),coachId,
 			session.startAt().plusSeconds(86400),session.endAt().plusSeconds(86400)));
 		Instant start=makeup.makeupSession().startAt().plusSeconds(86400);
@@ -1090,5 +1082,14 @@ class CourseScheduleChangeIntegrationTests {
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
 		throw new AssertionError("Timed out waiting for Manager supersede to block on Member response row lock");
+	}
+	// Legacy cancelled sessions still need makeup/refund lifecycle coverage.
+	// Seed their historical state rather than invoking cancellation now forbidden to Managers.
+	private CourseSessionResponse seedPreviouslyCancelledSession(UUID sessionId) {
+		return transactions.execute(status -> {
+			CourseSession existing = sessions.findByIdForUpdate(sessionId).orElseThrow();
+			existing.cancelPendingMakeup();
+			return CourseSessionResponse.from(sessions.saveAndFlush(existing));
+		});
 	}
 }

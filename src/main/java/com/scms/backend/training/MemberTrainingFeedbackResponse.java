@@ -19,7 +19,8 @@ public record MemberTrainingFeedbackResponse(
 	Instant sessionStartTime,
 	String className,
 	Instant createdAt,
-	Instant updatedAt
+	Instant updatedAt,
+	UUID courseSessionId
 ) {
 	static MemberTrainingFeedbackResponse from(TrainingFeedbackRepository.MemberFeedbackHistoryView view) {
 		TrainingFeedback feedback = view.getFeedback();
@@ -28,6 +29,6 @@ public record MemberTrainingFeedbackResponse(
 			feedback.getTrainingResultId(), view.getClassSessionId(), feedback.getContent(),
 			feedback.getCreatedByAccountId(), view.getCoachName(), view.getSessionName(),
 			view.getSessionStartTime(), view.getClassType() == SportClassType.PT_1_1 ? null : view.getSessionName(),
-			feedback.getCreatedAt(), feedback.getUpdatedAt());
+			feedback.getCreatedAt(), feedback.getUpdatedAt(), view.getCourseSessionId());
 	}
 }

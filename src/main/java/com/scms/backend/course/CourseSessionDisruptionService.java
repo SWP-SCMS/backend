@@ -58,16 +58,15 @@ class CourseSessionDisruptionService {
 
 	@Transactional
 	CourseSessionResponse cancel(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion) {
-		return cancelInternal(managerId, runId, sessionId, expectedVersion, false);
+		return cancelInternal(managerId, runId, sessionId, expectedVersion);
 	}
 
 	@Transactional
 	CourseSessionResponse cancelFromEndpoint(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion) {
-		return cancelInternal(managerId, runId, sessionId, expectedVersion, true);
+		return cancelInternal(managerId, runId, sessionId, expectedVersion);
 	}
 
-	private CourseSessionResponse cancelInternal(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion,
-			boolean requireConcreteMakeup) {
+	private CourseSessionResponse cancelInternal(UUID managerId, UUID runId, UUID sessionId, Long expectedVersion) {
 		ensureManager(managerId);
 		if (expectedVersion == null || expectedVersion < 0) throw CourseException.sessionDisruptionConflict();
 		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseException::runNotFound);
@@ -84,7 +83,7 @@ class CourseSessionDisruptionService {
 			.flatMap(sessions::findByIdForUpdate).orElse(null);
 		if (original != null && original.getReplacementSession() == null) throw CourseException.sessionDisruptionConflict();
 		List<UUID> recipients = enrolledMembers(sessionId);
-		if (requireConcreteMakeup && !recipients.isEmpty()) throw CourseException.sessionDisruptionConflict();
+		if (!recipients.isEmpty()) throw CourseException.sessionHasMembers();
 		Map<String, Object> before = snapshot(session);
 		session.cancelPendingMakeup();
 		if (original != null) {
@@ -119,6 +118,7 @@ class CourseSessionDisruptionService {
 		if (original.isMakeup() || !original.getStartAt().isAfter(clock.instant())
 				|| original.getStatus() != CourseSessionStatus.SCHEDULED) throw CourseException.sessionDisruptionConflict();
 		List<UUID> recipients = enrolledMembers(sessionId);
+		if (!recipients.isEmpty()) throw CourseException.sessionHasMembers();
 		Map<String, Object> before = snapshot(original);
 		Instant now = clock.instant();
 		original.cancelPendingMakeup();

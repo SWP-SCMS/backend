@@ -14,11 +14,12 @@ public record TrainingResultResponse(
 	Map<String, Object> content,
 	UUID createdByAccountId,
 	Instant createdAt,
-	Instant updatedAt
+	Instant updatedAt,
+	UUID courseSessionId
 ) {
 	static TrainingResultResponse from(TrainingResult result) {
 		return new TrainingResultResponse(result.getId(), result.getMemberAccountId(),
 				result.getCoachAssignmentId(), result.getTrainingPlanVersionId(), result.getClassSessionId(), result.getActivityAt(),
-				result.getContent(), result.getCreatedByAccountId(), result.getCreatedAt(), result.getUpdatedAt());
+				result.getContent(), result.getCreatedByAccountId(), result.getCreatedAt(), result.getUpdatedAt(), result.getCourseSessionId());
 	}
 }

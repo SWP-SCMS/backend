@@ -15,29 +15,38 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedback, UUID> {
 
+	@Query(value = "select * from feedback where training_result_id=:resultId and member_account_id=:memberId and coach_assignment_id is null and not legacy_duplicate", nativeQuery = true)
+	Optional<TrainingFeedback> findCanonicalSessionFeedback(@Param("resultId") UUID resultId, @Param("memberId") UUID memberId);
+
 	@Query("""
-		select f as feedback, r.classSessionId as classSessionId, coach.fullName as coachName,
-		  sportClass.name as sessionName, session.startTime as sessionStartTime,
+		select f as feedback, r.classSessionId as classSessionId, r.courseSessionId as courseSessionId, coach.fullName as coachName,
+		  coalesce(course.name, sportClass.name) as sessionName, coalesce(courseSession.startAt, session.startTime) as sessionStartTime,
 		  sportClass.classType as classType
 		from TrainingFeedback f
 		left join TrainingResult r on r.id = f.trainingResultId
 		join Account coach on coach.id = f.createdByAccountId
 		left join ClassSession session on session.id = r.classSessionId
 		left join session.sportClass sportClass
+		left join CourseSession courseSession on courseSession.id = r.courseSessionId
+		left join courseSession.courseRun courseRun
+		left join courseRun.course course
 		where f.memberAccountId = :memberId
 		order by f.createdAt desc, f.id desc
 		""")
 	List<MemberFeedbackHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
 
 	@Query(value = """
-		select f as feedback, r.classSessionId as classSessionId, coach.fullName as coachName,
-		  sportClass.name as sessionName, session.startTime as sessionStartTime,
+		select f as feedback, r.classSessionId as classSessionId, r.courseSessionId as courseSessionId, coach.fullName as coachName,
+		  coalesce(course.name, sportClass.name) as sessionName, coalesce(courseSession.startAt, session.startTime) as sessionStartTime,
 		  sportClass.classType as classType
 		from TrainingFeedback f
 		left join TrainingResult r on r.id = f.trainingResultId
 		join Account coach on coach.id = f.createdByAccountId
 		left join ClassSession session on session.id = r.classSessionId
 		left join session.sportClass sportClass
+		left join CourseSession courseSession on courseSession.id = r.courseSessionId
+		left join courseSession.courseRun courseRun
+		left join courseRun.course course
 		where f.memberAccountId = :memberId
 		order by f.createdAt desc, f.id desc
 		""", countQuery = "select count(f) from TrainingFeedback f where f.memberAccountId = :memberId")
@@ -97,6 +106,7 @@ public interface TrainingFeedbackRepository extends JpaRepository<TrainingFeedba
 	interface MemberFeedbackHistoryView {
 		TrainingFeedback getFeedback();
 		UUID getClassSessionId();
+		UUID getCourseSessionId();
 		String getCoachName();
 		String getSessionName();
 		Instant getSessionStartTime();

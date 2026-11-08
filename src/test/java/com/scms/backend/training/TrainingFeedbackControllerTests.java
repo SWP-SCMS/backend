@@ -51,7 +51,7 @@ class TrainingFeedbackControllerTests {
 	void listReturnsFeedbackWithSessionLinkage() throws Exception {
 		UUID sessionId = UUID.randomUUID();
 		TrainingFeedbackResponse row = new TrainingFeedbackResponse(UUID.randomUUID(), MEMBER_ID, null,
-				null, UUID.randomUUID(), sessionId, "Class feedback", COACH_ID, NOW, NOW);
+				null, UUID.randomUUID(), sessionId, "Class feedback", COACH_ID, NOW, NOW, null, null);
 		when(service.list(eq(COACH_ID), eq(MEMBER_ID), any()))
 				.thenReturn(new TrainingFeedbackPageResponse(List.of(row), 0, 20, 1, 1));
 
@@ -128,7 +128,7 @@ class TrainingFeedbackControllerTests {
 
 	private TrainingFeedbackResponse response(UUID id, String content) {
 		return new TrainingFeedbackResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, null, null,
-				content, COACH_ID, NOW, NOW);
+				content, COACH_ID, NOW, NOW, null, null);
 	}
 
 	private String requestJson(String content) {

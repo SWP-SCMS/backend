@@ -15,12 +15,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface TrainingResultRepository extends JpaRepository<TrainingResult, UUID> {
 
+	@Query(value = "select * from training_results where course_session_id=:sessionId and member_account_id=:memberId and not legacy_duplicate", nativeQuery = true)
+	Optional<TrainingResult> findCourseSessionResult(@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
+
 	@Query("""
 		select r from TrainingResult r
 		where r.id = :id
 		  and r.memberAccountId = :memberId
 		  and r.coachAssignmentId is not null
 		  and r.classSessionId is null
+		  and r.courseSessionId is null
 		""")
 	Optional<TrainingResult> findPersonalByIdAndMemberAccountId(@Param("id") UUID id,
 			@Param("memberId") UUID memberId);
@@ -46,24 +50,30 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 			@Param("sessionId") UUID sessionId, @Param("memberId") UUID memberId);
 
 	@Query("""
-		select r as result, coach.fullName as coachName, sportClass.name as sessionName,
-		  session.startTime as sessionStartTime, sportClass.classType as classType
+		select r as result, coach.fullName as coachName, coalesce(course.name, sportClass.name) as sessionName,
+		  coalesce(courseSession.startAt, session.startTime) as sessionStartTime, sportClass.classType as classType
 		from TrainingResult r
 		join Account coach on coach.id = r.createdByAccountId
 		left join ClassSession session on session.id = r.classSessionId
 		left join session.sportClass sportClass
+		left join CourseSession courseSession on courseSession.id = r.courseSessionId
+		left join courseSession.courseRun courseRun
+		left join courseRun.course course
 		where r.memberAccountId = :memberId
 		order by r.activityAt desc, r.id desc
 		""")
 	List<MemberTrainingResultHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId);
 
 	@Query(value = """
-		select r as result, coach.fullName as coachName, sportClass.name as sessionName,
-		  session.startTime as sessionStartTime, sportClass.classType as classType
+		select r as result, coach.fullName as coachName, coalesce(course.name, sportClass.name) as sessionName,
+		  coalesce(courseSession.startAt, session.startTime) as sessionStartTime, sportClass.classType as classType
 		from TrainingResult r
 		join Account coach on coach.id = r.createdByAccountId
 		left join ClassSession session on session.id = r.classSessionId
 		left join session.sportClass sportClass
+		left join CourseSession courseSession on courseSession.id = r.courseSessionId
+		left join courseSession.courseRun courseRun
+		left join courseRun.course course
 		where r.memberAccountId = :memberId
 		order by r.activityAt desc, r.id desc
 		""", countQuery = "select count(r) from TrainingResult r where r.memberAccountId = :memberId")
@@ -88,6 +98,7 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 		  and r.memberAccountId = :memberId
 		  and r.coachAssignmentId is not null
 		  and r.classSessionId is null
+		  and r.courseSessionId is null
 		""")
 	Optional<TrainingResult> findPersonalByIdAndMemberAccountIdForUpdate(@Param("id") UUID id,
 			@Param("memberId") UUID memberId);

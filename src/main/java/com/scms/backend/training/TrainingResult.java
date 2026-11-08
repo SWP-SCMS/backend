@@ -35,6 +35,9 @@ public class TrainingResult {
 	@Column(name = "class_session_id", updatable = false)
 	private UUID classSessionId;
 
+	@Column(name = "course_session_id", updatable = false)
+	private UUID courseSessionId;
+
 	@Column(name = "activity_at", nullable = false)
 	private Instant activityAt;
 
@@ -94,6 +97,16 @@ public class TrainingResult {
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}
 
+	public static TrainingResult forCourseSession(UUID id, UUID memberId, UUID sessionId,
+			Instant activityAt, Map<String, Object> content, UUID coachId, Instant now) {
+		TrainingResult result = forClassSession(id, memberId, sessionId, activityAt, content, coachId, now);
+		result.classSessionId = null;
+		result.courseSessionId = sessionId;
+		return result;
+	}
+
+	public void setSessionPlanVersion(UUID versionId) { this.trainingPlanVersionId = versionId; }
+
 	public void updateClassSessionResult(Instant activityAt, Map<String, Object> content, Instant updatedAt) {
 		this.activityAt = Objects.requireNonNull(activityAt);
 		this.content = new LinkedHashMap<>(Objects.requireNonNull(content));
@@ -105,6 +118,7 @@ public class TrainingResult {
 	public UUID getCoachAssignmentId() { return coachAssignmentId; }
 	public UUID getTrainingPlanVersionId() { return trainingPlanVersionId; }
 	public UUID getClassSessionId() { return classSessionId; }
+	public UUID getCourseSessionId() { return courseSessionId; }
 	public Instant getActivityAt() { return activityAt; }
 	public Map<String, Object> getContent() {
 		return Collections.unmodifiableMap(new LinkedHashMap<>(content));

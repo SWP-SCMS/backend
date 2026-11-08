@@ -39,6 +39,10 @@ public class RecurringScheduleException extends RuntimeException {
 		this.requestedCapacity = requestedCapacity;
 	}
 
+	static RecurringScheduleException sessionHasMembers() {
+		return new RecurringScheduleException(HttpStatus.CONFLICT, "SESSION_HAS_MEMBERS", null, "A Session with registered Members cannot be cancelled.");
+	}
+
 	static RecurringScheduleException validation(String field, String message) {
 		return new RecurringScheduleException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}

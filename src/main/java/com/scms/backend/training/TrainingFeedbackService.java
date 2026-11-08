@@ -77,7 +77,7 @@ public class TrainingFeedbackService {
 		requireCurrentAssignment(coachId, memberId, clock.instant(), null);
 		var page = feedback.findHistoryByMemberAccountId(memberId, pageable);
 		return new TrainingFeedbackPageResponse(page.getContent().stream()
-				.map(view -> TrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId()))
+				.map(view -> TrainingFeedbackResponse.from(view.getFeedback(), view.getClassSessionId(), view.getCourseSessionId(), view.getSessionStartTime()))
 				.toList(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
