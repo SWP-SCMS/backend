@@ -35,7 +35,7 @@ class CourseApprovalMigrationV66Tests {
 		upgraded.validate();
 
 		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success",
-			Integer.class)).isEqualTo(76);
+			Integer.class)).isEqualTo(77);
 		assertThat(db.queryForObject("select name from courses where id=?", String.class, courseId))
 			.isEqualTo("Legacy course");
 		assertThat(db.queryForObject("select submitted_by_account_id is null and reviewed_by_account_id is null "

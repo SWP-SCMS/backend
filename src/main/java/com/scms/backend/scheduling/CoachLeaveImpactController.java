@@ -12,6 +12,7 @@ class CoachLeaveImpactController {
     private final CoachLeaveImpactService service;
     CoachLeaveImpactController(CoachLeaveImpactService service) { this.service = service; }
 
+    @io.swagger.v3.oas.annotations.Operation(operationId = "getCoachLeaveImpact")
     @GetMapping("/impact")
     CoachLeaveImpactService.Impact detail(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID requestId) {
         return service.detail(UUID.fromString(jwt.getSubject()), requestId);

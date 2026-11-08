@@ -180,7 +180,7 @@ class ClassSessionCancellationIntegrationTests {
 	}
 
 	@Test
-	void cancellationIsAtomicKeepsHistoryAndNotifiesAffectedMemberOnce() {
+	void bookedSessionCannotBeCancelledAndKeepsBookingsAuditAndOutboxUnchanged() {
 		Account manager = saveAccount(AccountRole.MANAGER, "Manager");
 		Account coach = saveAccount(AccountRole.COACH, "Coach");
 		Account member = saveAccount(AccountRole.MEMBER, "Member");
@@ -212,62 +212,22 @@ class ClassSessionCancellationIntegrationTests {
 			assertThat(count.getBookedCount()).isEqualTo(2);
 		});
 
-		installNotificationFailure();
-		try {
-			service.cancel(manager.getId(), session.getId(),
-				new ClassSessionCancellationRequest("Coach unavailable"));
-			notificationOutboxDispatcher.dispatchAvailable();
-		}
-		finally {
-			dropNotificationFailure();
-		}
-		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
-			session.getId())).isEqualTo("CANCELLED");
-		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'",
-			Long.class, session.getId())).isZero();
-		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' "
-			+ "and target_id = ?", Long.class, session.getId())).isEqualTo(1L);
-		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'SESSION_CANCELLED' "
-			+ "and target_id = ?", Long.class, session.getId())).isZero();
-		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' "
-			+ "where event_key like ?", "SESSION_CANCELLED:" + session.getId() + ":%");
-		notificationOutboxDispatcher.dispatchAvailable();
-
-		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
-			session.getId())).isEqualTo("CANCELLED");
-		assertThat(jdbc.queryForMap("""
-			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
-			""", bookingId)).containsEntry("status", "CANCELLED")
-			.containsEntry("cancellation_source", "SESSION_CANCELLED")
-			.containsEntry("cancelled_by_account_id", manager.getId());
-		assertThat(jdbc.queryForObject("""
-			select count(*) from audit_events
-			where action = 'SESSION_CANCELLED' and target_id = ? and actor_account_id = ?
-			""", Long.class, session.getId(), manager.getId())).isEqualTo(1L);
-		assertThat(jdbc.queryForObject("""
-			select count(*) from notifications
-			where notification_type = 'SESSION_CANCELLED' and target_id = ?
-			""", Long.class, session.getId())).isEqualTo(2L);
-		assertThat(jdbc.queryForObject("""
-			select count(*) from notifications
-			where event_key = ? and recipient_account_id = ?
-			""", Long.class, "SESSION_CANCELLED:" + session.getId() + ":" + member.getId(), member.getId())).isOne();
-		assertThat(jdbc.queryForObject("""
-			select count(*) from notifications
-			where event_key = ? and recipient_account_id = ?
-			""", Long.class, "SESSION_CANCELLED:" + session.getId() + ":" + secondMember.getId(),
-			secondMember.getId())).isOne();
-
 		assertThatThrownBy(() -> service.cancel(manager.getId(), session.getId(),
-			new ClassSessionCancellationRequest("again")))
+			new ClassSessionCancellationRequest("Coach unavailable")))
 			.isInstanceOf(RecurringScheduleException.class)
-			.extracting("code").isEqualTo("SESSION_NOT_SCHEDULED");
-		assertThat(jdbc.queryForObject("select count(*) from bookings where id = ?", Long.class, bookingId))
-			.isEqualTo(1L);
+			.extracting("code").isEqualTo("SESSION_HAS_MEMBERS");
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class,
+			session.getId())).isEqualTo("SCHEDULED");
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'",
+			Long.class, session.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?",
+			Long.class, session.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where notification_type = 'SESSION_CANCELLED' and target_id = ?",
+			Long.class, session.getId())).isZero();
 	}
 
 	@Test
-	void bulkCancellationCancelsMultipleSessionsWithBookingsAuditOutboxAndIdempotentRetry() {
+	void bulkCancellationRejectsBookedSessionsThenCancelsEmptySessionsIdempotently() {
 		Account manager = saveAccount(AccountRole.MANAGER, "Bulk Manager");
 		Account coach = saveAccount(AccountRole.COACH, "Bulk Coach");
 		Account firstMember = saveAccount(AccountRole.MEMBER, "Bulk Member One");
@@ -285,10 +245,28 @@ class ClassSessionCancellationIntegrationTests {
 			manager.getId()));
 		UUID firstMembershipId = insertMembership(manager.getId(), firstMember.getId());
 		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
-		insertBooking(first, firstMember, firstMembershipId);
-		insertBooking(second, secondMember, secondMembershipId);
+		UUID firstBookingId = insertBooking(first, firstMember, firstMembershipId);
+		UUID secondBookingId = insertBooking(second, secondMember, secondMembershipId);
 		List<UUID> requestedIds = List.of(second.getId(), first.getId());
 		List<UUID> expectedIds = requestedIds.stream().sorted(Comparator.comparing(UUID::toString)).toList();
+		// Make the first locked session empty, so rejection must roll back its cancellation too.
+		UUID firstLockedBooking = expectedIds.getFirst().equals(first.getId()) ? firstBookingId : secondBookingId;
+		UUID firstLockedMember = expectedIds.getFirst().equals(first.getId()) ? firstMember.getId() : secondMember.getId();
+		UUID remainingBooking = firstLockedBooking.equals(firstBookingId) ? secondBookingId : firstBookingId;
+		UUID remainingMember = firstLockedBooking.equals(firstBookingId) ? secondMember.getId() : firstMember.getId();
+		bookingService.cancel(firstLockedMember, firstLockedBooking);
+		assertThatThrownBy(() -> service.cancelBulk(manager.getId(),
+			new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "weather closure")))
+			.isInstanceOf(RecurringScheduleException.class)
+			.extracting("code").isEqualTo("SESSION_HAS_MEMBERS");
+		assertThat(jdbc.queryForObject("select count(*) from class_sessions where id in (?, ?) and status = 'SCHEDULED'",
+			Long.class, first.getId(), second.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select status from bookings where id = ?", String.class, remainingBooking)).isEqualTo("BOOKED");
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id in (?, ?)",
+			Long.class, first.getId(), second.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where notification_type = 'SESSION_CANCELLED' and target_id in (?, ?)",
+			Long.class, first.getId(), second.getId())).isZero();
+		bookingService.cancel(remainingMember, remainingBooking);
 
 		ClassSessionCancellationBatchResponse response = service.cancelBulk(manager.getId(),
 			new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "weather closure"));
@@ -311,7 +289,7 @@ class ClassSessionCancellationIntegrationTests {
 		assertThat(jdbc.queryForObject("""
 			select count(*) from notification_outbox
 			where notification_type = 'SESSION_CANCELLED' and target_id in (?, ?)
-			""", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+			""", Long.class, first.getId(), second.getId())).isZero();
 	}
 
 	@Test
@@ -375,6 +353,8 @@ class ClassSessionCancellationIntegrationTests {
 		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
 		UUID firstBookingId = insertBooking(first, firstMember, firstMembershipId);
 		UUID secondBookingId = insertBooking(second, secondMember, secondMembershipId);
+		bookingService.cancel(firstMember.getId(), firstBookingId);
+		bookingService.cancel(secondMember.getId(), secondBookingId);
 		CountDownLatch atLockBoundary = new CountDownLatch(2);
 		CountDownLatch releaseLockBoundary = new CountDownLatch(1);
 		doAnswer(invocation -> {
@@ -414,13 +394,13 @@ class ClassSessionCancellationIntegrationTests {
 		assertThat(jdbc.queryForMap("""
 			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
 			""", firstBookingId)).containsEntry("status", "CANCELLED")
-			.containsEntry("cancellation_source", "SESSION_CANCELLED")
-			.containsEntry("cancelled_by_account_id", manager.getId());
+			.containsEntry("cancellation_source", "MEMBER")
+			.containsEntry("cancelled_by_account_id", firstMember.getId());
 		assertThat(jdbc.queryForMap("""
 			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
 			""", secondBookingId)).containsEntry("status", "CANCELLED")
-			.containsEntry("cancellation_source", "SESSION_CANCELLED")
-			.containsEntry("cancelled_by_account_id", manager.getId());
+			.containsEntry("cancellation_source", "MEMBER")
+			.containsEntry("cancelled_by_account_id", secondMember.getId());
 		assertThat(jdbc.queryForObject("""
 			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
 			""", Long.class, first.getId())).isOne();
@@ -428,9 +408,9 @@ class ClassSessionCancellationIntegrationTests {
 			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
 			""", Long.class, second.getId())).isOne();
 		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?",
-			Long.class, "SESSION_CANCELLED:" + first.getId() + ":" + firstMember.getId())).isOne();
+			Long.class, "SESSION_CANCELLED:" + first.getId() + ":" + firstMember.getId())).isZero();
 		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?",
-			Long.class, "SESSION_CANCELLED:" + second.getId() + ":" + secondMember.getId())).isOne();
+			Long.class, "SESSION_CANCELLED:" + second.getId() + ":" + secondMember.getId())).isZero();
 	}
 
 	private UUID insertBooking(ClassSession session, Account member, UUID membershipId) {
