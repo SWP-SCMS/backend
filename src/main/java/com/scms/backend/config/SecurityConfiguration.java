@@ -168,6 +168,10 @@ public class SecurityConfiguration {
 				.requestMatchers(HttpMethod.GET, "/reception/pt-sessions").hasRole("RECEPTIONIST")
 				.requestMatchers(HttpMethod.GET, "/manager/pt-sessions").hasRole("MANAGER")
 				.requestMatchers(HttpMethod.GET, "/coach/pt-sessions").hasRole("COACH")
+				.requestMatchers(HttpMethod.GET, "/coach/pt-sessions/*/members/*/training-summary",
+					"/coach/course-sessions/*/members/*/training-summary").hasRole("COACH")
+				.requestMatchers(HttpMethod.PUT, "/coach/pt-sessions/*/members/*/training-summary",
+					"/coach/course-sessions/*/members/*/training-summary").hasRole("COACH")
 				.requestMatchers(HttpMethod.GET, "/coach/class-sessions", "/coach/class-sessions/*")
 					.hasRole("COACH")
 				.requestMatchers("/coach/class-sessions/*/attendance", "/coach/class-sessions/*/attendance/*")
@@ -256,6 +260,9 @@ public class SecurityConfiguration {
 				.requestMatchers("/staff/me/email-change", "/staff/me/email-change/**")
 					.hasAnyRole("MANAGER", "RECEPTIONIST", "COACH")
 				.requestMatchers("/members/me/profile").hasRole("MEMBER")
+				.requestMatchers(HttpMethod.GET, "/manager/coach-leave-requests/*/impact",
+					"/manager/coach-leave-requests/*/affected-sessions/*/*/available-coaches").hasRole("MANAGER")
+				.requestMatchers(HttpMethod.POST, "/manager/coach-leave-requests/*/batch", "/manager/coach-leave-requests/*/batch/available-coaches").hasRole("MANAGER")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(resourceServer -> resourceServer
 				.authenticationEntryPoint(problemHandler)

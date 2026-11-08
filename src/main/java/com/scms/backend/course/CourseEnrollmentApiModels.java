@@ -34,7 +34,7 @@ public final class CourseEnrollmentApiModels {
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record RosterEntry(UUID enrollmentSessionId, String memberCode, String fullName,
-			String profileImageUrl, CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt) {}
+			String profileImageUrl, CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt, UUID memberAccountId) {}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
 	public record AttendanceUpdate(CourseAttendanceStatus status) {}

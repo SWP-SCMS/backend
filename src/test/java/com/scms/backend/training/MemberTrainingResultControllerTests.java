@@ -47,7 +47,7 @@ class MemberTrainingResultControllerTests {
 		Instant activityAt = Instant.parse("2026-10-14T07:00:00Z");
 		var response = new MemberTrainingResultResponse(
 			UUID.randomUUID(), memberId, null, null, sessionId, activityAt, Map.of("notes", "Yoga"),
-			UUID.randomUUID(), "Coach A", "Vinyasa", activityAt, "Vinyasa", activityAt, activityAt);
+			UUID.randomUUID(), "Coach A", "Vinyasa", activityAt, "Vinyasa", activityAt, activityAt, null);
 		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
 				new MemberTrainingResultPageResponse(List.of(response), 0, 20, 1, 1));
 

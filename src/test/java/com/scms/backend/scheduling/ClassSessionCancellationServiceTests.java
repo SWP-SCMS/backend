@@ -54,7 +54,7 @@ class ClassSessionCancellationServiceTests {
 	}
 
 	@Test
-	void cancelScheduledSessionCancelsBookingsAndPublishesAffectedMembers() {
+	void rejectsCancellationWhenMembersAreBooked() {
 		UUID managerId = activeManager();
 		ClassSession session = session();
 		UUID memberA = UUID.randomUUID();
@@ -66,27 +66,13 @@ class ClassSessionCancellationServiceTests {
 			for update
 			""", UUID.class, session.getId())).thenReturn(List.of(memberA, memberB));
 
-		ClassSessionDetailResponse result = service.cancel(managerId, session.getId(),
-			new ClassSessionCancellationRequest("Coach unavailable"));
-
-		assertThat(result.status()).isEqualTo(ClassSessionStatus.CANCELLED);
-		assertThat(result.cancelledAt()).isEqualTo(now);
-		assertThat(result.cancellationReason()).isEqualTo("Coach unavailable");
-		verify(lifecycle).catchUp(now);
-		verify(jdbc).update("""
-			update bookings set status = 'CANCELLED', cancelled_by_account_id = ?,
-				cancellation_source = 'SESSION_CANCELLED', cancelled_at = ?, updated_at = ?, version = version + 1
-			where class_session_id = ? and status = 'BOOKED'
-			""", managerId, java.sql.Timestamp.from(now), java.sql.Timestamp.from(now), session.getId());
-		verify(audits).save(org.mockito.ArgumentMatchers.argThat(audit ->
-			"SESSION_CANCELLED".equals(audit.getAction())
-				&& managerId.equals(audit.getActorAccountId())
-				&& "Coach unavailable".equals(audit.getReason())));
-		verify(notifications).write("SESSION_CANCELLED:" + session.getId() + ":" + memberA, memberA,
-			"SESSION_CANCELLED", "CLASS_SESSION", session.getId(), Map.of("sessionId", session.getId().toString()));
-		verify(notifications).write("SESSION_CANCELLED:" + session.getId() + ":" + memberB, memberB,
-			"SESSION_CANCELLED", "CLASS_SESSION", session.getId(), Map.of("sessionId", session.getId().toString()));
-	}
+        assertThatThrownBy(() -> service.cancel(managerId, session.getId(),
+            new ClassSessionCancellationRequest("Coach unavailable")))
+            .isInstanceOf(RecurringScheduleException.class).hasFieldOrPropertyWithValue("code", "SESSION_HAS_MEMBERS");
+        assertThat(session.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+        verify(sessions, never()).saveAndFlush(any());
+        org.mockito.Mockito.verifyNoInteractions(audits, notifications);
+    }
 
 	@Test
 	void blankReasonIsRejectedBeforeReadingSession() {

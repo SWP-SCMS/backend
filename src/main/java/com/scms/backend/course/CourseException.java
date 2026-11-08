@@ -19,6 +19,10 @@ public class CourseException extends RuntimeException {
 		this.field = field;
 	}
 
+	static CourseException sessionHasMembers() {
+		return new CourseException(HttpStatus.CONFLICT, "SESSION_HAS_MEMBERS", "A Session with registered Members cannot be cancelled.");
+	}
+
 	static CourseException validation(String field, String message) {
 		return new CourseException(HttpStatus.BAD_REQUEST, "COURSE_VALIDATION_ERROR", message, field);
 	}

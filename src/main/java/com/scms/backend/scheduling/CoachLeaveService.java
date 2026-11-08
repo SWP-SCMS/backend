@@ -137,6 +137,13 @@ class CoachLeaveService {
 	}
 
 	@Transactional
+	CoachLeaveResponse managerDetail(UUID managerId, UUID requestId) {
+		activeAccount(managerId, AccountRole.MANAGER);
+		expireIfStarted(requestId);
+		return response(leaves.findById(requestId).orElseThrow(CoachLeaveException::notFound));
+	}
+
+	@Transactional
 	CoachLeaveResponse reject(UUID managerId, UUID requestId, CoachLeaveReviewRequest request) {
 		return review(managerId, requestId, request, false);
 	}

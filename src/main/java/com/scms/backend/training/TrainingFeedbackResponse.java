@@ -13,16 +13,26 @@ public record TrainingFeedbackResponse(
 	String content,
 	UUID createdByAccountId,
 	Instant createdAt,
-	Instant updatedAt
+	Instant updatedAt,
+	UUID courseSessionId,
+	Instant sessionStartTime
 ) {
 	static TrainingFeedbackResponse from(TrainingFeedback feedback) {
 		return from(feedback, null);
 	}
 
 	static TrainingFeedbackResponse from(TrainingFeedback feedback, UUID classSessionId) {
+		return from(feedback, classSessionId, null);
+	}
+
+	static TrainingFeedbackResponse from(TrainingFeedback feedback, UUID classSessionId, UUID courseSessionId) {
+		return from(feedback, classSessionId, courseSessionId, null);
+	}
+
+	static TrainingFeedbackResponse from(TrainingFeedback feedback, UUID classSessionId, UUID courseSessionId, Instant sessionStartTime) {
 		return new TrainingFeedbackResponse(feedback.getId(), feedback.getMemberAccountId(),
 				feedback.getCoachAssignmentId(), feedback.getTrainingPlanVersionId(),
 				feedback.getTrainingResultId(), classSessionId, feedback.getContent(), feedback.getCreatedByAccountId(),
-				feedback.getCreatedAt(), feedback.getUpdatedAt());
+				feedback.getCreatedAt(), feedback.getUpdatedAt(), courseSessionId, sessionStartTime);
 	}
 }

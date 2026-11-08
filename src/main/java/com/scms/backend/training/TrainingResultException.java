@@ -48,6 +48,11 @@ public class TrainingResultException extends RuntimeException {
 				"The Member does not have a booked place in this Session.");
 	}
 
+	static TrainingResultException bookedSessionNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND",
+			"The PT or Course session was not found in this Coach's scope.");
+	}
+
 	static TrainingResultException sessionResultNotFound() {
 		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND",
 				"The Session Training Result was not found for this Member.");

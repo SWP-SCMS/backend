@@ -47,7 +47,7 @@ class MemberTrainingFeedbackControllerTests {
 		Instant now = Instant.parse("2026-10-15T08:00:00Z");
 		var response = new MemberTrainingFeedbackResponse(
 			UUID.randomUUID(), memberId, null, null, resultId, sessionId, "Session feedback",
-			UUID.randomUUID(), "Coach A", "Vinyasa", now, "Vinyasa", now, now);
+			UUID.randomUUID(), "Coach A", "Vinyasa", now, "Vinyasa", now, now, null);
 		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(
 				new MemberTrainingFeedbackPageResponse(List.of(response), 0, 20, 1, 1));
 

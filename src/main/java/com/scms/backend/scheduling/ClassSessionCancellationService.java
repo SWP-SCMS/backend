@@ -82,6 +82,7 @@ public class ClassSessionCancellationService {
 			where class_session_id = ? and status = 'BOOKED'
 			for update
 			""", UUID.class, sessionId);
+		if (!memberIds.isEmpty()) throw RecurringScheduleException.sessionHasMembers();
 		session.cancel(now, reason);
 		sessions.saveAndFlush(session);
 		int cancelledBookings = jdbc.update("""

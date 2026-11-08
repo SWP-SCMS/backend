@@ -109,6 +109,22 @@ class ClassSessionAssignmentServiceTests {
 	}
 
 	@Test
+	void staleAssignmentVersionCannotOverwriteAnotherManagersChange() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		ReflectionTestUtils.setField(session, "version", 3L);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(),
+			new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), null, 2L)))
+			.isInstanceOfSatisfying(RecurringScheduleException.class,
+				error -> assertThat(error.getCode()).isEqualTo("SESSION_VERSION_CONFLICT"));
+		verify(sessions, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
 	void updateAssignmentLocksSourceAndTargetRoomsBeforeSession() {
 		UUID managerId = activeManager();
 		Room source = new Room(UUID.fromString("00000000-0000-0000-0000-000000000001"),

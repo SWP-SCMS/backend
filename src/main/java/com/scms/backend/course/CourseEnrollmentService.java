@@ -96,7 +96,7 @@ class CourseEnrollmentService {
 			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class),
 			rs.getString("member_code"), rs.getString("full_name"),
 			rs.getString("profile_image_url"), CourseAttendanceStatus.valueOf(rs.getString("attendance_status")),
-			rs.getTimestamp("attendance_recorded_at") == null ? null : rs.getTimestamp("attendance_recorded_at").toInstant()),
+			rs.getTimestamp("attendance_recorded_at") == null ? null : rs.getTimestamp("attendance_recorded_at").toInstant(), rs.getObject("member_account_id", UUID.class)),
 			coachId, sessionId);
 		if (result.isEmpty() && db.queryForObject("select count(*) from course_sessions where id=? and coach_account_id=?",
 			Long.class, sessionId, coachId) != 1) throw CourseAttendanceException.notFound();
@@ -139,7 +139,7 @@ class CourseEnrollmentService {
 			Map.of("status", request.status().name(), "courseSessionId", sessionId.toString())));
 		return new RosterEntry(enrollmentSessionId, text(row, "member_code"),
 			text(row, "full_name"), text(row, "profile_image_url"), request.status(),
-			instant(row, "attendance_recorded_at") == null ? now : instant(row, "attendance_recorded_at"));
+			instant(row, "attendance_recorded_at") == null ? now : instant(row, "attendance_recorded_at"), uuid(row, "member_account_id"));
 	}
 
 	private void active(UUID id, AccountRole role) {

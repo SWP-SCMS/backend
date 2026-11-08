@@ -18,6 +18,11 @@ public class CoachLeaveException extends RuntimeException {
 		super(message); this.status = status; this.code = code; this.field = field;
 		this.affectedSessionIds = List.copyOf(affectedSessionIds);
 	}
+    static CoachLeaveException batchFailure(UUID id, String name, RuntimeException cause) {
+        var error = new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_BATCH_FAILED", null,
+            "Không xử lý được buổi " + name + " (" + id + "). Toàn bộ thay đổi đã được hoàn tác; hãy tải lại danh sách.", List.of(id));
+        error.initCause(cause); return error;
+    }
 	static CoachLeaveException validation(String field, String message) {
 		return new CoachLeaveException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}

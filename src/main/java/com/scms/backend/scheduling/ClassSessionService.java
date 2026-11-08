@@ -322,6 +322,9 @@ public class ClassSessionService {
 		}
 		UUID coachId = request.coachId() == null ? session.getTeachingCoach().getId() : request.coachId();
 		UUID roomId = request.roomId() == null ? sourceRoomId : request.roomId();
+		if (request.expectedVersion() != null && !request.expectedVersion().equals(session.getVersion())) {
+			throw RecurringScheduleException.versionConflict();
+		}
 		UUID beforeCoachId = session.getTeachingCoach().getId();
 		UUID beforeRoomId = session.getRoom() == null ? null : session.getRoom().getId();
 		if (coachId.equals(beforeCoachId) && java.util.Objects.equals(roomId, beforeRoomId)) {

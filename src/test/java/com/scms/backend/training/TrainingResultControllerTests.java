@@ -52,7 +52,7 @@ class TrainingResultControllerTests {
 	void listReturnsPersonalAndSessionResultsWithSessionLinkage() throws Exception {
 		UUID sessionId = UUID.randomUUID();
 		TrainingResultResponse row = new TrainingResultResponse(UUID.randomUUID(), MEMBER_ID, null, null,
-				sessionId, ACTIVITY_AT, Map.of("notes", "Class result"), COACH_ID, ACTIVITY_AT, ACTIVITY_AT);
+				sessionId, ACTIVITY_AT, Map.of("notes", "Class result"), COACH_ID, ACTIVITY_AT, ACTIVITY_AT, null);
 		when(service.list(eq(COACH_ID), eq(MEMBER_ID), any()))
 				.thenReturn(new TrainingResultPageResponse(List.of(row), 0, 20, 1, 1));
 
@@ -119,7 +119,7 @@ class TrainingResultControllerTests {
 
 	private TrainingResultResponse response(UUID id, String notes) {
 		return new TrainingResultResponse(id, MEMBER_ID, UUID.randomUUID(), PLAN_VERSION_ID, null, ACTIVITY_AT,
-				Map.of("notes", notes), COACH_ID, ACTIVITY_AT, ACTIVITY_AT);
+				Map.of("notes", notes), COACH_ID, ACTIVITY_AT, ACTIVITY_AT, null);
 	}
 
 	private String requestJson(String notes) {
