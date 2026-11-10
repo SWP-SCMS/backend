@@ -132,7 +132,7 @@ public class StaffAccountService {
 
 	private String normalizeEmail(String value) {
 		String normalized = normalizeRequired(value, "email", 320).toLowerCase(java.util.Locale.ROOT);
-		if (!normalized.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
+		if (!normalized.matches("^[^\\s@]++@[^\\s@][^\\s@.]*+\\.[^\\s@]++$")) {
 			throw new StaffAccountValidationException("email", "must be a well-formed email address");
 		}
 		return normalized;

@@ -14,6 +14,7 @@ Bản nguồn: `9c08093`. Cleanup được triển khai và kiểm chứng trên
 - [RUN_LOCAL.md](RUN_LOCAL.md): chạy bằng Maven wrapper, database local và khôi phục checkpoint.
 - [VALIDATION.md](VALIDATION.md): kết quả gate cuối và giới hạn kiểm chứng.
 - [Tài liệu lễ tân](../recep-presentation/README.md): luồng nghiệp vụ, demo, class và API đã đồng bộ.
+- [EMAIL_VALIDATION_FIX.md](EMAIL_VALIDATION_FIX.md): bổ sung sửa hai cảnh báo regex trước merge và test tương thích.
 - [CHANGES.md](CHANGES.md): phạm vi thay đổi thực tế, trách nhiệm mới và các invariant giữ nguyên.
 - [PROGRESS.md](PROGRESS.md): trạng thái thực hiện và bằng chứng, không nhầm kế hoạch với kết quả.
 - `api-index.json`, `symbol-index.json`, `applied-movement-manifest.json`: dữ liệu hiện tại; `movement-manifest.json` giữ kế hoạch đầu vào và caller/test trước di chuyển.

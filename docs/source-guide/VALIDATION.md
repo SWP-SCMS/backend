@@ -10,6 +10,8 @@ Nguồn `9c08093505df43da557b7fa6ff91478f4bef770d`. Tổng gate cuối: **1,733 
 | final-integration-2 | 143 | Đạt | [Bằng chứng local](verification/README.md#local-gates) |
 | final-integration-3 | 228 | Đạt | [Bằng chứng local](verification/README.md#local-gates) |
 
+Xem [bổ sung regex email trước merge](EMAIL_VALIDATION_FIX.md). Các số liệu trong bảng trên thuộc checkpoint cleanup; CI commit cuối gồm thêm ba test characterization.
+
 ## Contract và cấu trúc
 
 - OpenAPI snapshot đầy đủ giữ 330 HTTP operation, schema, `$ref`, status và mô tả security. OpenAPI snapshot tập trung vào contract; quyền truy cập được kiểm tra riêng.

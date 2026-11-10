@@ -12,7 +12,7 @@ public class MemberProfileDetailsValidator {
 
 	private static final Pattern PHONE_PATTERN = Pattern.compile("0[0-9]{9}");
 
-	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]++@[^\\s@][^\\s@.]*+\\.[^\\s@]++$");
 
 	private final Clock clock;
 

@@ -332,3 +332,7 @@ OTP, manual activation, đổi email, reset và rollback thông báo.
 - [StaffEmailChangeIntegrationTests#wrongOtpCountsAttemptsAndCancelKeepsCurrentEmail](../../src/test/java/com/scms/backend/emailverification/emailchange/StaffEmailChangeIntegrationTests.java#L89)
 - [StaffEmailChangeIntegrationTests#resendSupersedesOldOtpAndKeepsOnlyLatestValid](../../src/test/java/com/scms/backend/emailverification/emailchange/StaffEmailChangeIntegrationTests.java#L103)
 - [StaffEmailChangeIntegrationTests#pendingEmailDoesNotReserveAddressAndReplaceSupersedesOldRequest](../../src/test/java/com/scms/backend/emailverification/emailchange/StaffEmailChangeIntegrationTests.java#L115)
+
+## Regex email trước merge
+
+[EmailValidationCompatibilityTests](../../src/test/java/com/scms/backend/manager/EmailValidationCompatibilityTests.java) đối chiếu acceptance cũ/mới ở cả hai validator, normalization, giới hạn độ dài và thông báo lỗi. Xem [phạm vi bổ sung](EMAIL_VALIDATION_FIX.md).

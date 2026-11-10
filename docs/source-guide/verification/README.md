@@ -8,4 +8,4 @@ Log thô và checkpoint ZIP được giữ ngoài Git trên máy triển khai cl
 
 CI của Pull Request chạy lại unit/web và bốn shard PostgreSQL Testcontainers trên GitHub. Kết quả CI phải được đọc trên PR; báo cáo local không thay thế trạng thái CI.
 
-Manifest SHA-256 phản ánh byte của source local đã kiểm chứng; Git có thể chuẩn hóa LF/CRLF theo cấu hình checkout. Ngoài chuẩn hóa newline, source/test/config của nhánh giữ nguyên checkpoint FINAL.
+Manifest SHA-256 phản ánh byte của source local đã kiểm chứng; Git có thể chuẩn hóa LF/CRLF theo cấu hình checkout. Manifest này thuộc checkpoint FINAL trước [bổ sung sửa regex email](../EMAIL_VALIDATION_FIX.md); hai file production và test mới của bổ sung được kiểm chứng riêng và bởi CI commit cuối.
