@@ -1,14 +1,13 @@
 package com.scms.backend.account;
 
-import java.util.Optional;
-import java.util.List;
-import java.util.UUID;
-
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpecificationExecutor<Account> {
@@ -43,17 +42,18 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 	Optional<MemberIdentityView> findMemberIdentity(@Param("accountId") UUID accountId);
 
 	interface MemberIdentityView {
+
 		String getMemberCode();
+
 		String getFullName();
+
 		String getPhone();
 	}
 
-	@Query("select count(a) > 0 from Account a where lower(a.email) = lower(:email) and "
-		+ "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
+	@Query("select count(a) > 0 from Account a where lower(a.email) = lower(:email) and " + "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
 	boolean existsByOccupiedEmail(@Param("email") String email);
 
-	@Query("select count(a) > 0 from Account a where a.phone = :phone and "
-		+ "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
+	@Query("select count(a) > 0 from Account a where a.phone = :phone and " + "(a.status <> com.scms.backend.account.AccountStatus.INACTIVE or a.emailVerificationRequired = true)")
 	boolean existsByOccupiedPhone(@Param("phone") String phone);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -61,10 +61,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 	List<Account> findByEmailForUpdate(@Param("email") String email);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
-	@Query("select a from Account a where lower(a.email)=lower(:email) and a.phone=:phone and "
-		+ "a.role=com.scms.backend.account.AccountRole.MEMBER and a.status=com.scms.backend.account.AccountStatus.INACTIVE "
-		+ "and a.emailVerificationRequired=false and a.registrationExpiresAt is not null order by a.registrationExpiresAt desc")
-	List<Account> findExpiredSelfRegistrationForUpdate(@Param("email") String email,@Param("phone") String phone);
+	@Query("select a from Account a where lower(a.email)=lower(:email) and a.phone=:phone and " + "a.role=com.scms.backend.account.AccountRole.MEMBER and a.status=com.scms.backend.account.AccountStatus.INACTIVE " + "and a.emailVerificationRequired=false and a.registrationExpiresAt is not null order by a.registrationExpiresAt desc")
+	List<Account> findExpiredSelfRegistrationForUpdate(@Param("email") String email, @Param("phone") String phone);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select a from Account a where a.role = com.scms.backend.account.AccountRole.MANAGER and a.status = com.scms.backend.account.AccountStatus.ACTIVE order by a.id")
@@ -78,5 +76,4 @@ public interface AccountRepository extends JpaRepository<Account, UUID>, JpaSpec
 
 	@Query(value = "select id from accounts where id = :id for update skip locked", nativeQuery = true)
 	Optional<UUID> tryLockById(@Param("id") UUID id);
-
 }

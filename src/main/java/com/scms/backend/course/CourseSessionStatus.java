@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
 public enum CourseSessionStatus {
+
 	SCHEDULED,
 	CANCELLED,
 	CANCELLED_PENDING_MAKEUP,

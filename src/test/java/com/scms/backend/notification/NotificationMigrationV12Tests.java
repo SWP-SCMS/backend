@@ -2,9 +2,7 @@ package com.scms.backend.notification;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-
 import java.util.UUID;
-
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,10 +20,8 @@ class NotificationMigrationV12Tests {
 
 	@Test
 	void v12BackfillsLegacyKeysThenRequiresUniqueEventKeys() {
-		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-			.target("11").load().migrate();
-		JdbcTemplate db = new JdbcTemplate(new DriverManagerDataSource(postgres.getJdbcUrl(),
-			postgres.getUsername(), postgres.getPassword()));
+		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()).target("11").load().migrate();
+		JdbcTemplate db = new JdbcTemplate(new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()));
 		UUID accountId = UUID.randomUUID();
 		UUID notificationId = UUID.randomUUID();
 		db.update("""
@@ -36,12 +32,8 @@ class NotificationMigrationV12Tests {
 			insert into notifications(id,recipient_account_id,notification_type,target_type,target_id,payload,delivery_status)
 			values(?,?,'LEGACY','ACCOUNT',?,'{}','PENDING')
 			""", notificationId, accountId, accountId);
-
-		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
-			.load().migrate();
-
-		assertThat(db.queryForObject("select event_key from notifications where id=?", String.class, notificationId))
-			.isEqualTo("legacy:" + notificationId);
+		Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()).load().migrate();
+		assertThat(db.queryForObject("select event_key from notifications where id=?", String.class, notificationId)).isEqualTo("legacy:" + notificationId);
 		assertThat(db.queryForObject("""
 			select is_nullable from information_schema.columns
 			where table_schema='public' and table_name='notifications' and column_name='event_key'
@@ -49,7 +41,6 @@ class NotificationMigrationV12Tests {
 		assertThatThrownBy(() -> db.update("""
 			insert into notifications(id,event_key,recipient_account_id,notification_type,target_type,target_id,payload,delivery_status)
 			values(?,?,?,'DUPLICATE','ACCOUNT',?,'{}','PENDING')
-			""", UUID.randomUUID(), "legacy:" + notificationId, accountId, accountId))
-			.isInstanceOf(DataIntegrityViolationException.class);
+			""", UUID.randomUUID(), "legacy:" + notificationId, accountId, accountId)).isInstanceOf(DataIntegrityViolationException.class);
 	}
 }

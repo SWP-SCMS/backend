@@ -1,11 +1,8 @@
 package com.scms.backend.auth;
 
-import jakarta.validation.Valid;
-
-import java.util.UUID;
-
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
-
+import jakarta.validation.Valid;
+import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthenticationController {
 
 	private final AuthenticationService authenticationService;
+
 	private final RefreshTokenCookieService cookieService;
 
 	AuthenticationController(AuthenticationService authenticationService, RefreshTokenCookieService cookieService) {
@@ -39,8 +37,7 @@ public class AuthenticationController {
 
 	@PostMapping("/refresh")
 	@SecurityRequirements
-	ResponseEntity<AuthResponse> refresh(
-			@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
+	ResponseEntity<AuthResponse> refresh(@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
 		AuthSession session = authenticationService.refresh(refreshToken);
 		return withRefreshCookie(session);
 	}
@@ -48,28 +45,19 @@ public class AuthenticationController {
 	@PostMapping("/logout")
 	@SecurityRequirements
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	ResponseEntity<Void> logout(
-			@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
+	ResponseEntity<Void> logout(@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
 		authenticationService.logout(refreshToken);
-		return ResponseEntity.noContent()
-			.header(HttpHeaders.SET_COOKIE, cookieService.clear().toString())
-			.build();
+		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cookieService.clear().toString()).build();
 	}
 
 	@PostMapping("/change-password")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
-	ResponseEntity<Void> changePassword(@AuthenticationPrincipal Jwt jwt,
-			@RequestBody ChangePasswordRequest request,
-			@CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
+	ResponseEntity<Void> changePassword(@AuthenticationPrincipal Jwt jwt, @RequestBody ChangePasswordRequest request, @CookieValue(name = RefreshTokenCookieService.COOKIE_NAME, required = false) String refreshToken) {
 		authenticationService.changePassword(UUID.fromString(jwt.getSubject()), request, refreshToken);
-		return ResponseEntity.noContent()
-			.header(HttpHeaders.SET_COOKIE, cookieService.clear().toString())
-			.build();
+		return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cookieService.clear().toString()).build();
 	}
 
 	private ResponseEntity<AuthResponse> withRefreshCookie(AuthSession session) {
-		return ResponseEntity.ok()
-			.header(HttpHeaders.SET_COOKIE, cookieService.create(session.refreshToken()).toString())
-			.body(session.response());
+		return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookieService.create(session.refreshToken()).toString()).body(session.response());
 	}
 }

@@ -1,10 +1,5 @@
 package com.scms.backend.account;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,6 +7,10 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -51,17 +50,28 @@ public class Account {
 
 	@Column(name = "staff_emergency_contact_name", length = 200)
 	private String staffEmergencyContactName;
+
 	@Column(name = "staff_emergency_contact_phone", length = 32)
 	private String staffEmergencyContactPhone;
+
 	@Column(name = "staff_emergency_contact_relationship", length = 100)
 	private String staffEmergencyContactRelationship;
 
-	public String getStaffEmergencyContactName() { return staffEmergencyContactName; }
-	public String getStaffEmergencyContactPhone() { return staffEmergencyContactPhone; }
-	public String getStaffEmergencyContactRelationship() { return staffEmergencyContactRelationship; }
+	public String getStaffEmergencyContactName() {
+		return staffEmergencyContactName;
+	}
+
+	public String getStaffEmergencyContactPhone() {
+		return staffEmergencyContactPhone;
+	}
+
+	public String getStaffEmergencyContactRelationship() {
+		return staffEmergencyContactRelationship;
+	}
 
 	public void updateStaffEmergencyContact(String name, String phone, String relationship) {
-		if (role == AccountRole.MEMBER) throw new IllegalStateException("Staff contact requested for member");
+		if (role == AccountRole.MEMBER)
+			throw new IllegalStateException("Staff contact requested for member");
 		staffEmergencyContactName = name;
 		staffEmergencyContactPhone = phone;
 		staffEmergencyContactRelationship = relationship;
@@ -94,8 +104,7 @@ public class Account {
 	protected Account() {
 	}
 
-	public Account(UUID id, AccountRole role, AccountStatus status, String fullName, String phone, String email,
-			LocalDate birthDate, String passwordHash) {
+	public Account(UUID id, AccountRole role, AccountStatus status, String fullName, String phone, String email, LocalDate birthDate, String passwordHash) {
 		this.id = Objects.requireNonNull(id);
 		this.role = Objects.requireNonNull(role);
 		this.status = Objects.requireNonNull(status);
@@ -106,10 +115,8 @@ public class Account {
 		this.passwordHash = Objects.requireNonNull(passwordHash);
 	}
 
-	public static Account pendingSelfRegistration(UUID id, String fullName, String phone, String email,
-			LocalDate birthDate, String passwordHash, Instant registrationExpiresAt) {
-		Account account = new Account(id, AccountRole.MEMBER, AccountStatus.INACTIVE, fullName, phone, email,
-			birthDate, passwordHash);
+	public static Account pendingSelfRegistration(UUID id, String fullName, String phone, String email, LocalDate birthDate, String passwordHash, Instant registrationExpiresAt) {
+		Account account = new Account(id, AccountRole.MEMBER, AccountStatus.INACTIVE, fullName, phone, email, birthDate, passwordHash);
 		account.emailVerificationRequired = true;
 		account.registrationExpiresAt = Objects.requireNonNull(registrationExpiresAt);
 		return account;
@@ -164,8 +171,7 @@ public class Account {
 	}
 
 	public void expirePendingRegistration(Instant now) {
-		if (!emailVerificationRequired || status != AccountStatus.INACTIVE || registrationExpiresAt == null
-				|| registrationExpiresAt.isAfter(now)) {
+		if (!emailVerificationRequired || status != AccountStatus.INACTIVE || registrationExpiresAt == null || registrationExpiresAt.isAfter(now)) {
 			throw new IllegalStateException("Registration is not eligible for expiration");
 		}
 		emailVerificationRequired = false;
@@ -193,19 +199,21 @@ public class Account {
 		changeVerifiedEmail(newEmail, now);
 	}
 
-	public void reviveSelfRegistration(String fullName,String phone,String email,LocalDate birthDate,
-			String passwordHash,Instant registrationExpiresAt) {
-		if (role!=AccountRole.MEMBER || status!=AccountStatus.INACTIVE || emailVerificationRequired
-				|| this.registrationExpiresAt==null) throw new IllegalStateException("Account is not an expired self-registration");
-		this.fullName=Objects.requireNonNull(fullName);this.phone=Objects.requireNonNull(phone);
-		this.email=Objects.requireNonNull(email);this.birthDate=Objects.requireNonNull(birthDate);
-		this.passwordHash=Objects.requireNonNull(passwordHash);this.registrationExpiresAt=Objects.requireNonNull(registrationExpiresAt);
-		this.emailVerifiedAt=null;this.emailVerificationRequired=true;
+	public void reviveSelfRegistration(String fullName, String phone, String email, LocalDate birthDate, String passwordHash, Instant registrationExpiresAt) {
+		if (role != AccountRole.MEMBER || status != AccountStatus.INACTIVE || emailVerificationRequired || this.registrationExpiresAt == null)
+			throw new IllegalStateException("Account is not an expired self-registration");
+		this.fullName = Objects.requireNonNull(fullName);
+		this.phone = Objects.requireNonNull(phone);
+		this.email = Objects.requireNonNull(email);
+		this.birthDate = Objects.requireNonNull(birthDate);
+		this.passwordHash = Objects.requireNonNull(passwordHash);
+		this.registrationExpiresAt = Objects.requireNonNull(registrationExpiresAt);
+		this.emailVerifiedAt = null;
+		this.emailVerificationRequired = true;
 	}
 
 	private void ensurePending(Instant now) {
-		if (role != AccountRole.MEMBER || status != AccountStatus.INACTIVE || !emailVerificationRequired
-				|| registrationExpiresAt == null || !registrationExpiresAt.isAfter(now)) {
+		if (role != AccountRole.MEMBER || status != AccountStatus.INACTIVE || !emailVerificationRequired || registrationExpiresAt == null || !registrationExpiresAt.isAfter(now)) {
 			throw new IllegalStateException("Account is not an active pending self-registration");
 		}
 	}
@@ -216,6 +224,7 @@ public class Account {
 		}
 		status = AccountStatus.INACTIVE;
 	}
+
 	public AccountRole getRole() {
 		return role;
 	}
@@ -248,13 +257,21 @@ public class Account {
 		return profileImageUrl;
 	}
 
-	public Instant getEmailVerifiedAt() { return emailVerifiedAt; }
+	public Instant getEmailVerifiedAt() {
+		return emailVerifiedAt;
+	}
 
-	public boolean isEmailVerificationRequired() { return emailVerificationRequired; }
+	public boolean isEmailVerificationRequired() {
+		return emailVerificationRequired;
+	}
 
-	public Instant getRegistrationExpiresAt() { return registrationExpiresAt; }
+	public Instant getRegistrationExpiresAt() {
+		return registrationExpiresAt;
+	}
 
-	public long getAuthVersion() { return authVersion; }
+	public long getAuthVersion() {
+		return authVersion;
+	}
 
 	public Instant getCreatedAt() {
 		return createdAt;

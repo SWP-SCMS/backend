@@ -1,16 +1,15 @@
 package com.scms.backend.notification;
 
-import java.time.Instant;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
@@ -66,8 +65,7 @@ public class Notification {
 	protected Notification() {
 	}
 
-	public Notification(UUID id, UUID recipientAccountId, String notificationType, String targetType, UUID targetId,
-			Map<String, Object> payload) {
+	public Notification(UUID id, UUID recipientAccountId, String notificationType, String targetType, UUID targetId, Map<String, Object> payload) {
 		this.id = Objects.requireNonNull(id);
 		this.eventKey = "legacy:" + id;
 		this.recipientAccountId = Objects.requireNonNull(recipientAccountId);

@@ -1,12 +1,5 @@
 package com.scms.backend.centervisit;
 
-import java.time.Clock;
-import java.time.Instant;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.stream.Collectors;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -17,6 +10,12 @@ import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 import com.scms.backend.identity.receptionmember.ReceptionMemberSearchResponse;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -26,14 +25,18 @@ import org.springframework.transaction.annotation.Transactional;
 class CenterVisitService {
 
 	private final ReceptionMemberProfileService members;
+
 	private final CenterVisitRepository visits;
+
 	private final AccountRepository accounts;
+
 	private final MemberProfileRepository profiles;
+
 	private final AuditEventRepository audits;
+
 	private final Clock clock;
 
-	CenterVisitService(ReceptionMemberProfileService members, CenterVisitRepository visits,
-			AccountRepository accounts, MemberProfileRepository profiles, AuditEventRepository audits, Clock clock) {
+	CenterVisitService(ReceptionMemberProfileService members, CenterVisitRepository visits, AccountRepository accounts, MemberProfileRepository profiles, AuditEventRepository audits, Clock clock) {
 		this.members = members;
 		this.visits = visits;
 		this.accounts = accounts;
@@ -50,14 +53,17 @@ class CenterVisitService {
 		String key = normalizeKey(idempotencyKey);
 		ReceptionMemberSearchResponse member = members.search(receptionistId, request.memberId(), request.phone());
 		var replay = findReplay(receptionistId, key, member, request.courseSessionId());
-		if (replay.isPresent()) return replay.get();
-		if (member.status() != AccountStatus.ACTIVE) throw CenterVisitException.memberNotActive();
+		if (replay.isPresent())
+			return replay.get();
+		if (member.status() != AccountStatus.ACTIVE)
+			throw CenterVisitException.memberNotActive();
 		if (member.profileImageUrl() == null || member.profileImageUrl().isBlank()) {
 			throw CenterVisitException.profileImageRequired();
 		}
 		Account lockedMember = lockMember(member.accountId());
 		replay = findReplay(receptionistId, key, member, request.courseSessionId());
-		if (replay.isPresent()) return replay.get();
+		if (replay.isPresent())
+			return replay.get();
 		if (lockedMember.getStatus() != AccountStatus.ACTIVE) {
 			throw CenterVisitException.memberNotActive();
 		}
@@ -65,28 +71,22 @@ class CenterVisitService {
 		UUID membershipId = null;
 		UUID courseEnrollmentId = null;
 		if (request.courseSessionId() == null) {
-			if (visits.hasActiveMembershipFreeze(member.accountId())) throw CenterVisitException.membershipFrozen();
-			membershipId = visits.findCurrentMembership(member.accountId(), now)
-				.orElseThrow(CenterVisitException::membershipRequired);
+			if (visits.hasActiveMembershipFreeze(member.accountId()))
+				throw CenterVisitException.membershipFrozen();
+			membershipId = visits.findCurrentMembership(member.accountId(), now).orElseThrow(CenterVisitException::membershipRequired);
+		} else {
+			courseEnrollmentId = visits.findEligibleCourseEnrollmentId(member.accountId(), request.courseSessionId(), now).orElseThrow(CenterVisitException::courseCheckInNotEligible);
 		}
-		else {
-			courseEnrollmentId = visits.findEligibleCourseEnrollmentId(member.accountId(), request.courseSessionId(), now)
-				.orElseThrow(CenterVisitException::courseCheckInNotEligible);
-		}
-		visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId())
-			.ifPresent(open -> {
-				close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now);
-				visits.flush();
-			});
-		CenterVisit visit = request.courseSessionId() == null
-			? new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId, receptionistId, now, key)
-			: CenterVisit.forCourse(UUID.randomUUID(), member.accountId(), courseEnrollmentId,
-				request.courseSessionId(), receptionistId, now, key);
+		visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId()).ifPresent(open -> {
+			close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now);
+			visits.flush();
+		});
+		CenterVisit visit = request.courseSessionId() == null ? new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId, receptionistId, now, key) : CenterVisit.forCourse(UUID.randomUUID(), member.accountId(), courseEnrollmentId, request.courseSessionId(), receptionistId, now, key);
 		try {
 			visits.saveAndFlush(visit);
-		}
-		catch (DataIntegrityViolationException exception) {
-			if (key != null) throw CenterVisitException.idempotencyKeyReused();
+		} catch (DataIntegrityViolationException exception) {
+			if (key != null)
+				throw CenterVisitException.idempotencyKeyReused();
 			throw exception;
 		}
 		Map<String, Object> audit = new java.util.HashMap<>();
@@ -94,20 +94,21 @@ class CenterVisitService {
 		audit.put("memberId", member.accountId().toString());
 		audit.put("visitId", visit.getId().toString());
 		audit.put("source", visit.getSource().name());
-		if (membershipId != null) audit.put("membershipId", membershipId.toString());
-		if (courseEnrollmentId != null) audit.put("courseEnrollmentId", courseEnrollmentId.toString());
-		if (request.courseSessionId() != null) audit.put("courseSessionId", request.courseSessionId().toString());
-		audits.save(new AuditEvent(UUID.randomUUID(), receptionistId, "CENTER_VISIT_CREATED", "CENTER_VISIT",
-			visit.getId(), audit));
+		if (membershipId != null)
+			audit.put("membershipId", membershipId.toString());
+		if (courseEnrollmentId != null)
+			audit.put("courseEnrollmentId", courseEnrollmentId.toString());
+		if (request.courseSessionId() != null)
+			audit.put("courseSessionId", request.courseSessionId().toString());
+		audits.save(new AuditEvent(UUID.randomUUID(), receptionistId, "CENTER_VISIT_CREATED", "CENTER_VISIT", visit.getId(), audit));
 		return CenterVisitResponse.from(visit, member.memberId(), member.fullName(), true);
 	}
 
-	private Optional<CenterVisitResponse> findReplay(UUID receptionistId, String key,
-			ReceptionMemberSearchResponse member, UUID courseSessionId) {
-		if (key == null) return Optional.empty();
+	private Optional<CenterVisitResponse> findReplay(UUID receptionistId, String key, ReceptionMemberSearchResponse member, UUID courseSessionId) {
+		if (key == null)
+			return Optional.empty();
 		return visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, key).map(visit -> {
-			if (!visit.getMemberAccountId().equals(member.accountId())
-					|| !java.util.Objects.equals(visit.getCourseSessionId(), courseSessionId)) {
+			if (!visit.getMemberAccountId().equals(member.accountId()) || !java.util.Objects.equals(visit.getCourseSessionId(), courseSessionId)) {
 				throw CenterVisitException.idempotencyKeyReused();
 			}
 			return CenterVisitResponse.from(visit, member.memberId(), member.fullName(), false);
@@ -117,9 +118,7 @@ class CenterVisitService {
 	@Transactional(readOnly = true)
 	CenterVisitResponse currentMember(UUID memberId) {
 		ensureActiveMember(memberId);
-		CenterVisit visit = visits
-			.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)
-			.orElseThrow(CenterVisitException::openVisitNotFound);
+		CenterVisit visit = visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId).orElseThrow(CenterVisitException::openVisitNotFound);
 		String memberName = accounts.findById(memberId).map(Account::getFullName).orElse(null);
 		return CenterVisitResponse.from(visit, memberCode(memberId), memberName, false);
 	}
@@ -144,30 +143,22 @@ class CenterVisitService {
 	CenterVisitPageResponse openVisits(UUID receptionistId, Pageable pageable) {
 		ensureActiveReceptionist(receptionistId);
 		var page = visits.findByCheckedOutAtIsNull(pageable);
-		var memberIds = page.getContent().stream().map(CenterVisit::getMemberAccountId)
-			.collect(Collectors.toSet());
-		var accountsById = accounts.findAllById(memberIds).stream()
-			.collect(Collectors.toMap(Account::getId, account -> account));
-		var profilesById = profiles.findAllById(memberIds).stream()
-			.collect(Collectors.toMap(profile -> profile.getAccountId(), profile -> profile));
-		var content = page.getContent().stream()
-			.map(visit -> {
-				UUID memberId = visit.getMemberAccountId();
-				var account = accountsById.get(memberId);
-				var profile = profilesById.get(memberId);
-				return CenterVisitResponse.from(visit, profile == null ? null : profile.getMemberCode(),
-					account == null ? null : account.getFullName(), false);
-			}).toList();
-		return new CenterVisitPageResponse(content, page.getNumber(), page.getSize(), page.getTotalElements(),
-			page.getTotalPages());
+		var memberIds = page.getContent().stream().map(CenterVisit::getMemberAccountId).collect(Collectors.toSet());
+		var accountsById = accounts.findAllById(memberIds).stream().collect(Collectors.toMap(Account::getId, account -> account));
+		var profilesById = profiles.findAllById(memberIds).stream().collect(Collectors.toMap(profile -> profile.getAccountId(), profile -> profile));
+		var content = page.getContent().stream().map(visit -> {
+			UUID memberId = visit.getMemberAccountId();
+			var account = accountsById.get(memberId);
+			var profile = profilesById.get(memberId);
+			return CenterVisitResponse.from(visit, profile == null ? null : profile.getMemberCode(), account == null ? null : account.getFullName(), false);
+		}).toList();
+		return new CenterVisitPageResponse(content, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
 	private CenterVisitResponse checkout(UUID memberId, UUID actorId, CheckoutSource source, String memberName) {
 		var open = visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId);
 		if (open.isEmpty()) {
-			CenterVisit replay = visits
-				.findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(memberId)
-				.orElseThrow(CenterVisitException::openVisitNotFound);
+			CenterVisit replay = visits.findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(memberId).orElseThrow(CenterVisitException::openVisitNotFound);
 			return CenterVisitResponse.from(replay, memberCode(memberId), memberName, false);
 		}
 		CenterVisit visit = open.get();
@@ -178,14 +169,12 @@ class CenterVisitService {
 
 	private void close(CenterVisit visit, UUID actorId, CheckoutSource source, Instant at) {
 		visit.checkout(actorId, source, at);
-		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "CENTER_VISIT_CHECKED_OUT", "CENTER_VISIT",
-			visit.getId(), source + " checkout", Map.of("checkedOut", false),
-			Map.of("checkedOut", true, "checkedOutAt", at.toString(), "checkedOutBy", actorId.toString(),
-				"checkoutSource", source.name())));
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "CENTER_VISIT_CHECKED_OUT", "CENTER_VISIT", visit.getId(), source + " checkout", Map.of("checkedOut", false), Map.of("checkedOut", true, "checkedOutAt", at.toString(), "checkedOutBy", actorId.toString(), "checkoutSource", source.name())));
 	}
 
 	private String normalizeKey(String key) {
-		if (key == null) return null;
+		if (key == null)
+			return null;
 		String normalized = key.trim();
 		if (normalized.isEmpty() || normalized.length() > 100) {
 			throw CenterVisitException.invalidIdempotencyKey();
@@ -195,7 +184,8 @@ class CenterVisitService {
 
 	private Account lockMember(UUID memberId) {
 		Account account = accounts.findByIdForUpdate(memberId).orElseThrow(CenterVisitException::memberNotFound);
-		if (account.getRole() != AccountRole.MEMBER) throw CenterVisitException.memberNotFound();
+		if (account.getRole() != AccountRole.MEMBER)
+			throw CenterVisitException.memberNotFound();
 		return account;
 	}
 

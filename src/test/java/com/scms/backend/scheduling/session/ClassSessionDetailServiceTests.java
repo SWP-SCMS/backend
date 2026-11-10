@@ -1,0 +1,105 @@
+package com.scms.backend.scheduling.session;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.ClassSessionStatus;
+import com.scms.backend.scheduling.Discipline;
+import com.scms.backend.scheduling.DisciplineStatus;
+import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.Room;
+import com.scms.backend.scheduling.RoomStatus;
+import com.scms.backend.scheduling.SportClass;
+import com.scms.backend.scheduling.SportClassStatus;
+import com.scms.backend.scheduling.SportClassType;
+import com.scms.backend.scheduling.room.RoomRepository;
+import com.scms.backend.scheduling.sportclass.SportClassRepository;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class ClassSessionDetailServiceTests {
+
+	@Mock
+	ClassSessionRepository sessions;
+
+	@Mock
+	SportClassRepository classes;
+
+	@Mock
+	RoomRepository rooms;
+
+	@Mock
+	AccountRepository accounts;
+
+	@Mock
+	AuditEventRepository audits;
+
+	@Mock
+	SessionLifecycleService lifecycle;
+
+	ClassSessionService service;
+
+	private final Instant now = Instant.parse("2026-10-06T05:00:00Z");
+
+	@BeforeEach
+	void setUp() {
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle, Clock.fixed(now, ZoneOffset.UTC));
+	}
+
+	@Test
+	void scheduledSessionDetailIncludesResourcesAndAllowedActions() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		when(sessions.findById(session.getId())).thenReturn(Optional.of(session));
+		ClassSessionDetailResponse result = service.get(managerId, session.getId());
+		verify(lifecycle).catchUp(now);
+		assertThat(result.id()).isEqualTo(session.getId());
+		assertThat(result.className()).isEqualTo("Vinyasa");
+		assertThat(result.disciplineName()).isEqualTo("Yoga");
+		assertThat(result.coachName()).isEqualTo("Coach");
+		assertThat(result.roomName()).isEqualTo("Studio");
+		assertThat(result.status()).isEqualTo(ClassSessionStatus.SCHEDULED);
+		assertThat(result.canUpdateAssignment()).isTrue();
+		assertThat(result.canCancel()).isTrue();
+	}
+
+	@Test
+	void missingSessionReturnsNotFoundAfterLifecycleRefresh() {
+		UUID managerId = activeManager();
+		UUID sessionId = UUID.randomUUID();
+		when(sessions.findById(sessionId)).thenReturn(Optional.empty());
+		assertThatThrownBy(() -> service.get(managerId, sessionId)).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_NOT_FOUND");
+	}
+
+	private UUID activeManager() {
+		UUID id = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		return id;
+	}
+
+	private ClassSession session() {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA, null, SportClassStatus.ACTIVE);
+		Room room = new Room(UUID.randomUUID(), "Studio", 20, RoomStatus.ACTIVE);
+		UUID coachId = UUID.randomUUID();
+		Account coach = new Account(coachId, AccountRole.COACH, AccountStatus.ACTIVE, "Coach", "090" + coachId.toString().substring(0, 8), coachId + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password");
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, now.plusSeconds(3600), now.plusSeconds(7200), 15, UUID.randomUUID());
+	}
+}

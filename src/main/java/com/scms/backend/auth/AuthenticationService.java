@@ -1,13 +1,11 @@
 package com.scms.backend.auth;
 
-import java.util.Locale;
-import java.util.Optional;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountStatus;
-
+import java.util.Locale;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,13 +14,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthenticationService {
 
 	private final AccountRepository accountRepository;
+
 	private final PasswordEncoder passwordEncoder;
+
 	private final JwtTokenService jwtTokenService;
+
 	private final RefreshTokenService refreshTokenService;
+
 	private final String dummyPasswordHash;
 
-	AuthenticationService(AccountRepository accountRepository, PasswordEncoder passwordEncoder,
-			JwtTokenService jwtTokenService, RefreshTokenService refreshTokenService) {
+	AuthenticationService(AccountRepository accountRepository, PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService, RefreshTokenService refreshTokenService) {
 		this.accountRepository = accountRepository;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtTokenService = jwtTokenService;
@@ -41,10 +42,7 @@ public class AuthenticationService {
 		if (candidate.isEmpty() || !passwordMatches) {
 			throw new InvalidCredentialsException();
 		}
-		Account account = accountRepository.findByIdForUpdate(candidate.orElseThrow().getId())
-			.filter(value -> value.getStatus() == AccountStatus.ACTIVE)
-			.filter(value -> passwordEncoder.matches(request.password(), value.getPasswordHash()))
-			.orElseThrow(InvalidCredentialsException::new);
+		Account account = accountRepository.findByIdForUpdate(candidate.orElseThrow().getId()).filter(value -> value.getStatus() == AccountStatus.ACTIVE).filter(value -> passwordEncoder.matches(request.password(), value.getPasswordHash())).orElseThrow(InvalidCredentialsException::new);
 		return issueSession(account, refreshTokenService.issue(account).value());
 	}
 
@@ -62,9 +60,7 @@ public class AuthenticationService {
 	@Transactional
 	void changePassword(UUID accountId, ChangePasswordRequest request, String rawRefreshToken) {
 		request.validate();
-		Account account = accountRepository.findByIdForUpdate(accountId)
-			.filter(candidate -> candidate.getStatus() == AccountStatus.ACTIVE)
-			.orElseThrow(InvalidAuthenticatedAccountException::new);
+		Account account = accountRepository.findByIdForUpdate(accountId).filter(candidate -> candidate.getStatus() == AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);
 		String currentPasswordHash = account.getPasswordHash();
 		if (!passwordEncoder.matches(request.currentPassword(), currentPasswordHash)) {
 			throw new CurrentPasswordIncorrectException();
@@ -72,22 +68,19 @@ public class AuthenticationService {
 		if (passwordEncoder.matches(request.newPassword(), currentPasswordHash)) {
 			throw new NewPasswordSameAsCurrentException();
 		}
-
 		account.changePassword(passwordEncoder.encode(request.newPassword()));
 		refreshTokenService.revokeIfPresent(rawRefreshToken, accountId);
 	}
 
 	private AuthSession issueSession(Account account, String refreshToken) {
 		JwtTokenService.AccessToken accessToken = jwtTokenService.issue(account);
-		AuthResponse response = new AuthResponse(account.getId(), account.getFullName(), account.getRole(),
-			accessToken.value(), "Bearer", accessToken.expiresInSeconds());
+		AuthResponse response = new AuthResponse(account.getId(), account.getFullName(), account.getRole(), accessToken.value(), "Bearer", accessToken.expiresInSeconds());
 		return new AuthSession(response, refreshToken);
 	}
 
 	private Optional<Account> findActiveAccount(String identifier) {
 		if (identifier.contains("@")) {
-			return accountRepository.findByEmailIgnoreCaseAndStatus(identifier.toLowerCase(Locale.ROOT),
-				AccountStatus.ACTIVE);
+			return accountRepository.findByEmailIgnoreCaseAndStatus(identifier.toLowerCase(Locale.ROOT), AccountStatus.ACTIVE);
 		}
 		return accountRepository.findByPhoneAndStatus(identifier, AccountStatus.ACTIVE);
 	}

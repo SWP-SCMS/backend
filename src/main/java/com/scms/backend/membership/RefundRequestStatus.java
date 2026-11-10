@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
-enum RefundRequestStatus {
+public enum RefundRequestStatus {
+
 	REQUESTED,
 	FIRST_APPROVED,
 	CASH_DISBURSED,

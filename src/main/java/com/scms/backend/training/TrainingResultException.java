@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 public class TrainingResultException extends RuntimeException {
 
 	private final HttpStatus status;
+
 	private final String code;
 
 	private TrainingResultException(HttpStatus status, String code, String message) {
@@ -13,56 +14,51 @@ public class TrainingResultException extends RuntimeException {
 		this.code = code;
 	}
 
-	static TrainingResultException actorNotActiveCoach() {
-		return new TrainingResultException(HttpStatus.FORBIDDEN, "ACTOR_NOT_ACTIVE_COACH",
-				"This action requires an active Coach account.");
+	public static TrainingResultException actorNotActiveCoach() {
+		return new TrainingResultException(HttpStatus.FORBIDDEN, "ACTOR_NOT_ACTIVE_COACH", "This action requires an active Coach account.");
 	}
 
-	static TrainingResultException plusMembershipRequired() {
-		return new TrainingResultException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
-				"Recording or editing a Training Result requires an active Membership with the TRAINING_RESULT Benefit.");
+	public static TrainingResultException plusMembershipRequired() {
+		return new TrainingResultException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED", "Recording or editing a Training Result requires an active Membership with the TRAINING_RESULT Benefit.");
 	}
 
-	static TrainingResultException activeAssignmentNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "COACH_ASSIGNMENT_NOT_FOUND",
-				"No active coaching assignment was found for this Member and Coach.");
+	public static TrainingResultException activeAssignmentNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "COACH_ASSIGNMENT_NOT_FOUND", "No active coaching assignment was found for this Member and Coach.");
 	}
 
-	static TrainingResultException planVersionNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_PLAN_VERSION_NOT_FOUND",
-				"The Training Plan Version was not found for this Member.");
+	public static TrainingResultException planVersionNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_PLAN_VERSION_NOT_FOUND", "The Training Plan Version was not found for this Member.");
 	}
 
-	static TrainingResultException resultNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND",
-				"The Personal Training Result was not found for this Member.");
+	public static TrainingResultException resultNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND", "The Personal Training Result was not found for this Member.");
 	}
 
-	static TrainingResultException sessionNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND",
-				"The Group or Yoga Session was not found in this Teaching Coach's scope.");
+	public static TrainingResultException sessionNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", "The Group or Yoga Session was not found in this Teaching Coach's scope.");
 	}
 
-	static TrainingResultException sessionMemberNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_MEMBER_NOT_FOUND",
-				"The Member does not have a booked place in this Session.");
+	public static TrainingResultException sessionMemberNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_MEMBER_NOT_FOUND", "The Member does not have a booked place in this Session.");
 	}
 
-	static TrainingResultException bookedSessionNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND",
-			"The PT or Course session was not found in this Coach's scope.");
+	public static TrainingResultException bookedSessionNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", "The PT or Course session was not found in this Coach's scope.");
 	}
 
-	static TrainingResultException sessionResultNotFound() {
-		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND",
-				"The Session Training Result was not found for this Member.");
+	public static TrainingResultException sessionResultNotFound() {
+		return new TrainingResultException(HttpStatus.NOT_FOUND, "TRAINING_RESULT_NOT_FOUND", "The Session Training Result was not found for this Member.");
 	}
 
-	static TrainingResultException sessionNotEnded() {
-		return new TrainingResultException(HttpStatus.CONFLICT, "SESSION_TRAINING_NOT_AVAILABLE",
-				"Results and feedback can only be recorded after a non-cancelled session ends.");
+	public static TrainingResultException sessionNotEnded() {
+		return new TrainingResultException(HttpStatus.CONFLICT, "SESSION_TRAINING_NOT_AVAILABLE", "Results and feedback can only be recorded after a non-cancelled session ends.");
 	}
 
-	public HttpStatus getStatus() { return status; }
-	public String getCode() { return code; }
+	public HttpStatus getStatus() {
+		return status;
+	}
+
+	public String getCode() {
+		return code;
+	}
 }

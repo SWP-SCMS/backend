@@ -1,5 +1,7 @@
 package com.scms.backend.auth;
 
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountStatus;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -9,10 +11,6 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountStatus;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +20,16 @@ public class RefreshTokenService {
 	private static final int TOKEN_BYTES = 32;
 
 	private final RefreshTokenRepository repository;
+
 	private final com.scms.backend.account.AccountRepository accounts;
+
 	private final AuthProperties properties;
+
 	private final Clock clock;
+
 	private final SecureRandom secureRandom = new SecureRandom();
 
-	RefreshTokenService(RefreshTokenRepository repository, com.scms.backend.account.AccountRepository accounts,
-			AuthProperties properties, Clock clock) {
+	RefreshTokenService(RefreshTokenRepository repository, com.scms.backend.account.AccountRepository accounts, AuthProperties properties, Clock clock) {
 		this.repository = repository;
 		this.accounts = accounts;
 		this.properties = properties;
@@ -45,17 +46,13 @@ public class RefreshTokenService {
 		if (rawToken == null || rawToken.isBlank()) {
 			throw new InvalidRefreshTokenException();
 		}
-		RefreshToken candidate = repository.findByTokenHash(hash(rawToken))
-			.orElseThrow(InvalidRefreshTokenException::new);
-		var account = accounts.findByIdForUpdate(candidate.getAccount().getId())
-			.orElseThrow(InvalidRefreshTokenException::new);
-		RefreshToken current = repository.findByTokenHashForUpdate(hash(rawToken))
-			.orElseThrow(InvalidRefreshTokenException::new);
+		RefreshToken candidate = repository.findByTokenHash(hash(rawToken)).orElseThrow(InvalidRefreshTokenException::new);
+		var account = accounts.findByIdForUpdate(candidate.getAccount().getId()).orElseThrow(InvalidRefreshTokenException::new);
+		RefreshToken current = repository.findByTokenHashForUpdate(hash(rawToken)).orElseThrow(InvalidRefreshTokenException::new);
 		Instant now = clock.instant();
 		if (!current.isUsableAt(now) || account.getStatus() != AccountStatus.ACTIVE) {
 			throw new InvalidRefreshTokenException();
 		}
-
 		IssuedRefreshToken replacement = create(current.getAccount(), now);
 		current.revoke(now, replacement.id());
 		return new RotatedRefreshToken(current.getAccount(), replacement.value());
@@ -66,8 +63,7 @@ public class RefreshTokenService {
 		if (rawToken == null || rawToken.isBlank()) {
 			return;
 		}
-		repository.findByTokenHashForUpdate(hash(rawToken))
-			.ifPresent(token -> token.revoke(clock.instant(), null));
+		repository.findByTokenHashForUpdate(hash(rawToken)).ifPresent(token -> token.revoke(clock.instant(), null));
 	}
 
 	@Transactional
@@ -76,10 +72,7 @@ public class RefreshTokenService {
 			return;
 		}
 		Instant now = clock.instant();
-		repository.findByTokenHashForUpdate(hash(rawToken))
-			.filter(token -> token.getAccount().getId().equals(accountId))
-			.filter(token -> token.isUsableAt(now))
-			.ifPresent(token -> token.revoke(now, null));
+		repository.findByTokenHashForUpdate(hash(rawToken)).filter(token -> token.getAccount().getId().equals(accountId)).filter(token -> token.isUsableAt(now)).ifPresent(token -> token.revoke(now, null));
 	}
 
 	@Transactional
@@ -91,8 +84,7 @@ public class RefreshTokenService {
 
 	private IssuedRefreshToken create(Account account, Instant now) {
 		String rawToken = generateToken();
-		RefreshToken token = new RefreshToken(UUID.randomUUID(), account, hash(rawToken),
-			now.plus(properties.refreshTokenTtl()));
+		RefreshToken token = new RefreshToken(UUID.randomUUID(), account, hash(rawToken), now.plus(properties.refreshTokenTtl()));
 		repository.save(token);
 		return new IssuedRefreshToken(token.getId(), rawToken);
 	}
@@ -107,8 +99,7 @@ public class RefreshTokenService {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 			return HexFormat.of().formatHex(digest.digest(rawToken.getBytes(StandardCharsets.UTF_8)));
-		}
-		catch (NoSuchAlgorithmException exception) {
+		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException("SHA-256 is unavailable", exception);
 		}
 	}

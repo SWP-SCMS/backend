@@ -2,7 +2,6 @@ package com.scms.backend.common.error;
 
 import java.net.URI;
 import java.util.Locale;
-
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -12,8 +11,7 @@ public final class ProblemDetails {
 	private ProblemDetails() {
 	}
 
-	public static ProblemDetail create(HttpStatus status, String title, String detail, String code,
-			String requestPath) {
+	public static ProblemDetail create(HttpStatus status, String title, String detail, String code, String requestPath) {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
 		problem.setTitle(title);
 		problem.setProperty("code", code);

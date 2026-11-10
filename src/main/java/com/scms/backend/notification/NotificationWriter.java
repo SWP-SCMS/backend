@@ -1,10 +1,9 @@
 package com.scms.backend.notification;
 
-import java.util.Map;
-import java.util.UUID;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -12,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationWriter {
 
 	private final NotificationOutboxRepository outbox;
+
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	NotificationWriter(NotificationOutboxRepository outbox) {
@@ -19,13 +19,10 @@ public class NotificationWriter {
 	}
 
 	@Transactional
-	public void write(String eventKey, UUID recipientId, String notificationType, String targetType, UUID targetId,
-			Map<String, Object> payload) {
+	public void write(String eventKey, UUID recipientId, String notificationType, String targetType, UUID targetId, Map<String, Object> payload) {
 		try {
-			outbox.enqueue(UUID.randomUUID(), eventKey, recipientId, notificationType, targetType, targetId,
-				objectMapper.writeValueAsString(payload));
-		}
-		catch (JsonProcessingException exception) {
+			outbox.enqueue(UUID.randomUUID(), eventKey, recipientId, notificationType, targetType, targetId, objectMapper.writeValueAsString(payload));
+		} catch (JsonProcessingException exception) {
 			throw new IllegalArgumentException("Notification payload cannot be serialized", exception);
 		}
 	}

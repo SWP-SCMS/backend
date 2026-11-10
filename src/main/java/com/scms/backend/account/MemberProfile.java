@@ -1,9 +1,5 @@
 package com.scms.backend.account;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -13,6 +9,9 @@ import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -90,8 +89,7 @@ public class MemberProfile {
 		return accountId;
 	}
 
-	public void updateDetails(String profileImageUrl, String fitnessGoal, String emergencyContactName,
-			String emergencyContactPhone) {
+	public void updateDetails(String profileImageUrl, String fitnessGoal, String emergencyContactName, String emergencyContactPhone) {
 		this.profileImageUrl = profileImageUrl;
 		this.fitnessGoal = fitnessGoal;
 		this.emergencyContactName = emergencyContactName;
@@ -122,8 +120,7 @@ public class MemberProfile {
 		return emergencyContactPhone;
 	}
 
-	public void updateAdditionalDetails(String gender, String address, String physicalConditionNotes,
-			String emergencyContactRelationship, String emergencyContactTimeNotes) {
+	public void updateAdditionalDetails(String gender, String address, String physicalConditionNotes, String emergencyContactRelationship, String emergencyContactTimeNotes) {
 		this.gender = gender;
 		this.address = address;
 		this.physicalConditionNotes = physicalConditionNotes;

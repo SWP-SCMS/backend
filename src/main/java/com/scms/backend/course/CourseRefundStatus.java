@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
-enum CourseRefundStatus {
+public enum CourseRefundStatus {
+
 	PENDING_REVIEW,
 	APPROVED,
 	DISBURSEMENT_RECORDED,

@@ -9,7 +9,15 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -18,11 +26,6 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.scms.backend.account.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,12 +40,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.jwt.JwsHeader;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -55,23 +61,45 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class ReceptionMemberMembershipSummaryIntegrationTests {
 
 	private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
+
 	private Instant now;
+
 	private LocalDate today;
+
 	private static final AtomicInteger PHONES = new AtomicInteger(750_000_000);
-	@Container @ServiceConnection
+
+	@Container
+	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
-	@Autowired ReceptionMemberProfileService service;
-	@Autowired AccountRepository accounts;
-	@Autowired MemberProfileRepository profiles;
-	@Autowired MockMvc mvc;
-	@Autowired JwtEncoder jwtEncoder;
-	@MockitoSpyBean JdbcTemplate jdbc;
-	@MockitoBean Clock clock;
+
+	@Autowired
+	ReceptionMemberProfileService service;
+
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	MemberProfileRepository profiles;
+
+	@Autowired
+	MockMvc mvc;
+
+	@Autowired
+	JwtEncoder jwtEncoder;
+
+	@MockitoSpyBean
+	JdbcTemplate jdbc;
+
+	@MockitoBean
+	Clock clock;
+
 	private Account receptionist;
+
 	private MemberProfile member;
+
 	private String plan;
-	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules()
-		.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+	private final ObjectMapper json = new ObjectMapper().findAndRegisterModules().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
 	@BeforeEach
 	void setUp() {
@@ -86,7 +114,7 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = {false, true})
+	@ValueSource(booleans = { false, true })
 	void bothSearchCriteriaReturnActiveAlongsideReservedWithCurrentInactivePlan(boolean byPhone) throws Exception {
 		UUID active = membership("ACTIVE", now.minusSeconds(82800), now.plusSeconds(2592000));
 		membership("RESERVED", null, null);
@@ -100,20 +128,17 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 		assertThat(summary.path("benefitCodes").toString()).isEqualTo("[\"CENTER_ACCESS\",\"CLASS_BOOKING\",\"PERSONAL_COACHING\"]");
 		assertThat(summary.path("status").asText()).isEqualTo("ACTIVE");
 		assertThat(summary.path("frozen").asBoolean()).isFalse();
-		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
-			.param(byPhone ? "phone" : "memberId", byPhone ? member.getAccount().getPhone() : member.getMemberCode()))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.activeMembership.membershipId").value(active.toString()));
+		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).param(byPhone ? "phone" : "memberId", byPhone ? member.getAccount().getPhone() : member.getMemberCode())).andExpect(status().isOk()).andExpect(jsonPath("$.activeMembership.membershipId").value(active.toString()));
 	}
 
 	@ParameterizedTest
-	@CsvSource({"NONE,-1,1,false", "RESERVED,0,0,false", "CANCELLED,0,0,false", "EXPIRED,-2,-1,false", "TERMINATED,-1,1,false",
-		"ACTIVE,0,1,true", "ACTIVE,-1,0,false", "ACTIVE,1,2,false"})
+	@CsvSource({ "NONE,-1,1,false", "RESERVED,0,0,false", "CANCELLED,0,0,false", "EXPIRED,-2,-1,false", "TERMINATED,-1,1,false", "ACTIVE,0,1,true", "ACTIVE,-1,0,false", "ACTIVE,1,2,false" })
 	void statusAndHalfOpenTimeBoundariesAreReadWithoutLifecycleMutation(String status, int start, int end, boolean current) {
 		boolean undated = status.equals("RESERVED") || status.equals("CANCELLED");
-		if (!status.equals("NONE")) membership(status, undated ? null : now.plusSeconds(start),
-			undated ? null : now.plusSeconds(end));
-		if (status.equals("TERMINATED") || status.equals("ACTIVE") && end == 0) membership("RESERVED", null, null);
+		if (!status.equals("NONE"))
+			membership(status, undated ? null : now.plusSeconds(start), undated ? null : now.plusSeconds(end));
+		if (status.equals("TERMINATED") || status.equals("ACTIVE") && end == 0)
+			membership("RESERVED", null, null);
 		var before = jdbc.queryForList("select * from memberships where member_account_id=?", member.getAccountId());
 		long audits = jdbc.queryForObject("select count(*) from audit_events", Long.class);
 		long notifications = jdbc.queryForObject("select count(*) from notifications", Long.class);
@@ -126,8 +151,7 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@CsvSource({"SCHEDULED,1,3,false", "SCHEDULED,-1,1,true", "ACTIVE,0,1,true", "ACTIVE,-1,0,false",
-		"ACTIVE,1,2,false", "COMPLETED,-1,1,false", "ENDED_EARLY,-1,1,false"})
+	@CsvSource({ "SCHEDULED,1,3,false", "SCHEDULED,-1,1,true", "ACTIVE,0,1,true", "ACTIVE,-1,0,false", "ACTIVE,1,2,false", "COMPLETED,-1,1,false", "ENDED_EARLY,-1,1,false" })
 	void frozenUsesOnlyEffectiveActivePeriodAndKeepsMembershipActive(String periodStatus, int start, int end, boolean frozen) {
 		UUID active = membership("ACTIVE", now.minusSeconds(86400), now.plusSeconds(864000));
 		freeze(active, periodStatus, today.plusDays(start), today.plusDays(end), null);
@@ -150,10 +174,10 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@ValueSource(ints = {0, 1, 3})
+	@ValueSource(ints = { 0, 1, 3 })
 	void membershipPlanBenefitsAndFreezeUseOneQueryRegardlessOfBenefits(int benefitCount) {
 		membership("ACTIVE", now.minusSeconds(1), now.plusSeconds(86400));
-		String[] codes = {"PERSONAL_COACHING", "CENTER_ACCESS", "CLASS_BOOKING"};
+		String[] codes = { "PERSONAL_COACHING", "CENTER_ACCESS", "CLASS_BOOKING" };
 		for (int i = 0; i < benefitCount; i++) jdbc.update("insert into membership_plan_benefits values(?,?)", plan, codes[i]);
 		clearInvocations(jdbc);
 		assertThat(search(false).at("/activeMembership/benefitCodes").size()).isEqualTo(benefitCount);
@@ -161,59 +185,44 @@ class ReceptionMemberMembershipSummaryIntegrationTests {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = AccountRole.class, names = {"MEMBER", "COACH", "MANAGER"})
+	@EnumSource(value = AccountRole.class, names = { "MEMBER", "COACH", "MANAGER" })
 	void otherActiveRolesCannotSearch(AccountRole role) throws Exception {
-		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(account(role, AccountStatus.ACTIVE)))
-			.param("memberId", member.getMemberCode())).andExpect(status().isForbidden());
+		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(account(role, AccountStatus.ACTIVE))).param("memberId", member.getMemberCode())).andExpect(status().isForbidden());
 	}
 
 	@Test
 	void inactiveReceptionistAndAnonymousCannotSearchAndCriteriaRemainExclusive() throws Exception {
-		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(account(AccountRole.RECEPTIONIST, AccountStatus.INACTIVE)))
-			.param("memberId", member.getMemberCode())).andExpect(status().isUnauthorized());
+		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(account(AccountRole.RECEPTIONIST, AccountStatus.INACTIVE))).param("memberId", member.getMemberCode())).andExpect(status().isUnauthorized());
 		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1")).andExpect(status().isUnauthorized());
-		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))
-			.param("memberId", member.getMemberCode()).param("phone", member.getAccount().getPhone()))
-			.andExpect(status().isBadRequest());
+		mvc.perform(get("/api/v1/reception/members/search").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).param("memberId", member.getMemberCode()).param("phone", member.getAccount().getPhone())).andExpect(status().isBadRequest());
 	}
 
 	private JsonNode search(boolean byPhone) {
-		return json.valueToTree(service.search(receptionist.getId(), byPhone ? null : member.getMemberCode(),
-			byPhone ? member.getAccount().getPhone() : null));
+		return json.valueToTree(service.search(receptionist.getId(), byPhone ? null : member.getMemberCode(), byPhone ? member.getAccount().getPhone() : null));
 	}
 
 	private UUID membership(String status, Instant start, Instant end) {
 		UUID offer = UUID.randomUUID(), order = UUID.randomUUID(), id = UUID.randomUUID();
 		jdbc.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,?,'Current offer','Summary fixture',100000,'VND',30,'ACTIVE',?)", offer, plan, receptionist.getId());
-		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Purchased offer',?,100000,'VND',30,'CASH','PAID',?,?)",
-			order, "SUM-" + order, member.getAccountId(), receptionist.getId(), offer, plan, Timestamp.from(now), start == null ? "RESERVED" : "IMMEDIATE");
+		jdbc.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,paid_at,fulfillment_mode) values(?,?,?,?,?,'Purchased offer',?,100000,'VND',30,'CASH','PAID',?,?)", order, "SUM-" + order, member.getAccountId(), receptionist.getId(), offer, plan, Timestamp.from(now), start == null ? "RESERVED" : "IMMEDIATE");
 		jdbc.update("insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at) values(?,?,'CASH','PAID',100000,'VND',?,?)", UUID.randomUUID(), order, receptionist.getId(), Timestamp.from(now));
-		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Purchased offer',100000,'VND',30,?,?,?)",
-			id, member.getAccountId(), order, offer, plan, status, start == null ? null : Timestamp.from(start), end == null ? null : Timestamp.from(end));
+		jdbc.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Purchased offer',100000,'VND',30,?,?,?)", id, member.getAccountId(), order, offer, plan, status, start == null ? null : Timestamp.from(start), end == null ? null : Timestamp.from(end));
 		return id;
 	}
 
 	private void freeze(UUID membership, String status, LocalDate start, LocalDate end, LocalDate actualEnd) {
 		UUID request = UUID.randomUUID();
-		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'Summary fixture','COMPLETED')",
-			request, membership, member.getAccountId(), member.getAccountId(), java.sql.Date.valueOf(start), java.sql.Date.valueOf(end));
-		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,actual_start_date,actual_end_date,status) values(?,?,?,?,?,?,?,?)",
-			UUID.randomUUID(), request, membership, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end), status.equals("SCHEDULED") ? null : java.sql.Date.valueOf(start), actualEnd == null ? null : java.sql.Date.valueOf(actualEnd), status);
+		jdbc.update("insert into membership_freeze_requests(id,membership_id,member_account_id,requester_account_id,start_date,end_date,reason,status) values(?,?,?,?,?,?,'Summary fixture','COMPLETED')", request, membership, member.getAccountId(), member.getAccountId(), java.sql.Date.valueOf(start), java.sql.Date.valueOf(end));
+		jdbc.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,actual_start_date,actual_end_date,status) values(?,?,?,?,?,?,?,?)", UUID.randomUUID(), request, membership, java.sql.Date.valueOf(start), java.sql.Date.valueOf(end), status.equals("SCHEDULED") ? null : java.sql.Date.valueOf(start), actualEnd == null ? null : java.sql.Date.valueOf(actualEnd), status);
 	}
 
 	private Account account(AccountRole role, AccountStatus status) {
 		UUID id = UUID.randomUUID();
-		return accounts.saveAndFlush(new Account(id, role, status, "Summary " + role, "0" + PHONES.getAndIncrement(),
-			id + "@summary.test", LocalDate.of(1990, 1, 1), "hash"));
+		return accounts.saveAndFlush(new Account(id, role, status, "Summary " + role, "0" + PHONES.getAndIncrement(), id + "@summary.test", LocalDate.of(1990, 1, 1), "hash"));
 	}
 
 	private String token(Account account) {
 		Instant now = Instant.now();
-		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(),
-			JwtClaimsSet.builder().subject(account.getId().toString()).issuedAt(now).expiresAt(now.plusSeconds(3600))
-				.claim("role", account.getRole().name()).build())).getTokenValue();
+		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), JwtClaimsSet.builder().subject(account.getId().toString()).issuedAt(now).expiresAt(now.plusSeconds(3600)).claim("role", account.getRole().name()).build())).getTokenValue();
 	}
 }

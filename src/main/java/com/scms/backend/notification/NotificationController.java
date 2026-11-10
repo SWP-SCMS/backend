@@ -1,9 +1,7 @@
 package com.scms.backend.notification;
 
-import java.util.UUID;
-
 import io.swagger.v3.oas.annotations.Operation;
-
+import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -29,16 +27,13 @@ public class NotificationController {
 
 	@GetMapping
 	@Operation(summary = "List the authenticated account's notifications")
-	ResponseEntity<NotificationPageResponse> list(@AuthenticationPrincipal Jwt jwt,
-			@RequestParam(defaultValue = "false") boolean unreadOnly,
-			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+	ResponseEntity<NotificationPageResponse> list(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "false") boolean unreadOnly, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.list(accountId(jwt), unreadOnly, pageable(page, size)));
 	}
 
 	@PatchMapping("/{notificationId}/read")
 	@Operation(summary = "Mark an owned notification as read")
-	ResponseEntity<NotificationReadResponse> markRead(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable UUID notificationId) {
+	ResponseEntity<NotificationReadResponse> markRead(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID notificationId) {
 		return ResponseEntity.ok(service.markRead(accountId(jwt), notificationId));
 	}
 

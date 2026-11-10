@@ -1,8 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "bookings")
@@ -57,8 +56,7 @@ public class Booking {
 	protected Booking() {
 	}
 
-	Booking(UUID id, UUID classSessionId, UUID memberAccountId, UUID membershipId, UUID bookedByAccountId,
-			Instant createdAt) {
+	public Booking(UUID id, UUID classSessionId, UUID memberAccountId, UUID membershipId, UUID bookedByAccountId, Instant createdAt) {
 		this.id = id;
 		this.classSessionId = classSessionId;
 		this.memberAccountId = memberAccountId;
@@ -69,18 +67,47 @@ public class Booking {
 		this.updatedAt = createdAt;
 	}
 
-	UUID getId() { return id; }
-	UUID getClassSessionId() { return classSessionId; }
-	UUID getMemberAccountId() { return memberAccountId; }
-	UUID getMembershipId() { return membershipId; }
-	BookingStatus getStatus() { return status; }
-	UUID getBookedByAccountId() { return bookedByAccountId; }
-	Instant getCreatedAt() { return createdAt; }
-	UUID getCancelledByAccountId() { return cancelledByAccountId; }
-	String getCancellationSource() { return cancellationSource; }
-	Instant getCancelledAt() { return cancelledAt; }
+	public UUID getId() {
+		return id;
+	}
 
-	void cancel(UUID actorId, String source, Instant now) {
+	public UUID getClassSessionId() {
+		return classSessionId;
+	}
+
+	public UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	public UUID getMembershipId() {
+		return membershipId;
+	}
+
+	public BookingStatus getStatus() {
+		return status;
+	}
+
+	public UUID getBookedByAccountId() {
+		return bookedByAccountId;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public UUID getCancelledByAccountId() {
+		return cancelledByAccountId;
+	}
+
+	public String getCancellationSource() {
+		return cancellationSource;
+	}
+
+	public Instant getCancelledAt() {
+		return cancelledAt;
+	}
+
+	public void cancel(UUID actorId, String source, Instant now) {
 		this.status = BookingStatus.CANCELLED;
 		this.cancelledByAccountId = actorId;
 		this.cancellationSource = source;

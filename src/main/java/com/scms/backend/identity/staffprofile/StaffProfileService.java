@@ -1,37 +1,39 @@
 package com.scms.backend.identity.staffprofile;
 
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.auth.AccountIdentifierAvailability;
+import com.scms.backend.emailverification.EmailVerificationException;
+import com.scms.backend.emailverification.emailchange.AccountEmailChangeService;
+import com.scms.backend.emailverification.verification.EmailVerificationService;
+import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.auth.AccountIdentifierAvailability;
-import com.scms.backend.audit.AuditEvent;
-import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.emailverification.EmailVerificationService;
-import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
-
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.http.HttpStatus;
-import com.scms.backend.emailverification.EmailVerificationException;
-import com.scms.backend.emailverification.AccountEmailChangeService;
 
 @Service
 public class StaffProfileService {
+
 	private final AccountRepository accounts;
+
 	private final AccountIdentifierAvailability identifiers;
+
 	private final MemberProfileDetailsValidator validator;
+
 	private final AuditEventRepository audits;
+
 	private final AccountEmailChangeService emailChanges;
 
-	StaffProfileService(AccountRepository accounts, AccountIdentifierAvailability identifiers,
-			MemberProfileDetailsValidator validator, AuditEventRepository audits, AccountEmailChangeService emailChanges) {
+	StaffProfileService(AccountRepository accounts, AccountIdentifierAvailability identifiers, MemberProfileDetailsValidator validator, AuditEventRepository audits, AccountEmailChangeService emailChanges) {
 		this.accounts = accounts;
 		this.identifiers = identifiers;
 		this.validator = validator;
@@ -55,51 +57,39 @@ public class StaffProfileService {
 	@Transactional
 	StaffProfileResponse updateProfile(UUID accountId, StaffProfilePatchRequest request) {
 		Account account = loadStaff(accountId);
-		String fullName = request.fullName() == null ? account.getFullName()
-			: validator.normalizePersonName(request.fullName(), "fullName", 200);
-		String phone = request.phone() == null ? account.getPhone()
-			: validator.normalizePhone(request.phone(), "phone");
+		String fullName = request.fullName() == null ? account.getFullName() : validator.normalizePersonName(request.fullName(), "fullName", 200);
+		String phone = request.phone() == null ? account.getPhone() : validator.normalizePhone(request.phone(), "phone");
 		String email = request.email() == null ? account.getEmail() : validator.normalizeEmail(request.email());
 		if (!Objects.equals(email, account.getEmail())) {
-			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_CHANGE_VERIFICATION_REQUIRED",
-				"Use the authenticated email-change verification flow to change email.");
+			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_CHANGE_VERIFICATION_REQUIRED", "Use the authenticated email-change verification flow to change email.");
 		}
-		LocalDate birthDate = request.birthDate() == null ? account.getBirthDate()
-			: validator.validateBirthDate(request.birthDate());
-		String contactName = request.emergencyContactName() == null ? account.getStaffEmergencyContactName()
-			: validator.normalizeOptionalPersonName(blankToNull(request.emergencyContactName()), "emergencyContactName", 200);
-		String contactPhone = request.emergencyContactPhone() == null ? account.getStaffEmergencyContactPhone()
-			: validator.normalizeOptionalPhone(blankToNull(request.emergencyContactPhone()));
-		String contactRelationship = request.emergencyContactRelationship() == null ? account.getStaffEmergencyContactRelationship()
-			: validator.normalizeOptional(blankToNull(request.emergencyContactRelationship()), "emergencyContactRelationship", 100);
+		LocalDate birthDate = request.birthDate() == null ? account.getBirthDate() : validator.validateBirthDate(request.birthDate());
+		String contactName = request.emergencyContactName() == null ? account.getStaffEmergencyContactName() : validator.normalizeOptionalPersonName(blankToNull(request.emergencyContactName()), "emergencyContactName", 200);
+		String contactPhone = request.emergencyContactPhone() == null ? account.getStaffEmergencyContactPhone() : validator.normalizeOptionalPhone(blankToNull(request.emergencyContactPhone()));
+		String contactRelationship = request.emergencyContactRelationship() == null ? account.getStaffEmergencyContactRelationship() : validator.normalizeOptional(blankToNull(request.emergencyContactRelationship()), "emergencyContactRelationship", 100);
 		validator.validateEmergencyContact(contactName, contactPhone);
 		identifiers.ensureAvailableForUpdate(accountId, account.getEmail(), account.getPhone(), email, phone);
-		if (Objects.equals(fullName, account.getFullName()) && Objects.equals(phone, account.getPhone())
-				&& Objects.equals(email, account.getEmail()) && Objects.equals(birthDate, account.getBirthDate())
-                && Objects.equals(contactName, account.getStaffEmergencyContactName())
-                && Objects.equals(contactPhone, account.getStaffEmergencyContactPhone())
-                && Objects.equals(contactRelationship, account.getStaffEmergencyContactRelationship())) {
+		if (Objects.equals(fullName, account.getFullName()) && Objects.equals(phone, account.getPhone()) && Objects.equals(email, account.getEmail()) && Objects.equals(birthDate, account.getBirthDate()) && Objects.equals(contactName, account.getStaffEmergencyContactName()) && Objects.equals(contactPhone, account.getStaffEmergencyContactPhone()) && Objects.equals(contactRelationship, account.getStaffEmergencyContactRelationship())) {
 			return toResponse(account);
 		}
-		Map<String, Object> beforeData = snapshot(account.getFullName(), account.getPhone(), account.getEmail(),
-			account.getBirthDate());
-        beforeData.put("hasEmergencyContact", account.getStaffEmergencyContactName() != null);
+		Map<String, Object> beforeData = snapshot(account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate());
+		beforeData.put("hasEmergencyContact", account.getStaffEmergencyContactName() != null);
 		account.updateStaffEmergencyContact(contactName, contactPhone, contactRelationship);
 		account.updateMemberProfileDetails(fullName, phone, email, birthDate);
 		try {
 			accounts.flush();
-		}
-		catch (DataIntegrityViolationException exception) {
+		} catch (DataIntegrityViolationException exception) {
 			throw identifiers.fromDatabase(exception);
 		}
-        Map<String, Object> afterData = snapshot(fullName, phone, email, birthDate);
-        afterData.put("hasEmergencyContact", contactName != null);
-		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "STAFF_SELF_PROFILE_UPDATED", "ACCOUNT", accountId,
-			null, beforeData, afterData));
+		Map<String, Object> afterData = snapshot(fullName, phone, email, birthDate);
+		afterData.put("hasEmergencyContact", contactName != null);
+		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "STAFF_SELF_PROFILE_UPDATED", "ACCOUNT", accountId, null, beforeData, afterData));
 		return toResponse(account);
 	}
 
-    private String blankToNull(String value) { return value.isBlank() ? null : value; }
+	private String blankToNull(String value) {
+		return value.isBlank() ? null : value;
+	}
 
 	private Map<String, Object> snapshot(String fullName, String phone, String email, LocalDate birthDate) {
 		Map<String, Object> data = new LinkedHashMap<>();
@@ -111,8 +101,7 @@ public class StaffProfileService {
 	}
 
 	private Account loadStaff(UUID accountId) {
-		Account account = accounts.findById(accountId)
-			.orElseThrow(() -> new IllegalStateException("Authenticated account no longer exists"));
+		Account account = accounts.findById(accountId).orElseThrow(() -> new IllegalStateException("Authenticated account no longer exists"));
 		if (account.getRole() == AccountRole.MEMBER) {
 			throw new IllegalStateException("Staff profile requested for a member account");
 		}
@@ -121,10 +110,6 @@ public class StaffProfileService {
 
 	private StaffProfileResponse toResponse(Account account) {
 		var pending = emailChanges.status(account.getId());
-		return new StaffProfileResponse(account.getId(), account.getFullName(), account.getPhone(), account.getEmail(),
-			account.getBirthDate(), account.getRole(), account.getStatus(), account.getProfileImageUrl(),
-			pending.pending(), pending.maskedEmail(), pending.otpExpiresAt(), pending.resendAvailableAt(),
-            account.getStaffEmergencyContactName(), account.getStaffEmergencyContactPhone(),
-            account.getStaffEmergencyContactRelationship());
+		return new StaffProfileResponse(account.getId(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus(), account.getProfileImageUrl(), pending.pending(), pending.maskedEmail(), pending.otpExpiresAt(), pending.resendAvailableAt(), account.getStaffEmergencyContactName(), account.getStaffEmergencyContactPhone(), account.getStaffEmergencyContactRelationship());
 	}
 }

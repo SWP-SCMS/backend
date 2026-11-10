@@ -2,54 +2,77 @@ package com.scms.backend.scheduling;
 
 import java.util.List;
 import java.util.UUID;
-
 import org.springframework.http.HttpStatus;
 
 public class CoachLeaveException extends RuntimeException {
+
 	private final HttpStatus status;
+
 	private final String code;
+
 	private final String field;
+
 	private final List<UUID> affectedSessionIds;
+
 	private CoachLeaveException(HttpStatus status, String code, String field, String message) {
 		this(status, code, field, message, List.of());
 	}
-	private CoachLeaveException(HttpStatus status, String code, String field, String message,
-			List<UUID> affectedSessionIds) {
-		super(message); this.status = status; this.code = code; this.field = field;
+
+	private CoachLeaveException(HttpStatus status, String code, String field, String message, List<UUID> affectedSessionIds) {
+		super(message);
+		this.status = status;
+		this.code = code;
+		this.field = field;
 		this.affectedSessionIds = List.copyOf(affectedSessionIds);
 	}
-    static CoachLeaveException batchFailure(UUID id, String name, RuntimeException cause) {
-        var error = new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_BATCH_FAILED", null,
-            "Không xử lý được buổi " + name + " (" + id + "). Toàn bộ thay đổi đã được hoàn tác; hãy tải lại danh sách.", List.of(id));
-        error.initCause(cause); return error;
-    }
-	static CoachLeaveException validation(String field, String message) {
+
+	static public CoachLeaveException batchFailure(UUID id, String name, RuntimeException cause) {
+		var error = new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_BATCH_FAILED", null, "Không xử lý được buổi " + name + " (" + id + "). Toàn bộ thay đổi đã được hoàn tác; hãy tải lại danh sách.", List.of(id));
+		error.initCause(cause);
+		return error;
+	}
+
+	static public CoachLeaveException validation(String field, String message) {
 		return new CoachLeaveException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}
-	static CoachLeaveException notFound() { return new CoachLeaveException(HttpStatus.NOT_FOUND,
-		"COACH_LEAVE_NOT_FOUND", null, "The requested Coach leave request was not found."); }
-	static CoachLeaveException conflict(String code, String message) {
+
+	static public CoachLeaveException notFound() {
+		return new CoachLeaveException(HttpStatus.NOT_FOUND, "COACH_LEAVE_NOT_FOUND", null, "The requested Coach leave request was not found.");
+	}
+
+	static public CoachLeaveException conflict(String code, String message) {
 		return new CoachLeaveException(HttpStatus.CONFLICT, code, null, message);
 	}
-	static CoachLeaveException affectedSessions(List<UUID> sessionIds) {
-		return new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_HAS_AFFECTED_SESSIONS", null,
-			"Resolve all affected sessions before approving this leave request.", sessionIds);
-	}
-	static CoachLeaveException alreadyStarted() {
-		return conflict("COACH_LEAVE_ALREADY_STARTED",
-			"A leave request cannot be approved after its start time.");
-	}
-	static CoachLeaveException cancellationAlreadyStarted() {
-		return conflict("COACH_LEAVE_ALREADY_STARTED",
-			"An approved leave request cannot be cancelled after its start time.");
-	}
-	static CoachLeaveException notApproved() {
-		return conflict("COACH_LEAVE_NOT_APPROVED",
-			"Only an approved leave request can be cancelled.");
-	}
-	public HttpStatus getStatus() { return status; }
-	public String getCode() { return code; }
-	public String getField() { return field; }
-	public List<UUID> getAffectedSessionIds() { return affectedSessionIds; }
-}
 
+	static public CoachLeaveException affectedSessions(List<UUID> sessionIds) {
+		return new CoachLeaveException(HttpStatus.CONFLICT, "COACH_LEAVE_HAS_AFFECTED_SESSIONS", null, "Resolve all affected sessions before approving this leave request.", sessionIds);
+	}
+
+	static public CoachLeaveException alreadyStarted() {
+		return conflict("COACH_LEAVE_ALREADY_STARTED", "A leave request cannot be approved after its start time.");
+	}
+
+	static public CoachLeaveException cancellationAlreadyStarted() {
+		return conflict("COACH_LEAVE_ALREADY_STARTED", "An approved leave request cannot be cancelled after its start time.");
+	}
+
+	static public CoachLeaveException notApproved() {
+		return conflict("COACH_LEAVE_NOT_APPROVED", "Only an approved leave request can be cancelled.");
+	}
+
+	public HttpStatus getStatus() {
+		return status;
+	}
+
+	public String getCode() {
+		return code;
+	}
+
+	public String getField() {
+		return field;
+	}
+
+	public List<UUID> getAffectedSessionIds() {
+		return affectedSessionIds;
+	}
+}

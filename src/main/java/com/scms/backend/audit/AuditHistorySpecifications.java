@@ -2,7 +2,6 @@ package com.scms.backend.audit;
 
 import java.time.Instant;
 import java.util.UUID;
-
 import org.springframework.data.jpa.domain.Specification;
 
 final class AuditHistorySpecifications {
@@ -10,8 +9,7 @@ final class AuditHistorySpecifications {
 	private AuditHistorySpecifications() {
 	}
 
-	static Specification<AuditEvent> filtered(UUID actorId, String action, String targetType, UUID targetId,
-			Instant from, Instant to) {
+	static Specification<AuditEvent> filtered(UUID actorId, String action, String targetType, UUID targetId, Instant from, Instant to) {
 		return (root, query, builder) -> {
 			var predicates = builder.conjunction();
 			if (actorId != null) {

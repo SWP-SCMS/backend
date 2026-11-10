@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,8 +17,7 @@ class NotificationOutboxRepository {
 		this.db = db;
 	}
 
-	int enqueue(UUID id, String eventKey, UUID recipientId, String notificationType, String targetType, UUID targetId,
-			String payload) {
+	int enqueue(UUID id, String eventKey, UUID recipientId, String notificationType, String targetType, UUID targetId, String payload) {
 		return db.update("""
 			insert into notification_outbox(id,event_key,recipient_account_id,notification_type,target_type,target_id,payload)
 			values(?,?,?,?,?,?,cast(? as jsonb))
@@ -42,11 +40,7 @@ class NotificationOutboxRepository {
 			from candidate c where o.id=c.id
 			returning o.id,o.event_key,o.recipient_account_id,o.notification_type,o.target_type,o.target_id,
 				o.payload::text,o.attempt_count
-			""", (rs, rowNum) -> new NotificationOutboxEvent(rs.getObject("id", UUID.class),
-				rs.getString("event_key"), rs.getObject("recipient_account_id", UUID.class),
-				rs.getString("notification_type"), rs.getString("target_type"), rs.getObject("target_id", UUID.class),
-				rs.getString("payload"), rs.getInt("attempt_count")), Timestamp.from(now), Timestamp.from(now),
-			Timestamp.from(now), Timestamp.from(leaseUntil), Timestamp.from(now));
+			""", (rs, rowNum) -> new NotificationOutboxEvent(rs.getObject("id", UUID.class), rs.getString("event_key"), rs.getObject("recipient_account_id", UUID.class), rs.getString("notification_type"), rs.getString("target_type"), rs.getObject("target_id", UUID.class), rs.getString("payload"), rs.getInt("attempt_count")), Timestamp.from(now), Timestamp.from(now), Timestamp.from(now), Timestamp.from(leaseUntil), Timestamp.from(now));
 		return claimed.stream().findFirst();
 	}
 

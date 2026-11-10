@@ -1,25 +1,23 @@
 package com.scms.backend.member;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import java.time.LocalDate;
-import java.util.UUID;
-import java.util.stream.Stream;
-
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.ActiveAccountJwtValidator;
 import com.scms.backend.common.error.GlobalExceptionHandler;
 import com.scms.backend.common.error.SecurityProblemDetailHandler;
 import com.scms.backend.identity.staffprofile.StaffProfileResponse;
+import java.time.LocalDate;
+import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -35,92 +33,62 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(controllers = ProfileImageUploadController.class,
-		excludeAutoConfiguration = UserDetailsServiceAutoConfiguration.class)
+@WebMvcTest(controllers = ProfileImageUploadController.class, excludeAutoConfiguration = UserDetailsServiceAutoConfiguration.class)
 @AutoConfigureMockMvc
-@Import({ com.scms.backend.config.SecurityConfiguration.class, SecurityProblemDetailHandler.class,
-	GlobalExceptionHandler.class })
-@TestPropertySource(properties = {
-	"scms.cors.allowed-origins=http://localhost:5173",
-	"scms.security.jwt-secret=test-only-jwt-secret-at-least-32-bytes-long"
-})
+@Import({ com.scms.backend.config.SecurityConfiguration.class, SecurityProblemDetailHandler.class, GlobalExceptionHandler.class })
+@TestPropertySource(properties = { "scms.cors.allowed-origins=http://localhost:5173", "scms.security.jwt-secret=test-only-jwt-secret-at-least-32-bytes-long" })
 class StaffProfileImageUploadControllerTests {
 
-	@Autowired MockMvc mockMvc;
-	@MockitoBean ProfileImageUploadService service;
-	@MockitoBean ActiveAccountJwtValidator activeAccountJwtValidator;
+	@Autowired
+	MockMvc mockMvc;
+
+	@MockitoBean
+	ProfileImageUploadService service;
+
+	@MockitoBean
+	ActiveAccountJwtValidator activeAccountJwtValidator;
 
 	@ParameterizedTest
 	@MethodSource("staffRoles")
 	void staffCanUploadOwnProfileImage(AccountRole role) throws Exception {
 		UUID accountId = UUID.randomUUID();
 		when(service.uploadForStaff(eq(accountId), any())).thenReturn(response(accountId, role));
-
-		mockMvc.perform(multipart("/staff/me/profile/image")
-			.file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1, 2 }))
-			.with(jwt().jwt(jwt -> jwt.subject(accountId.toString()).claim("role", role.name()))
-				.authorities(new SimpleGrantedAuthority("ROLE_" + role.name()))))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.accountId").value(accountId.toString()))
-			.andExpect(jsonPath("$.role").value(role.name()))
-			.andExpect(jsonPath("$.profileImageUrl").value("/profile-images/staff.png"));
-
+		mockMvc.perform(multipart("/staff/me/profile/image").file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1, 2 })).with(jwt().jwt(jwt -> jwt.subject(accountId.toString()).claim("role", role.name())).authorities(new SimpleGrantedAuthority("ROLE_" + role.name())))).andExpect(status().isOk()).andExpect(jsonPath("$.accountId").value(accountId.toString())).andExpect(jsonPath("$.role").value(role.name())).andExpect(jsonPath("$.profileImageUrl").value("/profile-images/staff.png"));
 		verify(service).uploadForStaff(eq(accountId), any());
 	}
 
 	@Test
 	void memberCannotUploadThroughStaffEndpoint() throws Exception {
-		mockMvc.perform(multipart("/staff/me/profile/image")
-			.file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1 }))
-			.with(jwt().jwt(jwt -> jwt.subject(UUID.randomUUID().toString()).claim("role", "MEMBER"))
-				.authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
-			.andExpect(status().isForbidden());
+		mockMvc.perform(multipart("/staff/me/profile/image").file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1 })).with(jwt().jwt(jwt -> jwt.subject(UUID.randomUUID().toString()).claim("role", "MEMBER")).authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))).andExpect(status().isForbidden());
 	}
 
 	@Test
 	void uploadResponseIncludesNullImageFieldForLegacyStaff() throws Exception {
 		UUID accountId = UUID.randomUUID();
-		StaffProfileResponse response = new StaffProfileResponse(accountId, "Staff", "0901234567",
-			"staff@example.com", LocalDate.of(1990, 1, 1), AccountRole.COACH, AccountStatus.ACTIVE,
-			null, false, null, null, null);
+		StaffProfileResponse response = new StaffProfileResponse(accountId, "Staff", "0901234567", "staff@example.com", LocalDate.of(1990, 1, 1), AccountRole.COACH, AccountStatus.ACTIVE, null, false, null, null, null);
 		when(service.uploadForStaff(eq(accountId), any())).thenReturn(response);
-
-		mockMvc.perform(multipart("/staff/me/profile/image")
-			.file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1 }))
-			.with(jwt().jwt(jwt -> jwt.subject(accountId.toString()).claim("role", "COACH"))
-				.authorities(new SimpleGrantedAuthority("ROLE_COACH"))))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.profileImageUrl").value(nullValue()));
+		mockMvc.perform(multipart("/staff/me/profile/image").file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[] { 1 })).with(jwt().jwt(jwt -> jwt.subject(accountId.toString()).claim("role", "COACH")).authorities(new SimpleGrantedAuthority("ROLE_COACH")))).andExpect(status().isOk()).andExpect(jsonPath("$.profileImageUrl").value(nullValue()));
 	}
 
-    @ParameterizedTest
-    @MethodSource("staffRoles")
-    void staffCanRemoveOwnImage(AccountRole role) throws Exception {
-        UUID id = UUID.randomUUID();
-        when(service.removeForStaff(id)).thenReturn(response(id, role));
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image")
-            .with(jwt().jwt(jwt -> jwt.subject(id.toString()).claim("role", role.name()))
-                .authorities(new SimpleGrantedAuthority("ROLE_" + role.name()))))
-            .andExpect(status().isOk());
-        verify(service).removeForStaff(id);
-    }
+	@ParameterizedTest
+	@MethodSource("staffRoles")
+	void staffCanRemoveOwnImage(AccountRole role) throws Exception {
+		UUID id = UUID.randomUUID();
+		when(service.removeForStaff(id)).thenReturn(response(id, role));
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image").with(jwt().jwt(jwt -> jwt.subject(id.toString()).claim("role", role.name())).authorities(new SimpleGrantedAuthority("ROLE_" + role.name())))).andExpect(status().isOk());
+		verify(service).removeForStaff(id);
+	}
 
-    @Test
-    void memberCannotRemoveStaffImage() throws Exception {
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image")
-            .with(jwt().jwt(jwt -> jwt.subject(UUID.randomUUID().toString()).claim("role", "MEMBER"))
-                .authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))))
-            .andExpect(status().isForbidden());
-    }
+	@Test
+	void memberCannotRemoveStaffImage() throws Exception {
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/staff/me/profile/image").with(jwt().jwt(jwt -> jwt.subject(UUID.randomUUID().toString()).claim("role", "MEMBER")).authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))).andExpect(status().isForbidden());
+	}
 
 	private StaffProfileResponse response(UUID accountId, AccountRole role) {
-		return new StaffProfileResponse(accountId, "Staff", "0901234567", "staff@example.com",
-			LocalDate.of(1990, 1, 1), role, AccountStatus.ACTIVE, "/profile-images/staff.png", false,
-			null, null, null);
+		return new StaffProfileResponse(accountId, "Staff", "0901234567", "staff@example.com", LocalDate.of(1990, 1, 1), role, AccountStatus.ACTIVE, "/profile-images/staff.png", false, null, null, null);
 	}
 
 	private static Stream<Arguments> staffRoles() {
-		return Stream.of(AccountRole.MANAGER, AccountRole.RECEPTIONIST, AccountRole.COACH)
-			.map(Arguments::of);
+		return Stream.of(AccountRole.MANAGER, AccountRole.RECEPTIONIST, AccountRole.COACH).map(Arguments::of);
 	}
 }

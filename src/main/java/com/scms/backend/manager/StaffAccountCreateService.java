@@ -1,10 +1,5 @@
 package com.scms.backend.manager;
 
-import java.time.Clock;
-import java.time.LocalDate;
-import java.util.Map;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -15,7 +10,10 @@ import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.common.validation.PersonNameRules;
 import com.scms.backend.notification.NotificationWriter;
-
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -25,15 +23,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class StaffAccountCreateService {
 
 	private final AccountRepository accountRepository;
+
 	private final AccountIdentifierAvailability identifierAvailability;
+
 	private final AuditEventRepository auditRepository;
+
 	private final NotificationWriter notificationWriter;
+
 	private final PasswordEncoder passwordEncoder;
+
 	private final Clock clock;
 
-	StaffAccountCreateService(AccountRepository accountRepository, AccountIdentifierAvailability identifierAvailability,
-			AuditEventRepository auditRepository, NotificationWriter notificationWriter,
-			PasswordEncoder passwordEncoder, Clock clock) {
+	StaffAccountCreateService(AccountRepository accountRepository, AccountIdentifierAvailability identifierAvailability, AuditEventRepository auditRepository, NotificationWriter notificationWriter, PasswordEncoder passwordEncoder, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.identifierAvailability = identifierAvailability;
 		this.auditRepository = auditRepository;
@@ -48,23 +49,16 @@ public class StaffAccountCreateService {
 		validate(request);
 		identifierAvailability.ensureAvailableForRegistration(request.email(), request.phone());
 		UUID accountId = UUID.randomUUID();
-		Account account = new Account(accountId, request.role(), AccountStatus.ACTIVE, request.fullName(), request.phone(),
-			request.email(), request.birthDate(), passwordEncoder.encode(request.phone()));
+		Account account = new Account(accountId, request.role(), AccountStatus.ACTIVE, request.fullName(), request.phone(), request.email(), request.birthDate(), passwordEncoder.encode(request.phone()));
 		try {
 			accountRepository.saveAndFlush(account);
-		}
-		catch (DataIntegrityViolationException exception) {
+		} catch (DataIntegrityViolationException exception) {
 			throw identifierAvailability.fromDatabase(exception);
 		}
-		Map<String, Object> snapshot = Map.of("accountId", accountId.toString(), "fullName", account.getFullName(),
-			"phone", account.getPhone(), "email", account.getEmail(), "birthDate", account.getBirthDate().toString(),
-			"role", account.getRole().name(), "status", account.getStatus().name());
-		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, "ACCOUNT_CREATED", "ACCOUNT", accountId,
-			snapshot));
-		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, "ACCOUNT_CREATED", "ACCOUNT", accountId,
-			Map.of("accountId", accountId.toString(), "role", account.getRole().name()));
-		return new StaffAccountResponse(accountId, account.getRole(), account.getStatus(), account.getFullName(),
-			account.getPhone(), account.getEmail(), account.getBirthDate());
+		Map<String, Object> snapshot = Map.of("accountId", accountId.toString(), "fullName", account.getFullName(), "phone", account.getPhone(), "email", account.getEmail(), "birthDate", account.getBirthDate().toString(), "role", account.getRole().name(), "status", account.getStatus().name());
+		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, "ACCOUNT_CREATED", "ACCOUNT", accountId, snapshot));
+		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, "ACCOUNT_CREATED", "ACCOUNT", accountId, Map.of("accountId", accountId.toString(), "role", account.getRole().name()));
+		return new StaffAccountResponse(accountId, account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate());
 	}
 
 	private void ensureActiveManager(UUID managerId) {
@@ -74,11 +68,10 @@ public class StaffAccountCreateService {
 	}
 
 	private void validate(StaffAccountCreateRequest request) {
-		if (request == null) throw new StaffAccountValidationException("request", "must be a JSON object");
-		if (request.fullName() == null || request.fullName().isBlank() || request.fullName().length() > 200
-				|| !PersonNameRules.isValid(request.fullName()))
-			throw new StaffAccountValidationException("fullName",
-				"must contain letters and valid name separators only and be at most 200 characters");
+		if (request == null)
+			throw new StaffAccountValidationException("request", "must be a JSON object");
+		if (request.fullName() == null || request.fullName().isBlank() || request.fullName().length() > 200 || !PersonNameRules.isValid(request.fullName()))
+			throw new StaffAccountValidationException("fullName", "must contain letters and valid name separators only and be at most 200 characters");
 		if (request.phone() == null || !request.phone().matches("0[0-9]{9}"))
 			throw new StaffAccountValidationException("phone", "must be 10 digits starting with 0");
 		if (request.email() == null || !request.email().matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"))

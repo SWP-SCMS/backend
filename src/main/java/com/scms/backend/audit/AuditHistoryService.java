@@ -1,5 +1,10 @@
 package com.scms.backend.audit;
 
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
@@ -8,13 +13,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -24,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 class AuditHistoryService {
 
 	private final AuditEventRepository audits;
+
 	private final AccountRepository accounts;
 
 	AuditHistoryService(AuditEventRepository audits, AccountRepository accounts) {
@@ -32,30 +31,21 @@ class AuditHistoryService {
 	}
 
 	@Transactional(readOnly = true)
-	AuditHistoryPageResponse list(UUID managerId, UUID actorId, String action, String targetType, UUID targetId,
-			Instant from, Instant to, Pageable pageable) {
+	AuditHistoryPageResponse list(UUID managerId, UUID actorId, String action, String targetType, UUID targetId, Instant from, Instant to, Pageable pageable) {
 		ensureActiveManager(managerId);
 		if (from != null && to != null && !from.isBefore(to)) {
 			throw new AuditHistoryValidationException("to", "must be after from");
 		}
 		String normalizedAction = normalize(action, "action", 120);
 		String normalizedTargetType = normalize(targetType, "targetType", 80);
-		Page<AuditEvent> page = audits.findAll(
-			AuditHistorySpecifications.filtered(actorId, normalizedAction, normalizedTargetType, targetId, from, to),
-			pageable);
-		Set<UUID> actorIds = page.getContent().stream()
-			.filter(event -> event.getActorNameSnapshot() == null || event.getActorRoleSnapshot() == null)
-			.map(AuditEvent::getActorAccountId).filter(Objects::nonNull)
-			.collect(Collectors.toSet());
-		Map<UUID, Account> actors = actorIds.isEmpty() ? Map.of() : accounts.findAllById(actorIds).stream()
-			.collect(Collectors.toMap(Account::getId, Function.identity()));
-		return new AuditHistoryPageResponse(page.getContent().stream()
-			.map(event -> {
-				UUID actorIdForEvent = event.getActorAccountId();
-				Account actor = actorIdForEvent == null ? null : actors.get(actorIdForEvent);
-				return AuditHistoryResponse.from(event, actor);
-			}).toList(),
-			page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+		Page<AuditEvent> page = audits.findAll(AuditHistorySpecifications.filtered(actorId, normalizedAction, normalizedTargetType, targetId, from, to), pageable);
+		Set<UUID> actorIds = page.getContent().stream().filter(event -> event.getActorNameSnapshot() == null || event.getActorRoleSnapshot() == null).map(AuditEvent::getActorAccountId).filter(Objects::nonNull).collect(Collectors.toSet());
+		Map<UUID, Account> actors = actorIds.isEmpty() ? Map.of() : accounts.findAllById(actorIds).stream().collect(Collectors.toMap(Account::getId, Function.identity()));
+		return new AuditHistoryPageResponse(page.getContent().stream().map(event -> {
+			UUID actorIdForEvent = event.getActorAccountId();
+			Account actor = actorIdForEvent == null ? null : actors.get(actorIdForEvent);
+			return AuditHistoryResponse.from(event, actor);
+		}).toList(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
 
 	private void ensureActiveManager(UUID managerId) {

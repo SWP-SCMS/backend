@@ -1,0 +1,164 @@
+package com.scms.backend.membership.offer;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.membership.MembershipBenefit;
+import com.scms.backend.membership.MembershipBenefitStatus;
+import com.scms.backend.membership.MembershipOffer;
+import com.scms.backend.membership.MembershipOfferStatus;
+import com.scms.backend.membership.MembershipPlan;
+import com.scms.backend.membership.MembershipPlanCode;
+import com.scms.backend.membership.MembershipPlanStatus;
+import com.scms.backend.membership.plan.MembershipPlanRepository;
+import java.math.BigInteger;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+@ExtendWith(MockitoExtension.class)
+class MembershipOfferAdminServiceTests {
+
+	@Mock
+	MembershipOfferRepository offers;
+
+	@Mock
+	MembershipPlanRepository plans;
+
+	@Mock
+	AccountRepository accounts;
+
+	@Mock
+	AuditEventRepository audits;
+
+	@InjectMocks
+	MembershipOfferAdminService service;
+
+	@Test
+	void listUsesTheManagerPlanBenefitFetchQuery() {
+		UUID managerId = activeManager();
+		when(offers.findAllWithPlanAndBenefits()).thenReturn(List.of());
+		service.all(managerId);
+		verify(offers).findAllWithPlanAndBenefits();
+		verify(offers, never()).findAll();
+	}
+
+	@Test
+	void detailUsesFetchQueryAndReturnsInactiveOfferAndPlan() {
+		UUID managerId = activeManager();
+		MembershipBenefit benefit = new MembershipBenefit("Z_ACCESS", "Z", "Z desc", MembershipBenefitStatus.INACTIVE);
+		MembershipPlan plan = new MembershipPlan("ARCHIVED", "Archived", MembershipPlanStatus.INACTIVE, Set.of(benefit));
+		UUID offerId = UUID.randomUUID();
+		MembershipOffer offer = new MembershipOffer(offerId, plan, "Archived offer", "Archived description", BigInteger.valueOf(500000), "VND", 30, MembershipOfferStatus.INACTIVE, managerId);
+		when(offers.findByIdWithPlanAndBenefits(offerId)).thenReturn(Optional.of(offer));
+		assertThat(service.get(managerId, offerId).planDisplayName()).isEqualTo("Archived");
+		verify(offers).findByIdWithPlanAndBenefits(offerId);
+		verify(offers, never()).findById(offerId);
+	}
+
+	@Test
+	void inactiveManagerCannotReadOffers() {
+		UUID managerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(false);
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.all(managerId)).isInstanceOf(com.scms.backend.auth.InvalidAuthenticatedAccountException.class);
+		verify(offers, never()).findAll();
+	}
+
+	@Test
+	void createWritesCompleteAuditEvent() {
+		UUID managerId = activeManager();
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByPlanCodeForUpdate(MembershipPlanCode.PLUS.name())).thenReturn(Optional.of(plan));
+		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		MembershipOfferAdminResponse result = service.create(managerId, new MembershipOfferAdminRequest(MembershipPlanCode.PLUS.name(), " Plus 30 ", " Full access ", BigInteger.valueOf(750000), 30, null));
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("MEMBERSHIP_OFFER_CREATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("MEMBERSHIP_OFFER");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(result.offerId());
+		assertThat(audit.getValue().getBeforeData()).isNull();
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of("planCode", "PLUS", "name", "Plus 30", "description", "Full access", "priceAmount", BigInteger.valueOf(750000), "currencyCode", "VND", "durationDays", 30, "status", "ACTIVE", "createdByAccountId", managerId.toString()));
+	}
+
+	@Test
+	void createLocksPlanBeforeCheckingEligibilityAndSavingOffer() {
+		UUID managerId = activeManager();
+		MembershipPlan plan = eligiblePlan(MembershipPlanCode.PLUS);
+		when(plans.findByPlanCodeForUpdate("PLUS")).thenReturn(Optional.of(plan));
+		when(offers.save(any(MembershipOffer.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		service.create(managerId, new MembershipOfferAdminRequest("PLUS", "Plus 30", "Full access", BigInteger.valueOf(750000), 30, null));
+		InOrder order = inOrder(plans, plan, offers);
+		order.verify(plans).findByPlanCodeForUpdate("PLUS");
+		order.verify(plan).getStatus();
+		order.verify(plan).getBenefits();
+		order.verify(offers).save(any(MembershipOffer.class));
+		verify(plans, never()).findByIdWithBenefits("PLUS");
+	}
+
+	@Test
+	void updateWritesCompleteBeforeAndAfterAuditEvent() {
+		UUID managerId = activeManager();
+		UUID offerId = UUID.randomUUID();
+		MembershipOffer offer = new MembershipOffer(offerId, plan(MembershipPlanCode.PLUS), "Plus 30", "Old", BigInteger.valueOf(750000), "VND", 30, MembershipOfferStatus.ACTIVE, managerId);
+		when(offers.findById(offerId)).thenReturn(Optional.of(offer));
+		service.update(managerId, offerId, new MembershipOfferPatchRequest(null, " Plus 60 ", " Updated ", BigInteger.valueOf(900000), 60, MembershipOfferStatus.INACTIVE));
+		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits, times(1)).save(audit.capture());
+		assertThat(audit.getValue().getAction()).isEqualTo("MEMBERSHIP_OFFER_UPDATED");
+		assertThat(audit.getValue().getActorAccountId()).isEqualTo(managerId);
+		assertThat(audit.getValue().getTargetType()).isEqualTo("MEMBERSHIP_OFFER");
+		assertThat(audit.getValue().getTargetId()).isEqualTo(offerId);
+		assertThat(audit.getValue().getBeforeData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of("planCode", "PLUS", "name", "Plus 30", "description", "Old", "priceAmount", BigInteger.valueOf(750000), "currencyCode", "VND", "durationDays", 30, "status", "ACTIVE", "createdByAccountId", managerId.toString()));
+		assertThat(audit.getValue().getAfterData()).containsExactlyInAnyOrderEntriesOf(java.util.Map.of("planCode", "PLUS", "name", "Plus 60", "description", "Updated", "priceAmount", BigInteger.valueOf(900000), "currencyCode", "VND", "durationDays", 60, "status", "INACTIVE", "createdByAccountId", managerId.toString()));
+	}
+
+	@Test
+	void normalizedNoOpPatchWritesNoAudit() {
+		UUID managerId = activeManager();
+		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plan(MembershipPlanCode.BASIC), "Basic", "Access", BigInteger.valueOf(500000), "VND", 30, MembershipOfferStatus.ACTIVE, managerId);
+		when(offers.findById(offer.getId())).thenReturn(Optional.of(offer));
+		MembershipOfferAdminResponse result = service.update(managerId, offer.getId(), new MembershipOfferPatchRequest(null, " Basic ", " Access ", BigInteger.valueOf(500000), 30, MembershipOfferStatus.ACTIVE));
+		assertThat(result).isEqualTo(MembershipOfferAdminResponse.from(offer));
+		verify(audits, never()).save(any());
+	}
+
+	private UUID activeManager() {
+		UUID managerId = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		return managerId;
+	}
+
+	private MembershipPlan plan(MembershipPlanCode code) {
+		MembershipPlan plan = mock(MembershipPlan.class);
+		when(plan.getPlanCode()).thenReturn(code.name());
+		return plan;
+	}
+
+	private MembershipPlan eligiblePlan(MembershipPlanCode code) {
+		MembershipPlan plan = plan(code);
+		when(plan.getStatus()).thenReturn(MembershipPlanStatus.ACTIVE);
+		MembershipBenefit benefit = mock(MembershipBenefit.class);
+		when(benefit.getStatus()).thenReturn(MembershipBenefitStatus.ACTIVE);
+		when(plan.getBenefits()).thenReturn(java.util.Set.of(benefit));
+		return plan;
+	}
+}

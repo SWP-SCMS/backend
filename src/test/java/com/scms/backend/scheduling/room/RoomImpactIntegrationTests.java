@@ -1,0 +1,117 @@
+package com.scms.backend.scheduling.room;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.ClassSessionStatus;
+import com.scms.backend.scheduling.Discipline;
+import com.scms.backend.scheduling.DisciplineStatus;
+import com.scms.backend.scheduling.Room;
+import com.scms.backend.scheduling.RoomStatus;
+import com.scms.backend.scheduling.SportClass;
+import com.scms.backend.scheduling.SportClassStatus;
+import com.scms.backend.scheduling.SportClassType;
+import com.scms.backend.scheduling.discipline.DisciplineRepository;
+import com.scms.backend.scheduling.session.ClassSessionRepository;
+import com.scms.backend.scheduling.sportclass.SportClassRepository;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@Testcontainers
+@SpringBootTest
+@ActiveProfiles("test")
+class RoomImpactIntegrationTests {
+
+	@Container
+	@ServiceConnection
+	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+
+	@Autowired
+	RoomSuspensionService service;
+
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	DisciplineRepository disciplines;
+
+	@Autowired
+	SportClassRepository classes;
+
+	@Autowired
+	RoomRepository rooms;
+
+	@Autowired
+	ClassSessionRepository sessions;
+
+	@Autowired
+	JdbcTemplate jdbc;
+
+	@Test
+	void permanentDisableMovesFutureSessionAndKeepsCompletedHistory() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Impact Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Impact Coach");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Impact Discipline", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Impact Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact Source", 20, RoomStatus.ACTIVE));
+		Room target = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Impact Target", 20, RoomStatus.ACTIVE));
+		ClassSession future = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, source, Instant.parse("2030-01-01T02:00:00Z"), Instant.parse("2030-01-01T03:00:00Z"), 10, manager.getId()));
+		ClassSession completed = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, source, Instant.parse("2020-01-01T02:00:00Z"), Instant.parse("2020-01-01T03:00:00Z"), 10, manager.getId()));
+		jdbc.update("update class_sessions set status='COMPLETED' where id=?", completed.getId());
+		RoomImpactPreviewResponse preview = service.previewImpact(manager.getId(), source.getId(), new RoomImpactPreviewRequest(null, null, true));
+		assertThat(preview.count()).isOne();
+		assertThat(preview.sessions()).singleElement().extracting(RoomImpactPreviewResponse.SessionImpact::sessionId).isEqualTo(future.getId());
+		ClassSession discoveredAfterPreview = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, source, Instant.parse("2030-01-02T02:00:00Z"), Instant.parse("2030-01-02T03:00:00Z"), 10, manager.getId()));
+		RoomResponse result = service.applyImpact(manager.getId(), source.getId(), new RoomImpactPreviewRequest(null, null, true, "Room retired", List.of(), new RoomBulkResolutionRequest("MOVE", target.getId(), null), List.of()));
+		assertThat(result.status()).isEqualTo(RoomStatus.INACTIVE);
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, future.getId())).isEqualTo(target.getId());
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, discoveredAfterPreview.getId())).isEqualTo(target.getId());
+		assertThat(sessions.findById(completed.getId()).orElseThrow().getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
+		assertThat(jdbc.queryForObject("select room_id from class_sessions where id=?", UUID.class, completed.getId())).isEqualTo(source.getId());
+	}
+
+	@Test
+	void previewIncludesPerSessionAndBulkAvailableTargetRooms() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Gap 027 Manager");
+		Account firstCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach A");
+		Account secondCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach B");
+		Account blockingCoach = saveAccount(AccountRole.COACH, "Gap 027 Coach C");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Gap 027 Discipline", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Gap 027 Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room source = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Source", 20, RoomStatus.ACTIVE));
+		Room bulkTarget = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Bulk Target", 20, RoomStatus.ACTIVE));
+		Room partialTarget = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 027 Partial Target", 20, RoomStatus.ACTIVE));
+		Instant firstStart = Instant.parse("2034-01-01T02:00:00Z");
+		Instant firstEnd = Instant.parse("2034-01-01T03:00:00Z");
+		Instant secondStart = Instant.parse("2034-01-02T02:00:00Z");
+		Instant secondEnd = Instant.parse("2034-01-02T03:00:00Z");
+		ClassSession first = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, firstCoach, source, firstStart, firstEnd, 10, manager.getId()));
+		ClassSession second = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, secondCoach, source, secondStart, secondEnd, 10, manager.getId()));
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, blockingCoach, partialTarget, secondStart, secondEnd, 10, manager.getId()));
+		RoomImpactPreviewResponse preview = service.previewImpact(manager.getId(), source.getId(), new RoomImpactPreviewRequest(firstStart.minusSeconds(60), secondEnd.plusSeconds(60), false));
+		RoomImpactPreviewResponse.SessionImpact firstImpact = preview.sessions().stream().filter(impact -> impact.sessionId().equals(first.getId())).findFirst().orElseThrow();
+		RoomImpactPreviewResponse.SessionImpact secondImpact = preview.sessions().stream().filter(impact -> impact.sessionId().equals(second.getId())).findFirst().orElseThrow();
+		assertThat(firstImpact.availableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId).contains(bulkTarget.getId(), partialTarget.getId());
+		assertThat(secondImpact.availableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId).contains(bulkTarget.getId()).doesNotContain(partialTarget.getId());
+		assertThat(preview.bulkAvailableTargetRooms()).extracting(RoomImpactPreviewResponse.TargetRoom::roomId).contains(bulkTarget.getId()).doesNotContain(partialTarget.getId());
+	}
+
+	private Account saveAccount(AccountRole role, String name) {
+		UUID id = UUID.randomUUID();
+		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name, "09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password"));
+	}
+}

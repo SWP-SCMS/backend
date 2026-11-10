@@ -7,13 +7,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import java.time.Clock;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.util.TimeZone;
-import java.util.UUID;
-
 import com.jayway.jsonpath.JsonPath;
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
@@ -24,7 +17,11 @@ import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationRepository;
 import jakarta.persistence.EntityManager;
-
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.TimeZone;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,7 +46,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class MemberProfileIntegrationTests {
 
 	private static final String PROFILE_PATH = "/api/v1/members/me/profile";
+
 	private static final String LOGIN_PATH = "/api/v1/auth/login";
+
 	private static final String PASSWORD = "Password123";
 
 	static {
@@ -87,44 +86,20 @@ class MemberProfileIntegrationTests {
 	@Test
 	void memberGetsOnlyOwnCompleteProfileAndResponseContainsNoSecrets() throws Exception {
 		MemberProfile ownProfile = createMember("Profile Owner", "0901000001", "owner@example.com");
-		ownProfile.updateDetails("https://cdn.example/owner.png", "Run a marathon", "Emergency Person",
-			"0911000001");
+		ownProfile.updateDetails("https://cdn.example/owner.png", "Run a marathon", "Emergency Person", "0911000001");
 		memberProfileRepository.saveAndFlush(ownProfile);
 		createMember("Other Member", "0901000002", "other@example.com");
 		Account account = ownProfile.getAccount();
-
-		String body = getProfile(accessToken(account))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.accountId").value(account.getId().toString()))
-			.andExpect(jsonPath("$.memberId").value(ownProfile.getMemberCode()))
-			.andExpect(jsonPath("$.fullName").value("Profile Owner"))
-			.andExpect(jsonPath("$.phone").value("0901000001"))
-			.andExpect(jsonPath("$.email").value("owner@example.com"))
-			.andExpect(jsonPath("$.birthDate").value("2000-01-15"))
-			.andExpect(jsonPath("$.role").value("MEMBER"))
-			.andExpect(jsonPath("$.status").value("ACTIVE"))
-			.andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/owner.png"))
-			.andExpect(jsonPath("$.fitnessGoal").value("Run a marathon"))
-			.andExpect(jsonPath("$.emergencyContactName").value("Emergency Person"))
-			.andExpect(jsonPath("$.emergencyContactPhone").value("0911000001"))
-			.andExpect(jsonPath("$.password").doesNotExist())
-			.andExpect(jsonPath("$.passwordHash").doesNotExist())
-			.andExpect(jsonPath("$.accessToken").doesNotExist())
-			.andReturn().getResponse().getContentAsString();
-
+		String body = getProfile(accessToken(account)).andExpect(status().isOk()).andExpect(jsonPath("$.accountId").value(account.getId().toString())).andExpect(jsonPath("$.memberId").value(ownProfile.getMemberCode())).andExpect(jsonPath("$.fullName").value("Profile Owner")).andExpect(jsonPath("$.phone").value("0901000001")).andExpect(jsonPath("$.email").value("owner@example.com")).andExpect(jsonPath("$.birthDate").value("2000-01-15")).andExpect(jsonPath("$.role").value("MEMBER")).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/owner.png")).andExpect(jsonPath("$.fitnessGoal").value("Run a marathon")).andExpect(jsonPath("$.emergencyContactName").value("Emergency Person")).andExpect(jsonPath("$.emergencyContactPhone").value("0911000001")).andExpect(jsonPath("$.password").doesNotExist()).andExpect(jsonPath("$.passwordHash").doesNotExist()).andExpect(jsonPath("$.accessToken").doesNotExist()).andReturn().getResponse().getContentAsString();
 		assertThat(body).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 	}
 
 	@Test
 	void profileEndpointsRequireAuthenticationAndMemberRole() throws Exception {
-		mockMvc.perform(get(PROFILE_PATH).contextPath("/api/v1"))
-			.andExpect(status().isUnauthorized());
+		mockMvc.perform(get(PROFILE_PATH).contextPath("/api/v1")).andExpect(status().isUnauthorized());
 		getProfile("not-a-jwt").andExpect(status().isUnauthorized());
-
-		for (AccountRole role : new AccountRole[] { AccountRole.COACH, AccountRole.RECEPTIONIST,
-				AccountRole.MANAGER }) {
-			Account account = createAccount(role, AccountStatus.ACTIVE, nextPhone(role),
-				role.name().toLowerCase() + "@example.com");
+		for (AccountRole role : new AccountRole[] { AccountRole.COACH, AccountRole.RECEPTIONIST, AccountRole.MANAGER }) {
+			Account account = createAccount(role, AccountStatus.ACTIVE, nextPhone(role), role.name().toLowerCase() + "@example.com");
 			getProfile(accessToken(account)).andExpect(status().isForbidden());
 			patchProfile(accessToken(account), "{}").andExpect(status().isForbidden());
 		}
@@ -142,7 +117,6 @@ class MemberProfileIntegrationTests {
 		Long profileVersion = profile.getVersion();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
-
 		patchProfile(accessToken(account), """
 			{
 			  "fullName": "  New Name  ",
@@ -153,19 +127,7 @@ class MemberProfileIntegrationTests {
 			  "emergencyContactName": " Emergency Name ",
 			  "emergencyContactPhone": " 0912000002 "
 			}
-			""")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.fullName").value("New Name"))
-			.andExpect(jsonPath("$.phone").value("0902000002"))
-			.andExpect(jsonPath("$.email").value("old@example.com"))
-			.andExpect(jsonPath("$.birthDate").value("1995-05-20"))
-			.andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/new.png"))
-			.andExpect(jsonPath("$.fitnessGoal").value("Build strength"))
-			.andExpect(jsonPath("$.emergencyContactName").value("Emergency Name"))
-			.andExpect(jsonPath("$.emergencyContactPhone").value("0912000002"))
-			.andExpect(jsonPath("$.accountId").value(account.getId().toString()))
-			.andExpect(jsonPath("$.memberId").value(memberId));
-
+			""").andExpect(status().isOk()).andExpect(jsonPath("$.fullName").value("New Name")).andExpect(jsonPath("$.phone").value("0902000002")).andExpect(jsonPath("$.email").value("old@example.com")).andExpect(jsonPath("$.birthDate").value("1995-05-20")).andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/new.png")).andExpect(jsonPath("$.fitnessGoal").value("Build strength")).andExpect(jsonPath("$.emergencyContactName").value("Emergency Name")).andExpect(jsonPath("$.emergencyContactPhone").value("0912000002")).andExpect(jsonPath("$.accountId").value(account.getId().toString())).andExpect(jsonPath("$.memberId").value(memberId));
 		entityManager.clear();
 		Account updatedAccount = accountRepository.findById(account.getId()).orElseThrow();
 		MemberProfile updatedProfile = memberProfileRepository.findById(account.getId()).orElseThrow();
@@ -186,37 +148,20 @@ class MemberProfileIntegrationTests {
 		memberProfileRepository.saveAndFlush(profile);
 		Account account = profile.getAccount();
 		String token = accessToken(account);
-
-		patchProfile(token, "{\"fitnessGoal\":\" Updated goal \"}")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.fullName").value("Stable Name"))
-			.andExpect(jsonPath("$.phone").value("0903000001"))
-			.andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/stable.png"))
-			.andExpect(jsonPath("$.fitnessGoal").value("Updated goal"))
-			.andExpect(jsonPath("$.emergencyContactName").value("Stable Contact"));
-
+		patchProfile(token, "{\"fitnessGoal\":\" Updated goal \"}").andExpect(status().isOk()).andExpect(jsonPath("$.fullName").value("Stable Name")).andExpect(jsonPath("$.phone").value("0903000001")).andExpect(jsonPath("$.profileImageUrl").value("https://cdn.example/stable.png")).andExpect(jsonPath("$.fitnessGoal").value("Updated goal")).andExpect(jsonPath("$.emergencyContactName").value("Stable Contact"));
 		String beforeNoOp = getProfile(token).andReturn().getResponse().getContentAsString();
-		String afterNoOp = patchProfile(token, "{}")
-			.andExpect(status().isOk())
-			.andReturn().getResponse().getContentAsString();
+		String afterNoOp = patchProfile(token, "{}").andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
 		assertThat(afterNoOp).isEqualTo(beforeNoOp);
-
 		patchProfile(token, """
 			{"profileImageUrl":null,"fitnessGoal":null,
 			 "emergencyContactName":null,"emergencyContactPhone":null}
-			""")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.profileImageUrl").doesNotExist())
-			.andExpect(jsonPath("$.fitnessGoal").doesNotExist())
-			.andExpect(jsonPath("$.emergencyContactName").doesNotExist())
-			.andExpect(jsonPath("$.emergencyContactPhone").doesNotExist());
+			""").andExpect(status().isOk()).andExpect(jsonPath("$.profileImageUrl").doesNotExist()).andExpect(jsonPath("$.fitnessGoal").doesNotExist()).andExpect(jsonPath("$.emergencyContactName").doesNotExist()).andExpect(jsonPath("$.emergencyContactPhone").doesNotExist());
 	}
 
 	@Test
 	void patchValidatesRequiredFormatsDatesAndOptionalBlankValues() throws Exception {
 		Account account = createMember("Validation Member", "0904000001", "validation@example.com").getAccount();
 		String token = accessToken(account);
-
 		assertValidation(token, "{\"fullName\":null}", "fullName");
 		assertValidation(token, "{\"phone\":null}", "phone");
 		assertValidation(token, "{\"email\":null}", "email");
@@ -230,8 +175,7 @@ class MemberProfileIntegrationTests {
 		assertValidation(token, "{\"fitnessGoal\":\"   \"}", "fitnessGoal");
 		assertValidation(token, "{\"emergencyContactName\":\"   \"}", "emergencyContactName");
 		assertValidation(token, "{\"emergencyContactPhone\":\"123\"}", "emergencyContactPhone");
-		assertValidation(token, "{\"birthDate\":\"%s\"}".formatted(LocalDate.now(clock).plusDays(1)),
-			"birthDate");
+		assertValidation(token, "{\"birthDate\":\"%s\"}".formatted(LocalDate.now(clock).plusDays(1)), "birthDate");
 	}
 
 	@Test
@@ -240,22 +184,10 @@ class MemberProfileIntegrationTests {
 		createAccount(AccountRole.COACH, AccountStatus.ACTIVE, "0905000002", "active-owner@example.com");
 		createAccount(AccountRole.RECEPTIONIST, AccountStatus.INACTIVE, "0905000003", "inactive-owner@example.com");
 		String token = accessToken(member);
-
-		patchProfile(token, "{\"email\":\" ACTIVE-OWNER@EXAMPLE.COM \"}")
-			.andExpect(status().isConflict())
-			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
-		patchProfile(token, "{\"phone\":\"0905000002\"}")
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
-
-		patchProfile(token, "{\"email\":\"inactive-owner@example.com\"}")
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
-		patchProfile(token, "{\"phone\":\"0905000003\"}")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.email").value("updating@example.com"))
-			.andExpect(jsonPath("$.phone").value("0905000003"));
+		patchProfile(token, "{\"email\":\" ACTIVE-OWNER@EXAMPLE.COM \"}").andExpect(status().isConflict()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		patchProfile(token, "{\"phone\":\"0905000002\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
+		patchProfile(token, "{\"email\":\"inactive-owner@example.com\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		patchProfile(token, "{\"phone\":\"0905000003\"}").andExpect(status().isOk()).andExpect(jsonPath("$.email").value("updating@example.com")).andExpect(jsonPath("$.phone").value("0905000003"));
 	}
 
 	@Test
@@ -263,53 +195,30 @@ class MemberProfileIntegrationTests {
 		MemberProfile profile = createMember("Protected Member", "0906000001", "protected@example.com");
 		String token = accessToken(profile.getAccount());
 		String originalMemberId = profile.getMemberCode();
-
 		for (String field : new String[] { "accountId", "memberId", "role", "status", "password", "unknown" }) {
-			patchProfile(token, "{\"%s\":\"attempted-value\"}".formatted(field))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+			patchProfile(token, "{\"%s\":\"attempted-value\"}".formatted(field)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
 		}
-
-		getProfile(token)
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.fullName").value("Protected Member"))
-			.andExpect(jsonPath("$.memberId").value(originalMemberId));
+		getProfile(token).andExpect(status().isOk()).andExpect(jsonPath("$.fullName").value("Protected Member")).andExpect(jsonPath("$.memberId").value(originalMemberId));
 	}
 
 	@Test
 	void emergencyContactInvariantIsValidatedAgainstFinalPatchedState() throws Exception {
 		Account account = createMember("Emergency Member", "0907000001", "emergency@example.com").getAccount();
 		String token = accessToken(account);
-
 		assertValidation(token, "{\"emergencyContactName\":\"Name Only\"}", "emergencyContact");
-		patchProfile(token,
-			"{\"emergencyContactName\":\"Contact One\",\"emergencyContactPhone\":\"0917000001\"}")
-			.andExpect(status().isOk());
-		patchProfile(token, "{\"emergencyContactPhone\":\"0917000002\"}")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.emergencyContactName").value("Contact One"))
-			.andExpect(jsonPath("$.emergencyContactPhone").value("0917000002"));
-		patchProfile(token, "{\"emergencyContactName\":\"Contact Two\"}")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.emergencyContactName").value("Contact Two"));
+		patchProfile(token, "{\"emergencyContactName\":\"Contact One\",\"emergencyContactPhone\":\"0917000001\"}").andExpect(status().isOk());
+		patchProfile(token, "{\"emergencyContactPhone\":\"0917000002\"}").andExpect(status().isOk()).andExpect(jsonPath("$.emergencyContactName").value("Contact One")).andExpect(jsonPath("$.emergencyContactPhone").value("0917000002"));
+		patchProfile(token, "{\"emergencyContactName\":\"Contact Two\"}").andExpect(status().isOk()).andExpect(jsonPath("$.emergencyContactName").value("Contact Two"));
 		assertValidation(token, "{\"emergencyContactName\":null}", "emergencyContact");
-		patchProfile(token, "{\"emergencyContactName\":null,\"emergencyContactPhone\":null}")
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.emergencyContactName").doesNotExist())
-			.andExpect(jsonPath("$.emergencyContactPhone").doesNotExist());
+		patchProfile(token, "{\"emergencyContactName\":null,\"emergencyContactPhone\":null}").andExpect(status().isOk()).andExpect(jsonPath("$.emergencyContactName").doesNotExist()).andExpect(jsonPath("$.emergencyContactPhone").doesNotExist());
 	}
 
 	@Test
 	void phoneCanChangeDirectlyButEmailRemainsUntilVerifiedFlowCompletes() throws Exception {
 		Account account = createMember("Login Member", "0908000001", "old-login@example.com").getAccount();
 		String token = accessToken(account);
-
-		patchProfile(token, "{\"email\":\"new-login@example.com\",\"phone\":\"0908000002\"}")
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
-		patchProfile(token, "{\"phone\":\"0908000002\"}")
-			.andExpect(status().isOk());
-
+		patchProfile(token, "{\"email\":\"new-login@example.com\",\"phone\":\"0908000002\"}").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("EMAIL_CHANGE_VERIFICATION_REQUIRED"));
+		patchProfile(token, "{\"phone\":\"0908000002\"}").andExpect(status().isOk());
 		performLogin("new-login@example.com").andExpect(status().isUnauthorized());
 		performLogin("0908000002").andExpect(status().isOk());
 		performLogin("old-login@example.com").andExpect(status().isOk());
@@ -328,27 +237,15 @@ class MemberProfileIntegrationTests {
 			""").andExpect(status().isOk());
 		entityManager.flush();
 		entityManager.clear();
-		getProfile(token).andExpect(status().isOk())
-			.andExpect(jsonPath("$.gender").value("FEMALE"))
-			.andExpect(jsonPath("$.address").value("123 Nguyễn Trãi"))
-			.andExpect(jsonPath("$.physicalConditionNotes").value("Chấn thương đầu gối"))
-			.andExpect(jsonPath("$.emergencyContactRelationship").value("Chị gái"))
-			.andExpect(jsonPath("$.emergencyContactTimeNotes").value("Sau 18:00"))
-			.andExpect(jsonPath("$.createdAt").value(createdAt));
-		patchProfile(token, "{\"address\":\"New address\"}")
-			.andExpect(status().isOk()).andExpect(jsonPath("$.gender").value("FEMALE"));
+		getProfile(token).andExpect(status().isOk()).andExpect(jsonPath("$.gender").value("FEMALE")).andExpect(jsonPath("$.address").value("123 Nguyễn Trãi")).andExpect(jsonPath("$.physicalConditionNotes").value("Chấn thương đầu gối")).andExpect(jsonPath("$.emergencyContactRelationship").value("Chị gái")).andExpect(jsonPath("$.emergencyContactTimeNotes").value("Sau 18:00")).andExpect(jsonPath("$.createdAt").value(createdAt));
+		patchProfile(token, "{\"address\":\"New address\"}").andExpect(status().isOk()).andExpect(jsonPath("$.gender").value("FEMALE"));
 		patchProfile(token, """
 			{"gender":null,"address":null,"physicalConditionNotes":null,
 			 "emergencyContactRelationship":null,"emergencyContactTimeNotes":null}
 			""").andExpect(status().isOk());
 		entityManager.flush();
 		entityManager.clear();
-		getProfile(token).andExpect(status().isOk())
-			.andExpect(jsonPath("$.gender").doesNotExist())
-			.andExpect(jsonPath("$.address").doesNotExist())
-			.andExpect(jsonPath("$.physicalConditionNotes").doesNotExist())
-			.andExpect(jsonPath("$.emergencyContactRelationship").doesNotExist())
-			.andExpect(jsonPath("$.emergencyContactTimeNotes").doesNotExist());
+		getProfile(token).andExpect(status().isOk()).andExpect(jsonPath("$.gender").doesNotExist()).andExpect(jsonPath("$.address").doesNotExist()).andExpect(jsonPath("$.physicalConditionNotes").doesNotExist()).andExpect(jsonPath("$.emergencyContactRelationship").doesNotExist()).andExpect(jsonPath("$.emergencyContactTimeNotes").doesNotExist());
 		assertValidation(token, "{\"gender\":\"UNKNOWN\"}", "gender");
 		assertValidation(token, "{\"gender\":\"OTHER\"}", "gender");
 		assertValidation(token, "{\"address\":\" \"}", "address");
@@ -356,15 +253,13 @@ class MemberProfileIntegrationTests {
 
 	private MemberProfile createMember(String fullName, String phone, String email) {
 		UUID id = UUID.randomUUID();
-		Account account = accountRepository.saveAndFlush(new Account(id, AccountRole.MEMBER, AccountStatus.ACTIVE,
-			fullName, phone, email, LocalDate.of(2000, 1, 15), passwordEncoder.encode(PASSWORD)));
+		Account account = accountRepository.saveAndFlush(new Account(id, AccountRole.MEMBER, AccountStatus.ACTIVE, fullName, phone, email, LocalDate.of(2000, 1, 15), passwordEncoder.encode(PASSWORD)));
 		return memberProfileRepository.saveAndFlush(new MemberProfile(account));
 	}
 
 	private Account createAccount(AccountRole role, AccountStatus status, String phone, String email) {
 		UUID id = UUID.randomUUID();
-		return accountRepository.saveAndFlush(new Account(id, role, status, role.name() + " Account", phone, email,
-			LocalDate.of(2000, 1, 15), passwordEncoder.encode(PASSWORD)));
+		return accountRepository.saveAndFlush(new Account(id, role, status, role.name() + " Account", phone, email, LocalDate.of(2000, 1, 15), passwordEncoder.encode(PASSWORD)));
 	}
 
 	private String accessToken(Account account) throws Exception {
@@ -373,40 +268,31 @@ class MemberProfileIntegrationTests {
 	}
 
 	private org.springframework.test.web.servlet.ResultActions performLogin(String identifier) throws Exception {
-		return mockMvc.perform(post(LOGIN_PATH)
-			.contextPath("/api/v1")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"identifier\":\"%s\",\"password\":\"%s\"}".formatted(identifier, PASSWORD)));
+		return mockMvc.perform(post(LOGIN_PATH).contextPath("/api/v1").contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"%s\",\"password\":\"%s\"}".formatted(identifier, PASSWORD)));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions getProfile(String token) throws Exception {
-		return mockMvc.perform(get(PROFILE_PATH)
-			.contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
+		return mockMvc.perform(get(PROFILE_PATH).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token));
 	}
 
 	private org.springframework.test.web.servlet.ResultActions patchProfile(String token, String body) throws Exception {
-		return mockMvc.perform(patch(PROFILE_PATH)
-			.contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(body));
+		return mockMvc.perform(patch(PROFILE_PATH).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body));
 	}
 
 	private void assertValidation(String token, String body, String field) throws Exception {
-		patchProfile(token, body)
-			.andExpect(status().isBadRequest())
-			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors." + field).exists());
+		patchProfile(token, body).andExpect(status().isBadRequest()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors." + field).exists());
 	}
 
 	private String nextPhone(AccountRole role) {
-		return switch (role) {
-			case COACH -> "0909000001";
-			case RECEPTIONIST -> "0909000002";
-			case MANAGER -> "0909000003";
-			case MEMBER -> "0909000004";
+		return switch(role) {
+			case COACH ->
+				"0909000001";
+			case RECEPTIONIST ->
+				"0909000002";
+			case MANAGER ->
+				"0909000003";
+			case MEMBER ->
+				"0909000004";
 		};
 	}
 }

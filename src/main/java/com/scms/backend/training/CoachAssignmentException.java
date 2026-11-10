@@ -1,21 +1,23 @@
 package com.scms.backend.training;
 
-import com.scms.backend.scheduling.PtAssignmentImpactResponse;
+import com.scms.backend.scheduling.session.PtAssignmentImpactResponse;
 import org.springframework.http.HttpStatus;
 
 public class CoachAssignmentException extends RuntimeException {
 
 	private final HttpStatus status;
+
 	private final String code;
+
 	private final String field;
+
 	private final PtAssignmentImpactResponse impact;
 
 	private CoachAssignmentException(HttpStatus status, String code, String message, String field) {
 		this(status, code, message, field, null);
 	}
 
-	private CoachAssignmentException(HttpStatus status, String code, String message, String field,
-			PtAssignmentImpactResponse impact) {
+	private CoachAssignmentException(HttpStatus status, String code, String message, String field, PtAssignmentImpactResponse impact) {
 		super(message);
 		this.status = status;
 		this.code = code;
@@ -44,8 +46,7 @@ public class CoachAssignmentException extends RuntimeException {
 	}
 
 	public static CoachAssignmentException plusMembershipRequired() {
-		return new CoachAssignmentException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED",
-				"Coach assignment requires an active Membership with the PERSONAL_COACHING Benefit.");
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "PLUS_MEMBERSHIP_REQUIRED", "Coach assignment requires an active Membership with the PERSONAL_COACHING Benefit.");
 	}
 
 	public static CoachAssignmentException membershipFrozen() {
@@ -69,20 +70,15 @@ public class CoachAssignmentException extends RuntimeException {
 	}
 
 	public static CoachAssignmentException impactConfirmationRequired(PtAssignmentImpactResponse impact) {
-		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED",
-			"Future PT bookings or waitlists must be previewed and confirmed before changing the Coach assignment.",
-			null, impact);
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CONFIRMATION_REQUIRED", "Future PT bookings or waitlists must be previewed and confirmed before changing the Coach assignment.", null, impact);
 	}
 
 	public static CoachAssignmentException impactChanged(PtAssignmentImpactResponse impact) {
-		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CHANGED",
-			"The affected future PT bookings or waitlists changed. Preview and confirm the current impact.",
-			null, impact);
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_ASSIGNMENT_IMPACT_CHANGED", "The affected future PT bookings or waitlists changed. Preview and confirm the current impact.", null, impact);
 	}
 
 	public static CoachAssignmentException coachCapacityExceeded(int maximumMemberCount) {
-		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_CAPACITY_EXCEEDED",
-				"The Coach already has the maximum of " + maximumMemberCount + " active Members.");
+		return new CoachAssignmentException(HttpStatus.CONFLICT, "COACH_CAPACITY_EXCEEDED", "The Coach already has the maximum of " + maximumMemberCount + " active Members.");
 	}
 
 	public static CoachAssignmentException validationError(String field, String message) {

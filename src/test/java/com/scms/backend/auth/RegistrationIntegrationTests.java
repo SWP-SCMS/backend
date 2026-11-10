@@ -7,14 +7,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import java.time.Clock;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.util.TimeZone;
-import java.util.UUID;
-import java.util.Map;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -24,7 +16,12 @@ import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.notification.NotificationRepository;
 import jakarta.persistence.EntityManager;
-
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.TimeZone;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -50,6 +47,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class RegistrationIntegrationTests {
 
 	private static final String REGISTER_PATH = "/api/v1/auth/register";
+
 	private static final String PASSWORD = "Password123";
 
 	static {
@@ -89,29 +87,12 @@ class RegistrationIntegrationTests {
 
 	@Test
 	void validRegistrationCreatesCompleteAtomicResultWithoutAuthenticating() throws Exception {
-		MvcResult result = performRegistration(request("  Nguyen Van A  ", "  0901234567  ",
-			"  MEMBER@Example.COM  ", "https://cdn.example/member.png", "Run a marathon"))
-			.andExpect(status().isCreated())
-			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-			.andExpect(jsonPath("$.verificationRequired").value(false))
-			.andExpect(jsonPath("$.status").value("ACTIVE"))
-			.andExpect(jsonPath("$.maskedEmail").value("m***@example.com"))
-			.andExpect(jsonPath("$.serverTime").isString())
-			.andExpect(jsonPath("$.accountId").doesNotExist())
-			.andExpect(jsonPath("$.memberId").doesNotExist())
-			.andExpect(jsonPath("$.accessToken").doesNotExist())
-			.andExpect(jsonPath("$.refreshToken").doesNotExist())
-			.andExpect(jsonPath("$.password").doesNotExist())
-			.andExpect(jsonPath("$.passwordHash").doesNotExist())
-			.andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE))
-			.andReturn();
-
+		MvcResult result = performRegistration(request("  Nguyen Van A  ", "  0901234567  ", "  MEMBER@Example.COM  ", "https://cdn.example/member.png", "Run a marathon")).andExpect(status().isCreated()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON)).andExpect(jsonPath("$.verificationRequired").value(false)).andExpect(jsonPath("$.status").value("ACTIVE")).andExpect(jsonPath("$.maskedEmail").value("m***@example.com")).andExpect(jsonPath("$.serverTime").isString()).andExpect(jsonPath("$.accountId").doesNotExist()).andExpect(jsonPath("$.memberId").doesNotExist()).andExpect(jsonPath("$.accessToken").doesNotExist()).andExpect(jsonPath("$.refreshToken").doesNotExist()).andExpect(jsonPath("$.password").doesNotExist()).andExpect(jsonPath("$.passwordHash").doesNotExist()).andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE)).andReturn();
 		String responseBody = result.getResponse().getContentAsString();
 		entityManager.flush();
 		entityManager.clear();
-
-		Account account = accountRepository.findByEmailIgnoreCaseAndStatus("member@example.com",AccountStatus.ACTIVE).orElseThrow();
-		UUID accountId=account.getId();
+		Account account = accountRepository.findByEmailIgnoreCaseAndStatus("member@example.com", AccountStatus.ACTIVE).orElseThrow();
+		UUID accountId = account.getId();
 		assertThat(account.getRole()).isEqualTo(AccountRole.MEMBER);
 		assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
 		assertThat(account.getFullName()).isEqualTo("Nguyen Van A");
@@ -119,15 +100,13 @@ class RegistrationIntegrationTests {
 		assertThat(account.getEmail()).isEqualTo("member@example.com");
 		assertThat(account.getPasswordHash()).startsWith("$2").doesNotContain(PASSWORD);
 		assertThat(passwordEncoder.matches(PASSWORD, account.getPasswordHash())).isTrue();
-
 		MemberProfile profile = memberProfileRepository.findById(accountId).orElseThrow();
-		String memberId=profile.getMemberCode();
+		String memberId = profile.getMemberCode();
 		assertThat(profile.getMemberCode()).isEqualTo(memberId).matches("MB-[0-9]+");
 		assertThat(profile.getProfileImageUrl()).isEqualTo("https://cdn.example/member.png");
 		assertThat(profile.getFitnessGoal()).isEqualTo("Run a marathon");
 		assertThat(profile.getEmergencyContactName()).isNull();
 		assertThat(profile.getEmergencyContactPhone()).isNull();
-
 		assertThat(auditEventRepository.findAll()).singleElement().satisfies(event -> {
 			assertThat(event.getActorAccountId()).isNull();
 			assertThat(event.getAction()).isEqualTo("ACCOUNT_CREATED");
@@ -137,10 +116,7 @@ class RegistrationIntegrationTests {
 			assertThat(event.getAfterData()).containsEntry("memberId", memberId);
 			assertThat(event.getAfterData().toString()).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 		});
-		Map<String, Object> notification = jdbcTemplate.queryForMap(
-			"select recipient_account_id, event_key, notification_type, target_type, target_id, status, "
-				+ "attempt_count, payload::text payload from notification_outbox where event_key = ?",
-			"ACCOUNT_CREATED:" + accountId);
+		Map<String, Object> notification = jdbcTemplate.queryForMap("select recipient_account_id, event_key, notification_type, target_type, target_id, status, " + "attempt_count, payload::text payload from notification_outbox where event_key = ?", "ACCOUNT_CREATED:" + accountId);
 		assertThat(notification.get("recipient_account_id")).isEqualTo(accountId);
 		assertThat(notification.get("event_key")).isEqualTo("ACCOUNT_CREATED:" + accountId);
 		assertThat(notification.get("notification_type")).isEqualTo("ACCOUNT_CREATED");
@@ -148,8 +124,7 @@ class RegistrationIntegrationTests {
 		assertThat(notification.get("target_id")).isEqualTo(accountId);
 		assertThat(notification.get("status")).isEqualTo("PENDING");
 		assertThat(notification.get("attempt_count")).isEqualTo(0);
-		assertThat(notification.get("payload").toString()).contains(memberId).doesNotContain(PASSWORD)
-			.doesNotContain(account.getPasswordHash());
+		assertThat(notification.get("payload").toString()).contains(memberId).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 		assertThat(responseBody).doesNotContain(PASSWORD).doesNotContain(account.getPasswordHash());
 		assertThat(databaseTextFor(accountId)).doesNotContain(PASSWORD);
 	}
@@ -164,25 +139,15 @@ class RegistrationIntegrationTests {
 			  "password": "Password123",
 			  "birthDate": "1999-05-20"
 			}
-			""")
-			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.verificationRequired").value(false))
-			.andReturn();
-
-		Account registered=accountRepository.findByEmailIgnoreCaseAndStatus("optional@example.com",AccountStatus.ACTIVE).orElseThrow();
-		String accountIdText=registered.getId().toString();
+			""").andExpect(status().isCreated()).andExpect(jsonPath("$.verificationRequired").value(false)).andReturn();
+		Account registered = accountRepository.findByEmailIgnoreCaseAndStatus("optional@example.com", AccountStatus.ACTIVE).orElseThrow();
+		String accountIdText = registered.getId().toString();
 		MemberProfile profile = memberProfileRepository.findById(registered.getId()).orElseThrow();
 		assertThat(profile.getProfileImageUrl()).isNull();
 		assertThat(profile.getFitnessGoal()).isNull();
 		assertThat(profile.getEmergencyContactName()).isNull();
 		assertThat(profile.getEmergencyContactPhone()).isNull();
-
-		mockMvc.perform(post("/api/v1/auth/login")
-			.contextPath("/api/v1")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"identifier\":\"0912345678\",\"password\":\"Password123\"}"))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.accountId").value(accountIdText));
+		mockMvc.perform(post("/api/v1/auth/login").contextPath("/api/v1").contentType(MediaType.APPLICATION_JSON).content("{\"identifier\":\"0912345678\",\"password\":\"Password123\"}")).andExpect(status().isOk()).andExpect(jsonPath("$.accountId").value(accountIdText));
 	}
 
 	@Test
@@ -190,10 +155,7 @@ class RegistrationIntegrationTests {
 		performRegistration("""
 			{"fullName":"Member","phone":"0912345678","email":"member-id@example.com",
 			 "password":"Password123","birthDate":"1999-05-20","memberId":"MB-1"}
-			""")
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
-
+			""").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
 		assertCounts(0, 0, 0, 0);
 	}
 
@@ -204,79 +166,37 @@ class RegistrationIntegrationTests {
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
 		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
-
-		performRegistration("{}")
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors.fullName").exists())
-			.andExpect(jsonPath("$.errors.phone").exists())
-			.andExpect(jsonPath("$.errors.email").exists())
-			.andExpect(jsonPath("$.errors.birthDate").exists());
-
+		performRegistration("{}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors.fullName").exists()).andExpect(jsonPath("$.errors.phone").exists()).andExpect(jsonPath("$.errors.email").exists()).andExpect(jsonPath("$.errors.birthDate").exists());
 		performRegistration("""
 			{"fullName":" ","phone":" ","email":" ","password":" ","birthDate":null}
-			""")
-			.andExpect(status().isBadRequest())
-			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors.fullName").exists())
-			.andExpect(jsonPath("$.errors.phone").exists())
-			.andExpect(jsonPath("$.errors.email").exists())
-			.andExpect(jsonPath("$.errors.birthDate").exists());
-
+			""").andExpect(status().isBadRequest()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors.fullName").exists()).andExpect(jsonPath("$.errors.phone").exists()).andExpect(jsonPath("$.errors.email").exists()).andExpect(jsonPath("$.errors.birthDate").exists());
 		performRegistration("""
 			{"fullName":"Valid Name","phone":"0901234567","email":"valid@example.com",
 			 "birthDate":"2000-01-15"}
-			""")
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors.password").exists());
-
-		performRegistration(request("Valid Name", "0901234567", "bad-email", null, null))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors.email").exists());
-		performRegistration(request("Valid Name", "+84901234567", "valid@example.com", null, null))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.errors.phone").exists());
-		performRegistration(requestWithPassword("Valid Name", "0901234567", "valid@example.com", "short"))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.errors.password").exists());
-
+			""").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors.password").exists());
+		performRegistration(request("Valid Name", "0901234567", "bad-email", null, null)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors.email").exists());
+		performRegistration(request("Valid Name", "+84901234567", "valid@example.com", null, null)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors.phone").exists());
+		performRegistration(requestWithPassword("Valid Name", "0901234567", "valid@example.com", "short")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors.password").exists());
 		String futureBirthDate = LocalDate.now(clock).plusDays(1).toString();
 		performRegistration("""
 			{"fullName":"Valid Name","phone":"0901234567","email":"valid@example.com",
 			 "password":"Password123","birthDate":"%s"}
-			""".formatted(futureBirthDate))
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-			.andExpect(jsonPath("$.errors.birthDate[0]").value("must not be in the future"));
-
+			""".formatted(futureBirthDate)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_ERROR")).andExpect(jsonPath("$.errors.birthDate[0]").value("must not be in the future"));
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
 		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
 	}
 
 	@Test
 	void currentEmailAndPhoneConflictsReturnStable409CodesWithoutPartialData() throws Exception {
-		Account emailOwner = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "0900000001",
-			"duplicate@example.com");
-		Account phoneOwner = createAccount(AccountRole.MEMBER, AccountStatus.SUSPENDED, "0900000002",
-			"phone-owner@example.com");
+		Account emailOwner = createAccount(AccountRole.MEMBER, AccountStatus.ACTIVE, "0900000001", "duplicate@example.com");
+		Account phoneOwner = createAccount(AccountRole.MEMBER, AccountStatus.SUSPENDED, "0900000002", "phone-owner@example.com");
 		long accountsBefore = accountRepository.count();
 		long profilesBefore = memberProfileRepository.count();
 		long auditsBefore = auditEventRepository.count();
 		long notificationsBefore = notificationRepository.count();
 		long outboxBefore = jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class);
-
-		performRegistration(request("Duplicate Email", "0900000003", "  DUPLICATE@EXAMPLE.COM  ", null, null))
-			.andExpect(status().isConflict())
-			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-			.andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
-		performRegistration(request("Duplicate Phone", "  " + phoneOwner.getPhone() + "  ",
-			"new@example.com", null, null))
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
-
+		performRegistration(request("Duplicate Email", "0900000003", "  DUPLICATE@EXAMPLE.COM  ", null, null)).andExpect(status().isConflict()).andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON)).andExpect(jsonPath("$.code").value("EMAIL_ALREADY_EXISTS"));
+		performRegistration(request("Duplicate Phone", "  " + phoneOwner.getPhone() + "  ", "new@example.com", null, null)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PHONE_ALREADY_EXISTS"));
 		assertThat(emailOwner.getStatus()).isEqualTo(AccountStatus.ACTIVE);
 		assertCounts(accountsBefore, profilesBefore, auditsBefore, notificationsBefore);
 		assertThat(jdbcTemplate.queryForObject("select count(*) from notification_outbox", Long.class)).isEqualTo(outboxBefore);
@@ -285,12 +205,7 @@ class RegistrationIntegrationTests {
 	@Test
 	void identifiersFromInactiveAccountCanBeReused() throws Exception {
 		createAccount(AccountRole.RECEPTIONIST, AccountStatus.INACTIVE, "0900000004", "inactive@example.com");
-
-		performRegistration(request("Replacement Member", "0900000004", "inactive@example.com", null, null))
-			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.verificationRequired").value(false))
-			.andExpect(jsonPath("$.status").value("ACTIVE"));
-
+		performRegistration(request("Replacement Member", "0900000004", "inactive@example.com", null, null)).andExpect(status().isCreated()).andExpect(jsonPath("$.verificationRequired").value(false)).andExpect(jsonPath("$.status").value("ACTIVE"));
 		assertThat(accountRepository.count()).isEqualTo(2);
 		assertThat(memberProfileRepository.count()).isEqualTo(1);
 		assertThat(auditEventRepository.count()).isEqualTo(1);
@@ -298,10 +213,7 @@ class RegistrationIntegrationTests {
 	}
 
 	private org.springframework.test.web.servlet.ResultActions performRegistration(String body) throws Exception {
-		return mockMvc.perform(post(REGISTER_PATH)
-			.contextPath("/api/v1")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(body));
+		return mockMvc.perform(post(REGISTER_PATH).contextPath("/api/v1").contentType(MediaType.APPLICATION_JSON).content(body));
 	}
 
 	private String request(String fullName, String phone, String email, String profileImageUrl, String fitnessGoal) {
@@ -323,8 +235,7 @@ class RegistrationIntegrationTests {
 
 	private Account createAccount(AccountRole role, AccountStatus status, String phone, String email) {
 		UUID id = UUID.randomUUID();
-		return accountRepository.saveAndFlush(new Account(id, role, status, "Existing Account", phone, email,
-			LocalDate.of(1990, 1, 1), passwordEncoder.encode("existing-password")));
+		return accountRepository.saveAndFlush(new Account(id, role, status, "Existing Account", phone, email, LocalDate.of(1990, 1, 1), passwordEncoder.encode("existing-password")));
 	}
 
 	private void assertCounts(long accounts, long profiles, long audits, long notifications) {

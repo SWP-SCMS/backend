@@ -3,12 +3,10 @@ package com.scms.backend.auth;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties("scms.security")
-public record AuthProperties(String jwtSecret, Duration accessTokenTtl, Duration refreshTokenTtl,
-		boolean refreshCookieSecure) {
+public record AuthProperties(String jwtSecret, Duration accessTokenTtl, Duration refreshTokenTtl, boolean refreshCookieSecure) {
 
 	public AuthProperties {
 		Objects.requireNonNull(jwtSecret, "JWT secret is required");

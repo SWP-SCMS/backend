@@ -3,12 +3,10 @@ package com.scms.backend.membership;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
-
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,11 +30,20 @@ class MembershipLifecycleIntegrationTests {
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
-	@Autowired JdbcTemplate db;
-	@Autowired MembershipLifecycleScheduler scheduler;
-	@Autowired MembershipRepository memberships;
-	@MockitoSpyBean MembershipLifecycleService lifecycle;
-	@MockitoBean Clock clock;
+	@Autowired
+	JdbcTemplate db;
+
+	@Autowired
+	MembershipLifecycleScheduler scheduler;
+
+	@Autowired
+	MembershipRepository memberships;
+
+	@MockitoSpyBean
+	MembershipLifecycleService lifecycle;
+
+	@MockitoBean
+	Clock clock;
 
 	@Test
 	void schedulerCommitsEachMemberInAnIndependentTransaction() {
@@ -49,9 +56,7 @@ class MembershipLifecycleIntegrationTests {
 		membership(first, manager, offer, now.minusSeconds(7200), now.minusSeconds(3600));
 		membership(second, manager, offer, now.minusSeconds(7200), now.minusSeconds(3600));
 		doThrow(new IllegalStateException("member-specific failure")).when(lifecycle).reconcile(second, now);
-
 		scheduler.reconcile();
-
 		assertThat(status(first)).isEqualTo("EXPIRED");
 		assertThat(status(second)).isEqualTo("ACTIVE");
 	}
@@ -67,13 +72,9 @@ class MembershipLifecycleIntegrationTests {
 		membership(member, manager, offer, now.minusSeconds(7200), now.minusSeconds(3600));
 		db.update("update memberships set status='EXPIRED' where member_account_id=?", member);
 		UUID assignment = UUID.randomUUID();
-		db.update("insert into coach_assignments(id,member_account_id,coach_account_id,assigned_by_account_id,status,starts_at) values(?,?,?,?,'ACTIVE',?)",
-			assignment, member, coach, manager, java.sql.Timestamp.from(now.minusSeconds(7200)));
-
+		db.update("insert into coach_assignments(id,member_account_id,coach_account_id,assigned_by_account_id,status,starts_at) values(?,?,?,?,'ACTIVE',?)", assignment, member, coach, manager, java.sql.Timestamp.from(now.minusSeconds(7200)));
 		scheduler.reconcile();
-
-		assertThat(db.queryForObject("select status from coach_assignments where id=?", String.class, assignment))
-			.isEqualTo("ENDED");
+		assertThat(db.queryForObject("select status from coach_assignments where id=?", String.class, assignment)).isEqualTo("ENDED");
 	}
 
 	@Test
@@ -87,15 +88,11 @@ class MembershipLifecycleIntegrationTests {
 		membership(member, manager, offer, now.minusSeconds(7200), previousEnd);
 		db.update("update memberships set status='EXPIRED' where member_account_id=?", member);
 		reservedMembership(member, manager, offer);
-
 		scheduler.reconcile();
-
-		Map<String, Object> row = db.queryForMap(
-			"select status,starts_at,ends_at from memberships where member_account_id=? and status='ACTIVE'", member);
+		Map<String, Object> row = db.queryForMap("select status,starts_at,ends_at from memberships where member_account_id=? and status='ACTIVE'", member);
 		assertThat(row.get("status")).isEqualTo("ACTIVE");
 		assertThat(((java.sql.Timestamp) row.get("starts_at")).toInstant()).isEqualTo(previousEnd);
-		assertThat(((java.sql.Timestamp) row.get("ends_at")).toInstant())
-			.isEqualTo(previousEnd.plusSeconds(45L * 86400));
+		assertThat(((java.sql.Timestamp) row.get("ends_at")).toInstant()).isEqualTo(previousEnd.plusSeconds(45L * 86400));
 	}
 
 	@Test
@@ -109,43 +106,33 @@ class MembershipLifecycleIntegrationTests {
 		db.update("update memberships set status='EXPIRED' where member_account_id=?", member);
 		membership(member, manager, offer, now.minusSeconds(60), now.plusSeconds(3600));
 		reservedMembership(member, manager, offer);
-
 		assertThat(memberships.findDueMemberAccountIds(now, null)).doesNotContain(member);
 	}
 
 	private UUID account(String role) {
 		UUID id = UUID.randomUUID();
-		db.update("insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash) values(?,?,'ACTIVE','Lifecycle','09' || substring(?::text,1,8),?,'1990-01-01','hash')",
-			id, role, id, id + "@example.test");
+		db.update("insert into accounts(id,role,status,full_name,phone,email,birth_date,password_hash) values(?,?,'ACTIVE','Lifecycle','09' || substring(?::text,1,8),?,'1990-01-01','hash')", id, role, id, id + "@example.test");
 		return id;
 	}
 
 	private UUID offer(UUID manager) {
 		UUID id = UUID.randomUUID();
-		db.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'PLUS','Lifecycle','Lifecycle',100000,'VND',30,'ACTIVE',?)",
-			id, manager);
+		db.update("insert into membership_offers(id,plan_code,name,description,price_amount,currency_code,duration_days,status,created_by_account_id) values(?,'PLUS','Lifecycle','Lifecycle',100000,'VND',30,'ACTIVE',?)", id, manager);
 		return id;
 	}
 
 	private void membership(UUID member, UUID manager, UUID offer, Instant startsAt, Instant endsAt) {
 		UUID order = UUID.randomUUID();
-		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at) values(?,?,?,?,?,'Lifecycle','PLUS',100000,'VND',30,'CASH','PAID',now(),now())",
-			order, "ORD-" + order, member, manager, offer);
-		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',now())",
-			UUID.randomUUID(), order);
-		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',30,'ACTIVE',?,?)",
-			UUID.randomUUID(), member, order, offer, "PLUS", java.sql.Timestamp.from(startsAt),
-			java.sql.Timestamp.from(endsAt));
+		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at) values(?,?,?,?,?,'Lifecycle','PLUS',100000,'VND',30,'CASH','PAID',now(),now())", order, "ORD-" + order, member, manager, offer);
+		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',now())", UUID.randomUUID(), order);
+		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',30,'ACTIVE',?,?)", UUID.randomUUID(), member, order, offer, "PLUS", java.sql.Timestamp.from(startsAt), java.sql.Timestamp.from(endsAt));
 	}
 
 	private void reservedMembership(UUID member, UUID manager, UUID offer) {
 		UUID order = UUID.randomUUID();
-		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at) values(?,?,?,?,?,'Lifecycle','PLUS',100000,'VND',45,'CASH','PAID',now(),now())",
-			order, "ORD-" + order, member, manager, offer);
-		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',now())",
-			UUID.randomUUID(), order);
-		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',45,'RESERVED',null,null)",
-			UUID.randomUUID(), member, order, offer, "PLUS");
+		db.update("insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,payment_method,status,expires_at,paid_at) values(?,?,?,?,?,'Lifecycle','PLUS',100000,'VND',45,'CASH','PAID',now(),now())", order, "ORD-" + order, member, manager, offer);
+		db.update("insert into payments(id,order_id,method,status,amount,currency_code,paid_at) values(?,?,'CASH','PAID',100000,'VND',now())", UUID.randomUUID(), order);
+		db.update("insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at) values(?,?,?,?,?,'Lifecycle',100000,'VND',45,'RESERVED',null,null)", UUID.randomUUID(), member, order, offer, "PLUS");
 	}
 
 	private String status(UUID member) {

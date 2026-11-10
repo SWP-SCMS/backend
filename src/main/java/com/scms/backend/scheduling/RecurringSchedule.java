@@ -1,10 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -12,6 +7,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -63,9 +62,7 @@ public class RecurringSchedule {
 	protected RecurringSchedule() {
 	}
 
-	RecurringSchedule(UUID id, SportClass sportClass, com.scms.backend.account.Account teachingCoach, Room room,
-			LocalDate startDate, Short[] weekdays, LocalTime startTime, LocalTime endTime,
-			int sessionCapacity, int sessionCount, UUID createdByAccountId) {
+	public RecurringSchedule(UUID id, SportClass sportClass, com.scms.backend.account.Account teachingCoach, Room room, LocalDate startDate, Short[] weekdays, LocalTime startTime, LocalTime endTime, int sessionCapacity, int sessionCount, UUID createdByAccountId) {
 		this.id = id;
 		this.sportClass = sportClass;
 		this.teachingCoach = teachingCoach;
@@ -79,6 +76,11 @@ public class RecurringSchedule {
 		this.createdByAccountId = createdByAccountId;
 	}
 
-	UUID getId() { return id; }
-	short getSessionCount() { return sessionCount; }
+	public UUID getId() {
+		return id;
+	}
+
+	short getSessionCount() {
+		return sessionCount;
+	}
 }

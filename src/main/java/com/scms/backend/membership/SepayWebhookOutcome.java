@@ -1,6 +1,7 @@
 package com.scms.backend.membership;
 
 public enum SepayWebhookOutcome {
+
 	FULFILLED,
 	ALREADY_PROCESSED,
 	PAYMENT_WINDOW_EXPIRED,

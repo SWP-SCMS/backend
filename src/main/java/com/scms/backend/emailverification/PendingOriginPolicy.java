@@ -7,9 +7,15 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
-class PendingOriginPolicy {
+public class PendingOriginPolicy {
+
 	private final Set<String> allowed;
-	PendingOriginPolicy(@Value("${scms.cors.allowed-origins}") String origins){allowed=Arrays.stream(origins.split(","))
-		.map(String::trim).filter(value->!value.isEmpty()).collect(Collectors.toUnmodifiableSet());}
-	boolean allows(String origin){return origin!=null&&allowed.contains(origin);}
+
+	PendingOriginPolicy(@Value("${scms.cors.allowed-origins}") String origins) {
+		allowed = Arrays.stream(origins.split(",")).map(String::trim).filter(value -> !value.isEmpty()).collect(Collectors.toUnmodifiableSet());
+	}
+
+	public boolean allows(String origin) {
+		return origin != null && allowed.contains(origin);
+	}
 }

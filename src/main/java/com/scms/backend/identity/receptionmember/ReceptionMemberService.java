@@ -1,10 +1,5 @@
 package com.scms.backend.identity.receptionmember;
 
-import java.time.Clock;
-import java.time.LocalDate;
-import java.util.Map;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -17,7 +12,10 @@ import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.RegistrationValidationException;
 import com.scms.backend.common.validation.PersonNameRules;
 import com.scms.backend.notification.NotificationWriter;
-
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -27,19 +25,24 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReceptionMemberService {
 
 	private static final String ACCOUNT_CREATED = "ACCOUNT_CREATED";
+
 	private static final String ACCOUNT = "ACCOUNT";
 
 	private final AccountRepository accountRepository;
+
 	private final MemberProfileRepository memberProfileRepository;
+
 	private final AuditEventRepository auditEventRepository;
+
 	private final AccountIdentifierAvailability identifierAvailability;
+
 	private final PasswordEncoder passwordEncoder;
+
 	private final Clock clock;
+
 	private final NotificationWriter notificationWriter;
 
-	ReceptionMemberService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
-			AuditEventRepository auditEventRepository, AccountIdentifierAvailability identifierAvailability,
-			PasswordEncoder passwordEncoder, Clock clock, NotificationWriter notificationWriter) {
+	ReceptionMemberService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository, AuditEventRepository auditEventRepository, AccountIdentifierAvailability identifierAvailability, PasswordEncoder passwordEncoder, Clock clock, NotificationWriter notificationWriter) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.auditEventRepository = auditEventRepository;
@@ -56,36 +59,19 @@ public class ReceptionMemberService {
 		}
 		validateBirthDate(request.birthDate());
 		identifierAvailability.ensureAvailableForRegistration(request.email(), request.phone());
-
 		UUID accountId = UUID.randomUUID();
-		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, request.fullName(),
-			request.phone(), request.email(), request.birthDate(), passwordEncoder.encode(request.phone()));
+		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, request.fullName(), request.phone(), request.email(), request.birthDate(), passwordEncoder.encode(request.phone()));
 		try {
 			accountRepository.saveAndFlush(account);
-		}
-		catch (DataIntegrityViolationException exception) {
+		} catch (DataIntegrityViolationException exception) {
 			throw identifierAvailability.fromDatabase(exception);
 		}
-
-		MemberProfile profile = memberProfileRepository.saveAndFlush(
-			new MemberProfile(account, request.profileImageUrl(), null));
+		MemberProfile profile = memberProfileRepository.saveAndFlush(new MemberProfile(account, request.profileImageUrl(), null));
 		String memberId = profile.getMemberCode();
-		Map<String, Object> accountSnapshot = Map.of(
-			"accountId", accountId.toString(),
-			"memberId", memberId,
-			"fullName", account.getFullName(),
-			"email", account.getEmail(),
-			"birthDate", account.getBirthDate().toString(),
-			"role", account.getRole().name(),
-			"status", account.getStatus().name());
-
-		auditEventRepository.saveAndFlush(new AuditEvent(UUID.randomUUID(), receptionistAccountId, ACCOUNT_CREATED,
-			ACCOUNT, accountId, accountSnapshot));
-		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, ACCOUNT_CREATED, ACCOUNT, accountId,
-			Map.of("memberId", memberId));
-
-		return new ReceptionMemberCreateResponse(accountId, memberId, account.getFullName(), account.getPhone(),
-			account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus());
+		Map<String, Object> accountSnapshot = Map.of("accountId", accountId.toString(), "memberId", memberId, "fullName", account.getFullName(), "email", account.getEmail(), "birthDate", account.getBirthDate().toString(), "role", account.getRole().name(), "status", account.getStatus().name());
+		auditEventRepository.saveAndFlush(new AuditEvent(UUID.randomUUID(), receptionistAccountId, ACCOUNT_CREATED, ACCOUNT, accountId, accountSnapshot));
+		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, ACCOUNT_CREATED, ACCOUNT, accountId, Map.of("memberId", memberId));
+		return new ReceptionMemberCreateResponse(accountId, memberId, account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus());
 	}
 
 	private void validateBirthDate(LocalDate birthDate) {

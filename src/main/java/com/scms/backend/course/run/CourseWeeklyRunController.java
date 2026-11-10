@@ -1,0 +1,44 @@
+package com.scms.backend.course.run;
+
+import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/manager/course-runs")
+class CourseWeeklyRunController {
+
+	private final CourseWeeklyRunService service;
+
+	CourseWeeklyRunController(CourseWeeklyRunService service) {
+		this.service = service;
+	}
+
+	@Operation(description = "Preview calendar only, without saving or reserving resources. ISO weekdays: 1=Monday, 7=Sunday. Opening date must match a selected weekday. Times use Asia/Ho_Chi_Minh. End date is calculated from totalUnits.")
+	@PostMapping("/preview-schedule")
+	CourseWeeklyPreview preview(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CourseWeeklyScheduleRequest request) {
+		return service.preview(UUID.fromString(jwt.getSubject()), request);
+	}
+
+	@Operation(description = "Atomically create a draft Run and every weekly session. Calculates plannedStartAt/plannedEndAt; does not accept a manually supplied end date. Conflicts roll back the entire operation. Registration remains closed until the existing open-registration action. Retrying a saved runCode returns the existing duplicate-code conflict, never creates another Run.")
+	@PostMapping("/with-schedule")
+	ResponseEntity<CourseWeeklyRunResponse> create(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CourseWeeklyRunCreateRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(service.create(UUID.fromString(jwt.getSubject()), request));
+	}
+}

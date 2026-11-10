@@ -1,0 +1,291 @@
+package com.scms.backend.scheduling.session;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.scheduling.Booking;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.ClassSessionStatus;
+import com.scms.backend.scheduling.Discipline;
+import com.scms.backend.scheduling.DisciplineStatus;
+import com.scms.backend.scheduling.PtSessionAssignmentException;
+import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.Room;
+import com.scms.backend.scheduling.RoomStatus;
+import com.scms.backend.scheduling.SessionWaitlist;
+import com.scms.backend.scheduling.SportClass;
+import com.scms.backend.scheduling.SportClassStatus;
+import com.scms.backend.scheduling.SportClassType;
+import com.scms.backend.scheduling.booking.BookingRepository;
+import com.scms.backend.scheduling.room.RoomRepository;
+import com.scms.backend.scheduling.sportclass.SportClassRepository;
+import com.scms.backend.scheduling.waitlist.SessionWaitlistRepository;
+import com.scms.backend.training.CoachAssignment;
+import com.scms.backend.training.CoachAssignmentStatus;
+import com.scms.backend.training.assignment.CoachAssignmentRepository;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@ExtendWith(MockitoExtension.class)
+class ClassSessionAssignmentServiceTests {
+
+	@Mock
+	ClassSessionRepository sessions;
+
+	@Mock
+	SportClassRepository classes;
+
+	@Mock
+	RoomRepository rooms;
+
+	@Mock
+	AccountRepository accounts;
+
+	@Mock
+	AuditEventRepository audits;
+
+	@Mock
+	SessionLifecycleService lifecycle;
+
+	@Mock
+	BookingRepository bookings;
+
+	@Mock
+	SessionWaitlistRepository waitlists;
+
+	@Mock
+	CoachAssignmentRepository coachAssignments;
+
+	ClassSessionService service;
+
+	private final Instant now = Instant.parse("2026-10-06T05:30:00Z");
+
+	@BeforeEach
+	void setUp() {
+		service = new ClassSessionService(sessions, classes, rooms, accounts, audits, lifecycle, Clock.fixed(now, ZoneOffset.UTC), null, null, coachAssignments, null, bookings, waitlists);
+	}
+
+	@Test
+	void scheduledSessionCanChangeCoachAndRoomWithoutChangingSchedule() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		Account newCoach = coach("New Coach");
+		Room newRoom = new Room(UUID.randomUUID(), "Studio B", 30, RoomStatus.ACTIVE);
+		stubAssignment(session, newCoach, newRoom);
+		when(sessions.saveAndFlush(session)).thenReturn(session);
+		Instant originalStart = session.getStartTime();
+		Instant originalEnd = session.getEndTime();
+		int originalCapacity = session.getCapacity();
+		String originalCoachId = session.getTeachingCoach().getId().toString();
+		String originalRoomId = session.getRoom().getId().toString();
+		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(newCoach.getId(), newRoom.getId()));
+		assertThat(result.coachId()).isEqualTo(newCoach.getId());
+		assertThat(result.roomId()).isEqualTo(newRoom.getId());
+		assertThat(result.startTime()).isEqualTo(originalStart);
+		assertThat(result.endTime()).isEqualTo(originalEnd);
+		assertThat(result.capacity()).isEqualTo(originalCapacity);
+		ArgumentCaptor<AuditEvent> event = ArgumentCaptor.forClass(AuditEvent.class);
+		verify(audits).save(event.capture());
+		assertThat(event.getValue()).satisfies(audit -> {
+			assertThat(audit.getActorAccountId()).isEqualTo(managerId);
+			assertThat(audit.getAction()).isEqualTo("SESSION_ASSIGNMENT_CHANGED");
+			assertThat(audit.getTargetType()).isEqualTo("CLASS_SESSION");
+			assertThat(audit.getTargetId()).isEqualTo(session.getId());
+			assertThat(audit.getBeforeData()).containsEntry("coachId", originalCoachId).containsEntry("roomId", originalRoomId);
+			assertThat(audit.getAfterData()).containsEntry("coachId", newCoach.getId().toString()).containsEntry("roomId", newRoom.getId().toString());
+		});
+	}
+
+	@Test
+	void unchangedAssignmentWritesNoAuditOrSession() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		ClassSessionDetailResponse result = service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), session.getRoom().getId()));
+		assertThat(result.coachId()).isEqualTo(session.getTeachingCoach().getId());
+		verify(sessions, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void staleAssignmentVersionCannotOverwriteAnotherManagersChange() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		ReflectionTestUtils.setField(session, "version", 3L);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(session.getTeachingCoach().getId(), null, 2L))).isInstanceOfSatisfying(RecurringScheduleException.class, error -> assertThat(error.getCode()).isEqualTo("SESSION_VERSION_CONFLICT"));
+		verify(sessions, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void updateAssignmentLocksSourceAndTargetRoomsBeforeSession() {
+		UUID managerId = activeManager();
+		Room source = new Room(UUID.fromString("00000000-0000-0000-0000-000000000001"), "Studio A", 20, RoomStatus.ACTIVE);
+		Room target = new Room(UUID.fromString("00000000-0000-0000-0000-000000000002"), "Studio B", 30, RoomStatus.ACTIVE);
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP, null, SportClassStatus.ACTIVE);
+		Account currentCoach = coach("Coach");
+		ClassSession session = new ClassSession(UUID.randomUUID(), sportClass, null, currentCoach, source, now.plusSeconds(3600), now.plusSeconds(7200), 15, UUID.randomUUID());
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(source.getId()));
+		when(classes.findByIdForUpdate(sportClass.getId())).thenReturn(Optional.of(sportClass));
+		when(accounts.findByIdForUpdate(currentCoach.getId())).thenReturn(Optional.of(currentCoach));
+		when(rooms.findByIdForUpdate(source.getId())).thenReturn(Optional.of(source));
+		when(rooms.findByIdForUpdate(target.getId())).thenReturn(Optional.of(target));
+		service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(currentCoach.getId(), target.getId()));
+		InOrder ordered = inOrder(rooms, sessions);
+		ordered.verify(rooms).findByIdForUpdate(source.getId());
+		ordered.verify(rooms).findByIdForUpdate(target.getId());
+		ordered.verify(sessions).findByIdForUpdate(session.getId());
+	}
+
+	@Test
+	void nonScheduledSessionCannotChangeAssignment() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		ReflectionTestUtils.setField(session, "status", ClassSessionStatus.IN_PROGRESS);
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(any(UUID.class))).thenReturn(Optional.of(session.getRoom()));
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(UUID.randomUUID(), UUID.randomUUID()))).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_NOT_SCHEDULED");
+		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void conflictingAssignmentIsRejectedBeforeWrite() {
+		UUID managerId = activeManager();
+		ClassSession session = session();
+		Account newCoach = coach("New Coach");
+		Room newRoom = new Room(UUID.randomUUID(), "Studio B", 30, RoomStatus.ACTIVE);
+		stubAssignment(session, newCoach, newRoom);
+		when(sessions.existsCoachOverlapExcluding(session.getId(), newCoach.getId(), session.getStartTime(), session.getEndTime())).thenReturn(true);
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(newCoach.getId(), newRoom.getId()))).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_CONFLICT");
+		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void ptCoachChangeRejectsIncompatibleBookedAndWaitlistedMembers() {
+		UUID managerId = activeManager();
+		ClassSession session = ptSession();
+		Account newCoach = coach("New PT Coach");
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), now);
+		SessionWaitlist waitlist = new SessionWaitlist(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(), "MEMBER", now);
+		stubAssignment(session, newCoach, session.getRoom());
+		when(bookings.findBookedBySessionForUpdate(session.getId())).thenReturn(List.of(booking));
+		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(waitlist));
+		when(coachAssignments.findActiveForMembersAndCoachForUpdate(any(), any())).thenReturn(List.of());
+		when(accounts.findMemberIdentity(booking.getMemberAccountId())).thenReturn(Optional.of(identity("MB-100001", "Booked Member")));
+		when(accounts.findMemberIdentity(waitlist.getMemberId())).thenReturn(Optional.of(identity("MB-100002", "Waitlisted Member")));
+		assertThatThrownBy(() -> service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(newCoach.getId(), null))).isInstanceOfSatisfying(PtSessionAssignmentException.class, error -> {
+			assertThat(error.getCode()).isEqualTo("PT_SESSION_ASSIGNMENT_HAS_INCOMPATIBLE_MEMBERS");
+			assertThat(error.getAffectedBookings()).containsExactly(new PtSessionAffectedBooking(booking.getId(), booking.getMemberAccountId(), "MB-100001", "Booked Member"));
+			assertThat(error.getAffectedWaitlists()).containsExactly(new PtSessionAffectedWaitlist(waitlist.getId(), waitlist.getMemberId(), "MB-100002", "Waitlisted Member"));
+		});
+		assertThat(session.getTeachingCoach().getId()).isNotEqualTo(newCoach.getId());
+		verify(sessions, never()).saveAndFlush(session);
+		verify(audits, never()).save(any());
+	}
+
+	@Test
+	void ptCoachChangeSucceedsWhenEveryBookedAndWaitlistedMemberHasNewCoachAssignment() {
+		UUID managerId = activeManager();
+		ClassSession session = ptSession();
+		Account newCoach = coach("Compatible PT Coach");
+		Booking booking = new Booking(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), now);
+		SessionWaitlist waitlist = new SessionWaitlist(UUID.randomUUID(), session.getId(), UUID.randomUUID(), UUID.randomUUID(), "MEMBER", now);
+		stubAssignment(session, newCoach, session.getRoom());
+		when(bookings.findBookedBySessionForUpdate(session.getId())).thenReturn(List.of(booking));
+		when(waitlists.findWaitingBySessionForUpdate(session.getId())).thenReturn(List.of(waitlist));
+		when(coachAssignments.findActiveForMembersAndCoachForUpdate(any(), any())).thenReturn(List.of(assignment(booking.getMemberAccountId(), newCoach.getId(), managerId), assignment(waitlist.getMemberId(), newCoach.getId(), managerId)));
+		when(sessions.saveAndFlush(session)).thenReturn(session);
+		ClassSessionDetailResponse response = service.updateAssignment(managerId, session.getId(), new ClassSessionAssignmentRequest(newCoach.getId(), null));
+		assertThat(response.coachId()).isEqualTo(newCoach.getId());
+		verify(sessions).saveAndFlush(session);
+	}
+
+	private void stubAssignment(ClassSession session, Account coach, Room room) {
+		when(sessions.findByIdForUpdate(session.getId())).thenReturn(Optional.of(session));
+		when(sessions.findRoomIdById(session.getId())).thenReturn(Optional.of(session.getRoom().getId()));
+		when(rooms.findByIdForUpdate(session.getRoom().getId())).thenReturn(Optional.of(session.getRoom()));
+		when(rooms.findByIdForUpdate(room.getId())).thenReturn(Optional.of(room));
+		when(classes.findById(session.getSportClass().getId())).thenReturn(Optional.of(session.getSportClass()));
+		when(accounts.findById(coach.getId())).thenReturn(Optional.of(coach));
+	}
+
+	private UUID activeManager() {
+		UUID id = UUID.randomUUID();
+		when(accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		return id;
+	}
+
+	private ClassSession session() {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP, null, SportClassStatus.ACTIVE);
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach("Coach"), new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE), now.plusSeconds(3600), now.plusSeconds(7200), 15, UUID.randomUUID());
+	}
+
+	private ClassSession ptSession() {
+		Discipline discipline = new Discipline(UUID.randomUUID(), "Personal Training", null, DisciplineStatus.ACTIVE);
+		SportClass sportClass = new SportClass(UUID.randomUUID(), discipline, "PT 1-1", SportClassType.PT_1_1, null, SportClassStatus.ACTIVE);
+		return new ClassSession(UUID.randomUUID(), sportClass, null, coach("PT Coach"), new Room(UUID.randomUUID(), "PT Zone", 20, RoomStatus.ACTIVE), now.plusSeconds(3600), now.plusSeconds(7200), 1, UUID.randomUUID());
+	}
+
+	private CoachAssignment assignment(UUID memberId, UUID coachId, UUID managerId) {
+		return new CoachAssignment(UUID.randomUUID(), memberId, coachId, managerId, CoachAssignmentStatus.ACTIVE, now.minusSeconds(3600), now.minusSeconds(3600));
+	}
+
+	private AccountRepository.MemberIdentityView identity(String code, String name) {
+		return new AccountRepository.MemberIdentityView() {
+
+			@Override
+			public String getMemberCode() {
+				return code;
+			}
+
+			@Override
+			public String getFullName() {
+				return name;
+			}
+
+			@Override
+			public String getPhone() {
+				return "0900000000";
+			}
+		};
+	}
+
+	private Account coach(String name) {
+		UUID id = UUID.randomUUID();
+		return new Account(id, AccountRole.COACH, AccountStatus.ACTIVE, name, "090" + id.toString().substring(0, 8), id + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password");
+	}
+}

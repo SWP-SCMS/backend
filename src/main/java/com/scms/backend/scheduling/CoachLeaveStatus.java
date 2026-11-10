@@ -1,6 +1,7 @@
 package com.scms.backend.scheduling;
 
 public enum CoachLeaveStatus {
+
 	PENDING,
 	APPROVED,
 	REJECTED,
@@ -8,4 +9,3 @@ public enum CoachLeaveStatus {
 	EXPIRED,
 	CANCELLED
 }
-

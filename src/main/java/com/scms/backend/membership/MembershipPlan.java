@@ -1,20 +1,19 @@
 package com.scms.backend.membership;
 
-import java.time.Instant;
-import java.util.HashSet;
-import java.util.Set;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
+import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "membership_plans")
@@ -48,15 +47,13 @@ public class MembershipPlan {
 	private Long version;
 
 	@ManyToMany(fetch = FetchType.LAZY)
-	@JoinTable(name = "membership_plan_benefits",
-		joinColumns = @JoinColumn(name = "plan_code", referencedColumnName = "plan_code"),
-		inverseJoinColumns = @JoinColumn(name = "benefit_code", referencedColumnName = "code"))
+	@JoinTable(name = "membership_plan_benefits", joinColumns = @JoinColumn(name = "plan_code", referencedColumnName = "plan_code"), inverseJoinColumns = @JoinColumn(name = "benefit_code", referencedColumnName = "code"))
 	private Set<MembershipBenefit> benefits = new HashSet<>();
 
 	protected MembershipPlan() {
 	}
 
-	MembershipPlan(String planCode, String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
+	public MembershipPlan(String planCode, String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
 		this.planCode = planCode;
 		this.displayName = displayName;
 		this.status = status;
@@ -85,12 +82,23 @@ public class MembershipPlan {
 		return Set.copyOf(benefits);
 	}
 
-	public MembershipPlanStatus getStatus() { return status; }
-	public Instant getCreatedAt() { return createdAt; }
-	public Instant getUpdatedAt() { return updatedAt; }
-	public Long getVersion() { return version; }
+	public MembershipPlanStatus getStatus() {
+		return status;
+	}
 
-	void update(String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public Instant getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
+
+	public void update(String displayName, MembershipPlanStatus status, Set<MembershipBenefit> benefits) {
 		this.displayName = displayName;
 		this.status = status;
 		this.benefits = new HashSet<>(benefits);

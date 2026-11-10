@@ -1,14 +1,13 @@
 package com.scms.backend.centervisit;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "center_visits")
@@ -60,8 +59,7 @@ class CenterVisit {
 		this(id, memberAccountId, membershipId, checkedInByAccountId, checkedInAt, null);
 	}
 
-	CenterVisit(UUID id, UUID memberAccountId, UUID membershipId, UUID checkedInByAccountId, Instant checkedInAt,
-			String idempotencyKey) {
+	CenterVisit(UUID id, UUID memberAccountId, UUID membershipId, UUID checkedInByAccountId, Instant checkedInAt, String idempotencyKey) {
 		this.id = id;
 		this.memberAccountId = memberAccountId;
 		this.membershipId = membershipId;
@@ -70,10 +68,8 @@ class CenterVisit {
 		this.idempotencyKey = idempotencyKey;
 	}
 
-	static CenterVisit forCourse(UUID id, UUID memberAccountId, UUID courseEnrollmentId, UUID courseSessionId,
-			UUID checkedInByAccountId, Instant checkedInAt, String idempotencyKey) {
-		CenterVisit visit = new CenterVisit(id, memberAccountId, null, checkedInByAccountId, checkedInAt,
-			idempotencyKey);
+	static CenterVisit forCourse(UUID id, UUID memberAccountId, UUID courseEnrollmentId, UUID courseSessionId, UUID checkedInByAccountId, Instant checkedInAt, String idempotencyKey) {
+		CenterVisit visit = new CenterVisit(id, memberAccountId, null, checkedInByAccountId, checkedInAt, idempotencyKey);
 		visit.source = CenterVisitSource.COURSE;
 		visit.courseEnrollmentId = courseEnrollmentId;
 		visit.courseSessionId = courseSessionId;
@@ -81,22 +77,58 @@ class CenterVisit {
 	}
 
 	void checkout(UUID actorId, CheckoutSource source, Instant at) {
-		if (checkedOutAt != null) return;
+		if (checkedOutAt != null)
+			return;
 		checkedOutAt = at;
 		checkedOutByAccountId = actorId;
 		checkoutSource = source;
 	}
 
-	UUID getId() { return id; }
-	UUID getMemberAccountId() { return memberAccountId; }
-	UUID getMembershipId() { return membershipId; }
-	CenterVisitSource getSource() { return source; }
-	UUID getCourseEnrollmentId() { return courseEnrollmentId; }
-	UUID getCourseSessionId() { return courseSessionId; }
-	UUID getCheckedInByAccountId() { return checkedInByAccountId; }
-	Instant getCheckedInAt() { return checkedInAt; }
-	Instant getCheckedOutAt() { return checkedOutAt; }
-	UUID getCheckedOutByAccountId() { return checkedOutByAccountId; }
-	CheckoutSource getCheckoutSource() { return checkoutSource; }
-	String getIdempotencyKey() { return idempotencyKey; }
+	UUID getId() {
+		return id;
+	}
+
+	UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	UUID getMembershipId() {
+		return membershipId;
+	}
+
+	CenterVisitSource getSource() {
+		return source;
+	}
+
+	UUID getCourseEnrollmentId() {
+		return courseEnrollmentId;
+	}
+
+	UUID getCourseSessionId() {
+		return courseSessionId;
+	}
+
+	UUID getCheckedInByAccountId() {
+		return checkedInByAccountId;
+	}
+
+	Instant getCheckedInAt() {
+		return checkedInAt;
+	}
+
+	Instant getCheckedOutAt() {
+		return checkedOutAt;
+	}
+
+	UUID getCheckedOutByAccountId() {
+		return checkedOutByAccountId;
+	}
+
+	CheckoutSource getCheckoutSource() {
+		return checkoutSource;
+	}
+
+	String getIdempotencyKey() {
+		return idempotencyKey;
+	}
 }

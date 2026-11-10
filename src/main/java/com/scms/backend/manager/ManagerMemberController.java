@@ -1,10 +1,8 @@
 package com.scms.backend.manager;
 
-import java.util.UUID;
-
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
-
+import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -30,15 +28,11 @@ public class ManagerMemberController {
 	}
 
 	@GetMapping
-	ResponseEntity<MemberAccountPageResponse> search(@AuthenticationPrincipal Jwt jwt,
-			@RequestParam(required = false) String query, @RequestParam(required = false) AccountStatus status,
-            @RequestParam(required = false) String planCode,
-			@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+	ResponseEntity<MemberAccountPageResponse> search(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) String query, @RequestParam(required = false) AccountStatus status, @RequestParam(required = false) String planCode, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		if (page < 0 || size < 1 || size > 100) {
 			throw new StaffAccountValidationException("page", "page must be >= 0 and size must be between 1 and 100");
 		}
-		Pageable pageable = PageRequest.of(page, size,
-			Sort.by("account.fullName").ascending().and(Sort.by("accountId")));
+		Pageable pageable = PageRequest.of(page, size, Sort.by("account.fullName").ascending().and(Sort.by("accountId")));
 		return ResponseEntity.ok(service.search(accountId(jwt), query, status, planCode, pageable));
 	}
 
@@ -48,8 +42,7 @@ public class ManagerMemberController {
 	}
 
 	@PatchMapping("/{id}")
-	ResponseEntity<MemberAccountResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
-			@RequestBody MemberProfilePatchRequest request) {
+	ResponseEntity<MemberAccountResponse> update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id, @RequestBody MemberProfilePatchRequest request) {
 		return ResponseEntity.ok(service.update(accountId(jwt), id, request));
 	}
 

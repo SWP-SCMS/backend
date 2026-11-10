@@ -1,0 +1,401 @@
+package com.scms.backend.scheduling.session;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.notification.NotificationOutboxDispatcher;
+import com.scms.backend.scheduling.Booking;
+import com.scms.backend.scheduling.BookingException;
+import com.scms.backend.scheduling.BookingStatus;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.Discipline;
+import com.scms.backend.scheduling.DisciplineStatus;
+import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.Room;
+import com.scms.backend.scheduling.RoomStatus;
+import com.scms.backend.scheduling.SportClass;
+import com.scms.backend.scheduling.SportClassStatus;
+import com.scms.backend.scheduling.SportClassType;
+import com.scms.backend.scheduling.booking.BookingResponse;
+import com.scms.backend.scheduling.booking.BookingService;
+import com.scms.backend.scheduling.discipline.DisciplineRepository;
+import com.scms.backend.scheduling.room.RoomRepository;
+import com.scms.backend.scheduling.sportclass.SportClassRepository;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@Testcontainers
+@SpringBootTest
+@ActiveProfiles("test")
+@TestPropertySource(properties = "scms.notification-outbox-initial-delay-ms=3600000")
+class ClassSessionCancellationIntegrationTests {
+
+	@Container
+	@ServiceConnection
+	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+
+	@Autowired
+	ClassSessionCancellationService service;
+
+	@Autowired
+	BookingService bookingService;
+
+	@Autowired
+	ClassSessionRepository sessions;
+
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	DisciplineRepository disciplines;
+
+	@Autowired
+	SportClassRepository classes;
+
+	@Autowired
+	RoomRepository rooms;
+
+	@Autowired
+	JdbcTemplate jdbc;
+
+	@Autowired
+	NotificationOutboxDispatcher notificationOutboxDispatcher;
+
+	@MockitoBean
+	ExplicitBulkCancellationLockRendezvous explicitBulkLockRendezvous;
+
+	@Test
+	void memberBookingIsPersistedAuditedNotifiedAndCannotOverbook() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Booking Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Booking Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Booking Member");
+		Account otherMember = saveAccount(AccountRole.MEMBER, "Other Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Core", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Booking Studio", 10, RoomStatus.ACTIVE));
+		ClassSession session = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2030-01-01T04:00:00Z"), Instant.parse("2030-01-01T05:00:00Z"), 1, manager.getId()));
+		UUID membershipId = insertMembership(manager.getId(), member.getId());
+		insertMembership(manager.getId(), otherMember.getId());
+		BookingResponse response;
+		installNotificationFailure();
+		try {
+			response = bookingService.book(member.getId(), session.getId());
+			notificationOutboxDispatcher.dispatchAvailable();
+		} finally {
+			dropNotificationFailure();
+		}
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'", Long.class, session.getId())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CREATED' " + "and actor_account_id = ?", Long.class, member.getId())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where notification_type = 'BOOKING_CREATED' " + "and recipient_account_id = ?", Long.class, member.getId())).isZero();
+		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class, "BOOKING_CREATED:" + response.id())).isEqualTo("FAILED");
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' where event_key=?", "BOOKING_CREATED:" + response.id());
+		notificationOutboxDispatcher.dispatchAvailable();
+		assertThat(response.membershipId()).isEqualTo(membershipId);
+		assertThat(jdbc.queryForObject("select count(*) from bookings where id = ? and status = 'BOOKED'", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CREATED' " + "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where event_key = ? and target_id = ?", Long.class, "BOOKING_CREATED:" + response.id(), response.id())).isEqualTo(1L);
+		assertThatThrownBy(() -> bookingService.book(member.getId(), session.getId())).isInstanceOf(BookingException.class).extracting("code").isEqualTo("BOOKING_DUPLICATE");
+		assertThatThrownBy(() -> bookingService.book(otherMember.getId(), session.getId())).isInstanceOf(BookingException.class).extracting("code").isEqualTo("SESSION_FULL");
+		BookingResponse cancelled;
+		installNotificationFailure();
+		try {
+			cancelled = bookingService.cancel(member.getId(), response.id());
+			notificationOutboxDispatcher.dispatchAvailable();
+		} finally {
+			dropNotificationFailure();
+		}
+		assertThat(jdbc.queryForObject("select status from bookings where id = ?", String.class, response.id())).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CANCELLED' " + "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where event_key = ?", Long.class, "BOOKING_CANCELLED:" + response.id())).isZero();
+		assertThat(jdbc.queryForObject("select status from notification_outbox where event_key = ?", String.class, "BOOKING_CANCELLED:" + response.id())).isEqualTo("FAILED");
+		jdbc.update("update notification_outbox set next_attempt_at=current_timestamp - interval '1 second' where event_key=?", "BOOKING_CANCELLED:" + response.id());
+		notificationOutboxDispatcher.dispatchAvailable();
+		BookingResponse rebooked = bookingService.book(member.getId(), session.getId());
+		notificationOutboxDispatcher.dispatchAvailable();
+		assertThat(cancelled.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(cancelled.cancellationSource()).isEqualTo("MEMBER");
+		assertThat(rebooked.id()).isNotEqualTo(response.id());
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ?", Long.class, session.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'BOOKING_CANCELLED' " + "and target_id = ?", Long.class, response.id())).isEqualTo(1L);
+		assertThat(jdbc.queryForObject("select count(*) from notifications where event_key = ? and target_id = ?", Long.class, "BOOKING_CANCELLED:" + response.id(), response.id())).isEqualTo(1L);
+	}
+
+	@Test
+	void receptionistBooksAndCancelsForMemberWithCorrectOwnershipAndActor() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Reception Booking Manager");
+		Account receptionist = saveAccount(AccountRole.RECEPTIONIST, "Reception Booking Receptionist");
+		Account coach = saveAccount(AccountRole.COACH, "Reception Booking Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Reception Booking Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Boxing", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Fundamentals", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Reception Booking Studio", 10, RoomStatus.ACTIVE));
+		ClassSession session = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2030-02-01T04:00:00Z"), Instant.parse("2030-02-01T05:00:00Z"), 10, manager.getId()));
+		insertMembership(manager.getId(), member.getId());
+		BookingResponse booked = bookingService.bookForMember(receptionist.getId(), member.getId(), session.getId());
+		BookingResponse cancelled = bookingService.cancelForMember(receptionist.getId(), member.getId(), booked.id());
+		notificationOutboxDispatcher.dispatchAvailable();
+		assertThat(booked.memberId()).isEqualTo(member.getId());
+		assertThat(booked.bookedBy()).isEqualTo(receptionist.getId());
+		assertThat(cancelled.cancelledBy()).isEqualTo(receptionist.getId());
+		assertThat(cancelled.cancellationSource()).isEqualTo("RECEPTIONIST");
+		assertThat(jdbc.queryForMap("""
+			select member_account_id, booked_by_account_id, cancelled_by_account_id, cancellation_source
+			from bookings where id = ?
+			""", booked.id())).containsEntry("member_account_id", member.getId()).containsEntry("booked_by_account_id", receptionist.getId()).containsEntry("cancelled_by_account_id", receptionist.getId()).containsEntry("cancellation_source", "RECEPTIONIST");
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events
+			where target_id = ? and actor_account_id = ? and action in ('BOOKING_CREATED', 'BOOKING_CANCELLED')
+			""", Long.class, booked.id(), receptionist.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from notifications where target_id = ? and recipient_account_id = ?
+			""", Long.class, booked.id(), member.getId())).isEqualTo(2L);
+	}
+
+	@Test
+	void bookedSessionCannotBeCancelledAndKeepsBookingsAuditAndOutboxUnchanged() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Member");
+		Account secondMember = saveAccount(AccountRole.MEMBER, "Second Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Yoga", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Vinyasa", SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE));
+		ClassSession session = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2030-01-01T02:00:00Z"), Instant.parse("2030-01-01T03:00:00Z"), 12, manager.getId()));
+		UUID membershipId = insertMembership(manager.getId(), member.getId());
+		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
+		UUID bookingId = UUID.randomUUID();
+		UUID secondBookingId = UUID.randomUUID();
+		jdbc.update("""
+			insert into bookings (id, class_session_id, member_account_id, membership_id, status,
+				booked_by_account_id)
+			values (?, ?, ?, ?, 'BOOKED', ?)
+			""", bookingId, session.getId(), member.getId(), membershipId, member.getId());
+		jdbc.update("""
+			insert into bookings (id, class_session_id, member_account_id, membership_id, status,
+				booked_by_account_id)
+			values (?, ?, ?, ?, 'BOOKED', ?)
+			""", secondBookingId, session.getId(), secondMember.getId(), secondMembershipId, secondMember.getId());
+		assertThat(sessions.countBookedBySessionIds(List.of(session.getId()))).singleElement().satisfies(count -> {
+			assertThat(count.getSessionId()).isEqualTo(session.getId());
+			assertThat(count.getBookedCount()).isEqualTo(2);
+		});
+		assertThatThrownBy(() -> service.cancel(manager.getId(), session.getId(), new ClassSessionCancellationRequest("Coach unavailable"))).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_HAS_MEMBERS");
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class, session.getId())).isEqualTo("SCHEDULED");
+		assertThat(jdbc.queryForObject("select count(*) from bookings where class_session_id = ? and status = 'BOOKED'", Long.class, session.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?", Long.class, session.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where notification_type = 'SESSION_CANCELLED' and target_id = ?", Long.class, session.getId())).isZero();
+	}
+
+	@Test
+	void bulkCancellationRejectsBookedSessionsThenCancelsEmptySessionsIdempotently() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Bulk Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Bulk Coach");
+		Account firstMember = saveAccount(AccountRole.MEMBER, "Bulk Member One");
+		Account secondMember = saveAccount(AccountRole.MEMBER, "Bulk Member Two");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Bulk Yoga", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Bulk Flow", SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Bulk Studio", 20, RoomStatus.ACTIVE));
+		ClassSession first = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-01-01T02:00:00Z"), Instant.parse("2031-01-01T03:00:00Z"), 12, manager.getId()));
+		ClassSession second = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-01-01T04:00:00Z"), Instant.parse("2031-01-01T05:00:00Z"), 12, manager.getId()));
+		UUID firstMembershipId = insertMembership(manager.getId(), firstMember.getId());
+		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
+		UUID firstBookingId = insertBooking(first, firstMember, firstMembershipId);
+		UUID secondBookingId = insertBooking(second, secondMember, secondMembershipId);
+		List<UUID> requestedIds = List.of(second.getId(), first.getId());
+		List<UUID> expectedIds = requestedIds.stream().sorted(Comparator.comparing(UUID::toString)).toList();
+		// Make the first locked session empty, so rejection must roll back its cancellation too.
+		UUID firstLockedBooking = expectedIds.getFirst().equals(first.getId()) ? firstBookingId : secondBookingId;
+		UUID firstLockedMember = expectedIds.getFirst().equals(first.getId()) ? firstMember.getId() : secondMember.getId();
+		UUID remainingBooking = firstLockedBooking.equals(firstBookingId) ? secondBookingId : firstBookingId;
+		UUID remainingMember = firstLockedBooking.equals(firstBookingId) ? secondMember.getId() : firstMember.getId();
+		bookingService.cancel(firstLockedMember, firstLockedBooking);
+		assertThatThrownBy(() -> service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "weather closure"))).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_HAS_MEMBERS");
+		assertThat(jdbc.queryForObject("select count(*) from class_sessions where id in (?, ?) and status = 'SCHEDULED'", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select status from bookings where id = ?", String.class, remainingBooking)).isEqualTo("BOOKED");
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id in (?, ?)", Long.class, first.getId(), second.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where notification_type = 'SESSION_CANCELLED' and target_id in (?, ?)", Long.class, first.getId(), second.getId())).isZero();
+		bookingService.cancel(remainingMember, remainingBooking);
+		ClassSessionCancellationBatchResponse response = service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "weather closure"));
+		ClassSessionCancellationBatchResponse retry = service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(requestedIds, null, null, null, "retry"));
+		assertThat(response.cancelledCount()).isEqualTo(2);
+		assertThat(response.sessionIds()).containsExactlyElementsOf(expectedIds);
+		assertThat(retry.cancelledCount()).isZero();
+		assertThat(retry.sessionIds()).isEmpty();
+		assertThat(jdbc.queryForObject("""
+			select count(*) from class_sessions where id in (?, ?) and status = 'CANCELLED'
+			""", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from bookings where class_session_id in (?, ?) and status = 'CANCELLED'
+			""", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id in (?, ?)
+			""", Long.class, first.getId(), second.getId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("""
+			select count(*) from notification_outbox
+			where notification_type = 'SESSION_CANCELLED' and target_id in (?, ?)
+			""", Long.class, first.getId(), second.getId())).isZero();
+	}
+
+	@Test
+	void mixedExplicitSelectionRollsBackWithoutCancellingTheEligibleSession() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Stale Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Stale Coach");
+		Account member = saveAccount(AccountRole.MEMBER, "Stale Member");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Stale Yoga", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Stale Flow", SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Stale Studio", 20, RoomStatus.ACTIVE));
+		ClassSession eligible = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-02-01T02:00:00Z"), Instant.parse("2031-02-01T03:00:00Z"), 12, manager.getId()));
+		ClassSession cancelled = new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-02-01T04:00:00Z"), Instant.parse("2031-02-01T05:00:00Z"), 12, manager.getId());
+		cancelled.cancel(Instant.parse("2030-12-01T00:00:00Z"), "already cancelled");
+		sessions.saveAndFlush(cancelled);
+		UUID membershipId = insertMembership(manager.getId(), member.getId());
+		insertBooking(eligible, member, membershipId);
+		assertThatThrownBy(() -> service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(List.of(cancelled.getId(), eligible.getId()), null, null, null, "stale selection"))).isInstanceOf(RecurringScheduleException.class).hasFieldOrPropertyWithValue("code", "SESSION_BULK_SELECTION_CHANGED").hasFieldOrPropertyWithValue("eligibleSessionIds", List.of(eligible.getId())).hasFieldOrPropertyWithValue("ineligibleSessionIds", List.of(cancelled.getId()));
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class, eligible.getId())).isEqualTo("SCHEDULED");
+		assertThat(jdbc.queryForObject("select status from bookings where class_session_id = ?", String.class, eligible.getId())).isEqualTo("BOOKED");
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, eligible.getId())).isZero();
+		assertThat(jdbc.queryForObject("""
+			select count(*) from notification_outbox where notification_type = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, eligible.getId())).isZero();
+	}
+
+	@Test
+	void concurrentOppositeOrderBulkCancellationCancelsEachEffectExactlyOnceWithoutDeadlock() throws Exception {
+		Account manager = saveAccount(AccountRole.MANAGER, "Concurrent Manager");
+		Account coach = saveAccount(AccountRole.COACH, "Concurrent Coach");
+		Account firstMember = saveAccount(AccountRole.MEMBER, "Concurrent Member One");
+		Account secondMember = saveAccount(AccountRole.MEMBER, "Concurrent Member Two");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Concurrent Yoga", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Concurrent Flow", SportClassType.YOGA, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Concurrent Studio", 20, RoomStatus.ACTIVE));
+		ClassSession first = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-03-01T02:00:00Z"), Instant.parse("2031-03-01T03:00:00Z"), 12, manager.getId()));
+		ClassSession second = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coach, room, Instant.parse("2031-03-01T04:00:00Z"), Instant.parse("2031-03-01T05:00:00Z"), 12, manager.getId()));
+		UUID firstMembershipId = insertMembership(manager.getId(), firstMember.getId());
+		UUID secondMembershipId = insertMembership(manager.getId(), secondMember.getId());
+		UUID firstBookingId = insertBooking(first, firstMember, firstMembershipId);
+		UUID secondBookingId = insertBooking(second, secondMember, secondMembershipId);
+		bookingService.cancel(firstMember.getId(), firstBookingId);
+		bookingService.cancel(secondMember.getId(), secondBookingId);
+		CountDownLatch atLockBoundary = new CountDownLatch(2);
+		CountDownLatch releaseLockBoundary = new CountDownLatch(1);
+		doAnswer(invocation -> {
+			atLockBoundary.countDown();
+			if (!releaseLockBoundary.await(5, TimeUnit.SECONDS)) {
+				throw new AssertionError("Timed out waiting to release explicit bulk lock boundary");
+			}
+			return null;
+		}).when(explicitBulkLockRendezvous).await();
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<ClassSessionCancellationBatchResponse> firstRequest = executor.submit(() -> {
+				return service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(List.of(first.getId(), second.getId()), null, null, null, "concurrent one"));
+			});
+			Future<ClassSessionCancellationBatchResponse> secondRequest = executor.submit(() -> {
+				return service.cancelBulk(manager.getId(), new ClassSessionCancellationBatchRequest(List.of(second.getId(), first.getId()), null, null, null, "concurrent two"));
+			});
+			boolean bothReachedLockBoundary;
+			try {
+				bothReachedLockBoundary = atLockBoundary.await(5, TimeUnit.SECONDS);
+			} finally {
+				releaseLockBoundary.countDown();
+			}
+			assertThat(bothReachedLockBoundary).isTrue();
+			assertThat(List.of(firstRequest.get(10, TimeUnit.SECONDS).cancelledCount(), secondRequest.get(10, TimeUnit.SECONDS).cancelledCount())).containsExactlyInAnyOrder(0, 2);
+		}
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class, first.getId())).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForObject("select status from class_sessions where id = ?", String.class, second.getId())).isEqualTo("CANCELLED");
+		assertThat(jdbc.queryForMap("""
+			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
+			""", firstBookingId)).containsEntry("status", "CANCELLED").containsEntry("cancellation_source", "MEMBER").containsEntry("cancelled_by_account_id", firstMember.getId());
+		assertThat(jdbc.queryForMap("""
+			select status, cancellation_source, cancelled_by_account_id from bookings where id = ?
+			""", secondBookingId)).containsEntry("status", "CANCELLED").containsEntry("cancellation_source", "MEMBER").containsEntry("cancelled_by_account_id", secondMember.getId());
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, first.getId())).isOne();
+		assertThat(jdbc.queryForObject("""
+			select count(*) from audit_events where action = 'SESSION_CANCELLED' and target_id = ?
+			""", Long.class, second.getId())).isOne();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?", Long.class, "SESSION_CANCELLED:" + first.getId() + ":" + firstMember.getId())).isZero();
+		assertThat(jdbc.queryForObject("select count(*) from notification_outbox where event_key = ?", Long.class, "SESSION_CANCELLED:" + second.getId() + ":" + secondMember.getId())).isZero();
+	}
+
+	private UUID insertBooking(ClassSession session, Account member, UUID membershipId) {
+		UUID bookingId = UUID.randomUUID();
+		jdbc.update("""
+			insert into bookings (id, class_session_id, member_account_id, membership_id, status,
+				booked_by_account_id)
+			values (?, ?, ?, ?, 'BOOKED', ?)
+			""", bookingId, session.getId(), member.getId(), membershipId, member.getId());
+		return bookingId;
+	}
+
+	private UUID insertMembership(UUID managerId, UUID memberId) {
+		UUID offerId = UUID.randomUUID();
+		UUID orderId = UUID.randomUUID();
+		UUID paymentId = UUID.randomUUID();
+		UUID membershipId = UUID.randomUUID();
+		jdbc.update("""
+			insert into membership_offers (id, plan_code, name, description, price_amount, duration_days,
+				status, created_by_account_id)
+			values (?, 'PLUS', 'Plus', 'Plus membership', 12000, 3650, 'ACTIVE', ?)
+			""", offerId, managerId);
+		jdbc.update("""
+			insert into membership_orders (id, order_number, member_account_id, created_by_account_id, offer_id,
+				offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot,
+				duration_days_snapshot, payment_method, status, expires_at, paid_at)
+			values (?, ?, ?, ?, ?, 'Plus', 'PLUS', 12000, 'VND', 3650, 'CASH', 'PAID', ?, current_timestamp)
+			""", orderId, "ORD-" + orderId, memberId, managerId, offerId, java.sql.Timestamp.from(Instant.parse("2030-01-01T00:00:00Z")));
+		jdbc.update("""
+			insert into payments (id, order_id, method, status, amount, currency_code,
+				processed_by_account_id, paid_at)
+			values (?, ?, 'CASH', 'PAID', 12000, 'VND', ?, current_timestamp)
+			""", paymentId, orderId, managerId);
+		jdbc.update("""
+			insert into memberships (id, member_account_id, order_id, offer_id, plan_code_snapshot,
+				offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot,
+				status, starts_at, ends_at)
+			values (?, ?, ?, ?, 'PLUS', 'Plus', 12000, 'VND', 3650, 'ACTIVE', current_timestamp, ?)
+			""", membershipId, memberId, orderId, offerId, java.sql.Timestamp.from(Instant.parse("2035-01-01T00:00:00Z")));
+		return membershipId;
+	}
+
+	private Account saveAccount(AccountRole role, String name) {
+		UUID id = UUID.randomUUID();
+		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name, "09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password"));
+	}
+
+	private void installNotificationFailure() {
+		jdbc.execute("create function fail_notification() returns trigger language plpgsql as $$ begin " + "raise exception 'forced notification failure'; end; $$");
+		jdbc.execute("create trigger fail_notification before insert on notifications " + "for each row execute function fail_notification()");
+	}
+
+	private void dropNotificationFailure() {
+		jdbc.execute("drop trigger fail_notification on notifications");
+		jdbc.execute("drop function fail_notification()");
+	}
+}

@@ -1,7 +1,6 @@
 package com.scms.backend.identity.staffprofile;
 
 import java.util.UUID;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -14,9 +13,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/staff/me/profile")
 public class StaffProfileController {
+
 	private final StaffProfileService service;
 
-	StaffProfileController(StaffProfileService service) { this.service = service; }
+	StaffProfileController(StaffProfileService service) {
+		this.service = service;
+	}
 
 	@GetMapping
 	ResponseEntity<StaffProfileResponse> get(@AuthenticationPrincipal Jwt jwt) {
@@ -24,11 +26,13 @@ public class StaffProfileController {
 	}
 
 	@PatchMapping
-	ResponseEntity<StaffProfileResponse> update(@AuthenticationPrincipal Jwt jwt,
-			@RequestBody StaffProfilePatchRequest request) {
-		if (request == null) throw new IllegalArgumentException("request must be a JSON object");
+	ResponseEntity<StaffProfileResponse> update(@AuthenticationPrincipal Jwt jwt, @RequestBody StaffProfilePatchRequest request) {
+		if (request == null)
+			throw new IllegalArgumentException("request must be a JSON object");
 		return ResponseEntity.ok(service.updateProfile(id(jwt), request));
 	}
 
-	private UUID id(Jwt jwt) { return UUID.fromString(jwt.getSubject()); }
+	private UUID id(Jwt jwt) {
+		return UUID.fromString(jwt.getSubject());
+	}
 }

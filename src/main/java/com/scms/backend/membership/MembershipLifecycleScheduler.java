@@ -1,8 +1,9 @@
 package com.scms.backend.membership;
 
+import com.scms.backend.membership.freeze.MembershipFreezeExecutionService;
+import com.scms.backend.membership.termination.MembershipTerminationExecutionService;
 import java.time.Clock;
 import java.util.UUID;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,18 +11,22 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-class MembershipLifecycleScheduler {
+public class MembershipLifecycleScheduler {
+
 	private static final Logger log = LoggerFactory.getLogger(MembershipLifecycleScheduler.class);
 
 	private final MembershipRepository memberships;
+
 	private final MembershipLifecycleService lifecycle;
+
 	private final MembershipTerminationExecutionService terminationExecution;
+
 	private final MembershipFreezeExecutionService freezeExecution;
+
 	private final Clock clock;
 
 	@Autowired
-	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
-		MembershipTerminationExecutionService terminationExecution, MembershipFreezeExecutionService freezeExecution, Clock clock) {
+	public MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, MembershipTerminationExecutionService terminationExecution, MembershipFreezeExecutionService freezeExecution, Clock clock) {
 		this.memberships = memberships;
 		this.lifecycle = lifecycle;
 		this.terminationExecution = terminationExecution;
@@ -29,23 +34,24 @@ class MembershipLifecycleScheduler {
 		this.clock = clock;
 	}
 
-	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle,
-		MembershipTerminationExecutionService terminationExecution, Clock clock) {
+	public MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, MembershipTerminationExecutionService terminationExecution, Clock clock) {
 		this(memberships, lifecycle, terminationExecution, null, clock);
 	}
 
-	MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, Clock clock) {
+	public MembershipLifecycleScheduler(MembershipRepository memberships, MembershipLifecycleService lifecycle, Clock clock) {
 		this(memberships, lifecycle, null, null, clock);
 	}
 
 	@Scheduled(fixedDelayString = "${scms.membership-lifecycle-delay-ms:30000}", initialDelayString = "${scms.membership-lifecycle-initial-delay-ms:1000}")
-	void reconcile() {
+	public void reconcile() {
 		var now = clock.instant();
-		if (freezeExecution != null) freezeExecution.reconcileDue(now);
+		if (freezeExecution != null)
+			freezeExecution.reconcileDue(now);
 		UUID afterMemberId = null;
 		while (true) {
 			var dueMembers = memberships.findDueMemberAccountIds(now, afterMemberId);
-			if (dueMembers.isEmpty()) break;
+			if (dueMembers.isEmpty())
+				break;
 			for (var memberId : dueMembers) {
 				try {
 					lifecycle.reconcile(memberId, now);
@@ -54,11 +60,14 @@ class MembershipLifecycleScheduler {
 				}
 			}
 			UUID nextAfterMemberId = dueMembers.get(dueMembers.size() - 1);
-			if (nextAfterMemberId.equals(afterMemberId)) break;
+			if (nextAfterMemberId.equals(afterMemberId))
+				break;
 			afterMemberId = nextAfterMemberId;
-			if (dueMembers.size() < 100) break;
+			if (dueMembers.size() < 100)
+				break;
 		}
-		if (terminationExecution != null) terminationExecution.reconcileDue(now);
+		if (terminationExecution != null)
+			terminationExecution.reconcileDue(now);
 		lifecycle.reconcileExpiredAssignments(now);
 	}
 }

@@ -1,2 +1,6 @@
 package com.scms.backend.scheduling;
-public enum AttendanceStatus { PRESENT, ABSENT }
+
+public enum AttendanceStatus {
+
+	PRESENT, ABSENT
+}

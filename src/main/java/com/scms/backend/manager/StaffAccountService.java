@@ -1,18 +1,16 @@
 package com.scms.backend.manager;
 
-import java.time.Clock;
-import java.time.LocalDate;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
-import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.auth.AccountIdentifierAvailability;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.common.validation.PersonNameRules;
+import java.time.Clock;
+import java.time.LocalDate;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
-
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,11 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class StaffAccountService {
 
 	private final AccountRepository accountRepository;
+
 	private final AccountIdentifierAvailability identifierAvailability;
+
 	private final Clock clock;
 
-	StaffAccountService(AccountRepository accountRepository, AccountIdentifierAvailability identifierAvailability,
-			Clock clock) {
+	StaffAccountService(AccountRepository accountRepository, AccountIdentifierAvailability identifierAvailability, Clock clock) {
 		this.accountRepository = accountRepository;
 		this.identifierAvailability = identifierAvailability;
 		this.clock = clock;
@@ -54,16 +53,14 @@ public class StaffAccountService {
 		account.updateMemberProfileDetails(fullName, phone, email, birthDate);
 		try {
 			accountRepository.flush();
-		}
-		catch (DataIntegrityViolationException exception) {
+		} catch (DataIntegrityViolationException exception) {
 			throw identifierAvailability.fromDatabase(exception);
 		}
 		return toResponse(account);
 	}
 
 	@Transactional(readOnly = true)
-	StaffAccountPageResponse search(UUID managerId, String query, AccountRole role, AccountStatus status,
-			Pageable pageable) {
+	StaffAccountPageResponse search(UUID managerId, String query, AccountRole role, AccountStatus status, Pageable pageable) {
 		if (!accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)) {
 			throw new InvalidAuthenticatedAccountException();
 		}
@@ -71,8 +68,7 @@ public class StaffAccountService {
 		if (role == AccountRole.MEMBER) {
 			throw new StaffAccountValidationException("role", "must be COACH, RECEPTIONIST or MANAGER");
 		}
-		Specification<Account> filters = (root, ignored, builder) -> root.get("role")
-			.in(AccountRole.COACH, AccountRole.RECEPTIONIST, AccountRole.MANAGER);
+		Specification<Account> filters = (root, ignored, builder) -> root.get("role").in(AccountRole.COACH, AccountRole.RECEPTIONIST, AccountRole.MANAGER);
 		if (role != null) {
 			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("role"), role));
 		}
@@ -81,14 +77,10 @@ public class StaffAccountService {
 		}
 		if (normalizedQuery != null) {
 			String pattern = "%" + normalizedQuery.toLowerCase(java.util.Locale.ROOT) + "%";
-			filters = filters.and((root, ignored, builder) -> builder.or(
-				builder.like(builder.lower(root.get("fullName")), pattern),
-				builder.like(builder.lower(root.get("email")), pattern),
-				builder.like(root.get("phone"), pattern)));
+			filters = filters.and((root, ignored, builder) -> builder.or(builder.like(builder.lower(root.get("fullName")), pattern), builder.like(builder.lower(root.get("email")), pattern), builder.like(root.get("phone"), pattern)));
 		}
 		Page<Account> accounts = accountRepository.findAll(filters, pageable);
-		return new StaffAccountPageResponse(accounts.getContent().stream().map(this::toResponse).toList(),
-			accounts.getNumber(), accounts.getSize(), accounts.getTotalElements(), accounts.getTotalPages());
+		return new StaffAccountPageResponse(accounts.getContent().stream().map(this::toResponse).toList(), accounts.getNumber(), accounts.getSize(), accounts.getTotalElements(), accounts.getTotalPages());
 	}
 
 	private String normalizeQuery(String query) {
@@ -112,9 +104,7 @@ public class StaffAccountService {
 	}
 
 	private Account findStaff(UUID accountId) {
-		return accountRepository.findById(accountId)
-			.filter(account -> account.getRole() != AccountRole.MEMBER)
-			.orElseThrow(StaffAccountNotFoundException::new);
+		return accountRepository.findById(accountId).filter(account -> account.getRole() != AccountRole.MEMBER).orElseThrow(StaffAccountNotFoundException::new);
 	}
 
 	private String normalizeRequired(String value, String field, int maxLength) {
@@ -156,7 +146,6 @@ public class StaffAccountService {
 	}
 
 	private StaffAccountResponse toResponse(Account account) {
-		return new StaffAccountResponse(account.getId(), account.getRole(), account.getStatus(), account.getFullName(),
-			account.getPhone(), account.getEmail(), account.getBirthDate());
+		return new StaffAccountResponse(account.getId(), account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate());
 	}
 }

@@ -6,7 +6,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
@@ -14,13 +19,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.account.MemberProfile;
-import com.scms.backend.account.MemberProfileRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,32 +43,38 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 class CenterVisitIntegrationTests {
+
 	private static final AtomicInteger PHONE_SEQUENCE = new AtomicInteger(36_000_000);
 
 	@Container
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
-	@Autowired MockMvc mockMvc;
-	@Autowired AccountRepository accounts;
-	@Autowired MemberProfileRepository profiles;
-	@Autowired JdbcTemplate jdbc;
-	@Autowired JwtEncoder jwtEncoder;
-	@Autowired CenterVisitRepository visits;
+	@Autowired
+	MockMvc mockMvc;
+
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	MemberProfileRepository profiles;
+
+	@Autowired
+	JdbcTemplate jdbc;
+
+	@Autowired
+	JwtEncoder jwtEncoder;
+
+	@Autowired
+	CenterVisitRepository visits;
 
 	@Test
 	void identityVerificationIsRequired() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
 		membership(member.getAccountId(), receptionist.getId());
-
-		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\"}")
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
-		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode()
-			+ "\",\"identityVerified\":false}")
-			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\"}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":false}").andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("IDENTITY_VERIFICATION_REQUIRED"));
 	}
 
 	@Test
@@ -79,18 +83,10 @@ class CenterVisitIntegrationTests {
 		MemberProfile withoutCenterAccess = member(AccountStatus.ACTIVE, "photo");
 		String planWithoutCenterAccess = "NO_CENTER_ACCESS_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
 		membership(withoutCenterAccess.getAccountId(), receptionist.getId(), planWithoutCenterAccess, "No Center Access");
-
-		checkIn(receptionist, request(withoutCenterAccess))
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("CENTER_VISIT_MEMBERSHIP_REQUIRED"))
-			.andExpect(jsonPath("$.detail").value(
-				"An active membership with the CENTER_ACCESS benefit is required for center check-in."));
-
+		checkIn(receptionist, request(withoutCenterAccess)).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_MEMBERSHIP_REQUIRED")).andExpect(jsonPath("$.detail").value("An active membership with the CENTER_ACCESS benefit is required for center check-in."));
 		MemberProfile basic = member(AccountStatus.ACTIVE, "photo");
 		UUID basicMembership = membership(basic.getAccountId(), receptionist.getId());
-		checkIn(receptionist, request(basic))
-			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.membershipId").value(basicMembership.toString()));
+		checkIn(receptionist, request(basic)).andExpect(status().isCreated()).andExpect(jsonPath("$.membershipId").value(basicMembership.toString()));
 	}
 
 	@Test
@@ -98,23 +94,11 @@ class CenterVisitIntegrationTests {
 		Account receptionist = account(AccountRole.RECEPTIONIST, AccountStatus.ACTIVE);
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
 		UUID membershipId = membership(member.getAccountId(), receptionist.getId());
-
-		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}")
-			.andExpect(status().isCreated())
-			.andExpect(jsonPath("$.memberId").value(member.getAccountId().toString()))
-			.andExpect(jsonPath("$.memberCode").value(member.getMemberCode()))
-			.andExpect(jsonPath("$.memberName").value("MEMBER US36"))
-			.andExpect(jsonPath("$.membershipId").value(membershipId.toString()))
-			.andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
-		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}")
-			.andExpect(status().isCreated());
-
-		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id = ?",
-			Long.class, member.getAccountId())).isEqualTo(2L);
-		assertThat(jdbc.queryForObject("select count(distinct id) from center_visits where member_account_id = ?",
-			Long.class, member.getAccountId())).isEqualTo(2L);
-		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=? and checked_out_at is null",
-			Long.class, member.getAccountId())).isOne();
+		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}").andExpect(status().isCreated()).andExpect(jsonPath("$.memberId").value(member.getAccountId().toString())).andExpect(jsonPath("$.memberCode").value(member.getMemberCode())).andExpect(jsonPath("$.memberName").value("MEMBER US36")).andExpect(jsonPath("$.membershipId").value(membershipId.toString())).andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
+		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}").andExpect(status().isCreated());
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(distinct id) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=? and checked_out_at is null", Long.class, member.getAccountId())).isOne();
 	}
 
 	@Test
@@ -124,24 +108,14 @@ class CenterVisitIntegrationTests {
 		MemberProfile second = member(AccountStatus.ACTIVE, "photo");
 		membership(first.getAccountId(), receptionist.getId());
 		membership(second.getAccountId(), receptionist.getId());
-
-		checkIn(receptionist, request(first), "visit-key")
-			.andExpect(status().isCreated()).andExpect(jsonPath("$.created").value(true));
-		Instant checkedInAt = jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
-			Instant.class, first.getAccountId());
-		jdbc.update("update accounts set status='SUSPENDED', full_name='Renamed Replay Member' where id=?",
-			first.getAccountId());
+		checkIn(receptionist, request(first), "visit-key").andExpect(status().isCreated()).andExpect(jsonPath("$.created").value(true));
+		Instant checkedInAt = jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?", Instant.class, first.getAccountId());
+		jdbc.update("update accounts set status='SUSPENDED', full_name='Renamed Replay Member' where id=?", first.getAccountId());
 		jdbc.update("update member_profiles set profile_image_url=null where account_id=?", first.getAccountId());
-		checkIn(receptionist, request(first), " visit-key ")
-			.andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false))
-			.andExpect(jsonPath("$.memberName").value("Renamed Replay Member"));
-		assertThat(jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?",
-			Instant.class, first.getAccountId())).isEqualTo(checkedInAt);
-		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?",
-			Long.class, first.getAccountId())).isOne();
-		checkIn(receptionist, request(second), "visit-key")
-			.andExpect(status().isConflict())
-			.andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
+		checkIn(receptionist, request(first), " visit-key ").andExpect(status().isOk()).andExpect(jsonPath("$.created").value(false)).andExpect(jsonPath("$.memberName").value("Renamed Replay Member"));
+		assertThat(jdbc.queryForObject("select checked_in_at from center_visits where member_account_id=?", Instant.class, first.getAccountId())).isEqualTo(checkedInAt);
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?", Long.class, first.getAccountId())).isOne();
+		checkIn(receptionist, request(second), "visit-key").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
 	}
 
 	@Test
@@ -155,11 +129,7 @@ class CenterVisitIntegrationTests {
 		Callable<Integer> request = () -> {
 			ready.countDown();
 			start.await();
-			return mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1")
-				.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-				.header("Idempotency-Key", "concurrent-key")
-				.contentType(MediaType.APPLICATION_JSON).content(request(member)))
-				.andReturn().getResponse().getStatus();
+			return mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token).header("Idempotency-Key", "concurrent-key").contentType(MediaType.APPLICATION_JSON).content(request(member))).andReturn().getResponse().getStatus();
 		};
 		try (var executor = Executors.newFixedThreadPool(2)) {
 			var first = executor.submit(request);
@@ -168,8 +138,7 @@ class CenterVisitIntegrationTests {
 			start.countDown();
 			assertThat(java.util.List.of(first.get(), second.get())).containsExactlyInAnyOrder(200, 201);
 		}
-		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?",
-			Long.class, member.getAccountId())).isOne();
+		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=?", Long.class, member.getAccountId())).isOne();
 	}
 
 	@Test
@@ -180,41 +149,19 @@ class CenterVisitIntegrationTests {
 		membership(owner.getAccountId(), receptionist.getId());
 		checkIn(receptionist, request(owner), null).andExpect(status().isCreated());
 		jdbc.update("update accounts set full_name='Renamed Center Member' where id=?", owner.getAccountId());
-
-		mockMvc.perform(get("/api/v1/members/me/center-visits/current").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
-		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(other.getAccount())))
-			.andExpect(status().isNotFound());
-		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("MEMBER"))
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
-		Instant checkout = jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
-			Instant.class, owner.getAccountId());
-		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount())))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
-		assertThat(jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?",
-			Instant.class, owner.getAccountId())).isEqualTo(checkout);
-
-		checkIn(receptionist, request(owner), "reentry").andExpect(status().isCreated())
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
-		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
-			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"))
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		mockMvc.perform(get("/api/v1/members/me/center-visits/current").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount()))).andExpect(status().isOk()).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(other.getAccount()))).andExpect(status().isNotFound());
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount()))).andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("MEMBER")).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		Instant checkout = jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?", Instant.class, owner.getAccountId());
+		mockMvc.perform(patch("/api/v1/members/me/center-visits/current/checkout").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(owner.getAccount()))).andExpect(status().isOk()).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		assertThat(jdbc.queryForObject("select checked_out_at from center_visits where member_account_id=?", Instant.class, owner.getAccountId())).isEqualTo(checkout);
+		checkIn(receptionist, request(owner), "reentry").andExpect(status().isCreated()).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST")).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		Instant receptionistCheckout = jdbc.queryForObject("""
 			select checked_out_at from center_visits where member_account_id=?
 			order by checked_in_at desc, id desc limit 1
 			""", Instant.class, owner.getAccountId());
-		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId())
-			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST"))
-			.andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", owner.getAccountId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.checkoutSource").value("RECEPTIONIST")).andExpect(jsonPath("$.memberName").value("Renamed Center Member"));
 		assertThat(jdbc.queryForObject("""
 			select checked_out_at from center_visits where member_account_id=?
 			order by checked_in_at desc, id desc limit 1
@@ -244,69 +191,38 @@ class CenterVisitIntegrationTests {
 		Instant firstTime = Instant.parse("2026-10-06T01:00:00Z");
 		Instant secondTime = Instant.parse("2026-10-06T02:00:00Z");
 		Instant thirdTime = Instant.parse("2026-10-06T03:00:00Z");
-		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
-			java.sql.Timestamp.from(firstTime), first.getAccountId());
-		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
-			java.sql.Timestamp.from(secondTime), second.getAccountId());
-		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?",
-			java.sql.Timestamp.from(thirdTime), third.getAccountId());
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?", java.sql.Timestamp.from(firstTime), first.getAccountId());
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?", java.sql.Timestamp.from(secondTime), second.getAccountId());
+		jdbc.update("update center_visits set checked_in_at=? where member_account_id=?", java.sql.Timestamp.from(thirdTime), third.getAccountId());
 		jdbc.update("""
 			update center_visits set checked_out_at=?, checked_out_by_account_id=?, checkout_source='RECEPTIONIST'
 			where member_account_id=?
 			""", java.sql.Timestamp.from(secondTime.plusSeconds(60)), receptionist.getId(), second.getAccountId());
-		UUID firstVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?",
-			UUID.class, first.getAccountId());
-		UUID thirdVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?",
-			UUID.class, third.getAccountId());
-
-		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=0&size=1").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
-			.andExpect(jsonPath("$.content[0].id").value(firstVisit.toString()))
-			.andExpect(jsonPath("$.content[0].memberName").value("First Open Member"))
-			.andExpect(jsonPath("$.totalElements").value(2))
-			.andExpect(jsonPath("$.totalPages").value(2));
-		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=1&size=1").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)))
-			.andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1))
-			.andExpect(jsonPath("$.content[0].id").value(thirdVisit.toString()))
-			.andExpect(jsonPath("$.content[0].memberName").value("Third Open Member"))
-			.andExpect(jsonPath("$.totalElements").value(2));
-
-		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?",
-			java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")),
-			java.sql.Timestamp.from(Instant.parse("2026-10-05T02:00:00Z")), receptionist.getId(), first.getAccountId());
-		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
-			Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
+		UUID firstVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?", UUID.class, first.getAccountId());
+		UUID thirdVisit = jdbc.queryForObject("select id from center_visits where member_account_id=?", UUID.class, third.getAccountId());
+		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=0&size=1").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].id").value(firstVisit.toString())).andExpect(jsonPath("$.content[0].memberName").value("First Open Member")).andExpect(jsonPath("$.totalElements").value(2)).andExpect(jsonPath("$.totalPages").value(2));
+		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=1&size=1").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].id").value(thirdVisit.toString())).andExpect(jsonPath("$.content[0].memberName").value("Third Open Member")).andExpect(jsonPath("$.totalElements").value(2));
+		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?", java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")), java.sql.Timestamp.from(Instant.parse("2026-10-05T02:00:00Z")), receptionist.getId(), first.getAccountId());
+		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
 		UUID overlap = UUID.randomUUID();
-		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at,checked_out_at,checked_out_by_account_id,checkout_source) values(?,?,?,?,?,?,?,'RECEPTIONIST')",
-			overlap, first.getAccountId(), firstMembership, receptionist.getId(),
-			java.sql.Timestamp.from(Instant.parse("2026-10-05T09:30:00Z")),
-			java.sql.Timestamp.from(Instant.parse("2026-10-05T10:30:00Z")), receptionist.getId());
-		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"),
-			Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).contains(overlap);
+		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at,checked_out_at,checked_out_by_account_id,checkout_source) values(?,?,?,?,?,?,?,'RECEPTIONIST')", overlap, first.getAccountId(), firstMembership, receptionist.getId(), java.sql.Timestamp.from(Instant.parse("2026-10-05T09:30:00Z")), java.sql.Timestamp.from(Instant.parse("2026-10-05T10:30:00Z")), receptionist.getId());
+		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).contains(overlap);
 	}
 
 	@Test
 	void coachCannotUseReceptionCheckInEndpoint() throws Exception {
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
-		mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(coach))
-			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"memberId\":\"MB-100001\"}"))
-			.andExpect(status().isForbidden());
+		mockMvc.perform(post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(coach)).contentType(MediaType.APPLICATION_JSON).content("{\"memberId\":\"MB-100001\"}")).andExpect(status().isForbidden());
 	}
 
 	private org.springframework.test.web.servlet.ResultActions checkIn(Account actor, String body) throws Exception {
 		return checkIn(actor, body, null);
 	}
 
-	private org.springframework.test.web.servlet.ResultActions checkIn(Account actor, String body, String key)
-			throws Exception {
-		var request = post("/api/v1/reception/center-visits").contextPath("/api/v1")
-			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(actor))
-			.contentType(MediaType.APPLICATION_JSON).content(body);
-		if (key != null) request.header("Idempotency-Key", key);
+	private org.springframework.test.web.servlet.ResultActions checkIn(Account actor, String body, String key) throws Exception {
+		var request = post("/api/v1/reception/center-visits").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(actor)).contentType(MediaType.APPLICATION_JSON).content(body);
+		if (key != null)
+			request.header("Idempotency-Key", key);
 		return mockMvc.perform(request);
 	}
 
@@ -320,9 +236,7 @@ class CenterVisitIntegrationTests {
 
 	private Account account(AccountRole role, AccountStatus status) {
 		UUID id = UUID.randomUUID();
-		return accounts.saveAndFlush(new Account(id, role, status, role + " US36",
-			"09" + PHONE_SEQUENCE.getAndIncrement(), id + "@us36.test",
-			LocalDate.of(1990, 1, 1), "{noop}password"));
+		return accounts.saveAndFlush(new Account(id, role, status, role + " US36", "09" + PHONE_SEQUENCE.getAndIncrement(), id + "@us36.test", LocalDate.of(1990, 1, 1), "{noop}password"));
 	}
 
 	private UUID membership(UUID memberId, UUID actorId) {
@@ -349,9 +263,7 @@ class CenterVisitIntegrationTests {
 				offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot,
 				duration_days_snapshot, payment_method, status, expires_at, paid_at)
 			values (?, ?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'CASH', 'PAID', ?, ?)
-			""", orderId, "ORD-" + orderId, memberId, actorId, offerId,
-			offerName, planCode,
-			java.sql.Timestamp.from(Instant.now().plusSeconds(3600)), java.sql.Timestamp.from(Instant.now()));
+			""", orderId, "ORD-" + orderId, memberId, actorId, offerId, offerName, planCode, java.sql.Timestamp.from(Instant.now().plusSeconds(3600)), java.sql.Timestamp.from(Instant.now()));
 		jdbc.update("""
 			insert into payments (id, order_id, method, status, amount, currency_code,
 				processed_by_account_id, paid_at)
@@ -362,17 +274,13 @@ class CenterVisitIntegrationTests {
 				offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot,
 				status, starts_at, ends_at)
 			values (?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'ACTIVE', ?, ?)
-			""", membershipId, memberId, orderId, offerId, planCode, offerName,
-			java.sql.Timestamp.from(Instant.now().minusSeconds(60)),
-			java.sql.Timestamp.from(Instant.now().plusSeconds(3600)));
+			""", membershipId, memberId, orderId, offerId, planCode, offerName, java.sql.Timestamp.from(Instant.now().minusSeconds(60)), java.sql.Timestamp.from(Instant.now().plusSeconds(3600)));
 		return membershipId;
 	}
 
 	private String token(Account account) {
 		Instant now = Instant.now();
-		JwtClaimsSet claims = JwtClaimsSet.builder().subject(account.getId().toString()).issuedAt(now)
-			.expiresAt(now.plusSeconds(900)).claim("role", account.getRole().name()).build();
-		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
-			.getTokenValue();
+		JwtClaimsSet claims = JwtClaimsSet.builder().subject(account.getId().toString()).issuedAt(now).expiresAt(now.plusSeconds(900)).claim("role", account.getRole().name()).build();
+		return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims)).getTokenValue();
 	}
 }

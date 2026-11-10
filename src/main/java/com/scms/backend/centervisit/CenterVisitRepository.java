@@ -3,13 +3,12 @@ package com.scms.backend.centervisit;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> {
 
@@ -46,8 +45,7 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		limit 1
 		for update of e, s
 		""", nativeQuery = true)
-	Optional<UUID> findEligibleCourseEnrollmentId(@Param("memberId") UUID memberId,
-		@Param("sessionId") UUID sessionId, @Param("at") Instant at);
+	Optional<UUID> findEligibleCourseEnrollmentId(@Param("memberId") UUID memberId, @Param("sessionId") UUID sessionId, @Param("at") Instant at);
 
 	@Query(value = """
 		select exists (select 1 from membership_freeze_periods freeze_period join memberships membership on membership.id = freeze_period.membership_id
@@ -57,14 +55,11 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		""", nativeQuery = true)
 	boolean hasActiveMembershipFreeze(@Param("memberId") UUID memberId);
 
-	Optional<CenterVisit> findByCheckedInByAccountIdAndIdempotencyKey(UUID checkedInByAccountId,
-		String idempotencyKey);
+	Optional<CenterVisit> findByCheckedInByAccountIdAndIdempotencyKey(UUID checkedInByAccountId, String idempotencyKey);
 
-	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(
-		UUID memberAccountId);
+	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(UUID memberAccountId);
 
-	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(
-		UUID memberAccountId);
+	Optional<CenterVisit> findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(UUID memberAccountId);
 
 	Page<CenterVisit> findByCheckedOutAtIsNull(Pageable pageable);
 
@@ -76,8 +71,7 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 			checkout_source = 'MEMBERSHIP_TERMINATION'
 		where member_account_id = :memberId and checked_out_at is null and visit_source = 'MEMBERSHIP'
 		""", nativeQuery = true)
-	int checkoutOpenForMembershipTermination(@Param("memberId") UUID memberId,
-		@Param("actorId") UUID actorId, @Param("at") Instant at);
+	int checkoutOpenForMembershipTermination(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId, @Param("at") Instant at);
 
 	@Modifying(clearAutomatically = true, flushAutomatically = true)
 	@Query(value = """
@@ -85,8 +79,7 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 			checkout_source = 'MEMBERSHIP_FREEZE'
 		where member_account_id = :memberId and checked_out_at is null and visit_source = 'MEMBERSHIP'
 		""", nativeQuery = true)
-	int checkoutOpenForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId,
-		@Param("at") Instant at);
+	int checkoutOpenForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId, @Param("at") Instant at);
 
 	@Query(value = """
 		select id from center_visits
@@ -98,7 +91,5 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		order by checked_in_at desc, id
 		limit 1
 		""", nativeQuery = true)
-	Optional<UUID> findOverlappingVisitId(@Param("memberId") UUID memberId,
-		@Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd,
-		@Param("now") Instant now);
+	Optional<UUID> findOverlappingVisitId(@Param("memberId") UUID memberId, @Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd, @Param("now") Instant now);
 }

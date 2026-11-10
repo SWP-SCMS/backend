@@ -1,9 +1,5 @@
 package com.scms.backend.auth;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -13,6 +9,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 

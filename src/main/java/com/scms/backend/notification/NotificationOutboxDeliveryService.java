@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,11 +12,12 @@ import org.springframework.transaction.annotation.Transactional;
 class NotificationOutboxDeliveryService {
 
 	private final NotificationOutboxRepository outbox;
+
 	private final NotificationProvider provider;
+
 	private final Clock clock;
 
-	NotificationOutboxDeliveryService(NotificationOutboxRepository outbox, NotificationProvider provider,
-			Clock clock) {
+	NotificationOutboxDeliveryService(NotificationOutboxRepository outbox, NotificationProvider provider, Clock clock) {
 		this.outbox = outbox;
 		this.provider = provider;
 		this.clock = clock;

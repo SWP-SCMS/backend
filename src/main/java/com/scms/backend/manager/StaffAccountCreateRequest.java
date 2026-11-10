@@ -1,18 +1,19 @@
 package com.scms.backend.manager;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.scms.backend.account.AccountRole;
 import java.time.LocalDate;
 import java.util.Locale;
 
-import com.fasterxml.jackson.annotation.JsonAnySetter;
-import com.scms.backend.account.AccountRole;
-
-public record StaffAccountCreateRequest(String fullName, String phone, String email, LocalDate birthDate,
-		AccountRole role) {
+public record StaffAccountCreateRequest(String fullName, String phone, String email, LocalDate birthDate, AccountRole role) {
 
 	public StaffAccountCreateRequest {
-		if (fullName != null) fullName = fullName.trim();
-		if (phone != null) phone = phone.trim();
-		if (email != null) email = email.trim().toLowerCase(Locale.ROOT);
+		if (fullName != null)
+			fullName = fullName.trim();
+		if (phone != null)
+			phone = phone.trim();
+		if (email != null)
+			email = email.trim().toLowerCase(Locale.ROOT);
 	}
 
 	@JsonAnySetter

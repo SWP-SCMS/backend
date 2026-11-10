@@ -1,8 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -10,6 +7,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "rooms")
@@ -46,11 +45,11 @@ public class Room {
 	protected Room() {
 	}
 
-	Room(UUID id, String name, int capacity, RoomStatus status) {
+	public Room(UUID id, String name, int capacity, RoomStatus status) {
 		this(id, name, capacity, status, RoomUsageMode.EXCLUSIVE);
 	}
 
-	Room(UUID id, String name, int capacity, RoomStatus status, RoomUsageMode usageMode) {
+	public Room(UUID id, String name, int capacity, RoomStatus status, RoomUsageMode usageMode) {
 		this.id = id;
 		this.name = name;
 		this.capacity = capacity;
@@ -58,20 +57,34 @@ public class Room {
 		this.usageMode = usageMode;
 	}
 
-	void update(String name, int capacity, RoomStatus status) {
+	public void update(String name, int capacity, RoomStatus status) {
 		update(name, capacity, status, usageMode);
 	}
 
-	void update(String name, int capacity, RoomStatus status, RoomUsageMode usageMode) {
+	public void update(String name, int capacity, RoomStatus status, RoomUsageMode usageMode) {
 		this.name = name;
 		this.capacity = capacity;
 		this.status = status;
 		this.usageMode = usageMode;
 	}
 
-	public UUID getId() { return id; }
-	public String getName() { return name; }
-	public int getCapacity() { return capacity; }
-	public RoomStatus getStatus() { return status; }
-	RoomUsageMode getUsageMode() { return usageMode; }
+	public UUID getId() {
+		return id;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public int getCapacity() {
+		return capacity;
+	}
+
+	public RoomStatus getStatus() {
+		return status;
+	}
+
+	public RoomUsageMode getUsageMode() {
+		return usageMode;
+	}
 }

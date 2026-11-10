@@ -1,6 +1,10 @@
 package com.scms.backend.manager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -8,11 +12,6 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,10 +31,17 @@ class OperationalIntegrityIntegrationTests {
 	@ServiceConnection
 	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
-	@Autowired AccountRepository accounts;
-	@Autowired MemberStatusService memberStatuses;
-	@Autowired StaffStatusService staffStatuses;
-	@Autowired JdbcTemplate db;
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	MemberStatusService memberStatuses;
+
+	@Autowired
+	StaffStatusService staffStatuses;
+
+	@Autowired
+	JdbcTemplate db;
 
 	@Test
 	void suspensionIncrementsBookingVersionAndRejectsStaleVersionWrite() {
@@ -44,20 +50,15 @@ class OperationalIntegrityIntegrationTests {
 		Account member = account(AccountRole.MEMBER);
 		UUID bookingId = futureBooking(manager.getId(), coach.getId(), member.getId());
 		long staleVersion = db.queryForObject("select version from bookings where id=?", Long.class, bookingId);
-
-		MemberStatusChangeResponse response = memberStatuses.changeStatus(manager.getId(), member.getId(),
-			new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Operational integrity test"));
-
+		MemberStatusChangeResponse response = memberStatuses.changeStatus(manager.getId(), member.getId(), new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Operational integrity test"));
 		assertThat(response.cancelledFutureBookings()).isOne();
-		assertThat(db.queryForObject("select version from bookings where id=?", Long.class, bookingId))
-			.isEqualTo(staleVersion + 1);
+		assertThat(db.queryForObject("select version from bookings where id=?", Long.class, bookingId)).isEqualTo(staleVersion + 1);
 		int staleUpdate = db.update("""
 			update bookings set status='BOOKED',cancelled_by_account_id=null,cancellation_source=null,
 				cancelled_at=null,version=version+1 where id=? and version=?
 			""", bookingId, staleVersion);
 		assertThat(staleUpdate).isZero();
-		assertThat(db.queryForObject("select status from bookings where id=?", String.class, bookingId))
-			.isEqualTo("CANCELLED");
+		assertThat(db.queryForObject("select status from bookings where id=?", String.class, bookingId)).isEqualTo("CANCELLED");
 	}
 
 	@Test
@@ -70,16 +71,10 @@ class OperationalIntegrityIntegrationTests {
 		UUID sessionId = db.queryForObject("select class_session_id from bookings where id=?", UUID.class, bookingId);
 		UUID waitingMembership = activeMembership(manager.getId(), waitingMember.getId(), Instant.now());
 		UUID waitlistId = UUID.randomUUID();
-		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',current_timestamp,current_timestamp)",
-			waitlistId, sessionId, waitingMember.getId(), waitingMember.getId());
-
-		memberStatuses.changeStatus(manager.getId(), member.getId(),
-			new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Promote the waitlist"));
-
-		assertThat(db.queryForObject("select status from session_waitlists where id=?", String.class, waitlistId))
-			.isEqualTo("PROMOTED");
-		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and membership_id=? and status='BOOKED'",
-			Long.class, sessionId, waitingMember.getId(), waitingMembership)).isOne();
+		db.update("insert into session_waitlists(id,class_session_id,member_account_id,status,joined_by_account_id,source,created_at,updated_at) values(?,?,?,'WAITING',?,'MEMBER',current_timestamp,current_timestamp)", waitlistId, sessionId, waitingMember.getId(), waitingMember.getId());
+		memberStatuses.changeStatus(manager.getId(), member.getId(), new MemberStatusChangeRequest(AccountStatus.SUSPENDED, "Promote the waitlist"));
+		assertThat(db.queryForObject("select status from session_waitlists where id=?", String.class, waitlistId)).isEqualTo("PROMOTED");
+		assertThat(db.queryForObject("select count(*) from bookings where class_session_id=? and member_account_id=? and membership_id=? and status='BOOKED'", Long.class, sessionId, waitingMember.getId(), waitingMembership)).isOne();
 	}
 
 	@Test
@@ -97,25 +92,18 @@ class OperationalIntegrityIntegrationTests {
 			StaffStatusConflictException firstFailure = firstAttempt.get(10, TimeUnit.SECONDS);
 			StaffStatusConflictException secondFailure = secondAttempt.get(10, TimeUnit.SECONDS);
 			assertThat(firstFailure == null ^ secondFailure == null).isTrue();
-			assertThat(firstFailure != null ? firstFailure : secondFailure)
-				.hasMessage("The last active Manager cannot be deactivated");
+			assertThat(firstFailure != null ? firstFailure : secondFailure).hasMessage("The last active Manager cannot be deactivated");
 		}
-
-		assertThat(db.queryForObject("select count(*) from accounts where role='MANAGER' and status='ACTIVE'",
-			Long.class)).isOne();
+		assertThat(db.queryForObject("select count(*) from accounts where role='MANAGER' and status='ACTIVE'", Long.class)).isOne();
 	}
 
-	private StaffStatusConflictException deactivateTogether(UUID actorId, UUID targetId, CountDownLatch ready,
-			CountDownLatch start)
-			throws InterruptedException {
+	private StaffStatusConflictException deactivateTogether(UUID actorId, UUID targetId, CountDownLatch ready, CountDownLatch start) throws InterruptedException {
 		ready.countDown();
 		start.await();
 		try {
-			staffStatuses.deactivate(actorId, targetId,
-				new StaffStatusChangeRequest(AccountStatus.INACTIVE, "Concurrent manager test"));
+			staffStatuses.deactivate(actorId, targetId, new StaffStatusChangeRequest(AccountStatus.INACTIVE, "Concurrent manager test"));
 			return null;
-		}
-		catch (StaffStatusConflictException exception) {
+		} catch (StaffStatusConflictException exception) {
 			return exception;
 		}
 	}
@@ -139,8 +127,7 @@ class OperationalIntegrityIntegrationTests {
 				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
 				payment_method,status,paid_at)
 			values(?,?,?,?,?,'Plus','PLUS',12000,'VND',30,'CASH','PAID',?)
-			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId,
-			Timestamp.from(now));
+			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId, Timestamp.from(now));
 		db.update("""
 			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,processed_by_account_id)
 			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
@@ -149,21 +136,17 @@ class OperationalIntegrityIntegrationTests {
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
 				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
 			values(?,?,?,?,'PLUS','Plus',12000,'VND',30,'ACTIVE',?,?)
-			""", membershipId, memberId, orderId, offerId, Timestamp.from(now.minusSeconds(60)),
-			Timestamp.from(now.plusSeconds(86400 * 30L)));
-		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')",
-			disciplineId, "Discipline " + disciplineId);
+			""", membershipId, memberId, orderId, offerId, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now.plusSeconds(86400 * 30L)));
+		db.update("insert into disciplines(id,name,status) values(?,?,'ACTIVE')", disciplineId, "Discipline " + disciplineId);
 		db.update("""
 			insert into sport_classes(id,discipline_id,name,class_type,status) values(?,?,?,'GROUP','ACTIVE')
 			""", sportClassId, disciplineId, "Class " + sportClassId);
-		db.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')",
-			roomId, "Room " + roomId);
+		db.update("insert into rooms(id,name,capacity,status) values(?,?,10,'ACTIVE')", roomId, "Room " + roomId);
 		db.update("""
 			insert into class_sessions(id,sport_class_id,teaching_coach_account_id,room_id,start_time,end_time,
 				capacity,status,created_by_account_id)
 			values(?,?,?,?,?,?,1,'SCHEDULED',?)
-			""", sessionId, sportClassId, coachId, roomId, Timestamp.from(now.plusSeconds(86400)),
-			Timestamp.from(now.plusSeconds(90000)), managerId);
+			""", sessionId, sportClassId, coachId, roomId, Timestamp.from(now.plusSeconds(86400)), Timestamp.from(now.plusSeconds(90000)), managerId);
 		db.update("""
 			insert into bookings(id,class_session_id,member_account_id,membership_id,status,booked_by_account_id)
 			values(?,?,?,?,'BOOKED',?)
@@ -184,8 +167,7 @@ class OperationalIntegrityIntegrationTests {
 				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
 				payment_method,status,paid_at)
 			values(?,?,?,?,?,'Plus','PLUS',12000,'VND',30,'CASH','PAID',?)
-			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId,
-			Timestamp.from(now));
+			""", orderId, "ORD-" + orderId.toString().replace("-", "").toUpperCase(), memberId, managerId, offerId, Timestamp.from(now));
 		db.update("""
 			insert into payments(id,order_id,method,status,amount,currency_code,provider_reference,paid_at,processed_by_account_id)
 			values(?,?,'CASH','PAID',12000,'VND',?,?,?)
@@ -194,15 +176,12 @@ class OperationalIntegrityIntegrationTests {
 			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,offer_name_snapshot,
 				price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at)
 			values(?,?,?,?,'PLUS','Plus',12000,'VND',30,'ACTIVE',?,?)
-			""", membershipId, memberId, orderId, offerId, Timestamp.from(now.minusSeconds(60)),
-			Timestamp.from(now.plusSeconds(86400 * 30L)));
+			""", membershipId, memberId, orderId, offerId, Timestamp.from(now.minusSeconds(60)), Timestamp.from(now.plusSeconds(86400 * 30L)));
 		return membershipId;
 	}
 
 	private Account account(AccountRole role) {
 		UUID id = UUID.randomUUID();
-		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, role + " Integrity",
-			"09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test",
-			LocalDate.of(1990, 1, 1), "unused"));
+		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, role + " Integrity", "09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test", LocalDate.of(1990, 1, 1), "unused"));
 	}
 }

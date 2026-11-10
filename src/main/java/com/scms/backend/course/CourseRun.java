@@ -1,9 +1,5 @@
 package com.scms.backend.course;
 
-import java.math.BigInteger;
-import java.time.Instant;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,6 +11,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -86,9 +85,7 @@ public class CourseRun {
 	protected CourseRun() {
 	}
 
-	CourseRun(UUID id, String runCode, Course course, Account primaryCoach, BigInteger tuitionVnd,
-			int capacity, int minimumEnrollment, Instant registrationOpensAt, Instant registrationClosesAt,
-			Instant plannedStartAt, Instant plannedEndAt, int totalUnits, boolean namedCoachCommitment) {
+	public CourseRun(UUID id, String runCode, Course course, Account primaryCoach, BigInteger tuitionVnd, int capacity, int minimumEnrollment, Instant registrationOpensAt, Instant registrationClosesAt, Instant plannedStartAt, Instant plannedEndAt, int totalUnits, boolean namedCoachCommitment) {
 		this.id = id;
 		this.runCode = runCode;
 		this.course = course;
@@ -105,47 +102,50 @@ public class CourseRun {
 		this.status = CourseRunStatus.DRAFT;
 	}
 
-	void openForRegistration(String policyVersion) {
-		if (status != CourseRunStatus.DRAFT) throw CourseException.invalidTransition();
-		if (!hasValidOpeningDetails(policyVersion)) throw CourseException.invalidOpening();
+	public void openForRegistration(String policyVersion) {
+		if (status != CourseRunStatus.DRAFT)
+			throw CourseException.invalidTransition();
+		if (!hasValidOpeningDetails(policyVersion))
+			throw CourseException.invalidOpening();
 		policyVersionSnapshot = policyVersion;
 		status = CourseRunStatus.OPEN_FOR_REGISTRATION;
 		updatedAt = Instant.now();
 	}
 
-	void confirm() {
+	public void confirm() {
 		transition(CourseRunStatus.OPEN_FOR_REGISTRATION, CourseRunStatus.CONFIRMED);
 	}
 
-	void start() {
+	public void start() {
 		transition(CourseRunStatus.CONFIRMED, CourseRunStatus.IN_PROGRESS);
 	}
 
-	void markSettlementPending() {
+	public void markSettlementPending() {
 		transition(CourseRunStatus.IN_PROGRESS, CourseRunStatus.SETTLEMENT_PENDING);
 	}
 
-	void complete() {
+	public void complete() {
 		transition(CourseRunStatus.SETTLEMENT_PENDING, CourseRunStatus.COMPLETED);
 	}
 
-	void cancel() {
-		if (status != CourseRunStatus.DRAFT && status != CourseRunStatus.OPEN_FOR_REGISTRATION
-				&& status != CourseRunStatus.CONFIRMED && status != CourseRunStatus.IN_PROGRESS) {
+	public void cancel() {
+		if (status != CourseRunStatus.DRAFT && status != CourseRunStatus.OPEN_FOR_REGISTRATION && status != CourseRunStatus.CONFIRMED && status != CourseRunStatus.IN_PROGRESS) {
 			throw CourseException.invalidTransition();
 		}
 		status = CourseRunStatus.CANCELLED;
 		updatedAt = Instant.now();
 	}
 
-	void changeMinimumEnrollment(int minimumEnrollment) {
-		if (status != CourseRunStatus.DRAFT) throw CourseException.immutableRun();
-		if (minimumEnrollment <= 0 || minimumEnrollment > capacity) throw CourseException.invalidOpening();
+	public void changeMinimumEnrollment(int minimumEnrollment) {
+		if (status != CourseRunStatus.DRAFT)
+			throw CourseException.immutableRun();
+		if (minimumEnrollment <= 0 || minimumEnrollment > capacity)
+			throw CourseException.invalidOpening();
 		this.minimumEnrollment = minimumEnrollment;
 		updatedAt = Instant.now();
 	}
 
-	void changeSchedule(Instant plannedStartAt, Instant plannedEndAt, int totalUnits) {
+	public void changeSchedule(Instant plannedStartAt, Instant plannedEndAt, int totalUnits) {
 		this.plannedStartAt = plannedStartAt;
 		this.plannedEndAt = plannedEndAt;
 		this.totalUnits = totalUnits;
@@ -169,34 +169,69 @@ public class CourseRun {
 	}
 
 	private boolean hasValidOpeningDetails(String policyVersion) {
-		return tuitionVnd != null && tuitionVnd.signum() > 0 && tuitionVnd.toString().length() <= 19
-			&& capacity > 0 && minimumEnrollment > 0 && minimumEnrollment <= capacity
-			&& registrationOpensAt != null && registrationClosesAt != null
-			&& plannedStartAt != null && plannedEndAt != null
-			&& registrationOpensAt.isBefore(registrationClosesAt)
-			&& !registrationClosesAt.isAfter(plannedStartAt)
-			&& plannedStartAt.isBefore(plannedEndAt)
-			&& totalUnits > 0 && policyVersion != null && !policyVersion.isBlank() && policyVersion.length() <= 100;
+		return tuitionVnd != null && tuitionVnd.signum() > 0 && tuitionVnd.toString().length() <= 19 && capacity > 0 && minimumEnrollment > 0 && minimumEnrollment <= capacity && registrationOpensAt != null && registrationClosesAt != null && plannedStartAt != null && plannedEndAt != null && registrationOpensAt.isBefore(registrationClosesAt) && !registrationClosesAt.isAfter(plannedStartAt) && plannedStartAt.isBefore(plannedEndAt) && totalUnits > 0 && policyVersion != null && !policyVersion.isBlank() && policyVersion.length() <= 100;
 	}
 
 	private void transition(CourseRunStatus required, CourseRunStatus next) {
-		if (status != required) throw CourseException.invalidTransition();
+		if (status != required)
+			throw CourseException.invalidTransition();
 		status = next;
 		updatedAt = Instant.now();
 	}
 
-	public UUID getId() { return id; }
-	public String getRunCode() { return runCode; }
-	public Course getCourse() { return course; }
-	public Account getPrimaryCoach() { return primaryCoach; }
-	public BigInteger getTuitionVnd() { return tuitionVnd; }
-	public Instant getRegistrationOpensAt() { return registrationOpensAt; }
-	public Instant getRegistrationClosesAt() { return registrationClosesAt; }
-	public Instant getPlannedStartAt() { return plannedStartAt; }
-	public Instant getPlannedEndAt() { return plannedEndAt; }
-	public int getTotalUnits() { return totalUnits; }
-	public boolean isNamedCoachCommitment() { return namedCoachCommitment; }
-	public Instant getCreatedAt() { return createdAt; }
-	public Instant getUpdatedAt() { return updatedAt; }
-	public Long getVersion() { return version; }
+	public UUID getId() {
+		return id;
+	}
+
+	public String getRunCode() {
+		return runCode;
+	}
+
+	public Course getCourse() {
+		return course;
+	}
+
+	public Account getPrimaryCoach() {
+		return primaryCoach;
+	}
+
+	public BigInteger getTuitionVnd() {
+		return tuitionVnd;
+	}
+
+	public Instant getRegistrationOpensAt() {
+		return registrationOpensAt;
+	}
+
+	public Instant getRegistrationClosesAt() {
+		return registrationClosesAt;
+	}
+
+	public Instant getPlannedStartAt() {
+		return plannedStartAt;
+	}
+
+	public Instant getPlannedEndAt() {
+		return plannedEndAt;
+	}
+
+	public int getTotalUnits() {
+		return totalUnits;
+	}
+
+	public boolean isNamedCoachCommitment() {
+		return namedCoachCommitment;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public Instant getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
 }

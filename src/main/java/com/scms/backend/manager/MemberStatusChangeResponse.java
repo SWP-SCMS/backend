@@ -1,8 +1,7 @@
 package com.scms.backend.manager;
 
-import java.util.UUID;
-
 import com.scms.backend.account.AccountStatus;
+import java.util.UUID;
 
 public record MemberStatusChangeResponse(UUID accountId, AccountStatus status, int cancelledFutureBookings) {
 }

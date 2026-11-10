@@ -1,10 +1,5 @@
 package com.scms.backend.membership;
 
-import java.math.BigInteger;
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,6 +7,10 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
@@ -46,8 +45,7 @@ public class MembershipOrder {
 	@Column(name = "price_amount_snapshot", nullable = false, precision = 19, scale = 0, updatable = false)
 	private BigInteger priceAmountSnapshot;
 
-	@Column(name = "currency_code_snapshot", nullable = false, length = 3,
-		columnDefinition = "char(3)", updatable = false)
+	@Column(name = "currency_code_snapshot", nullable = false, length = 3, columnDefinition = "char(3)", updatable = false)
 	@JdbcTypeCode(SqlTypes.CHAR)
 	private String currencyCodeSnapshot;
 
@@ -87,13 +85,11 @@ public class MembershipOrder {
 	protected MembershipOrder() {
 	}
 
-	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId,
-			MembershipOffer offer) {
+	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId, MembershipOffer offer) {
 		this(id, orderNumber, memberAccountId, createdByAccountId, offer, FulfillmentMode.IMMEDIATE);
 	}
 
-	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId,
-			MembershipOffer offer, FulfillmentMode fulfillmentMode) {
+	public MembershipOrder(UUID id, String orderNumber, UUID memberAccountId, UUID createdByAccountId, MembershipOffer offer, FulfillmentMode fulfillmentMode) {
 		this.id = Objects.requireNonNull(id);
 		this.orderNumber = Objects.requireNonNull(orderNumber);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);

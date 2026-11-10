@@ -1,9 +1,5 @@
 package com.scms.backend.membership;
 
-import java.math.BigInteger;
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -14,6 +10,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -65,8 +64,7 @@ public class MembershipOffer {
 	protected MembershipOffer() {
 	}
 
-	public MembershipOffer(UUID id, MembershipPlan plan, String name, String description, BigInteger priceAmount,
-			String currencyCode, int durationDays, MembershipOfferStatus status, UUID createdByAccountId) {
+	public MembershipOffer(UUID id, MembershipPlan plan, String name, String description, BigInteger priceAmount, String currencyCode, int durationDays, MembershipOfferStatus status, UUID createdByAccountId) {
 		this.id = id;
 		this.plan = plan;
 		this.name = name;
@@ -86,13 +84,19 @@ public class MembershipOffer {
 	}
 
 	public void patch(String name, String description, BigInteger priceAmount, Integer durationDays) {
-		if (name != null) this.name = name;
-		if (description != null) this.description = description;
-		if (priceAmount != null) this.priceAmount = priceAmount;
-		if (durationDays != null) this.durationDays = durationDays;
+		if (name != null)
+			this.name = name;
+		if (description != null)
+			this.description = description;
+		if (priceAmount != null)
+			this.priceAmount = priceAmount;
+		if (durationDays != null)
+			this.durationDays = durationDays;
 	}
 
-	public void changeStatus(MembershipOfferStatus status) { this.status = status; }
+	public void changeStatus(MembershipOfferStatus status) {
+		this.status = status;
+	}
 
 	public UUID getId() {
 		return id;
@@ -118,7 +122,7 @@ public class MembershipOffer {
 		return currencyCode;
 	}
 
-	UUID getCreatedByAccountId() {
+	public UUID getCreatedByAccountId() {
 		return createdByAccountId;
 	}
 
@@ -126,5 +130,7 @@ public class MembershipOffer {
 		return durationDays;
 	}
 
-	public MembershipOfferStatus getStatus() { return status; }
+	public MembershipOfferStatus getStatus() {
+		return status;
+	}
 }
