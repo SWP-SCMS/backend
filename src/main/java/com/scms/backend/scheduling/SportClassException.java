@@ -26,31 +26,31 @@ public class SportClassException extends RuntimeException {
 		this.affectedSessions = List.copyOf(affectedSessions);
 	}
 
-	static public SportClassException validation(String field, String message) {
+	public static SportClassException validation(String field, String message) {
 		return new SportClassException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}
 
-	static public SportClassException notFound() {
+	public static SportClassException notFound() {
 		return new SportClassException(HttpStatus.NOT_FOUND, "CLASS_NOT_FOUND", null, "The requested class was not found.");
 	}
 
-	static public SportClassException disciplineNotFound() {
+	public static SportClassException disciplineNotFound() {
 		return new SportClassException(HttpStatus.NOT_FOUND, "DISCIPLINE_NOT_FOUND", null, "The requested discipline was not found.");
 	}
 
-	static public SportClassException inactiveDiscipline() {
+	public static SportClassException inactiveDiscipline() {
 		return new SportClassException(HttpStatus.CONFLICT, "DISCIPLINE_INACTIVE", null, "An inactive discipline cannot be used to create a class.");
 	}
 
-	static public SportClassException unsupportedType() {
+	public static SportClassException unsupportedType() {
 		return new SportClassException(HttpStatus.BAD_REQUEST, "CLASS_TYPE_UNSUPPORTED", "classType", "New classes must use GROUP or PT_1_1.");
 	}
 
-	static public SportClassException duplicateName() {
+	public static SportClassException duplicateName() {
 		return new SportClassException(HttpStatus.CONFLICT, "CLASS_NAME_CONFLICT", null, "A class with this name already exists in the discipline.");
 	}
 
-	static public SportClassException activeSessions(List<DisciplineSessionConflict> affectedSessions) {
+	public static SportClassException activeSessions(List<DisciplineSessionConflict> affectedSessions) {
 		return new SportClassException(HttpStatus.CONFLICT, "CLASS_HAS_ACTIVE_SESSIONS", null, "A class cannot be inactive while sessions are in progress or have not ended.", affectedSessions);
 	}
 

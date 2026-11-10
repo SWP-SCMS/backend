@@ -43,7 +43,7 @@ public class CourseTransferException extends RuntimeException {
 	}
 
 	// Only expiration commits its cleanup while returning a conflict; other failures roll back all effects.
-	static final public class ExpiredOffer extends CourseTransferException {
+	public static final class ExpiredOffer extends CourseTransferException {
 
 		private ExpiredOffer() {
 			super(HttpStatus.CONFLICT, "COURSE_TRANSFER_OFFER_EXPIRED", "The transfer offer has expired.");

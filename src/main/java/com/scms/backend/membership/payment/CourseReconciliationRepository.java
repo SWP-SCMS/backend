@@ -42,11 +42,11 @@ final class CourseReconciliationRepository {
 		return new Page(items, page, size, count, (int) Math.min(Integer.MAX_VALUE, Math.ceilDiv(count, (long) size)));
 	}
 
-	java.util.List<java.util.Map<java.lang.String, java.lang.Object>> reconcileFindCoursePaymentReconciliations(java.util.UUID actor, java.util.UUID paymentId, java.lang.String key) {
+	List<Map<java.lang.String, java.lang.Object>> reconcileFindCoursePaymentReconciliations(UUID actor, UUID paymentId, java.lang.String key) {
 		return db.queryForList("select request_json::text,response_json::text from course_payment_reconciliations " + "where actor_account_id=? and course_payment_id=? and idempotency_key=?", actor, paymentId, key);
 	}
 
-	int reconcileInsertCoursePaymentReconciliations(java.util.UUID randomUUID, java.util.UUID actor, java.util.UUID paymentId, java.lang.String key, java.lang.String payload, java.lang.String value6, boolean changed, java.sql.Timestamp nowTimestamp) {
+	int reconcileInsertCoursePaymentReconciliations(UUID randomUUID, UUID actor, UUID paymentId, java.lang.String key, java.lang.String payload, java.lang.String value6, boolean changed, Timestamp nowTimestamp) {
 		return db.update("""
 			insert into course_payment_reconciliations(id,actor_account_id,course_payment_id,idempotency_key,
 			  request_json,response_json,changed_payment,created_at) values(?,?,?,?,?::jsonb,?::jsonb,?,?)

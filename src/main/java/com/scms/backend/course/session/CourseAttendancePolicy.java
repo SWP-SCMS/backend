@@ -3,7 +3,7 @@ package com.scms.backend.course.session;
 import java.time.Instant;
 import java.util.Set;
 
-final public class CourseAttendancePolicy {
+public final class CourseAttendancePolicy {
 
 	private static final Set<String> ACTIVE_RUN_STATUSES = Set.of("CONFIRMED", "IN_PROGRESS", "COMPLETED");
 

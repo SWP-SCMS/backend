@@ -7,7 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 final class ClassSessionCancellationRepository {
 
-	java.util.List<java.util.UUID> cancelLockedFindBookings(java.util.UUID sessionId) {
+	List<UUID> cancelLockedFindBookings(UUID sessionId) {
 		return jdbc.queryForList("""
 			select member_account_id from bookings
 			where class_session_id = ? and status = 'BOOKED'
@@ -15,7 +15,7 @@ final class ClassSessionCancellationRepository {
 			""", UUID.class, sessionId);
 	}
 
-	int cancelLockedUpdateBookings(java.util.UUID managerId, java.sql.Timestamp nowTimestamp, java.sql.Timestamp nowTimestamp2, java.util.UUID sessionId) {
+	int cancelLockedUpdateBookings(UUID managerId, Timestamp nowTimestamp, Timestamp nowTimestamp2, UUID sessionId) {
 		return jdbc.update("""
 			update bookings set status = 'CANCELLED', cancelled_by_account_id = ?,
 				cancellation_source = 'SESSION_CANCELLED', cancelled_at = ?, updated_at = ?, version = version + 1

@@ -5,7 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-final public class CourseTransferApiModels {
+public final class CourseTransferApiModels {
 
 	private CourseTransferApiModels() {
 	}

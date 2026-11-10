@@ -46,59 +46,59 @@ public class RoomException extends RuntimeException {
 		this.conflictingSessionId = conflictingSessionId;
 	}
 
-	static public RoomException validation(String field, String message) {
+	public static RoomException validation(String field, String message) {
 		return new RoomException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}
 
-	static public RoomException notFound() {
+	public static RoomException notFound() {
 		return new RoomException(HttpStatus.NOT_FOUND, "ROOM_NOT_FOUND", null, "The requested room was not found.");
 	}
 
-	static public RoomException duplicateName() {
+	public static RoomException duplicateName() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_NAME_CONFLICT", null, "A room with this name already exists.");
 	}
 
-	static public RoomException capacityConflict() {
+	public static RoomException capacityConflict() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_CAPACITY_CONFLICT", null, "Room capacity cannot be lower than an active session capacity.");
 	}
 
-	static public RoomException activeSessionsConflict(java.util.List<java.util.UUID> sessionIds) {
+	public static RoomException activeSessionsConflict(java.util.List<java.util.UUID> sessionIds) {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_HAS_ACTIVE_SESSIONS", "affectedSessionIds", "Room cannot be disabled while sessions are in progress or scheduled in the future: " + sessionIds, sessionIds);
 	}
 
-	static public RoomException inProgressSessionsConflict(List<UUID> sessionIds) {
+	public static RoomException inProgressSessionsConflict(List<UUID> sessionIds) {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_HAS_IN_PROGRESS_SESSION", "affectedSessionIds", "Room cannot be disabled while a Session is in progress: " + sessionIds, sessionIds);
 	}
 
-	static public RoomException suspensionValidation(String field, String message) {
+	public static RoomException suspensionValidation(String field, String message) {
 		return new RoomException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", field, message);
 	}
 
-	static public RoomException suspensionConflict() {
+	public static RoomException suspensionConflict() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_SUSPENSION_CONFLICT", null, "The room suspension overlaps an existing suspension or Session.");
 	}
 
-	static public RoomException suspensionChanged() {
+	public static RoomException suspensionChanged() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_SUSPENSION_CHANGED", null, "The room suspension changed after it was loaded.");
 	}
 
-	static public RoomException suspensionExpired() {
+	public static RoomException suspensionExpired() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_SUSPENSION_EXPIRED", null, "An ended room suspension cannot be extended.");
 	}
 
-	static public RoomException inactiveRoom() {
+	public static RoomException inactiveRoom() {
 		return new RoomException(HttpStatus.CONFLICT, "ROOM_INACTIVE", null, "The target room is not active.");
 	}
 
-	static public RoomException moveCapacityConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime) {
+	public static RoomException moveCapacityConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime) {
 		return moveConflict("ROOM_CAPACITY_CONFLICT", "The target room cannot hold the Session.", sessionId, targetRoomId, startTime, endTime, null);
 	}
 
-	static public RoomException moveSuspensionConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime) {
+	public static RoomException moveSuspensionConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime) {
 		return moveConflict("ROOM_SUSPENSION_CONFLICT", "The target room is suspended during the Session.", sessionId, targetRoomId, startTime, endTime, null);
 	}
 
-	static public RoomException moveSessionConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime, UUID conflictingSessionId) {
+	public static RoomException moveSessionConflict(UUID sessionId, UUID targetRoomId, Instant startTime, Instant endTime, UUID conflictingSessionId) {
 		return moveConflict("ROOM_SESSION_CONFLICT", "The target room or Coach has an overlapping Session.", sessionId, targetRoomId, startTime, endTime, conflictingSessionId);
 	}
 
@@ -106,11 +106,11 @@ public class RoomException extends RuntimeException {
 		return new RoomException(HttpStatus.CONFLICT, code, null, message, List.of(), sessionId, targetRoomId, startTime, endTime, conflictingSessionId);
 	}
 
-	static public RoomException cancelNotAllowed(UUID sessionId) {
+	public static RoomException cancelNotAllowed(UUID sessionId) {
 		return sessionNotScheduled(sessionId);
 	}
 
-	static public RoomException sessionNotScheduled(UUID sessionId) {
+	public static RoomException sessionNotScheduled(UUID sessionId) {
 		return new RoomException(HttpStatus.CONFLICT, "SESSION_NOT_SCHEDULED", null, "The Session is not eligible for this resolution.", List.of(sessionId));
 	}
 

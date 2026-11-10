@@ -6,7 +6,7 @@ import java.math.BigInteger;
 import java.time.Instant;
 import java.util.UUID;
 
-final public class CourseWithdrawalApiModels {
+public final class CourseWithdrawalApiModels {
 
 	private CourseWithdrawalApiModels() {
 	}

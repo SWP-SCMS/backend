@@ -5,7 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 final class CoachAssignmentReminderRepository {
 
-	int notifyManagersInsertNotificationOutbox(java.sql.Timestamp nowTimestamp, java.sql.Timestamp nowTimestamp2, java.time.LocalDate today, java.time.LocalDate today2) {
+	int notifyManagersInsertNotificationOutbox(Timestamp nowTimestamp, Timestamp nowTimestamp2, java.time.LocalDate today, java.time.LocalDate today2) {
 		return db.update("""
 			with eligible as (
 			    select m.id membership_id, a.id member_id, a.full_name, p.member_code,

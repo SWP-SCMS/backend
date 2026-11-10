@@ -6,7 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 final class RoomSuspensionJdbcRepository {
 
-	java.util.List<java.util.UUID> notifyChangedSessionFindBookings(java.util.UUID sessionId) {
+	List<UUID> notifyChangedSessionFindBookings(UUID sessionId) {
 		return jdbc.queryForList("""
 			select member_account_id from bookings
 			where class_session_id = ? and status = 'BOOKED'

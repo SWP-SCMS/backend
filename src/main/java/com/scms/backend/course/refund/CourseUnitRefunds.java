@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * Invoked inside the caller's transaction after locking the run and flushing schedule changes.
  */
-final public class CourseUnitRefunds {
+public final class CourseUnitRefunds {
 
 	private CourseUnitRefunds() {
 	}

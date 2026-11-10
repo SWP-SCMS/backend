@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class EmailMessageRenderer {
 
-	static final public String VERIFICATION = "EMAIL_VERIFICATION_OTP";
+	public static final String VERIFICATION = "EMAIL_VERIFICATION_OTP";
 
 	static final String PASSWORD_RESET = "PASSWORD_RESET_OTP";
 

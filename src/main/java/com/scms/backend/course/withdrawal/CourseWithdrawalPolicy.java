@@ -3,7 +3,7 @@ package com.scms.backend.course.withdrawal;
 import com.scms.backend.course.CourseWithdrawalCause;
 import java.math.BigInteger;
 
-final public class CourseWithdrawalPolicy {
+public final class CourseWithdrawalPolicy {
 
 	private CourseWithdrawalPolicy() {
 	}

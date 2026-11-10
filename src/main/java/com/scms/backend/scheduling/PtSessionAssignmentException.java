@@ -17,7 +17,7 @@ public class PtSessionAssignmentException extends RuntimeException {
 		this.affectedWaitlists = List.copyOf(affectedWaitlists);
 	}
 
-	static public PtSessionAssignmentException incompatibleMembers(List<PtSessionAffectedBooking> affectedBookings, List<PtSessionAffectedWaitlist> affectedWaitlists) {
+	public static PtSessionAssignmentException incompatibleMembers(List<PtSessionAffectedBooking> affectedBookings, List<PtSessionAffectedWaitlist> affectedWaitlists) {
 		return new PtSessionAssignmentException(affectedBookings, affectedWaitlists);
 	}
 

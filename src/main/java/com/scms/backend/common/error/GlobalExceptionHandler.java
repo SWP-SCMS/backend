@@ -67,7 +67,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.TypeMismatchException;
@@ -137,585 +136,317 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler imple
 
 	@ExceptionHandler(InvalidCredentialsException.class)
 	ProblemDetail handleInvalidCredentials() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Invalid credentials");
-		problem.setTitle("Authentication failed");
-		problem.setProperty("code", "INVALID_CREDENTIALS");
-		return problem;
+		return AuthenticationProblemResponses.handleInvalidCredentials();
 	}
 
 	@ExceptionHandler(InvalidRefreshTokenException.class)
 	ProblemDetail handleInvalidRefreshToken() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "The refresh token is invalid or expired.");
-		problem.setTitle("Refresh failed");
-		problem.setProperty("code", "INVALID_REFRESH_TOKEN");
-		return problem;
+		return AuthenticationProblemResponses.handleInvalidRefreshToken();
 	}
 
 	@ExceptionHandler(InvalidAuthenticatedAccountException.class)
 	ProblemDetail handleInvalidAuthenticatedAccount() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "The authenticated account is no longer active.");
-		problem.setTitle("Authentication failed");
-		problem.setProperty("code", "INVALID_TOKEN");
-		return problem;
+		return AuthenticationProblemResponses.handleInvalidAuthenticatedAccount();
 	}
 
 	@ExceptionHandler(CurrentPasswordIncorrectException.class)
 	ProblemDetail handleCurrentPasswordIncorrect() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "The current password is incorrect.");
-		problem.setTitle("Password change failed");
-		problem.setProperty("code", "CURRENT_PASSWORD_INCORRECT");
-		return problem;
+		return AuthenticationProblemResponses.handleCurrentPasswordIncorrect();
 	}
 
 	@ExceptionHandler(ChangePasswordValidationException.class)
 	ProblemDetail handleChangePasswordValidation(ChangePasswordValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return AuthenticationProblemResponses.handleChangePasswordValidation(exception);
 	}
 
 	@ExceptionHandler(NewPasswordSameAsCurrentException.class)
 	ProblemDetail handleNewPasswordSameAsCurrent() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "The new password must differ from the current password.");
-		problem.setTitle("Password change failed");
-		problem.setProperty("code", "NEW_PASSWORD_SAME_AS_CURRENT");
-		return problem;
+		return AuthenticationProblemResponses.handleNewPasswordSameAsCurrent();
 	}
 
 	@ExceptionHandler(RegistrationValidationException.class)
 	ProblemDetail handleRegistrationValidation(RegistrationValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return AuthenticationProblemResponses.handleRegistrationValidation(exception);
 	}
 
 	@ExceptionHandler(DuplicateAccountException.class)
 	ProblemDetail handleDuplicateAccount(DuplicateAccountException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-		problem.setTitle("Account conflict");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return AuthenticationProblemResponses.handleDuplicateAccount(exception);
 	}
 
 	@ExceptionHandler(PendingRegistrationException.class)
 	ProblemDetail handlePendingRegistration(PendingRegistrationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-		problem.setTitle("Email verification pending");
-		problem.setProperty("code", "EMAIL_VERIFICATION_PENDING");
-		problem.setProperty("otpExpiresAt", exception.getOtpExpiresAt());
-		problem.setProperty("resendAvailableAt", exception.getResendAvailableAt());
-		problem.setProperty("registrationExpiresAt", exception.getRegistrationExpiresAt());
-		problem.setProperty("serverTime", exception.getServerTime());
-		return problem;
+		return AuthenticationProblemResponses.handlePendingRegistration(exception);
 	}
 
 	@ExceptionHandler(EmailVerificationException.class)
 	ResponseEntity<ProblemDetail> handleEmailVerification(EmailVerificationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Email verification failed");
-		problem.setProperty("code", exception.getCode());
-		ResponseEntity.BodyBuilder response = ResponseEntity.status(exception.getStatus());
-		if (exception.getRetryAfter() != null)
-			response.header(HttpHeaders.RETRY_AFTER, exception.getRetryAfter().toString());
-		return response.contentType(MediaType.APPLICATION_PROBLEM_JSON).body(problem);
+		return AuthenticationProblemResponses.handleEmailVerification(exception);
 	}
 
 	@ExceptionHandler(PasswordResetException.class)
 	ProblemDetail handlePasswordReset(PasswordResetException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Password reset failed");
-		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null)
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getFieldMessage())));
-		return problem;
+		return AuthenticationProblemResponses.handlePasswordReset(exception);
 	}
 
 	@ExceptionHandler(MemberProfileValidationException.class)
 	ProblemDetail handleMemberProfileValidation(MemberProfileValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return AccountProblemResponses.handleMemberProfileValidation(exception);
 	}
 
 	@ExceptionHandler(ReceptionMemberValidationException.class)
 	ProblemDetail handleReceptionMemberValidation(ReceptionMemberValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return AccountProblemResponses.handleReceptionMemberValidation(exception);
 	}
 
 	@ExceptionHandler(StaffAccountValidationException.class)
 	ProblemDetail handleStaffAccountValidation(StaffAccountValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return AccountProblemResponses.handleStaffAccountValidation(exception);
 	}
 
 	@ExceptionHandler(StaffAccountNotFoundException.class)
 	ProblemDetail handleStaffAccountNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested staff account was not found.");
-		problem.setTitle("Staff account not found");
-		problem.setProperty("code", "STAFF_ACCOUNT_NOT_FOUND");
-		return problem;
+		return AccountProblemResponses.handleStaffAccountNotFound();
 	}
 
 	@ExceptionHandler(MemberAccountNotFoundException.class)
 	ProblemDetail handleMemberAccountNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested member account was not found.");
-		problem.setTitle("Member not found");
-		problem.setProperty("code", "MEMBER_NOT_FOUND");
-		return problem;
+		return AccountProblemResponses.handleMemberAccountNotFound();
 	}
 
 	@ExceptionHandler(MemberStatusConflictException.class)
 	ProblemDetail handleMemberStatusConflict(MemberStatusConflictException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-		problem.setTitle("Member status conflict");
-		problem.setProperty("code", "MEMBER_STATUS_CONFLICT");
-		return problem;
+		return AccountProblemResponses.handleMemberStatusConflict(exception);
 	}
 
 	@ExceptionHandler(StaffStatusConflictException.class)
 	ProblemDetail handleStaffStatusConflict(StaffStatusConflictException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-		problem.setTitle("Staff status conflict");
-		problem.setProperty("code", "STAFF_STATUS_CONFLICT");
-		return problem;
+		return AccountProblemResponses.handleStaffStatusConflict(exception);
 	}
 
 	@ExceptionHandler(DisciplineValidationException.class)
 	ProblemDetail handleDisciplineValidation(DisciplineValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		if (!exception.getAffectedSessions().isEmpty()) {
-			problem.setProperty("affectedSessionIds", exception.getAffectedSessions().stream().map(session -> session.sessionId().toString()).toList());
-			problem.setProperty("affectedSessions", exception.getAffectedSessions());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleDisciplineValidation(exception);
 	}
 
 	@ExceptionHandler(DisciplineNotFoundException.class)
 	ProblemDetail handleDisciplineNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested discipline was not found.");
-		problem.setTitle("Discipline not found");
-		problem.setProperty("code", "DISCIPLINE_NOT_FOUND");
-		return problem;
+		return SchedulingProblemResponses.handleDisciplineNotFound();
 	}
 
 	@ExceptionHandler(DuplicateDisciplineException.class)
 	ProblemDetail handleDuplicateDiscipline() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "A discipline with this name already exists.");
-		problem.setTitle("Discipline conflict");
-		problem.setProperty("code", "DISCIPLINE_NAME_CONFLICT");
-		return problem;
+		return SchedulingProblemResponses.handleDuplicateDiscipline();
 	}
 
 	@ExceptionHandler(SportClassException.class)
 	ProblemDetail handleSportClass(SportClassException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Class request failed");
-		problem.setProperty("code", exception.getCode());
-		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if (!exception.getAffectedSessions().isEmpty()) {
-			problem.setProperty("affectedSessionIds", exception.getAffectedSessions().stream().map(session -> session.sessionId().toString()).toList());
-			problem.setProperty("affectedSessions", exception.getAffectedSessions());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleSportClass(exception);
 	}
 
 	@ExceptionHandler(RoomException.class)
 	ProblemDetail handleRoom(RoomException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Room request failed");
-		problem.setProperty("code", exception.getCode());
-		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if (!exception.getAffectedSessionIds().isEmpty()) {
-			problem.setProperty("affectedSessionIds", exception.getAffectedSessionIds().stream().map(UUID::toString).toList());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleRoom(exception);
 	}
 
 	@ExceptionHandler(CourseException.class)
 	ProblemDetail handleCourse(CourseException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Course request failed");
-		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		return problem;
+		return CourseProblemResponses.handleCourse(exception);
 	}
 
 	@ExceptionHandler(CourseOrderException.class)
 	ProblemDetail handleCourseOrder(CourseOrderException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Course order request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return CourseProblemResponses.handleCourseOrder(exception);
 	}
 
 	@ExceptionHandler(CourseWaitlistException.class)
 	ProblemDetail handleCourseWaitlist(CourseWaitlistException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Course waitlist request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return CourseProblemResponses.handleCourseWaitlist(exception);
 	}
 
 	@ExceptionHandler(CourseTransferException.class)
 	ProblemDetail handleCourseTransfer(CourseTransferException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
-		problem.setTitle("Course transfer request failed");
-		problem.setProperty("code", exception.code());
-		return problem;
+		return CourseProblemResponses.handleCourseTransfer(exception);
 	}
 
 	@ExceptionHandler(CourseWithdrawalException.class)
 	ProblemDetail handleCourseWithdrawal(CourseWithdrawalException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
-		problem.setTitle("Course withdrawal request failed");
-		problem.setProperty("code", exception.code());
-		return problem;
+		return CourseProblemResponses.handleCourseWithdrawal(exception);
 	}
 
 	@ExceptionHandler(CourseRefundException.class)
 	ProblemDetail handleCourseRefund(CourseRefundException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
-		problem.setTitle("Course refund request failed");
-		problem.setProperty("code", exception.code());
-		return problem;
+		return CourseProblemResponses.handleCourseRefund(exception);
 	}
 
 	@ExceptionHandler(RecurringScheduleException.class)
 	ProblemDetail handleRecurringSchedule(RecurringScheduleException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Recurring schedule request failed");
-		problem.setProperty("code", exception.getCode());
-		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if ("SESSION_BULK_SELECTION_CHANGED".equals(exception.getCode())) {
-			problem.setProperty("eligibleSessionIds", exception.getEligibleSessionIds());
-			problem.setProperty("ineligibleSessionIds", exception.getIneligibleSessionIds());
-		}
-		if (exception.getRoomCapacity() != null) {
-			problem.setProperty("roomCapacity", exception.getRoomCapacity());
-			problem.setProperty("occupiedCapacity", exception.getOccupiedCapacity());
-			problem.setProperty("requestedCapacity", exception.getRequestedCapacity());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleRecurringSchedule(exception);
 	}
 
 	@ExceptionHandler(PtSessionAssignmentException.class)
 	ProblemDetail handlePtSessionAssignment(PtSessionAssignmentException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("PT Session assignment failed");
-		problem.setProperty("code", exception.getCode());
-		problem.setProperty("affectedBookings", exception.getAffectedBookings());
-		problem.setProperty("affectedWaitlists", exception.getAffectedWaitlists());
-		return problem;
+		return SchedulingProblemResponses.handlePtSessionAssignment(exception);
 	}
 
 	@ExceptionHandler(BookingException.class)
 	ProblemDetail handleBooking(BookingException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Booking request failed");
-		problem.setProperty("code", exception.getCode());
-		if (exception.getRequiredBenefitCodes() != null) {
-			problem.setProperty("requiredBenefitCodes", exception.getRequiredBenefitCodes());
-			problem.setProperty("missingBenefitCodes", exception.getMissingBenefitCodes());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleBooking(exception);
 	}
 
 	@ExceptionHandler(CoachLeaveException.class)
 	ProblemDetail handleCoachLeave(CoachLeaveException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Coach leave request failed");
-		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if (!exception.getAffectedSessionIds().isEmpty()) {
-			problem.setProperty("affectedSessionIds", exception.getAffectedSessionIds());
-		}
-		return problem;
+		return SchedulingProblemResponses.handleCoachLeave(exception);
 	}
 
 	@ExceptionHandler(WaitlistException.class)
 	ProblemDetail handleWaitlist(WaitlistException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Waitlist request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return SchedulingProblemResponses.handleWaitlist(exception);
 	}
 
 	@ExceptionHandler(AttendanceException.class)
 	ProblemDetail handleAttendance(AttendanceException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Attendance request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return SchedulingProblemResponses.handleAttendance(exception);
 	}
 
 	@ExceptionHandler(CourseAttendanceException.class)
 	ProblemDetail handleCourseAttendance(CourseAttendanceException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Course attendance request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return CourseProblemResponses.handleCourseAttendance(exception);
 	}
 
 	@ExceptionHandler(ReceptionMemberNotFoundException.class)
 	ProblemDetail handleReceptionMemberNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested member was not found.");
-		problem.setTitle("Member not found");
-		problem.setProperty("code", "MEMBER_NOT_FOUND");
-		return problem;
+		return AccountProblemResponses.handleReceptionMemberNotFound();
 	}
 
 	@ExceptionHandler(CenterVisitException.class)
 	ProblemDetail handleCenterVisit(CenterVisitException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Center check-in failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return AccountProblemResponses.handleCenterVisit(exception);
 	}
 
 	@ExceptionHandler(InvalidPlanCodeException.class)
 	ProblemDetail handleInvalidPlanCode(InvalidPlanCodeException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-		problem.setTitle("Invalid plan code");
-		problem.setProperty("code", "INVALID_PLAN_CODE");
-		return problem;
+		return MembershipProblemResponses.handleInvalidPlanCode(exception);
 	}
 
 	@ExceptionHandler(MembershipOfferNotFoundException.class)
 	ProblemDetail handleMembershipOfferNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested membership offer was not found.");
-		problem.setTitle("Membership offer not found");
-		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_FOUND");
-		return problem;
+		return MembershipProblemResponses.handleMembershipOfferNotFound();
 	}
 
 	@ExceptionHandler(MembershipOfferUnavailableException.class)
 	ProblemDetail handleMembershipOfferUnavailable() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The requested membership offer is not available.");
-		problem.setTitle("Membership offer not available");
-		problem.setProperty("code", "MEMBERSHIP_OFFER_NOT_AVAILABLE");
-		return problem;
+		return MembershipProblemResponses.handleMembershipOfferUnavailable();
 	}
 
 	@ExceptionHandler(MembershipOrderMemberNotFoundException.class)
 	ProblemDetail handleMembershipOrderMemberNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested member was not found.");
-		problem.setTitle("Member not found");
-		problem.setProperty("code", "MEMBER_NOT_FOUND");
-		return problem;
+		return MembershipProblemResponses.handleMembershipOrderMemberNotFound();
 	}
 
 	@ExceptionHandler(MemberNotActiveException.class)
 	ProblemDetail handleMemberNotActive() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The member account is not active.");
-		problem.setTitle("Member not active");
-		problem.setProperty("code", "MEMBER_NOT_ACTIVE");
-		return problem;
+		return MembershipProblemResponses.handleMemberNotActive();
 	}
 
 	@ExceptionHandler(ActiveMembershipExistsException.class)
 	ProblemDetail handleActiveMembershipExists() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The member already has an active membership.");
-		problem.setTitle("Active membership exists");
-		problem.setProperty("code", "ACTIVE_MEMBERSHIP_EXISTS");
-		return problem;
+		return MembershipProblemResponses.handleActiveMembershipExists();
 	}
 
 	@ExceptionHandler(PendingMembershipOrderExistsException.class)
 	ProblemDetail handlePendingMembershipOrderExists() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The member already has a pending membership order.");
-		problem.setTitle("Pending membership order exists");
-		problem.setProperty("code", "PENDING_MEMBERSHIP_ORDER_EXISTS");
-		return problem;
+		return MembershipProblemResponses.handlePendingMembershipOrderExists();
 	}
 
 	@ExceptionHandler(MembershipRenewalAlreadyExistsException.class)
 	ProblemDetail handleMembershipRenewalAlreadyExists() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "The member already has a reserved membership or pending renewal order.");
-		problem.setTitle("Membership renewal already exists");
-		problem.setProperty("code", "MEMBERSHIP_RENEWAL_ALREADY_EXISTS");
-		return problem;
+		return MembershipProblemResponses.handleMembershipRenewalAlreadyExists();
 	}
 
 	@ExceptionHandler(SepayValidationException.class)
 	ProblemDetail handleSepayValidation(SepayValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-		problem.setTitle("SePay validation failed");
-		problem.setProperty("code", "SEPAY_VALIDATION_ERROR");
-		return problem;
+		return MembershipProblemResponses.handleSepayValidation(exception);
 	}
 
 	@ExceptionHandler(MembershipOfferValidationException.class)
 	ProblemDetail handleMembershipOfferValidation(MembershipOfferValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
-		problem.setTitle("Membership offer validation failed");
-		problem.setProperty("code", "MEMBERSHIP_OFFER_VALIDATION_ERROR");
-		return problem;
+		return MembershipProblemResponses.handleMembershipOfferValidation(exception);
 	}
 
 	@ExceptionHandler(MembershipPlanValidationException.class)
 	ProblemDetail handleMembershipPlanValidation(MembershipPlanValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Membership plan validation failed");
-		problem.setProperty("code", "MEMBERSHIP_PLAN_VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return MembershipProblemResponses.handleMembershipPlanValidation(exception);
 	}
 
 	@ExceptionHandler(MembershipPlanConflictException.class)
 	ProblemDetail handleMembershipPlanConflict(MembershipPlanConflictException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, exception.getMessage());
-		problem.setTitle("Membership plan conflict");
-		problem.setProperty("code", exception.getMessage());
-		return problem;
+		return MembershipProblemResponses.handleMembershipPlanConflict(exception);
 	}
 
 	@ExceptionHandler(MembershipPlanNotFoundException.class)
 	ProblemDetail handleMembershipPlanNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested membership plan was not found.");
-		problem.setTitle("Membership plan not found");
-		problem.setProperty("code", "MEMBERSHIP_PLAN_NOT_FOUND");
-		return problem;
+		return MembershipProblemResponses.handleMembershipPlanNotFound();
 	}
 
 	@ExceptionHandler(MembershipTerminationException.class)
 	ProblemDetail handleMembershipTermination(MembershipTerminationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Membership termination request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return MembershipProblemResponses.handleMembershipTermination(exception);
 	}
 
 	@ExceptionHandler(MembershipFreezeException.class)
 	ProblemDetail handleMembershipFreeze(MembershipFreezeException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Membership freeze request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return MembershipProblemResponses.handleMembershipFreeze(exception);
 	}
 
 	@ExceptionHandler(RefundException.class)
 	ProblemDetail handleRefund(RefundException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Refund request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return MembershipProblemResponses.handleRefund(exception);
 	}
 
 	@ExceptionHandler(NotificationNotFoundException.class)
 	ProblemDetail handleNotificationNotFound() {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested notification was not found.");
-		problem.setTitle("Notification not found");
-		problem.setProperty("code", "NOTIFICATION_NOT_FOUND");
-		return problem;
+		return OperationsProblemResponses.handleNotificationNotFound();
 	}
 
 	@ExceptionHandler(NotificationValidationException.class)
 	ProblemDetail handleNotificationValidation(NotificationValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return OperationsProblemResponses.handleNotificationValidation(exception);
 	}
 
 	@ExceptionHandler(AuditHistoryValidationException.class)
 	ProblemDetail handleAuditHistoryValidation(AuditHistoryValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return OperationsProblemResponses.handleAuditHistoryValidation(exception);
 	}
 
 	@ExceptionHandler(PaymentException.class)
 	ProblemDetail handlePayment(PaymentException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
-		problem.setTitle("Payment request failed");
-		problem.setProperty("code", exception.code());
-		return problem;
+		return MembershipProblemResponses.handlePayment(exception);
 	}
 
 	@ExceptionHandler(ReportingValidationException.class)
 	ProblemDetail handleReportingValidation(ReportingValidationException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "One or more request fields are invalid.");
-		problem.setTitle("Validation failed");
-		problem.setProperty("code", "VALIDATION_ERROR");
-		problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		return problem;
+		return MembershipProblemResponses.handleReportingValidation(exception);
 	}
 
 	@ExceptionHandler(CoachAssignmentException.class)
 	ProblemDetail handleCoachAssignment(CoachAssignmentException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Coach assignment request failed");
-		problem.setProperty("code", exception.getCode());
-		if ("VALIDATION_ERROR".equals(exception.getCode()) && exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if (exception.getImpact() != null) {
-			problem.setProperty("impact", exception.getImpact());
-		}
-		return problem;
+		return TrainingProblemResponses.handleCoachAssignment(exception);
 	}
 
 	@ExceptionHandler(TrainingPlanException.class)
 	ProblemDetail handleTrainingPlan(TrainingPlanException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Training Plan request failed");
-		problem.setProperty("code", exception.getCode());
-		if (exception.getField() != null) {
-			problem.setProperty("errors", Map.of(exception.getField(), List.of(exception.getMessage())));
-		}
-		if (exception.getCurrentVersionNumber() != null) {
-			problem.setProperty("currentVersionNumber", exception.getCurrentVersionNumber());
-		}
-		if (exception.getActivePlanId() != null) {
-			problem.setProperty("activePlanId", exception.getActivePlanId());
-			problem.setProperty("activePlanTitle", exception.getActivePlanTitle());
-		}
-		return problem;
+		return TrainingProblemResponses.handleTrainingPlan(exception);
 	}
 
 	@ExceptionHandler(TrainingResultException.class)
 	ProblemDetail handleTrainingResult(TrainingResultException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Training Result request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return TrainingProblemResponses.handleTrainingResult(exception);
 	}
 
 	@ExceptionHandler(TrainingFeedbackException.class)
 	ProblemDetail handleTrainingFeedback(TrainingFeedbackException exception) {
-		ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.getStatus(), exception.getMessage());
-		problem.setTitle("Training Feedback request failed");
-		problem.setProperty("code", exception.getCode());
-		return problem;
+		return TrainingProblemResponses.handleTrainingFeedback(exception);
 	}
 
 	@Override

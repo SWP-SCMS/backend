@@ -166,14 +166,14 @@ final class PaymentRepository {
 		return new RevenueReportResponse(from, to, number(row, "paid_payments"), paidRevenue, completedRefundAmount, paidRevenue.subtract(completedRefundAmount), number(row, "pending_payments"), number(row, "failed_payments"), number(memberships, "active"), number(memberships, "expired"), includeTestData);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> cashFindAccounts(java.lang.String memberCode) {
+	Map<java.lang.String, java.lang.Object> cashFindAccounts(java.lang.String memberCode) {
 		return db.queryForMap("""
 			select a.id account_id from accounts a join member_profiles m on m.account_id=a.id
 			where m.member_code=? and a.role='MEMBER' and a.status='ACTIVE'
 			""", memberCode);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> cashFindMembershipOrders(java.util.UUID actor, java.lang.String normalizedIdempotencyKey) {
+	Map<java.lang.String, java.lang.Object> cashFindMembershipOrders(UUID actor, java.lang.String normalizedIdempotencyKey) {
 		return db.queryForMap("""
 			select o.member_account_id,p.id payment_id
 			from membership_orders o join payments p on p.order_id=o.id
@@ -182,7 +182,7 @@ final class PaymentRepository {
 			""", actor, normalizedIdempotencyKey);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> cashFindMembershipOffers(java.util.@jakarta.validation.constraints.NotNull UUID offerId) {
+	Map<java.lang.String, java.lang.Object> cashFindMembershipOffers(@jakarta.validation.constraints.NotNull UUID offerId) {
 		return db.queryForMap("""
 			select offer.id,offer.name,offer.plan_code,offer.price_amount,offer.currency_code,offer.duration_days
 			from membership_offers offer join membership_plans plan on plan.plan_code=offer.plan_code
@@ -191,19 +191,19 @@ final class PaymentRepository {
 			""", offerId);
 	}
 
-	long countActiveMemberships(java.util.UUID memberId) {
+	long countActiveMemberships(UUID memberId) {
 		return count("select count(*) from memberships where member_account_id=? and status='ACTIVE'", memberId);
 	}
 
-	long countReservedMemberships(java.util.UUID memberId) {
+	long countReservedMemberships(UUID memberId) {
 		return count("select count(*) from memberships where member_account_id=? and status='RESERVED'", memberId);
 	}
 
-	long countPendingOrders(java.util.UUID memberId) {
+	long countPendingOrders(UUID memberId) {
 		return count("select count(*) from membership_orders where member_account_id=? and status='PENDING_PAYMENT'", memberId);
 	}
 
-	int cashInsertMembershipOrders(java.util.UUID orderId, java.lang.String orderNumber, java.util.UUID memberId, java.util.UUID actor, java.util.@jakarta.validation.constraints.NotNull UUID offerId, java.lang.Object name, java.lang.Object planCode, java.lang.Object priceAmount, java.lang.Object currencyCode, java.lang.Object durationDays, java.lang.String mode, java.lang.String normalizedIdempotencyKey) {
+	int cashInsertMembershipOrders(UUID orderId, java.lang.String orderNumber, UUID memberId, UUID actor, @jakarta.validation.constraints.NotNull UUID offerId, java.lang.Object name, java.lang.Object planCode, java.lang.Object priceAmount, java.lang.Object currencyCode, java.lang.Object durationDays, java.lang.String mode, java.lang.String normalizedIdempotencyKey) {
 		return db.update("""
 			insert into membership_orders(id,order_number,member_account_id,created_by_account_id,offer_id,
 				offer_name_snapshot,plan_code_snapshot,price_amount_snapshot,currency_code_snapshot,
@@ -212,7 +212,7 @@ final class PaymentRepository {
 			""", orderId, orderNumber, memberId, actor, offerId, name, planCode, priceAmount, currencyCode, durationDays, mode, normalizedIdempotencyKey);
 	}
 
-	int reconcileUpdatePayments(java.lang.String value1, java.lang.String value2, java.util.UUID actor, java.util.UUID paymentId) {
+	int reconcileUpdatePayments(java.lang.String value1, java.lang.String value2, UUID actor, UUID paymentId) {
 		return db.update("update payments set status='FAILED',failure_reason=?,evidence=?,processed_by_account_id=?,updated_at=current_timestamp where id=? and status='PENDING'", value1, value2, actor, paymentId);
 	}
 
@@ -220,25 +220,25 @@ final class PaymentRepository {
 		return db.update("update membership_orders set status='EXPIRED',updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'", orderId);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> cancelOrderFindMembershipOrders(java.util.UUID orderId) {
+	Map<java.lang.String, java.lang.Object> cancelOrderFindMembershipOrders(UUID orderId) {
 		return db.queryForMap("select id,status from membership_orders where id=? for update", orderId);
 	}
 
-	int cancelOrderUpdatePayments(java.lang.String value1, java.lang.String value2, java.util.UUID actor, java.sql.Timestamp nowTimestamp, java.util.UUID orderId) {
+	int cancelOrderUpdatePayments(java.lang.String value1, java.lang.String value2, UUID actor, Timestamp nowTimestamp, UUID orderId) {
 		return db.update("""
 			update payments set status='FAILED',failure_reason=?,evidence=?,processed_by_account_id=?,
 				updated_at=? where order_id=? and status='PENDING'
 			""", value1, value2, actor, nowTimestamp, orderId);
 	}
 
-	int cancelOrderUpdateMembershipOrders(java.sql.Timestamp nowTimestamp, java.util.UUID orderId) {
+	int cancelOrderUpdateMembershipOrders(Timestamp nowTimestamp, UUID orderId) {
 		return db.update("""
 			update membership_orders set status='EXPIRED',updated_at=?,version=version+1
 			where id=? and status='PENDING_PAYMENT'
 			""", nowTimestamp, orderId);
 	}
 
-	java.util.List<com.scms.backend.membership.payment.ReceiptResponse> receiptsFindReceipts(java.util.UUID actor) {
+	List<com.scms.backend.membership.payment.ReceiptResponse> receiptsFindReceipts(UUID actor) {
 		return db.query("""
 			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,o.order_number,a.full_name member_name,
 				m.member_code,p.provider_reference payment_reference from receipts r
@@ -250,14 +250,14 @@ final class PaymentRepository {
 			""", (rs, row) -> receipt(rs), actor);
 	}
 
-	java.util.UUID receiptsForReceptionistFindMemberProfiles(java.lang.String trim) {
+	UUID receiptsForReceptionistFindMemberProfiles(java.lang.String trim) {
 		return db.queryForObject("""
 			select a.id from member_profiles m join accounts a on a.id=m.account_id
 			where m.member_code=? and a.role='MEMBER'
 			""", UUID.class, trim);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> receiptFindReceipts(java.util.UUID receiptId) {
+	Map<java.lang.String, java.lang.Object> receiptFindReceipts(UUID receiptId) {
 		return db.queryForMap("""
 			select r.*,o.plan_code_snapshot,o.offer_name_snapshot,o.order_number,a.full_name member_name,
 			m.member_code,p.provider_reference payment_reference,p.processed_by_account_id from receipts r
@@ -269,11 +269,11 @@ final class PaymentRepository {
 			""", receiptId);
 	}
 
-	java.util.List<com.scms.backend.membership.MembershipHistoryResponse> memberHistoryFindMemberships(java.util.UUID actor) {
+	List<MembershipHistoryResponse> memberHistoryFindMemberships(UUID actor) {
 		return db.query("select id,order_id,plan_code_snapshot,offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,status,starts_at,ends_at from memberships where member_account_id=? order by starts_at desc nulls first,id desc", (rs, row) -> new MembershipHistoryResponse(rs.getObject("id", UUID.class), rs.getObject("order_id", UUID.class), rs.getString("plan_code_snapshot"), rs.getString("offer_name_snapshot"), rs.getBigDecimal("price_amount_snapshot").toBigIntegerExact(), rs.getString("currency_code_snapshot").trim(), rs.getInt("duration_days_snapshot"), rs.getString("status"), instant(rs.getTimestamp("starts_at")), instant(rs.getTimestamp("ends_at"))), actor);
 	}
 
-	java.util.List<com.scms.backend.membership.StaffMembershipResponse> staffMembershipHistoryFindMemberships(java.util.UUID memberId) {
+	List<StaffMembershipResponse> staffMembershipHistoryFindMemberships(UUID memberId) {
 		return db.query("""
 			select id,plan_code_snapshot,offer_name_snapshot,status,starts_at,ends_at
 			from memberships where member_account_id=? order by starts_at desc,id desc

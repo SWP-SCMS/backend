@@ -2,7 +2,7 @@ package com.scms.backend.membership.order;
 
 import org.hibernate.exception.ConstraintViolationException;
 
-final public class MembershipOrderConstraintDetector {
+public final class MembershipOrderConstraintDetector {
 
 	static final String PENDING_MEMBER_CONSTRAINT = "uq_membership_orders_pending_member";
 

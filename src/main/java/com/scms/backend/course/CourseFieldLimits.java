@@ -1,6 +1,6 @@
 package com.scms.backend.course;
 
-final public class CourseFieldLimits {
+public final class CourseFieldLimits {
 
 	public static final int DESCRIPTION = 2000;
 

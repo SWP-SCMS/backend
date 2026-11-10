@@ -45,18 +45,25 @@ class CoachLeaveBatchRollbackIntegrationTests {
 
 	@Autowired
 	CoachLeaveBatchService batches;
+
 	@Autowired
 	CoachLeaveRepository leaves;
+
 	@Autowired
 	ClassSessionRepository sessions;
+
 	@Autowired
 	AccountRepository accounts;
+
 	@Autowired
 	DisciplineRepository disciplines;
+
 	@Autowired
 	SportClassRepository classes;
+
 	@Autowired
 	RoomRepository rooms;
+
 	@Autowired
 	JdbcTemplate db;
 
@@ -78,18 +85,13 @@ class CoachLeaveBatchRollbackIntegrationTests {
 		var firstSelection = new CoachLeaveBatchService.Selection("CLASS", first.getId(), first.getVersion());
 		var secondSelection = new CoachLeaveBatchService.Selection("CLASS", second.getId(), second.getVersion());
 		var command = new CoachLeaveBatchService.Command(List.of(firstSelection, secondSelection), "reassign", replacement.getId(), "Cover leave");
-
-		assertThatThrownBy(() -> batches.resolve(manager.getId(), leave.getId(), command))
-			.isInstanceOf(CoachLeaveException.class)
-			.hasFieldOrPropertyWithValue("code", "COACH_LEAVE_BATCH_FAILED")
-			.hasFieldOrPropertyWithValue("affectedSessionIds", List.of(second.getId()));
+		assertThatThrownBy(() -> batches.resolve(manager.getId(), leave.getId(), command)).isInstanceOf(CoachLeaveException.class).hasFieldOrPropertyWithValue("code", "COACH_LEAVE_BATCH_FAILED").hasFieldOrPropertyWithValue("affectedSessionIds", List.of(second.getId()));
 		for (ClassSession session : List.of(first, second)) {
 			assertThat(db.queryForObject("select teaching_coach_account_id from class_sessions where id=?", UUID.class, session.getId())).isEqualTo(original.getId());
 			assertThat(db.queryForObject("select version from class_sessions where id=?", Long.class, session.getId())).isEqualTo(session.getVersion());
 			assertThat(db.queryForObject("select count(*) from audit_events where target_id=?", Long.class, session.getId())).isZero();
 		}
 		assertThat(db.queryForObject("select status from coach_leave_requests where id=?", String.class, leave.getId())).isEqualTo("PENDING");
-
 		assertThat(batches.resolve(manager.getId(), leave.getId(), new CoachLeaveBatchService.Command(List.of(firstSelection), "reassign", replacement.getId(), "Cover leave")).processedCount()).isOne();
 		assertThat(db.queryForObject("select teaching_coach_account_id from class_sessions where id=?", UUID.class, first.getId())).isEqualTo(replacement.getId());
 		assertThat(db.queryForObject("select count(*) from audit_events where target_id=?", Long.class, first.getId())).isPositive();

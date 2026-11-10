@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-final public class CourseRefundApiModels {
+public final class CourseRefundApiModels {
 
 	private CourseRefundApiModels() {
 	}

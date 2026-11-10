@@ -33,7 +33,7 @@ final class MembershipRefundRepository {
 			""" + placeholders + ")", requests.stream().map(RefundRequest::getId).toArray()).stream().collect(java.util.stream.Collectors.toMap(row -> (UUID) row.get("id"), row -> row));
 	}
 
-	java.util.List<java.util.Map<java.lang.String, java.lang.Object>> refundEligibleSourcesFindPayments(java.util.UUID memberId) {
+	List<Map<java.lang.String, java.lang.Object>> refundEligibleSourcesFindPayments(UUID memberId) {
 		return db.queryForList("""
 			select p.id payment_id, m.id membership_id, r.id receipt_id, r.receipt_number,
 				o.order_number, m.offer_name_snapshot offer_name, profile.member_code,
@@ -63,7 +63,7 @@ final class MembershipRefundRepository {
 			""", memberId);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> createFindPayments(java.util.UUID paymentId, java.util.UUID membershipId, java.util.UUID memberId) {
+	Map<java.lang.String, java.lang.Object> createFindPayments(UUID paymentId, UUID membershipId, UUID memberId) {
 		return db.queryForMap("""
 			select p.id payment_id, p.order_id, p.method, p.status payment_status,
 				m.id membership_id, m.member_account_id, m.status membership_status, m.price_amount_snapshot, r.id receipt_id
@@ -75,11 +75,11 @@ final class MembershipRefundRepository {
 			""", paymentId, membershipId, memberId);
 	}
 
-	int finalApprovalInsertCreditNotes(java.util.UUID randomUUID, java.util.UUID requestId, java.util.UUID receiptId, java.util.UUID paymentId, java.util.UUID memberAccountId, java.math.BigInteger approvedAmount, java.util.UUID actor, java.sql.Timestamp nowTimestamp) {
+	int finalApprovalInsertCreditNotes(UUID randomUUID, UUID requestId, UUID receiptId, UUID paymentId, UUID memberAccountId, BigInteger approvedAmount, UUID actor, Timestamp nowTimestamp) {
 		return db.update("insert into credit_notes(id,refund_request_id,receipt_id,payment_id,member_account_id,amount,issued_by_account_id,issued_at) values(?,?,?,?,?,?,?,?)", randomUUID, requestId, receiptId, paymentId, memberAccountId, approvedAmount, actor, nowTimestamp);
 	}
 
-	java.util.Map<java.lang.String, java.lang.Object> refundSourceFindMemberships(java.util.UUID membershipId) {
+	Map<java.lang.String, java.lang.Object> refundSourceFindMemberships(UUID membershipId) {
 		return db.queryForMap("""
 			select m.starts_at, m.status membership_status, m.duration_days_snapshot, m.price_amount_snapshot,
 				coalesce(sum(period.credited_days), 0) credited_days
