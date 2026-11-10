@@ -9,7 +9,6 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.course.CourseException;
-import com.scms.backend.course.CourseRun;
 import com.scms.backend.course.CourseRunStatus;
 import com.scms.backend.course.CourseStatus;
 import com.scms.backend.course.CourseWaitlistException;

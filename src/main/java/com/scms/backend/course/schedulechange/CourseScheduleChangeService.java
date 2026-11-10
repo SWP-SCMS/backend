@@ -78,7 +78,7 @@ public class CourseScheduleChangeService {
 	public List<ScheduleChange> list(UUID memberId) {
 		activeMember(memberId);
 		Timestamp now = Timestamp.from(clock.instant());
-		return db.query(select() + " where e.member_account_id=? order by r.created_at desc,r.id", this::map, now, now, memberId);
+		return courseScheduleChangeRepository.listFindRows(now, now, memberId);
 	}
 
 	@Transactional
@@ -94,14 +94,14 @@ public class CourseScheduleChangeService {
 		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
 			throw CourseException.invalidResponse();
 		if (!"CONTINUE".equals(choice)) {
-			List<UUID> runIds = db.queryForList("select e.course_run_id from course_schedule_change_responses r " + "join course_enrollment_sessions es on es.id=r.enrollment_session_id " + "join course_enrollments e on e.id=es.course_enrollment_id where r.id=? and e.member_account_id=?", UUID.class, responseId, memberId);
+			List<UUID> runIds = courseScheduleChangeRepository.respondFindCourseScheduleChangeResponses(responseId, memberId);
 			if (runIds.isEmpty())
 				throw CourseException.responseNotFound();
 			accounts.findByIdForUpdate(memberId).filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);
-			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runIds.getFirst());
+			courseScheduleChangeRepository.respondFindCourseRuns(runIds.getFirst());
 		}
 		Timestamp queryTime = Timestamp.from(clock.instant());
-		List<ScheduleChange> rows = db.query(select() + " where r.id=? and e.member_account_id=? for update of r", this::map, queryTime, queryTime, responseId, memberId);
+		List<ScheduleChange> rows = courseScheduleChangeRepository.respondFindOf(queryTime, queryTime, responseId, memberId);
 		if (rows.isEmpty())
 			throw CourseException.responseNotFound();
 		ScheduleChange current = rows.getFirst();
@@ -122,7 +122,7 @@ public class CourseScheduleChangeService {
 			throw CourseException.responseClosed();
 		if ("REQUEST_WITHDRAWAL".equals(choice) && !current.withdrawalEligible())
 			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED", "Withdrawal is not allowed for the current Enrollment or CourseRun state.");
-		db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?", choice, Timestamp.from(now), responseId);
+		courseScheduleChangeRepository.respondUpdateCourseScheduleChangeResponses(choice, Timestamp.from(now), responseId);
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_SCHEDULE_CHANGE_RESPONDED", "COURSE_SCHEDULE_CHANGE_RESPONSE", responseId, Map.of("memberAccountId", memberId.toString(), "response", choice)));
 		if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
 			withdrawals.createForScheduleChange(actorId, memberId, responseId);
@@ -151,18 +151,6 @@ public class CourseScheduleChangeService {
 	}
 
 	record AtomicResponse(UUID enrollmentSessionId, UUID memberId, UUID sessionId, Instant oldStart, Instant oldEnd, Instant newStart, Instant newEnd, CourseWithdrawalCause cause, UUID responseId, Instant deadline) {
-	}
-
-	private String select() {
-		return courseScheduleChangeRepository.select();
-	}
-
-	private ScheduleChange map(java.sql.ResultSet rs, int row) throws java.sql.SQLException {
-		return courseScheduleChangeRepository.map(rs, row);
-	}
-
-	private static Timestamp timestamp(Instant value) {
-		return CourseScheduleChangeNotifications.timestamp(value);
 	}
 
 	private Set<UUID> conflictingEnrollmentSessions(UUID runId, UUID sessionId, Instant startAt, Instant endAt) {

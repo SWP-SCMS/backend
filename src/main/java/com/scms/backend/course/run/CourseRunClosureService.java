@@ -44,15 +44,11 @@ public class CourseRunClosureService {
 		this.audits = audits;
 		this.notifications = notifications;
 		this.clock = clock;
+		this.courseRunClosureRepository = new CourseRunClosureRepository(this.db);
 	}
 
 	List<UUID> findDueRunIds(Instant now, UUID afterId, int limit) {
-		return db.queryForList("""
-			select id from course_runs
-			where status='OPEN_FOR_REGISTRATION' and registration_closes_at<=?
-			  and (?::uuid is null or id>?::uuid)
-			order by id limit ?
-			""", UUID.class, Timestamp.from(now), afterId, afterId, limit);
+		return courseRunClosureRepository.findDueRunIdsFindCourseRuns(Timestamp.from(now), afterId, afterId, limit);
 	}
 
 	@Transactional
@@ -62,7 +58,7 @@ public class CourseRunClosureService {
 			return false;
 		List<UUID> cancellationRecipients = affectedMembers(runId);
 		expiry.expireDueForRun(runId, now);
-		int enrollmentCount = db.queryForObject("select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')", Integer.class, runId);
+		int enrollmentCount = courseRunClosureRepository.closeAtRegistrationFindCourseEnrollments(runId);
 		Map<String, Object> before = snapshot(run);
 		if (enrollmentCount >= run.getMinimumEnrollment()) {
 			run.confirm();
@@ -91,29 +87,23 @@ public class CourseRunClosureService {
 
 	private void cancelEffects(UUID actorId, CourseRun run, Instant now, List<UUID> cancellationRecipients) {
 		UUID runId = run.getId();
-		List<UUID> orderIds = db.queryForList("select id from course_orders where course_run_id=? order by id", UUID.class, runId);
-		for (UUID orderId : orderIds) db.queryForObject("select id from course_orders where id=? for update", UUID.class, orderId);
-		for (UUID reservationId : db.queryForList("select id from course_reservations where course_run_id=? order by id", UUID.class, runId)) db.queryForObject("select id from course_reservations where id=? for update", UUID.class, reservationId);
-		for (UUID paymentId : db.queryForList("""
-			select payment.id from course_payments payment join course_orders orders
-			  on orders.id=payment.course_order_id where orders.course_run_id=? order by payment.id
-			""", UUID.class, runId)) db.queryForObject("select id from course_payments where id=? for update", UUID.class, paymentId);
+		List<UUID> orderIds = courseRunClosureRepository.cancelEffectsFindCourseOrders(runId);
+		for (UUID orderId : orderIds) courseRunClosureRepository.lockOrderForClosure(orderId);
+		for (UUID reservationId : courseRunClosureRepository.cancelEffectsFindCourseReservations(runId)) courseRunClosureRepository.lockReservationForClosure(reservationId);
+		for (UUID paymentId : courseRunClosureRepository.cancelEffectsFindCoursePayments(runId)) courseRunClosureRepository.lockPaymentForClosure(paymentId);
 		if (cancellationRecipients == null)
 			cancellationRecipients = affectedMembers(runId);
-		db.update("update course_reservations set status='EXPIRED',updated_at=? " + "where course_run_id=? and status='HELD'", Timestamp.from(now), runId);
-		db.update("update course_orders set status='EXPIRED',updated_at=? " + "where course_run_id=? and status='PENDING_PAYMENT'", Timestamp.from(now), runId);
-		db.update("update course_payments set status='FAILED',updated_at=? " + "where course_order_id in (select id from course_orders where course_run_id=?) and status='PENDING'", Timestamp.from(now), runId);
-		db.update("update course_transfer_holds set status='RELEASED',released_at=? where target_run_id=? and status='HELD'", Timestamp.from(now), runId);
-		db.update("update course_transfer_requests set status='EXPIRED' where status='OFFERED' and id in " + "(select transfer_request_id from course_transfer_offers where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT'))", runId);
-		db.update("update course_transfer_offers set status='CANCELLED' where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT')", runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseReservations(Timestamp.from(now), runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseOrders(Timestamp.from(now), runId);
+		courseRunClosureRepository.cancelEffectsUpdateCoursePayments(Timestamp.from(now), runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseTransferHolds(Timestamp.from(now), runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseTransferRequests(runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseTransferOffers(runId);
 		cancelPendingWithdrawals(actorId, runId, now);
 		CourseUnitRefunds.cancelled(db, runId, actorId, now);
 		// Both manager cancellation and minimum-enrollment closure hold the run lock.
 		// Terminal learning/refund history is preserved; cancelled slots stop blocking resources.
-		db.update("""
-			update course_sessions set status='CANCELLED',version=version+1,updated_at=?
-			where course_run_id=? and status in ('SCHEDULED','MAKEUP_SCHEDULED','CANCELLED_PENDING_MAKEUP')
-			""", Timestamp.from(now), runId);
+		courseRunClosureRepository.cancelEffectsUpdateCourseSessions(Timestamp.from(now), runId);
 		waitlists.cancelForRun(actorId, runId);
 		for (UUID memberId : cancellationRecipients) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":course_run_cancelled", memberId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
@@ -121,13 +111,9 @@ public class CourseRunClosureService {
 	}
 
 	private void cancelPendingWithdrawals(UUID actorId, UUID runId, Instant now) {
-		for (Map<String, Object> request : db.queryForList("""
-			update course_withdrawal_requests set status='CANCELLED',cancelled_at=?,cancelled_by_account_id=?,
-			 cancellation_reason='COURSE_RUN_CANCELLED' where course_run_id=? and status='PENDING'
-			returning id,course_enrollment_id,member_account_id
-			""", Timestamp.from(now), actorId, runId)) {
+		for (Map<String, Object> request : courseRunClosureRepository.cancelPendingWithdrawalsFindCourseWithdrawalRequests(Timestamp.from(now), actorId, runId)) {
 			UUID requestId = (UUID) request.get("id"), memberId = (UUID) request.get("member_account_id");
-			db.update("update course_enrollments set lifecycle_status='ACTIVE' where id=? and lifecycle_status='WITHDRAWAL_PENDING'", request.get("course_enrollment_id"));
+			courseRunClosureRepository.cancelPendingWithdrawalsUpdateCourseEnrollments(request.get("course_enrollment_id"));
 			audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_WITHDRAWAL_CANCELLED", "COURSE_WITHDRAWAL_REQUEST", requestId, "COURSE_RUN_CANCELLED", Map.of("status", "PENDING"), Map.of("status", "CANCELLED")));
 			notifications.write("course-withdrawal-cancelled:" + requestId, memberId, "COURSE_WITHDRAWAL_CANCELLED", "COURSE_WITHDRAWAL_REQUEST", requestId, Map.of("reason", "COURSE_RUN_CANCELLED"));
 		}
@@ -138,11 +124,11 @@ public class CourseRunClosureService {
 	}
 
 	private List<UUID> affectedMembers(UUID runId) {
-		return db.queryForList("select distinct member_account_id from course_orders " + "where course_run_id=? and status in ('PENDING_PAYMENT','PAID') order by member_account_id", UUID.class, runId);
+		return courseRunClosureRepository.affectedMembersFindCourseOrders(runId);
 	}
 
 	private void notifyEnrolledMembers(UUID runId, String type) {
-		for (UUID memberId : db.queryForList("select member_account_id from course_enrollments " + "where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by id", UUID.class, runId)) {
+		for (UUID memberId : courseRunClosureRepository.notifyEnrolledMembersFindCourseEnrollments(runId)) {
 			notifications.write("course-run:" + runId + ":" + memberId + ":" + type.toLowerCase(), memberId, type, "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
 		}
 	}
@@ -154,4 +140,6 @@ public class CourseRunClosureService {
 		data.put("status", run.getStatus().name());
 		return data;
 	}
+
+	private final CourseRunClosureRepository courseRunClosureRepository;
 }

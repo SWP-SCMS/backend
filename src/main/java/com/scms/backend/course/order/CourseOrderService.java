@@ -18,8 +18,6 @@ import com.scms.backend.course.CourseStatus;
 import com.scms.backend.course.run.CourseRunRepository;
 import com.scms.backend.course.session.CourseSessionRepository;
 import com.scms.backend.scheduling.booking.BookingRepository;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -65,6 +63,7 @@ public class CourseOrderService {
 		this.expiry = expiry;
 		this.creationRendezvous = creationRendezvous;
 		this.clock = clock;
+		this.courseOrderRepository = new CourseOrderRepository(this.db);
 	}
 
 	@Transactional
@@ -126,22 +125,12 @@ public class CourseOrderService {
 		Instant now = clock.instant();
 		expiry.expireDueForRun(run.getId(), now);
 		validateRun(run, now);
-		if (count("""
-			select count(*) from course_reservations
-			where member_account_id=? and course_run_id=? and status='HELD' and expires_at>?
-			""", member.getAccountId(), run.getId(), Timestamp.from(now)) > 0) {
+		if (courseOrderRepository.countMemberHeldReservations(member.getAccountId(), run.getId(), Timestamp.from(now)) > 0) {
 			throw CourseOrderException.reservationExists();
 		}
-		if (count("select count(*) from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')", member.getAccountId(), run.getId()) > 0)
+		if (courseOrderRepository.countMemberEnrollments(member.getAccountId(), run.getId()) > 0)
 			throw CourseOrderException.alreadyEnrolled();
-		long usedSeats = count("select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')", run.getId()) + count("""
-			select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?
-			""", run.getId(), Timestamp.from(now)) + count("""
-			select count(*) from course_waitlists
-			where course_run_id=? and status='INVITED' and invitation_expires_at>?
-			""", run.getId(), Timestamp.from(now)) + count("""
-			select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?
-			""", run.getId(), Timestamp.from(now));
+		long usedSeats = courseOrderRepository.countRunEnrollments(run.getId()) + courseOrderRepository.countRunHeldReservations(run.getId(), Timestamp.from(now)) + courseOrderRepository.createCountCourseWaitlists(run.getId(), Timestamp.from(now)) + courseOrderRepository.createCountCourseTransferHolds(run.getId(), Timestamp.from(now));
 		if (usedSeats - (invitedSeat ? 1 : 0) >= run.getCapacity()) {
 			throw CourseOrderException.capacityFull();
 		}
@@ -152,16 +141,8 @@ public class CourseOrderService {
 		UUID orderId = UUID.randomUUID();
 		UUID reservationId = UUID.randomUUID();
 		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase(Locale.ROOT);
-		db.update("""
-			insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,
-				tuition_vnd_snapshot,currency_code,status,idempotency_key,created_at,updated_at)
-			values (?,?,?,?,?,?,'VND','PENDING_PAYMENT',?,?,?)
-			""", orderId, reference, member.getAccountId(), actorId, run.getId(), run.getTuitionVnd(), key, Timestamp.from(now), Timestamp.from(now));
-		db.update("""
-			insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at,
-				created_at,updated_at)
-			values (?,?,?,?,'HELD',?,?,?)
-			""", reservationId, orderId, member.getAccountId(), run.getId(), Timestamp.from(expiresAt), Timestamp.from(now), Timestamp.from(now));
+		courseOrderRepository.createInsertCourseOrders(orderId, reference, member.getAccountId(), actorId, run.getId(), run.getTuitionVnd(), key, Timestamp.from(now), Timestamp.from(now));
+		courseOrderRepository.createInsertCourseReservations(reservationId, orderId, member.getAccountId(), run.getId(), Timestamp.from(expiresAt), Timestamp.from(now), Timestamp.from(now));
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_ORDER_CREATED", "COURSE_ORDER", orderId, Map.of("orderReference", reference, "memberAccountId", member.getAccountId().toString(), "courseRunId", run.getId().toString(), "reservationId", reservationId.toString(), "expiresAt", expiresAt.toString())));
 		return new CreateResult(findOrder(orderId, member.getAccountId()).response(), true);
 	}
@@ -195,25 +176,7 @@ public class CourseOrderService {
 	}
 
 	private boolean hasHeldCourseOverlap(UUID memberId, UUID runId, CourseSession target, Instant now) {
-		return Boolean.TRUE.equals(db.queryForObject("""
-			select exists (
-				select 1 from course_enrollments enrollment
-				join course_enrollment_sessions enrolled_unit on enrolled_unit.course_enrollment_id=enrollment.id
-				join course_sessions session on session.id=enrolled_unit.course_session_id
-				where enrollment.member_account_id=? and enrollment.course_run_id<>?
-				  and enrollment.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
-				  and enrolled_unit.disposition='ENROLLED'
-				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
-				  and session.start_at<? and session.end_at>?
-				union all
-				select 1 from course_reservations reservation
-				join course_sessions session on session.course_run_id=reservation.course_run_id
-				where reservation.member_account_id=? and reservation.course_run_id<>?
-				  and reservation.status='HELD' and reservation.expires_at>?
-				  and session.status in ('SCHEDULED','MAKEUP_SCHEDULED')
-				  and session.start_at<? and session.end_at>?
-			)
-			""", Boolean.class, memberId, runId, Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt()), memberId, runId, Timestamp.from(now), Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt())));
+		return Boolean.TRUE.equals(courseOrderRepository.hasHeldCourseOverlapFindCourseEnrollments(memberId, runId, Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt()), memberId, runId, Timestamp.from(now), Timestamp.from(target.getEndAt()), Timestamp.from(target.getStartAt())));
 	}
 
 	private Account lockActive(UUID accountId, AccountRole role) {
@@ -242,47 +205,19 @@ public class CourseOrderService {
 	}
 
 	private StoredOrder findByKey(UUID actorId, String key) {
-		List<StoredOrder> rows = db.query(orderQuery() + " where orders.actor_account_id=? and orders.idempotency_key=?", this::map, actorId, key);
+		List<StoredOrder> rows = courseOrderRepository.findByKeyFindRows(actorId, key);
 		return rows.stream().findFirst().orElse(null);
 	}
 
 	private StoredOrder findOrder(UUID orderId, UUID memberId) {
-		return db.query(orderQuery() + " where orders.id=? and orders.member_account_id=?", this::map, orderId, memberId).stream().findFirst().orElseThrow(CourseOrderException::orderNotFound);
-	}
-
-	private String orderQuery() {
-		return """
-			select orders.id,orders.order_reference,orders.member_account_id,
-				orders.course_run_id,orders.tuition_vnd_snapshot,orders.currency_code,orders.status order_status,
-				reservation.id reservation_id,reservation.status reservation_status,reservation.expires_at,
-				orders.created_at,payment.id payment_id,payment.amount payment_amount,
-				payment.currency_code payment_currency,payment.method payment_method,payment.provider,
-				payment.payment_reference,payment.bank_code_snapshot,payment.bank_account_number_snapshot,
-				payment.bank_account_name_snapshot,payment.status payment_status,payment.deadline_at payment_deadline
-			from course_orders orders
-			join course_reservations reservation on reservation.course_order_id=orders.id
-			left join course_payments payment on payment.course_order_id=orders.id
-			""";
-	}
-
-	private StoredOrder map(ResultSet result, int row) throws SQLException {
-		UUID orderId = result.getObject("id", UUID.class);
-		UUID memberId = result.getObject("member_account_id", UUID.class);
-		UUID runId = result.getObject("course_run_id", UUID.class);
-		Instant expiresAt = result.getTimestamp("expires_at").toInstant();
-		String reservationStatus = result.getString("reservation_status");
-		UUID paymentId = result.getObject("payment_id", UUID.class);
-		CoursePaymentResponse payment = paymentId == null ? null : new CoursePaymentResponse(paymentId, orderId, result.getBigDecimal("payment_amount").toBigIntegerExact(), result.getString("payment_currency").trim(), result.getString("payment_method"), result.getString("provider"), result.getString("payment_reference"), result.getString("bank_code_snapshot"), result.getString("bank_account_number_snapshot"), result.getString("bank_account_name_snapshot"), "PENDING".equals(result.getString("payment_status")) ? CoursePaymentResponse.qrUrl(result.getString("bank_code_snapshot"), result.getString("bank_account_number_snapshot"), result.getString("bank_account_name_snapshot"), result.getBigDecimal("payment_amount").toBigIntegerExact(), result.getString("payment_reference")) : null, result.getTimestamp("payment_deadline").toInstant(), result.getString("payment_status"));
-		return new StoredOrder(new CourseOrderResponse(orderId, result.getString("order_reference"), memberId, runId, result.getBigDecimal("tuition_vnd_snapshot").toBigIntegerExact(), result.getString("currency_code").trim(), result.getString("order_status"), reservationStatus, expiresAt, result.getTimestamp("created_at").toInstant(), payment), result.getObject("reservation_id", UUID.class), memberId, runId, reservationStatus, expiresAt);
-	}
-
-	private long count(String sql, Object... arguments) {
-		return db.queryForObject(sql, Long.class, arguments);
+		return courseOrderRepository.findOrderFindRows(orderId, memberId).stream().findFirst().orElseThrow(CourseOrderException::orderNotFound);
 	}
 
 	public record CreateResult(CourseOrderResponse response, boolean created) {
 	}
 
-	private record StoredOrder(CourseOrderResponse response, UUID reservationId, UUID memberAccountId, UUID runId, String reservationStatus, Instant expiresAt) {
+	record StoredOrder(CourseOrderResponse response, UUID reservationId, UUID memberAccountId, UUID runId, String reservationStatus, Instant expiresAt) {
 	}
+
+	private final CourseOrderRepository courseOrderRepository;
 }

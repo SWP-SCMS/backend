@@ -70,6 +70,7 @@ class MembershipFreezeService {
 		this.notifications = notifications;
 		this.db = db;
 		this.clock = clock;
+		this.membershipFreezeRepository = new MembershipFreezeRepository(this.db);
 	}
 
 	@Transactional(readOnly = true)
@@ -167,8 +168,8 @@ class MembershipFreezeService {
 			throw MembershipFreezeException.invalidPeriod();
 		UUID paymentId = UUID.randomUUID();
 		Instant now = clock.instant();
-		db.update("insert into membership_freeze_fee_payments(id,request_id,amount,currency_code,collected_by_account_id,paid_at) values(?,?,?,'VND',?,?)", paymentId, requestId, request.getFeeAmount(), receptionistId, Timestamp.from(now));
-		db.update("insert into membership_freeze_periods(id,request_id,membership_id,scheduled_start_date,scheduled_end_date,status) values(?,?,?,?,?,'SCHEDULED')", UUID.randomUUID(), requestId, request.getMembershipId(), Date.valueOf(request.getStartDate()), Date.valueOf(request.getEndDate()));
+		membershipFreezeRepository.collectCashInsertMembershipFreezeFeePayments(paymentId, requestId, request.getFeeAmount(), receptionistId, Timestamp.from(now));
+		membershipFreezeRepository.collectCashInsertMembershipFreezePeriods(UUID.randomUUID(), requestId, request.getMembershipId(), Date.valueOf(request.getStartDate()), Date.valueOf(request.getEndDate()));
 		request.schedule();
 		requests.saveAndFlush(request);
 		audit(receptionistId, "CASH_PAID", request, Map.of("feeAmount", request.getFeeAmount().toString(), "paymentId", paymentId.toString()));
@@ -209,7 +210,7 @@ class MembershipFreezeService {
 	}
 
 	private MembershipFreezeCashPaymentResponse paidResponse(MembershipFreezeRequest request) {
-		Map<String, Object> payment = db.queryForMap("select id,amount,paid_at from membership_freeze_fee_payments where request_id=?", request.getId());
+		Map<String, Object> payment = membershipFreezeRepository.paidResponseFindMembershipFreezeFeePayments(request.getId());
 		return new MembershipFreezeCashPaymentResponse(request.getId(), (UUID) payment.get("id"), ((BigDecimal) payment.get("amount")).toBigIntegerExact(), "VND", request.getStatus(), ((Timestamp) payment.get("paid_at")).toInstant());
 	}
 
@@ -225,14 +226,14 @@ class MembershipFreezeService {
 		LocalDate today = businessDate();
 		LocalDate actualStart;
 		try {
-			actualStart = db.queryForObject("select actual_start_date from membership_freeze_periods where request_id=? and status='ACTIVE' for update", LocalDate.class, requestId);
+			actualStart = membershipFreezeRepository.endEarlyFindMembershipFreezePeriods(requestId);
 		} catch (org.springframework.dao.EmptyResultDataAccessException exception) {
 			throw MembershipFreezeException.invalidTransition();
 		}
 		if (actualStart == null || actualStart.isAfter(today))
 			throw MembershipFreezeException.invalidTransition();
 		int creditedDays = Math.toIntExact(ChronoUnit.DAYS.between(actualStart, today));
-		int ended = db.update("update membership_freeze_periods set status='ENDED_EARLY', actual_end_date=?, credited_days=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='ACTIVE'", Date.valueOf(today), creditedDays, requestId);
+		int ended = membershipFreezeRepository.endEarlyUpdateMembershipFreezePeriods(Date.valueOf(today), creditedDays, requestId);
 		if (ended != 1)
 			throw MembershipFreezeException.changed();
 		if (creditedDays > 0)
@@ -328,4 +329,6 @@ class MembershipFreezeService {
 
 	private record LockedFreeze(MembershipFreezeRequest request, Membership membership) {
 	}
+
+	private final MembershipFreezeRepository membershipFreezeRepository;
 }

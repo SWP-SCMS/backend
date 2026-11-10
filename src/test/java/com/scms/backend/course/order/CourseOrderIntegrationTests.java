@@ -17,7 +17,6 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseOrderException;
 import com.scms.backend.course.waitlist.CourseWaitlistService;
 import java.sql.Timestamp;

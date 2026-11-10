@@ -31,6 +31,7 @@ class PaymentEvidenceService {
 	PaymentEvidenceService(JdbcTemplate db, AccountRepository accounts) {
 		this.db = db;
 		this.accounts = accounts;
+		this.paymentEvidenceRepository = new PaymentEvidenceRepository(this.db);
 	}
 
 	record Evidence(UUID id, Instant createdAt) {
@@ -48,14 +49,14 @@ class PaymentEvidenceService {
 	@Transactional(readOnly = true)
 	List<Evidence> list(UUID actor, UUID paymentId) {
 		authorize(actor);
-		return db.query("select id,created_at from payment_evidence_images where payment_id=? order by created_at,id", (rs, n) -> new Evidence(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant()), paymentId);
+		return paymentEvidenceRepository.listFindPaymentEvidenceImages(paymentId);
 	}
 
 	@Transactional
 	Evidence upload(UUID actor, UUID paymentId, MultipartFile file) {
 		authorize(actor);
 		Image image = validate(file);
-		var payments = db.queryForList("select status from payments where id=? for update", String.class, paymentId);
+		var payments = paymentEvidenceRepository.uploadFindPayments(paymentId);
 		if (payments.isEmpty())
 			throw PaymentException.notFound("Payment was not found");
 		if (!"PENDING".equals(payments.getFirst()))
@@ -66,23 +67,20 @@ class PaymentEvidenceService {
 		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException(exception);
 		}
-		var existing = db.query("select id,created_at from payment_evidence_images where payment_id=? and sha256=?", (rs, n) -> new Evidence(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant()), paymentId, digest);
+		var existing = paymentEvidenceRepository.findDuplicateEvidence(paymentId, digest);
 		if (!existing.isEmpty())
 			return existing.getFirst();
-		Integer count = db.queryForObject("select count(*) from payment_evidence_images where payment_id=?", Integer.class, paymentId);
+		Integer count = paymentEvidenceRepository.countEvidence(paymentId);
 		if (count != null && count >= 10)
 			throw PaymentException.validation("Tối đa 10 ảnh chứng từ cho mỗi giao dịch.");
 		UUID id = UUID.randomUUID();
-		return db.queryForObject("""
-			insert into payment_evidence_images(id,payment_id,uploaded_by,content_type,sha256,image_data)
-			values (?,?,?,?,?,?) returning id,created_at
-			""", (rs, n) -> new Evidence(rs.getObject("id", UUID.class), rs.getTimestamp("created_at").toInstant()), id, paymentId, actor, image.contentType(), digest, image.bytes());
+		return paymentEvidenceRepository.insertEvidence(id, paymentId, actor, image.contentType(), digest, image.bytes());
 	}
 
 	@Transactional(readOnly = true)
 	Image read(UUID actor, UUID paymentId, UUID evidenceId) {
 		authorize(actor);
-		var images = db.query("select content_type,image_data from payment_evidence_images where id=? and payment_id=?", (rs, n) -> new Image(rs.getString("content_type"), rs.getBytes("image_data")), evidenceId, paymentId);
+		var images = paymentEvidenceRepository.readFindPaymentEvidenceImages(evidenceId, paymentId);
 		if (images.isEmpty())
 			throw PaymentException.notFound("Evidence was not found");
 		return images.getFirst();
@@ -120,4 +118,6 @@ class PaymentEvidenceService {
 			throw PaymentException.validation("Ảnh không hợp lệ. Chọn PNG/JPEG tối đa 4 MB và 20 triệu điểm ảnh.");
 		}
 	}
+
+	private final PaymentEvidenceRepository paymentEvidenceRepository;
 }

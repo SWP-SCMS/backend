@@ -1,6 +1,5 @@
 package com.scms.backend.course.order;
 
-import com.scms.backend.course.Course;
 import java.time.Clock;
 import java.util.UUID;
 import org.slf4j.Logger;

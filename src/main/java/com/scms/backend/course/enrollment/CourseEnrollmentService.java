@@ -6,7 +6,6 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseAttendanceException;
 import com.scms.backend.course.CourseAttendanceStatus;
 import com.scms.backend.course.CourseRunStatus;
@@ -16,7 +15,6 @@ import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.MemberEnroll
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.MemberPaymentSummary;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.MemberSession;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.RosterEntry;
-import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeService;
@@ -54,6 +52,7 @@ public class CourseEnrollmentService {
 		this.audits = audits;
 		this.clock = clock;
 		this.scheduleChanges = scheduleChanges;
+		this.courseEnrollmentRepository = new CourseEnrollmentRepository(this.db);
 	}
 
 	public List<ScheduleChange> scheduleChanges(UUID memberId) {
@@ -67,21 +66,7 @@ public class CourseEnrollmentService {
 	@Transactional(readOnly = true)
 	public List<MemberEnrollment> memberEnrollments(UUID memberId) {
 		active(memberId, AccountRole.MEMBER);
-		List<Map<String, Object>> rows = db.queryForList("""
-			select e.id enrollment_id,e.course_run_id,c.code course_code,c.name course_name,r.run_code,r.status course_run_status,
-				e.lifecycle_status,e.enrolled_at,e.amount_paid_vnd_snapshot,p.status payment_status,p.method payment_method,
-				es.id enrollment_session_id,es.course_session_id,es.unit_number,s.start_at,s.end_at,
-				es.disposition,s.status session_status,s.is_makeup,s.replacement_session_id,original.id original_session_id,
-				es.attendance_status,es.attendance_recorded_at,room.name room_name,coach.full_name coach_name
-			from course_enrollments e join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
-			join course_enrollment_sessions es on es.course_enrollment_id=e.id
-			join course_sessions s on s.id=es.course_session_id
-			left join rooms room on room.id=s.room_id
-			left join accounts coach on coach.id=s.coach_account_id
-			left join course_payments p on p.id=e.course_payment_id
-			left join course_sessions original on original.replacement_session_id=s.id
-			where e.member_account_id=? order by e.enrolled_at desc,e.id,es.unit_number
-			""", memberId);
+		List<Map<String, Object>> rows = courseEnrollmentRepository.memberEnrollmentsFindCourseEnrollments(memberId);
 		Map<UUID, EnrollmentBuilder> grouped = new LinkedHashMap<>();
 		for (Map<String, Object> row : rows) {
 			UUID id = uuid(row, "enrollment_id");
@@ -93,17 +78,8 @@ public class CourseEnrollmentService {
 	@Transactional(readOnly = true)
 	public List<RosterEntry> roster(UUID coachId, UUID sessionId) {
 		active(coachId, AccountRole.COACH);
-		List<RosterEntry> result = db.query("""
-			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
-				es.attendance_status,es.attendance_recorded_at
-			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
-			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
-			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.course_session_id=? and es.disposition='ENROLLED'
-			  and e.lifecycle_status='ACTIVE'
-			order by a.full_name,a.id
-			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class), rs.getString("member_code"), rs.getString("full_name"), rs.getString("profile_image_url"), CourseAttendanceStatus.valueOf(rs.getString("attendance_status")), rs.getTimestamp("attendance_recorded_at") == null ? null : rs.getTimestamp("attendance_recorded_at").toInstant(), rs.getObject("member_account_id", UUID.class)), coachId, sessionId);
-		if (result.isEmpty() && db.queryForObject("select count(*) from course_sessions where id=? and coach_account_id=?", Long.class, sessionId, coachId) != 1)
+		List<RosterEntry> result = courseEnrollmentRepository.rosterFindCourseEnrollmentSessions(coachId, sessionId);
+		if (result.isEmpty() && courseEnrollmentRepository.rosterFindCourseSessions(sessionId, coachId) != 1)
 			throw CourseAttendanceException.notFound();
 		return result;
 	}
@@ -113,31 +89,14 @@ public class CourseEnrollmentService {
 		active(coachId, AccountRole.COACH);
 		if (request == null || request.status() == null || !CourseAttendanceStatus.writableValues().contains(request.status()))
 			throw CourseAttendanceException.invalid();
-		Map<String, Object> session = db.queryForList("""
-			with eligible_run as materialized (
-				select r.id,r.status run_status from course_runs r where r.id=(select course_run_id from course_sessions where id=?)
-				and r.status<>'CANCELLED' for update of r
-			)
-			select s.id,s.start_at,s.end_at,s.status,r.run_status from course_sessions s join eligible_run r on r.id=s.course_run_id
-			where s.id=? and s.coach_account_id=? for update of s
-			""", sessionId, sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
+		Map<String, Object> session = courseEnrollmentRepository.updateAttendanceFindCourseRuns(sessionId, sessionId, coachId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		Instant now = clock.instant();
 		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), text(session, "run_status"), instant(session, "start_at"), instant(session, "end_at"), now, true);
 		if (!attendance.writable())
 			throw CourseAttendanceException.closed();
-		Map<String, Object> row = db.queryForList("""
-			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
-				es.attendance_status,es.attendance_recorded_at
-			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
-			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
-			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED'
-			  and e.lifecycle_status='ACTIVE' for update of e,es
-			""", enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
+		Map<String, Object> row = courseEnrollmentRepository.updateAttendanceFindCourseEnrollmentSessions(enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
 		CourseAttendanceStatus before = CourseAttendanceStatus.valueOf(text(row, "attendance_status"));
-		db.update("""
-			update course_enrollment_sessions set attendance_status=?,attendance_recorded_at=coalesce(attendance_recorded_at,?),
-			attendance_recorded_by=?,attendance_updated_at=?,version=version+1 where id=?
-			""", request.status().name(), Timestamp.from(now), coachId, Timestamp.from(now), enrollmentSessionId);
+		courseEnrollmentRepository.updateAttendanceUpdateCourseEnrollmentSessions(request.status().name(), Timestamp.from(now), coachId, Timestamp.from(now), enrollmentSessionId);
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COURSE_ATTENDANCE_CHANGED", "CourseEnrollmentSession", enrollmentSessionId, "Coach changed Course attendance", Map.of("status", before.name()), Map.of("status", request.status().name(), "courseSessionId", sessionId.toString())));
 		return new RosterEntry(enrollmentSessionId, text(row, "member_code"), text(row, "full_name"), text(row, "profile_image_url"), request.status(), instant(row, "attendance_recorded_at") == null ? now : instant(row, "attendance_recorded_at"), uuid(row, "member_account_id"));
 	}
@@ -179,4 +138,6 @@ public class CourseEnrollmentService {
 			return new MemberEnrollment(id, runId, courseCode, courseName, runCode, courseRunStatus, lifecycleStatus, enrolledAt, payment, List.copyOf(sessions), "WITHDRAWAL_PENDING".equals(lifecycleStatus));
 		}
 	}
+
+	private final CourseEnrollmentRepository courseEnrollmentRepository;
 }

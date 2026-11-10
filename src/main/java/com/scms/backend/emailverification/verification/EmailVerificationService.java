@@ -56,6 +56,7 @@ public class EmailVerificationService {
 		this.notifications = notifications;
 		this.accounts = accounts;
 		this.outbox = outbox;
+		this.emailVerificationRepository = new EmailVerificationRepository(this.db);
 	}
 
 	public boolean enabled() {
@@ -79,20 +80,13 @@ public class EmailVerificationService {
 		Instant now = clock.instant();
 		Generated generated = generate(accountId, normalizeEmail(email), 1, now, registrationExpiresAt, "EMAIL_VERIFICATION_REQUESTED");
 		String session = crypto.token(), csrf = crypto.token();
-		db.update("""
-			insert into email_verification_sessions(id,account_id,token_hash,csrf_token_hash,expires_at)
-			values (?,?,?,?,?)
-			""", UUID.randomUUID(), accountId, crypto.sha256(session), crypto.sha256(csrf), Timestamp.from(registrationExpiresAt));
+		emailVerificationRepository.beginInsertEmailVerificationSessions(UUID.randomUUID(), accountId, crypto.sha256(session), crypto.sha256(csrf), Timestamp.from(registrationExpiresAt));
 		return new EmailVerificationRegistration(session, csrf, generated.expiresAt(), generated.resendAt(), registrationExpiresAt, now);
 	}
 
 	public PendingRegistrationException pendingConflict(String email) {
 		Instant now = clock.instant();
-		var rows = db.query("""
-			select c.expires_at,c.resend_available_at,a.registration_expires_at from accounts a
-			join email_verification_challenges c on c.account_id=a.id and c.consumed_at is null and c.superseded_at is null
-			where lower(a.email)=lower(?) and a.email_verification_required=true and a.registration_expires_at>?
-			""", (rs, n) -> new PendingTimes(rs.getTimestamp(1).toInstant(), rs.getTimestamp(2).toInstant(), rs.getTimestamp(3).toInstant()), normalizeEmail(email), Timestamp.from(now));
+		var rows = emailVerificationRepository.pendingConflictFindAccounts(normalizeEmail(email), Timestamp.from(now));
 		return rows.isEmpty() ? null : new PendingRegistrationException(rows.getFirst().otp(), rows.getFirst().resend(), rows.getFirst().registration(), now);
 	}
 
@@ -103,13 +97,7 @@ public class EmailVerificationService {
 		limits.check("VERIFY_IP", ip, 5, Duration.ofMinutes(1));
 		Instant now = clock.instant();
 		String email = normalizeEmail(request.email());
-		var rows = db.query("""
-			select a.id,a.status,a.email_verification_required,a.registration_expires_at,a.email_verified_at,
-			 c.id,c.otp_digest,c.hmac_key_version,c.expires_at,c.attempt_count,c.max_attempts,c.consumed_at,
-			 c.superseded_at,c.locked_at,c.generation
-			from accounts a join email_verification_challenges c on c.account_id=a.id
-			where lower(a.email)=lower(?) order by c.generation desc limit 1 for update of a,c
-			""", this::challengeRow, email);
+		var rows = emailVerificationRepository.verifyFindAccounts(email);
 		if (rows.isEmpty())
 			invalidOtp();
 		ChallengeRow row = rows.getFirst();
@@ -123,7 +111,7 @@ public class EmailVerificationService {
 			invalidOtp();
 		if (!matches) {
 			int attempts = row.attempts() + 1;
-			db.update("update email_verification_challenges set attempt_count=?,locked_at=?,updated_at=?,version=version+1 where id=?", attempts, attempts >= row.maximum() ? Timestamp.from(now) : null, Timestamp.from(now), row.challengeId());
+			emailVerificationRepository.verifyUpdateEmailVerificationChallenges(attempts, attempts >= row.maximum() ? Timestamp.from(now) : null, Timestamp.from(now), row.challengeId());
 			invalidOtp();
 		}
 		var account = accounts.findById(row.accountId()).orElseThrow();
@@ -133,7 +121,7 @@ public class EmailVerificationService {
 			invalidOtp();
 		}
 		accounts.flush();
-		db.update("update email_verification_challenges set consumed_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), row.challengeId());
+		emailVerificationRepository.consumeChallenge(Timestamp.from(now), Timestamp.from(now), row.challengeId());
 		revokeArtifacts(row.accountId(), now, row.generation());
 		cancelManualRequests(row.accountId(), now, "ACCOUNT_ALREADY_ACTIVATED");
 		audits.save(new AuditEvent(UUID.randomUUID(), "EMAIL_VERIFIED", "ACCOUNT", row.accountId(), Map.of("source", "SELF_REGISTRATION")));
@@ -152,16 +140,11 @@ public class EmailVerificationService {
 		String email = normalizeEmail(request.email());
 		limits.check("RESEND_EMAIL", email, 3, Duration.ofHours(1));
 		Instant now = clock.instant(), generic = now.plus(properties.getResendCooldown());
-		var rows = db.query("""
-			select a.id,a.registration_expires_at,c.id,c.generation,c.resend_available_at
-			from accounts a join email_verification_challenges c on c.account_id=a.id
-			where lower(a.email)=lower(?) and a.status='INACTIVE' and a.email_verification_required=true
-			 and c.consumed_at is null and c.superseded_at is null for update of a,c
-			""", (rs, n) -> new ResendRow(rs.getObject(1, UUID.class), instant(rs, 2), rs.getObject(3, UUID.class), rs.getInt(4), instant(rs, 5)), email);
+		var rows = emailVerificationRepository.resendFindAccounts(email);
 		if (!rows.isEmpty()) {
 			ResendRow row = rows.getFirst();
 			if (row.registrationExpiresAt().isAfter(now) && !row.resendAt().isAfter(now)) {
-				db.update("update email_verification_challenges set superseded_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), row.challengeId());
+				emailVerificationRepository.resendUpdateEmailVerificationChallenges(Timestamp.from(now), Timestamp.from(now), row.challengeId());
 				cancelOutbox(row.accountId(), now);
 				generate(row.accountId(), email, row.generation() + 1, now, row.registrationExpiresAt(), "EMAIL_VERIFICATION_RESENT");
 			}
@@ -177,11 +160,7 @@ public class EmailVerificationService {
 		Instant now = clock.instant();
 		if (cookie == null || cookie.isBlank() || csrf == null || csrf.isBlank())
 			invalidSession();
-		var sessions = db.query("""
-			select s.id,s.account_id,s.csrf_token_hash,s.expires_at,s.change_email_count,a.registration_expires_at
-			from email_verification_sessions s join accounts a on a.id=s.account_id
-			where s.token_hash=? and s.revoked_at is null for update of s,a
-			""", (rs, n) -> new SessionRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3), instant(rs, 4), rs.getInt(5), instant(rs, 6)), crypto.sha256(cookie));
+		var sessions = emailVerificationRepository.changeEmailFindEmailVerificationSessions(crypto.sha256(cookie));
 		if (sessions.isEmpty())
 			invalidSession();
 		SessionRow session = sessions.getFirst();
@@ -191,23 +170,20 @@ public class EmailVerificationService {
 			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_CHANGE_LIMIT_EXCEEDED", "Email change limit exceeded.");
 		String email = normalizeEmail(request.newEmail());
 		try {
-			int changed = db.update("""
-				update accounts set email=?,updated_at=?,version=version+1 where id=? and status='INACTIVE'
-				 and email_verification_required=true and registration_expires_at>?
-				""", email, Timestamp.from(now), session.accountId(), Timestamp.from(now));
+			int changed = emailVerificationRepository.changeEmailUpdateAccounts(email, Timestamp.from(now), session.accountId(), Timestamp.from(now));
 			if (changed != 1)
 				invalidSession();
 		} catch (DataIntegrityViolationException ex) {
 			throw new EmailVerificationException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "Email is already in use.");
 		}
-		Integer generation = db.queryForObject("select coalesce(max(generation),0) from email_verification_challenges where account_id=?", Integer.class, session.accountId());
-		db.update("update email_verification_challenges set superseded_at=?,updated_at=?,version=version+1 where account_id=? and consumed_at is null and superseded_at is null", Timestamp.from(now), Timestamp.from(now), session.accountId());
+		Integer generation = emailVerificationRepository.changeEmailFindEmailVerificationChallenges(session.accountId());
+		emailVerificationRepository.changeEmailUpdateEmailVerificationChallenges(Timestamp.from(now), Timestamp.from(now), session.accountId());
 		cancelOutbox(session.accountId(), now);
-		db.update("update email_verification_sessions set revoked_at=?,updated_at=? where id=?", Timestamp.from(now), Timestamp.from(now), session.id());
+		emailVerificationRepository.changeEmailUpdateEmailVerificationSessions(Timestamp.from(now), Timestamp.from(now), session.id());
 		cancelManualRequests(session.accountId(), now, "EMAIL_CHANGED");
 		Generated generated = generate(session.accountId(), email, (generation == null ? 0 : generation) + 1, now, session.registrationExpiresAt(), "EMAIL_VERIFICATION_EMAIL_CHANGED");
 		String newToken = crypto.token(), newCsrf = crypto.token();
-		db.update("insert into email_verification_sessions(id,account_id,token_hash,csrf_token_hash,expires_at,change_email_count) values (?,?,?,?,?,?)", UUID.randomUUID(), session.accountId(), crypto.sha256(newToken), crypto.sha256(newCsrf), Timestamp.from(session.registrationExpiresAt()), session.changeCount() + 1);
+		emailVerificationRepository.changeEmailInsertEmailVerificationSessions(UUID.randomUUID(), session.accountId(), crypto.sha256(newToken), crypto.sha256(newCsrf), Timestamp.from(session.registrationExpiresAt()), session.changeCount() + 1);
 		return new ChangeResult(new ChangePendingEmailResponse(true, mask(email), newCsrf, generated.expiresAt(), generated.resendAt(), session.registrationExpiresAt(), now), newToken);
 	}
 
@@ -217,34 +193,31 @@ public class EmailVerificationService {
 		Instant resend = now.plus(properties.getResendCooldown());
 		String hmacVersion = properties.getHmacActiveVersion();
 		UUID challengeId = UUID.randomUUID();
-		db.update("""
-			insert into email_verification_challenges(id,account_id,generation,otp_digest,hmac_key_version,expires_at,max_attempts,resend_available_at)
-			values (?,?,?,?,?,?,?,?)
-			""", challengeId, accountId, generation, crypto.otpDigest(otp, hmacVersion), hmacVersion, Timestamp.from(expires), properties.getMaxAttempts(), Timestamp.from(resend));
+		emailVerificationRepository.generateInsertEmailVerificationChallenges(challengeId, accountId, generation, crypto.otpDigest(otp, hmacVersion), hmacVersion, Timestamp.from(expires), properties.getMaxAttempts(), Timestamp.from(resend));
 		outbox.enqueue("EMAIL_VERIFICATION_OTP:" + accountId + ":" + generation, accountId, generation, email, EmailMessageRenderer.VERIFICATION, otp, expires, now);
 		audits.save(new AuditEvent(UUID.randomUUID(), auditAction, "ACCOUNT", accountId, Map.of("source", "SELF_REGISTRATION", "generation", generation)));
 		return new Generated(expires, resend);
 	}
 
 	private void revokeArtifacts(UUID accountId, Instant now, int generation) {
-		db.update("update email_verification_sessions set revoked_at=?,updated_at=? where account_id=? and revoked_at is null", Timestamp.from(now), Timestamp.from(now), accountId);
-		db.update("update email_outbox set status='CANCELLED',payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,updated_at=? where account_id=? and generation=? and status in ('PENDING','FAILED','PROCESSING')", Timestamp.from(now), accountId, generation);
+		emailVerificationRepository.revokeArtifactsUpdateEmailVerificationSessions(Timestamp.from(now), Timestamp.from(now), accountId);
+		emailVerificationRepository.revokeArtifactsUpdateEmailOutbox(Timestamp.from(now), accountId, generation);
 	}
 
 	private void cancelOutbox(UUID accountId, Instant now) {
-		db.update("update email_outbox set status='CANCELLED',payload_ciphertext=null,payload_nonce=null,locked_at=null,locked_by=null,updated_at=? where account_id=? and status in ('PENDING','FAILED','PROCESSING')", Timestamp.from(now), accountId);
+		emailVerificationRepository.cancelOutboxUpdateEmailOutbox(Timestamp.from(now), accountId);
 	}
 
 	private void cancelManualRequests(UUID accountId, Instant now, String terminalReason) {
-		var requests = db.query("select id,requested_by_account_id,reason_code,verification_method from email_verification_manual_activation_requests where account_id=? and status='PENDING' for update", (rs, n) -> new ManualRequestAudit(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3), rs.getString(4)), accountId);
-		db.update("update email_verification_manual_activation_requests set status='CANCELLED',terminal_reason=?,updated_at=?,version=version+1 where account_id=? and status='PENDING'", terminalReason, Timestamp.from(now), accountId);
+		var requests = emailVerificationRepository.cancelManualRequestsFindEmailVerificationManualActivationRequests(accountId);
+		emailVerificationRepository.cancelManualRequestsUpdateEmailVerificationManualActivationRequests(terminalReason, Timestamp.from(now), accountId);
 		for (var request : requests) audits.save(new AuditEvent(UUID.randomUUID(), "MANUAL_ACTIVATION_REQUEST_CANCELLED", "MANUAL_ACTIVATION_REQUEST", request.id(), Map.of("accountId", accountId.toString(), "requestedByAccountId", request.requestedBy().toString(), "reasonCode", request.reasonCode(), "verificationMethod", request.verificationMethod(), "terminalReason", terminalReason, "source", "SELF_REGISTRATION")));
 	}
 
 	private boolean cookieMatches(String cookie, UUID accountId) {
 		if (cookie == null || cookie.isBlank())
 			return false;
-		Integer count = db.queryForObject("select count(*) from email_verification_sessions where token_hash=? and account_id=?", Integer.class, crypto.sha256(cookie), accountId);
+		Integer count = emailVerificationRepository.cookieMatchesFindEmailVerificationSessions(crypto.sha256(cookie), accountId);
 		return count != null && count > 0;
 	}
 
@@ -274,10 +247,6 @@ public class EmailVerificationService {
 		return value == null ? null : value.toInstant();
 	}
 
-	private ChallengeRow challengeRow(ResultSet rs, int n) throws SQLException {
-		return new ChallengeRow(rs.getObject(1, UUID.class), rs.getString(2), rs.getBoolean(3), instant(rs, 4), instant(rs, 5), rs.getObject(6, UUID.class), rs.getString(7), rs.getString(8), instant(rs, 9), rs.getInt(10), rs.getInt(11), instant(rs, 12), instant(rs, 13), instant(rs, 14), rs.getInt(15));
-	}
-
 	public record VerifyResult(VerifyEmailResponse response, boolean clearCookie) {
 	}
 
@@ -287,18 +256,20 @@ public class EmailVerificationService {
 	private record Generated(Instant expiresAt, Instant resendAt) {
 	}
 
-	private record PendingTimes(Instant otp, Instant resend, Instant registration) {
+	record PendingTimes(Instant otp, Instant resend, Instant registration) {
 	}
 
-	private record ResendRow(UUID accountId, Instant registrationExpiresAt, UUID challengeId, int generation, Instant resendAt) {
+	record ResendRow(UUID accountId, Instant registrationExpiresAt, UUID challengeId, int generation, Instant resendAt) {
 	}
 
-	private record SessionRow(UUID id, UUID accountId, String csrfHash, Instant expiresAt, int changeCount, Instant registrationExpiresAt) {
+	record SessionRow(UUID id, UUID accountId, String csrfHash, Instant expiresAt, int changeCount, Instant registrationExpiresAt) {
 	}
 
-	private record ManualRequestAudit(UUID id, UUID requestedBy, String reasonCode, String verificationMethod) {
+	record ManualRequestAudit(UUID id, UUID requestedBy, String reasonCode, String verificationMethod) {
 	}
 
-	private record ChallengeRow(UUID accountId, String status, boolean required, Instant registrationExpiresAt, Instant verifiedAt, UUID challengeId, String digest, String keyVersion, Instant expiresAt, int attempts, int maximum, Instant consumedAt, Instant supersededAt, Instant lockedAt, int generation) {
+	record ChallengeRow(UUID accountId, String status, boolean required, Instant registrationExpiresAt, Instant verifiedAt, UUID challengeId, String digest, String keyVersion, Instant expiresAt, int attempts, int maximum, Instant consumedAt, Instant supersededAt, Instant lockedAt, int generation) {
 	}
+
+	private final EmailVerificationRepository emailVerificationRepository;
 }

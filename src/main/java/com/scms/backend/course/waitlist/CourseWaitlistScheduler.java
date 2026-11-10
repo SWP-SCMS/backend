@@ -1,6 +1,5 @@
 package com.scms.backend.course.waitlist;
 
-import com.scms.backend.course.Course;
 import java.time.Clock;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;

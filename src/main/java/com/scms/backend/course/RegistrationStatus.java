@@ -1,10 +1,6 @@
 package com.scms.backend.course;
 
-import io.swagger.v3.oas.annotations.media.Schema;
-import java.math.BigInteger;
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
 
 public enum RegistrationStatus {
 

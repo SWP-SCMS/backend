@@ -428,10 +428,6 @@ public class ClassSessionService {
 		return result;
 	}
 
-	private void ensureCoachAvailable(UUID coachId, Instant startTime, Instant endTime) {
-		classSessionResources.ensureCoachAvailable(coachId, startTime, endTime);
-	}
-
 	public void moveForRoomImpact(UUID managerId, ClassSession session, Room targetRoom, String reason) {
 		ensureActiveManager(managerId);
 		if (session.getStatus() != ClassSessionStatus.SCHEDULED && session.getStatus() != ClassSessionStatus.IN_PROGRESS) {

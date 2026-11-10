@@ -2,7 +2,6 @@ package com.scms.backend.training.feedback;
 
 import com.scms.backend.scheduling.SportClassType;
 import com.scms.backend.training.TrainingFeedback;
-import com.scms.backend.training.TrainingResult;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;

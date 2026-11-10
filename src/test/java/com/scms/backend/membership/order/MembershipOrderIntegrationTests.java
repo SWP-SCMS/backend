@@ -14,7 +14,6 @@ import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
-import com.scms.backend.membership.Membership;
 import com.scms.backend.membership.MembershipOrder;
 import com.scms.backend.membership.MembershipOrderStatus;
 import com.scms.backend.membership.PaymentMethod;

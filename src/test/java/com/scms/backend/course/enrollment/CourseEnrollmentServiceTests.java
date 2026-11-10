@@ -11,7 +11,6 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseAttendanceException;
 import com.scms.backend.course.CourseAttendanceStatus;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.AttendanceUpdate;

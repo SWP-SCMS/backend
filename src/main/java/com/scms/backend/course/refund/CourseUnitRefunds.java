@@ -53,22 +53,9 @@ final public class CourseUnitRefunds {
 	}
 
 	private static void create(JdbcTemplate db, UUID runId, UUID eventId, UUID actorId, Instant now, String source) {
-		var enrollments = db.queryForList("""
-			select e.id from course_enrollments e join course_payments p on p.id=e.course_payment_id
-			where e.course_run_id=? and p.status='PAID' and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
-			order by e.id for update of e
-			""", UUID.class, runId);
+		var enrollments = CourseUnitRefundsRepository.createFindCourseEnrollments(db, runId);
 		for (UUID enrollmentId : enrollments) {
-			var units = db.query("""
-				select es.id,es.allocation_vnd,es.disposition,
-				    coalesce(replacement.status,s.status) effective_status,
-				    coalesce(replacement.start_at,s.start_at) effective_start
-				from course_enrollment_sessions es join course_sessions s on s.id=es.course_session_id
-				left join course_sessions replacement on replacement.id=s.replacement_session_id
-				where es.course_enrollment_id=? and not exists
-				    (select 1 from course_refund_unit_claims claim where claim.enrollment_session_id=es.id)
-				order by es.unit_number for update of es
-				""", (rs, row) -> new Unit(rs.getObject("id", UUID.class), rs.getBigDecimal("allocation_vnd").toBigIntegerExact(), rs.getString("disposition"), rs.getString("effective_status"), rs.getTimestamp("effective_start").toInstant()), enrollmentId);
+			var units = CourseUnitRefundsRepository.createFindCourseEnrollmentSessions(db, enrollmentId);
 			var eligible = eligible(units, now, source);
 			BigInteger amount = eligible.stream().map(Unit::allocation).reduce(BigInteger.ZERO, BigInteger::add);
 			if (amount.signum() == 0)
@@ -82,23 +69,12 @@ final public class CourseUnitRefunds {
 				default ->
 					"Hủy đợt: hoàn các buổi chưa học theo phân bổ lúc thanh toán";
 			};
-			int inserted = db.update("""
-				insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,source_event_id,
-				    amount_vnd,requester_account_id,request_reason)
-				values(?,?,?,?,?,?,?,?) on conflict(course_enrollment_id,source_type,source_event_id) do nothing
-				""", id, enrollmentId, runId, source, eventId, new BigDecimal(amount), actorId, reason);
+			int inserted = CourseUnitRefundsRepository.createInsertCourseRefundObligations(db, id, enrollmentId, runId, source, eventId, new BigDecimal(amount), actorId, reason);
 			// Preserve existing financial decisions; never rewrite approved or paid amounts.
 			if (inserted == 0)
 				continue;
-			for (Unit unit : eligible) db.update("""
-				insert into course_refund_unit_claims(enrollment_session_id,course_enrollment_id,refund_obligation_id,allocation_vnd,created_at)
-				values(?,?,?,?,?)
-				""", unit.id(), enrollmentId, id, new BigDecimal(unit.allocation()), Timestamp.from(now));
-			db.update("""
-				insert into audit_events(id,actor_account_id,action,target_type,target_id,after_data)
-				values(gen_random_uuid(),?,'COURSE_REFUND_CREATED','COURSE_REFUND_OBLIGATION',?,
-				    jsonb_build_object('source',cast(? as text),'amountVnd',cast(? as text),'unitCount',cast(? as integer)))
-				""", actorId, id, source, amount.toString(), eligible.size());
+			for (Unit unit : eligible) CourseUnitRefundsRepository.createInsertCourseRefundUnitClaims(db, unit.id(), enrollmentId, id, new BigDecimal(unit.allocation()), Timestamp.from(now));
+			CourseUnitRefundsRepository.createInsertAuditEvents(db, actorId, id, source, amount.toString(), eligible.size());
 			if ("REDUCED_SESSION_COUNT".equals(source))
 				cancelStaleWithdrawal(db, enrollmentId, actorId, now);
 		}
@@ -106,25 +82,13 @@ final public class CourseUnitRefunds {
 
 	private static void cancelStaleWithdrawal(JdbcTemplate db, UUID enrollmentId, UUID actorId, Instant now) {
 		// Request-time amounts are immutable; a new reduction must not leave an older overlapping snapshot approvable.
-		var requests = db.queryForList("""
-			update course_withdrawal_requests set status='CANCELLED',cancelled_at=?,cancelled_by_account_id=?,
-			    cancellation_reason='REDUCED_SESSION_COUNT'
-			where course_enrollment_id=? and status='PENDING' returning id,member_account_id
-			""", Timestamp.from(now), actorId, enrollmentId);
+		var requests = CourseUnitRefundsRepository.cancelStaleWithdrawalFindCourseWithdrawalRequests(db, Timestamp.from(now), actorId, enrollmentId);
 		if (requests.isEmpty())
 			return;
-		db.update("update course_enrollments set lifecycle_status='ACTIVE' where id=? and lifecycle_status='WITHDRAWAL_PENDING'", enrollmentId);
+		CourseUnitRefundsRepository.cancelStaleWithdrawalUpdateCourseEnrollments(db, enrollmentId);
 		for (var request : requests) {
-			db.update("""
-				insert into audit_events(id,actor_account_id,action,target_type,target_id,reason,before_data,after_data)
-				values(gen_random_uuid(),?,'COURSE_WITHDRAWAL_CANCELLED','COURSE_WITHDRAWAL_REQUEST',?,'REDUCED_SESSION_COUNT',
-				    '{"status":"PENDING"}'::jsonb,'{"status":"CANCELLED"}'::jsonb)
-				""", actorId, request.get("id"));
-			db.update("""
-				insert into notification_outbox(id,event_key,recipient_account_id,notification_type,target_type,target_id,payload)
-				values(gen_random_uuid(),?,?,'COURSE_WITHDRAWAL_CANCELLED','COURSE_WITHDRAWAL_REQUEST',?,
-				    '{"reason":"REDUCED_SESSION_COUNT"}'::jsonb) on conflict(event_key) do nothing
-				""", "course-withdrawal-cancelled:" + request.get("id"), request.get("member_account_id"), request.get("id"));
+			CourseUnitRefundsRepository.cancelStaleWithdrawalInsertAuditEvents(db, actorId, request.get("id"));
+			CourseUnitRefundsRepository.cancelStaleWithdrawalInsertNotificationOutbox(db, "course-withdrawal-cancelled:" + request.get("id"), request.get("member_account_id"), request.get("id"));
 		}
 	}
 }

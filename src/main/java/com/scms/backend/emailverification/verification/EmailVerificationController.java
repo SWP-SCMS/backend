@@ -5,7 +5,6 @@ import com.scms.backend.emailverification.EmailVerificationProperties;
 import com.scms.backend.emailverification.PendingOriginPolicy;
 import com.scms.backend.emailverification.RailwayClientIpResolver;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Duration;

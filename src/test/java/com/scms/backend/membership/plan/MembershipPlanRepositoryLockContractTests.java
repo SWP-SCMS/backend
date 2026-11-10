@@ -1,7 +1,6 @@
 package com.scms.backend.membership.plan;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import com.scms.backend.membership.MembershipPlan;
 import com.scms.backend.membership.offer.MembershipOfferRepository;
 import jakarta.persistence.LockModeType;
 import java.lang.reflect.Method;

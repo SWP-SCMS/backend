@@ -6,7 +6,6 @@ import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseException;
 import com.scms.backend.course.CourseRun;
 import com.scms.backend.course.CourseSession;
-import com.scms.backend.course.CourseWithdrawalCause;
 import com.scms.backend.course.VersionRequest;
 import com.scms.backend.course.run.CourseRunClosureService;
 import com.scms.backend.course.run.CourseRunCreateRequest;
@@ -77,6 +76,7 @@ public class CourseManagementService {
 		this.clock = clock;
 		this.courseAdministration = new CourseAdministration(this.courses, this.runs, this.disciplines, this.accounts, this.audits, this.runClosure, this.clock);
 		this.courseRunAdministration = new CourseRunAdministration(this.runs, this.sessions, this.accounts, this.runClosure, this.db, this.scheduleChanges, this.clock, this.courseAdministration);
+		this.courseManagementRepository = new CourseManagementRepository(this.db);
 	}
 
 	@Transactional(readOnly = true)
@@ -112,14 +112,6 @@ public class CourseManagementService {
 	@Transactional
 	CourseApprovalResponse rejectCourse(UUID managerId, UUID courseId, CourseApprovalDecision request) {
 		return courseAdministration.rejectCourse(managerId, courseId, request);
-	}
-
-	private Course createDraftCourse(UUID actorId, CourseCreateRequest request) {
-		return courseAdministration.createDraftCourse(actorId, request);
-	}
-
-	private CourseApprovalResponse decideCourse(UUID managerId, UUID courseId, CourseApprovalDecision request, boolean approved) {
-		return courseAdministration.decideCourse(managerId, courseId, request, approved);
 	}
 
 	@Transactional
@@ -167,17 +159,9 @@ public class CourseManagementService {
 		return courseRunAdministration.openRun(managerId, runId, request);
 	}
 
-	private void validateOpeningSchedule(CourseRun run) {
-		courseRunAdministration.validateOpeningSchedule(run);
-	}
-
 	@Transactional
 	public CourseRunResponse patchRunSchedule(UUID managerId, UUID runId, CourseRunScheduleRequest request) {
 		return courseRunAdministration.patchRunSchedule(managerId, runId, request);
-	}
-
-	private CourseWithdrawalCause scheduleCause(CourseRun run, CourseRunScheduleRequest request) {
-		return courseRunAdministration.scheduleCause(run, request);
 	}
 
 	@Transactional
@@ -190,10 +174,7 @@ public class CourseManagementService {
 		ensureActiveManager(managerId);
 		if (!runs.existsById(runId))
 			throw CourseException.runNotFound();
-		return db.queryForMap("""
-			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')) as "enrollmentCount",
-			       (select count(*) from course_orders where course_run_id=? and status='PENDING_PAYMENT') as "pendingOrderCount"
-			""", runId, runId);
+		return courseManagementRepository.cancellationImpactFindCourseEnrollments(runId, runId);
 	}
 
 	@Transactional(readOnly = true)
@@ -249,40 +230,12 @@ public class CourseManagementService {
 		return result;
 	}
 
-	private CourseResponse transitionCourse(UUID managerId, UUID courseId, VersionRequest request, String action, java.util.function.Consumer<Course> transition) {
-		return courseAdministration.transitionCourse(managerId, courseId, request, action, transition);
-	}
-
-	private List<String> cancelUnstartedRuns(UUID managerId, UUID courseId, String reasonCode) {
-		return courseAdministration.cancelUnstartedRuns(managerId, courseId, reasonCode);
-	}
-
-	private Course lockCourse(UUID id) {
-		return courseAdministration.lockCourse(id);
-	}
-
-	private CourseRun lockRun(UUID id) {
-		return courseAdministration.lockRun(id);
-	}
-
 	private void ensureActiveManager(UUID managerId) {
 		courseAdministration.ensureActiveManager(managerId);
 	}
 
-	private void validateRun(CourseRunCreateRequest request) {
-		courseRunAdministration.validateRun(request);
-	}
-
 	private String required(String value, int max, String field) {
 		return courseAdministration.required(value, max, field);
-	}
-
-	private String optional(String value, int max, String field) {
-		return courseAdministration.optional(value, max, field);
-	}
-
-	private void checkVersion(Long actual, Long expected, java.util.function.Supplier<CourseException> error) {
-		courseAdministration.checkVersion(actual, expected, error);
 	}
 
 	private void audit(UUID actorId, String action, String targetType, UUID targetId, Map<String, Object> before, Map<String, Object> after) {
@@ -304,4 +257,6 @@ public class CourseManagementService {
 	private final CourseAdministration courseAdministration;
 
 	private final CourseRunAdministration courseRunAdministration;
+
+	private final CourseManagementRepository courseManagementRepository;
 }

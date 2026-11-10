@@ -4,10 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import com.scms.backend.course.CourseRunStatus;
-import com.scms.backend.course.CourseStatus;
-import com.scms.backend.course.run.CourseRunScheduleRequest;
-import com.scms.backend.course.session.CourseSessionCancelWithMakeupRequest;
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
 

@@ -220,16 +220,7 @@ public class PaymentFulfillmentService {
 	}
 
 	List<CourseUnit> courseUnits(Map<String, Object> row, Instant now) {
-		List<CourseUnit> units = db.query("""
-			select coalesce(replacement.id, original.id) id,original.unit_number,
-				coalesce(replacement.start_at, original.start_at) start_at
-			from course_sessions original
-			left join course_sessions replacement on replacement.id=original.replacement_session_id
-			where original.course_run_id=? and original.is_makeup=false
-			  and not exists (select 1 from course_sessions replaced_by
-				where replaced_by.replacement_session_id=original.id)
-			order by original.unit_number,original.id
-			""", (result, index) -> new CourseUnit(result.getObject("id", UUID.class), result.getInt("unit_number"), result.getTimestamp("start_at").toInstant()), uuid(row, "course_run_id"));
+		List<CourseUnit> units = paymentFulfillmentRepository.courseUnitsFindCourseSessions(uuid(row, "course_run_id"));
 		int totalUnits = ((Number) row.get("total_units")).intValue();
 		if (units.size() != totalUnits || units.stream().map(CourseUnit::unitNumber).distinct().count() != totalUnits) {
 			throw PaymentException.conflict("Course schedule does not match the published unit count");
@@ -247,10 +238,7 @@ public class PaymentFulfillmentService {
 
 	CourseEnrollmentResponse courseEnrollment(UUID orderId, UUID memberId) {
 		try {
-			Map<String, Object> row = db.queryForMap("""
-				select id,course_order_id,member_account_id,course_run_id,amount_paid_vnd_snapshot,
-					total_units_snapshot,enrolled_at from course_enrollments where course_order_id=? and member_account_id=?
-				""", orderId, memberId);
+			Map<String, Object> row = paymentFulfillmentRepository.courseEnrollmentFindCourseEnrollments(orderId, memberId);
 			return new CourseEnrollmentResponse(uuid(row, "id"), uuid(row, "course_order_id"), uuid(row, "member_account_id"), uuid(row, "course_run_id"), new BigDecimal(row.get("amount_paid_vnd_snapshot").toString()).toBigIntegerExact(), ((Number) row.get("total_units_snapshot")).intValue(), instant(row, "enrolled_at"));
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.conflict("Paid Course Order has incomplete enrollment data");
@@ -266,16 +254,7 @@ public class PaymentFulfillmentService {
 		lifecycle.reconcile(memberIdForOrder(orderId), clock.instant());
 		Map<String, Object> row;
 		try {
-			row = db.queryForMap("""
-				select ?::uuid payment_id,o.id order_id,'CASH' payment_method,'PENDING' payment_status,
-					o.order_number,a.full_name member_name,m.member_code,null::text provider_reference,
-					o.price_amount_snapshot payment_amount,o.currency_code_snapshot payment_currency,
-					o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
-					o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
-					o.duration_days_snapshot
-				from membership_orders o join accounts a on a.id=o.member_account_id
-				join member_profiles m on m.account_id=a.id where o.id=? for update of o
-				""", paymentId, orderId);
+			row = paymentFulfillmentRepository.fulfillCashFindMembershipOrders(paymentId, orderId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Membership Order was not found");
 		}
@@ -284,11 +263,8 @@ public class PaymentFulfillmentService {
 		ensureMembershipCanFulfill(row);
 		Instant now = clock.instant();
 		try {
-			db.update("""
-				insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at)
-				values(?,?,'CASH','PAID',?,'VND',?,?)
-				""", paymentId, orderId, row.get("payment_amount"), actorId, Timestamp.from(now));
-			db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'", Timestamp.from(now), orderId);
+			paymentFulfillmentRepository.fulfillCashInsertPayments(paymentId, orderId, row.get("payment_amount"), actorId, Timestamp.from(now));
+			paymentFulfillmentRepository.fulfillCashUpdateMembershipOrders(Timestamp.from(now), orderId);
 			return createArtifacts(row, paymentId, actorId, evidence, reason, now);
 		} catch (DataIntegrityViolationException exception) {
 			throw PaymentException.conflict("Payment or Order was already fulfilled");
@@ -304,7 +280,7 @@ public class PaymentFulfillmentService {
 	}
 
 	private void ensureMembershipCanFulfill(Map<String, Object> row) {
-		Integer active = db.queryForObject("select count(*) from memberships where member_account_id=? and status='ACTIVE'", Integer.class, uuid(row, "member_account_id"));
+		Integer active = paymentFulfillmentRepository.ensureMembershipCanFulfillFindMemberships(uuid(row, "member_account_id"));
 		if (fulfillmentMode(row) == FulfillmentMode.IMMEDIATE && active != null && active > 0) {
 			throw PaymentException.conflict("Member already has an active membership");
 		}
@@ -368,20 +344,12 @@ public class PaymentFulfillmentService {
 		return webhookResponse(row, processed, SepayWebhookOutcome.ALREADY_PROCESSED);
 	}
 
-	private void lockCourseTransferForPayment(UUID orderId) {
-		paymentFulfillmentRepository.lockCourseTransferForPayment(orderId);
-	}
-
 	Map<String, Object> coursePaymentForUpdate(UUID coursePaymentId) {
 		return paymentFulfillmentRepository.coursePaymentForUpdate(coursePaymentId);
 	}
 
 	Map<String, Object> coursePayment(UUID coursePaymentId) {
 		return paymentFulfillmentRepository.coursePayment(coursePaymentId);
-	}
-
-	private String coursePaymentSql() {
-		return paymentFulfillmentRepository.coursePaymentSql();
 	}
 
 	private SepayWebhookResponse webhookResponse(Map<String, Object> row, boolean processed, SepayWebhookOutcome outcome) {
@@ -394,10 +362,6 @@ public class PaymentFulfillmentService {
 
 	private static String normalizeReference(String value) {
 		return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
-	}
-
-	private static String last4(String value) {
-		return PaymentProviderEventRepository.last4(value);
 	}
 
 	private PaymentResultResponse createArtifacts(Map<String, Object> row, UUID paymentId, UUID actorId, String evidence, String reason, Instant now) {
@@ -416,11 +380,7 @@ public class PaymentFulfillmentService {
 		UUID orderId = uuid(row, "order_id");
 		Map<String, Object> fulfillment;
 		try {
-			fulfillment = db.queryForMap("""
-				select m.id membership_id,r.id receipt_id,o.fulfillment_mode from memberships m
-				join receipts r on r.order_id=m.order_id join membership_orders o on o.id=m.order_id
-				where m.order_id=?
-				""", orderId);
+			fulfillment = paymentFulfillmentRepository.resultFindMemberships(orderId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.conflict("Paid Payment has incomplete fulfillment data");
 		}

@@ -1,7 +1,6 @@
 package com.scms.backend.training.plan;
 
 import com.scms.backend.training.TrainingPlan;
-import com.scms.backend.training.TrainingPlanStatus;
 import jakarta.persistence.LockModeType;
 import java.util.List;
 import java.util.Optional;

@@ -16,12 +16,10 @@ import com.scms.backend.membership.PaymentException;
 import com.scms.backend.membership.ReconciliationQueueStatus;
 import com.scms.backend.membership.payment.CourseReconciliationModels.Detail;
 import com.scms.backend.membership.payment.CourseReconciliationModels.Page;
-import com.scms.backend.membership.payment.CourseReconciliationModels.QueueItem;
 import com.scms.backend.membership.payment.CourseReconciliationModels.Result;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,6 +53,7 @@ class CourseReconciliationService {
 		this.audits = audits;
 		this.json = json;
 		this.clock = clock;
+		this.courseReconciliationRepository = new CourseReconciliationRepository(this.db, this.clock);
 	}
 
 	@Transactional(readOnly = true)
@@ -62,22 +61,7 @@ class CourseReconciliationService {
 		staff(actor);
 		if (page < 0 || size < 1 || size > 100 || (query != null && query.length() > 200))
 			throw PaymentException.validation("page >= 0, size 1..100 and query <= 200 characters required");
-		String from = " from course_payments p join course_orders o on o.id=p.course_order_id " + "join accounts a on a.id=p.member_account_id left join member_profiles m on m.account_id=a.id ";
-		String where = " where p.status='PENDING' and p.method='SEPAY' and o.status='PENDING_PAYMENT'";
-		List<Object> args = new ArrayList<>();
-		if (status == ReconciliationQueueStatus.PENDING || status == ReconciliationQueueStatus.EXPIRED_WINDOW) {
-			where += status == ReconciliationQueueStatus.PENDING ? " and p.deadline_at>?" : " and p.deadline_at<=?";
-			args.add(Timestamp.from(clock.instant()));
-		}
-		if (query != null && !query.isBlank()) {
-			where += " and (p.id::text ilike ? or o.order_reference ilike ? or p.payment_reference ilike ? or a.full_name ilike ? or m.member_code ilike ?)";
-			for (int i = 0; i < 5; i++) args.add("%" + query.trim() + "%");
-		}
-		long count = db.queryForObject("select count(*)" + from + where, Long.class, args.toArray());
-		args.add(size);
-		args.add((long) page * size);
-		List<QueueItem> items = db.query("select p.*,o.course_run_id,o.order_reference,m.member_code,a.full_name" + from + where + " order by p.created_at desc,p.id desc limit ? offset ?", (rs, n) -> new QueueItem(rs.getObject("id", UUID.class), rs.getObject("course_order_id", UUID.class), rs.getObject("course_reservation_id", UUID.class), rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getString("member_code"), rs.getString("full_name"), rs.getString("order_reference"), rs.getString("payment_reference"), rs.getBigDecimal("amount").toBigIntegerExact(), rs.getString("currency_code").trim(), rs.getString("status"), rs.getTimestamp("deadline_at").toInstant(), rs.getTimestamp("created_at").toInstant()), args.toArray());
-		return new Page(items, page, size, count, (int) Math.min(Integer.MAX_VALUE, Math.ceilDiv(count, (long) size)));
+		return queueRows(status, query, page, size);
 	}
 
 	@Transactional(readOnly = true)
@@ -106,7 +90,7 @@ class CourseReconciliationService {
 		validate(key, request);
 		Map<String, Object> row = fulfillment.coursePaymentForUpdate(paymentId);
 		String payload = json.writeValueAsString(request);
-		var saved = db.queryForList("select request_json::text,response_json::text from course_payment_reconciliations " + "where actor_account_id=? and course_payment_id=? and idempotency_key=?", actor, paymentId, key);
+		var saved = courseReconciliationRepository.reconcileFindCoursePaymentReconciliations(actor, paymentId, key);
 		if (!saved.isEmpty()) {
 			if (!json.readTree(payload).equals(json.readTree((String) saved.getFirst().get("request_json"))))
 				throw PaymentException.conflict("Idempotency-Key was used with another payload");
@@ -140,10 +124,7 @@ class CourseReconciliationService {
 			changed = true;
 		}
 		Result response = view(fulfillment.coursePayment(paymentId));
-		db.update("""
-			insert into course_payment_reconciliations(id,actor_account_id,course_payment_id,idempotency_key,
-			  request_json,response_json,changed_payment,created_at) values(?,?,?,?,?::jsonb,?::jsonb,?,?)
-			""", UUID.randomUUID(), actor, paymentId, key, payload, json.writeValueAsString(response), changed, Timestamp.from(now));
+		courseReconciliationRepository.reconcileInsertCoursePaymentReconciliations(UUID.randomUUID(), actor, paymentId, key, payload, json.writeValueAsString(response), changed, Timestamp.from(now));
 		if (changed)
 			audits.save(new AuditEvent(UUID.randomUUID(), actor, "COURSE_PAYMENT_RECONCILED", "COURSE_PAYMENT", paymentId, request.reason().trim(), Map.of("status", string(row, "payment_status")), Map.of("status", response.status(), "evidence", request.evidence().trim(), "orderId", response.orderId().toString())));
 		return response;
@@ -200,4 +181,10 @@ class CourseReconciliationService {
 		if (a.getRole() != AccountRole.MANAGER && a.getRole() != AccountRole.RECEPTIONIST)
 			throw PaymentException.forbidden();
 	}
+
+	private Page queueRows(ReconciliationQueueStatus status, String query, int page, int size) {
+		return courseReconciliationRepository.queueRows(status, query, page, size);
+	}
+
+	private final CourseReconciliationRepository courseReconciliationRepository;
 }

@@ -7,8 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.scms.backend.config.OpenApiConfiguration;
-import com.scms.backend.membership.StaffMembershipResponse;
-import com.scms.backend.membership.reporting.RevenueReportResponse;
 import java.io.InputStream;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;

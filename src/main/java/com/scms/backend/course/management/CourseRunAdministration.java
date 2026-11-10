@@ -63,6 +63,7 @@ final class CourseRunAdministration {
 		this.scheduleChanges = scheduleChanges;
 		this.clock = clock;
 		this.courseAdministration = courseAdministration;
+		this.courseManagementRepository = new CourseManagementRepository(this.db);
 	}
 
 	CourseRunPageResponse listRuns(UUID managerId, Pageable pageable) {
@@ -181,11 +182,7 @@ final class CourseRunAdministration {
 		run.changeSchedule(request.plannedStartAt(), request.plannedEndAt(), request.totalUnits());
 		runs.saveAndFlush(run);
 		UUID eventId = UUID.randomUUID();
-		db.update("""
-			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,
-			old_planned_start_at,old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
-			values(?,?,?,?,?,?,?,?,?,?)
-			""", eventId, runId, managerId, cause.name(), Timestamp.from(oldStart), Timestamp.from(oldEnd), Timestamp.from(request.plannedStartAt()), Timestamp.from(request.plannedEndAt()), oldUnits, request.totalUnits());
+		courseManagementRepository.patchRunScheduleInsertCourseScheduleChangeEvents(eventId, runId, managerId, cause.name(), Timestamp.from(oldStart), Timestamp.from(oldEnd), Timestamp.from(request.plannedStartAt()), Timestamp.from(request.plannedEndAt()), oldUnits, request.totalUnits());
 		if (request.totalUnits() < oldUnits) {
 			for (CourseSession session : current) if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
 				session.removeByRunChange();
@@ -194,7 +191,7 @@ final class CourseRunAdministration {
 					session.getReplacementSession().removeByRunChange();
 					sessions.saveAndFlush(session.getReplacementSession());
 				}
-				db.update("update course_enrollment_sessions set disposition='REMOVED_BY_RUN_CHANGE' " + "where course_run_id=? and unit_number=? and disposition='ENROLLED'", runId, session.getUnitNumber());
+				courseManagementRepository.patchRunScheduleUpdateCourseEnrollmentSessions(runId, session.getUnitNumber());
 			}
 		}
 		sessions.flush();
@@ -290,4 +287,6 @@ final class CourseRunAdministration {
 	Map<String, Object> snapshot(CourseSession session) {
 		return CourseManagementSnapshots.snapshot(session);
 	}
+
+	private final CourseManagementRepository courseManagementRepository;
 }

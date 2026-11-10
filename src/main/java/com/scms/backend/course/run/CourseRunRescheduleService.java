@@ -78,6 +78,7 @@ public class CourseRunRescheduleService {
 		this.audits = audits;
 		this.json = json;
 		this.clock = clock;
+		this.courseRunRescheduleRepository = new CourseRunRescheduleRepository(this.db);
 	}
 
 	@Transactional
@@ -100,10 +101,10 @@ public class CourseRunRescheduleService {
 				roomIds.add(change.roomId());
 		}
 		locks.lock(coachIds, roomIds);
-		if (db.queryForList("select id from course_runs where id=? for update", UUID.class, runId).isEmpty())
+		if (courseRunRescheduleRepository.rescheduleFindCourseRuns(runId).isEmpty())
 			throw CourseException.runNotFound();
 		CourseRun run = runs.findById(runId).orElseThrow(CourseException::runNotFound);
-		var saved = db.queryForList("select request_fingerprint,response_json::text from course_run_reschedules " + "where course_run_id=? and actor_account_id=? and idempotency_key=?", runId, actorId, key);
+		var saved = courseRunRescheduleRepository.rescheduleFindCourseRunReschedules(runId, actorId, key);
 		if (!saved.isEmpty()) {
 			if (!fingerprint.equals(saved.getFirst().get("request_fingerprint")))
 				throw CourseException.rescheduleIdempotencyConflict();
@@ -117,7 +118,7 @@ public class CourseRunRescheduleService {
 			throw CourseException.validation("plannedStartAt", "must not precede registration closing");
 		if (request.totalUnits() > run.getTotalUnits() && run.getStatus() != CourseRunStatus.DRAFT)
 			throw CourseException.validation("totalUnits", "cannot increase after the Run is opened");
-		db.queryForList("select id from course_sessions where course_run_id=? order by id for update", UUID.class, runId);
+		courseRunRescheduleRepository.rescheduleFindCourseSessions(runId);
 		List<CourseSession> current = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId);
 		if (!current.stream().map(CourseSession::getId).toList().containsAll(requested.keySet()))
 			throw CourseException.sessionNotFound();
@@ -152,10 +153,7 @@ public class CourseRunRescheduleService {
 			if (item.removed() || !active(item.session()))
 				continue;
 			sessionService.validateAssignment(run.getCapacity(), item.coach(), item.room(), item.startAt(), item.endAt());
-			if (Boolean.TRUE.equals(db.queryForObject("""
-				select exists(select 1 from course_sessions where course_run_id<>? and status in ('SCHEDULED','MAKEUP_SCHEDULED')
-				 and (coach_account_id=? or room_id=?) and start_at<? and end_at>?)
-				""", Boolean.class, runId, item.coach().getId(), item.room().getId(), timestamp(item.endAt()), timestamp(item.startAt()))))
+			if (Boolean.TRUE.equals(courseRunRescheduleRepository.hasConflictingCourseSessions(runId, item.coach().getId(), item.room().getId(), timestamp(item.endAt()), timestamp(item.startAt()))))
 				throw CourseException.resourceConflict();
 			for (int j = 0; j < i; j++) {
 				PlannedSession other = plan.get(j);
@@ -168,15 +166,12 @@ public class CourseRunRescheduleService {
 		var responses = scheduleChanges.prepareAtomicRunResponses(run.getId(), cause, runChanged, plan, now);
 		UUID eventId = UUID.randomUUID();
 		Map<String, Object> before = auditData(Map.of("run", CourseRunResponse.from(run), "sessions", current.stream().map(CourseSessionResponse::from).toList()));
-		db.update("""
-			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,old_planned_start_at,
-			 old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units) values(?,?,?,?,?,?,?,?,?,?)
-			""", eventId, runId, actorId, cause.name(), timestamp(run.getPlannedStartAt()), timestamp(run.getPlannedEndAt()), timestamp(request.plannedStartAt()), timestamp(request.plannedEndAt()), run.getTotalUnits(), request.totalUnits());
+		courseRunRescheduleRepository.rescheduleInsertCourseScheduleChangeEvents(eventId, runId, actorId, cause.name(), timestamp(run.getPlannedStartAt()), timestamp(run.getPlannedEndAt()), timestamp(request.plannedStartAt()), timestamp(request.plannedEndAt()), run.getTotalUnits(), request.totalUnits());
 		run.changeSchedule(request.plannedStartAt(), request.plannedEndAt(), request.totalUnits());
 		for (PlannedSession item : plan) {
 			if (item.removed()) {
 				item.session().removeByRunChange();
-				db.update("update course_enrollment_sessions set disposition='REMOVED_BY_RUN_CHANGE' where course_session_id=? and disposition='ENROLLED'", item.session().getId());
+				courseRunRescheduleRepository.rescheduleUpdateCourseEnrollmentSessions(item.session().getId());
 			} else if (requested.containsKey(item.session().getId())) {
 				item.session().reschedule(item.startAt(), item.endAt());
 				item.session().updateAssignment(item.room(), item.coach());
@@ -192,7 +187,7 @@ public class CourseRunRescheduleService {
 			originals.put(s.getReplacementSession().getId(), s.getId());
 		CourseRunRescheduleResponse result = new CourseRunRescheduleResponse(CourseRunResponse.from(run), current.stream().sorted(java.util.Comparator.comparing(CourseSession::getStartAt).thenComparing(s -> s.getId().toString())).map(s -> CourseSessionResponse.from(s, originals.get(s.getId()))).toList(), eventId);
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_RUN_RESCHEDULED", "COURSE_RUN", runId, null, before, auditData(Map.of("run", result.run(), "sessions", result.sessions(), "changeEventId", eventId.toString(), "cause", cause.name()))));
-		db.update("insert into course_run_reschedules(course_run_id,actor_account_id,idempotency_key,request_fingerprint,change_event_id,response_json) " + "values(?,?,?,?,?,?::jsonb)", runId, actorId, key, fingerprint, eventId, json.writeValueAsString(result));
+		courseRunRescheduleRepository.rescheduleInsertCourseRunReschedules(runId, actorId, key, fingerprint, eventId, json.writeValueAsString(result));
 		return result;
 	}
 
@@ -212,7 +207,7 @@ public class CourseRunRescheduleService {
 	}
 
 	private List<Map<String, Object>> resources(UUID runId) {
-		return db.queryForList("select id,coach_account_id,room_id from course_sessions where course_run_id=? order by id", runId);
+		return courseRunRescheduleRepository.resourcesFindCourseSessions(runId);
 	}
 
 	private String fingerprint(CourseRunRescheduleRequest request) {
@@ -246,4 +241,6 @@ public class CourseRunRescheduleService {
 			return removed || !startAt.equals(session.getStartAt()) || !endAt.equals(session.getEndAt()) || !coach.getId().equals(session.getCoach().getId()) || !room.getId().equals(session.getRoom().getId());
 		}
 	}
+
+	private final CourseRunRescheduleRepository courseRunRescheduleRepository;
 }

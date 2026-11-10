@@ -9,7 +9,6 @@ import static org.mockito.Mockito.when;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseWithdrawalEligibilityReason;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.ReceptionCourseEnrollment;
 import java.math.BigDecimal;

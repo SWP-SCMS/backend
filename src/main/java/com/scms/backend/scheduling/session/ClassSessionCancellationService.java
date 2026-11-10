@@ -63,6 +63,7 @@ public class ClassSessionCancellationService {
 		this.clock = clock;
 		this.explicitBulkLockRendezvous = explicitBulkLockRendezvous;
 		this.waitlistPromotions = waitlistPromotions;
+		this.classSessionCancellationRepository = new ClassSessionCancellationRepository(this.jdbc);
 	}
 
 	@Transactional
@@ -80,20 +81,12 @@ public class ClassSessionCancellationService {
 
 	private ClassSessionDetailResponse cancelLocked(UUID managerId, ClassSession session, String reason, Instant now) {
 		UUID sessionId = session.getId();
-		List<UUID> memberIds = jdbc.queryForList("""
-			select member_account_id from bookings
-			where class_session_id = ? and status = 'BOOKED'
-			for update
-			""", UUID.class, sessionId);
+		List<UUID> memberIds = classSessionCancellationRepository.cancelLockedFindBookings(sessionId);
 		if (!memberIds.isEmpty())
 			throw RecurringScheduleException.sessionHasMembers();
 		session.cancel(now, reason);
 		sessions.saveAndFlush(session);
-		int cancelledBookings = jdbc.update("""
-			update bookings set status = 'CANCELLED', cancelled_by_account_id = ?,
-				cancellation_source = 'SESSION_CANCELLED', cancelled_at = ?, updated_at = ?, version = version + 1
-			where class_session_id = ? and status = 'BOOKED'
-			""", managerId, Timestamp.from(now), Timestamp.from(now), sessionId);
+		int cancelledBookings = classSessionCancellationRepository.cancelLockedUpdateBookings(managerId, Timestamp.from(now), Timestamp.from(now), sessionId);
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "SESSION_CANCELLED", "CLASS_SESSION", sessionId, reason, Map.of("status", ClassSessionStatus.SCHEDULED.name()), Map.of("status", ClassSessionStatus.CANCELLED.name(), "cancelledBookings", cancelledBookings)));
 		memberIds.forEach(memberId -> notifications.write("SESSION_CANCELLED:" + sessionId + ":" + memberId, memberId, "SESSION_CANCELLED", "CLASS_SESSION", sessionId, Map.of("sessionId", sessionId.toString())));
 		if (waitlistPromotions != null)
@@ -191,4 +184,6 @@ public class ClassSessionCancellationService {
 		}
 		return request.sessionIds();
 	}
+
+	private final ClassSessionCancellationRepository classSessionCancellationRepository;
 }

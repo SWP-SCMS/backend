@@ -58,13 +58,7 @@ public class CourseTransferService {
 	public TransferRequest requestFromScheduleChange(UUID actorId, UUID memberId, UUID responseId, Instant requestedAt) {
 		active(actorId, actorId.equals(memberId) ? AccountRole.MEMBER : AccountRole.RECEPTIONIST);
 		active(memberId, AccountRole.MEMBER);
-		Map<String, Object> source = rows("""
-			select e.id source_enrollment_id,e.course_run_id source_run_id,e.lifecycle_status
-			from course_schedule_change_responses response
-			join course_enrollment_sessions es on es.id=response.enrollment_session_id
-			join course_enrollments e on e.id=es.course_enrollment_id
-			where response.id=? and e.member_account_id=?
-			""", responseId, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		Map<String, Object> source = courseTransferRepository.requestFromScheduleChangeRowsCourseScheduleChangeResponses(responseId, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
 		TransferRequest existing = findRequestByResponse(responseId);
 		if (existing != null)
 			return existing;
@@ -72,22 +66,19 @@ public class CourseTransferService {
 			throw CourseTransferException.notFound();
 		UUID requestId = UUID.randomUUID();
 		try {
-			db.update("""
-				insert into course_transfer_requests(id,schedule_change_response_id,source_enrollment_id,source_run_id,
-					member_account_id,requester_account_id,requested_at) values(?,?,?,?,?,?,?)
-				""", requestId, responseId, uuid(source, "source_enrollment_id"), uuid(source, "source_run_id"), memberId, actorId, Timestamp.from(requestedAt));
+			courseTransferRepository.requestFromScheduleChangeInsertCourseTransferRequests(requestId, responseId, uuid(source, "source_enrollment_id"), uuid(source, "source_run_id"), memberId, actorId, Timestamp.from(requestedAt));
 		} catch (DataIntegrityViolationException exception) {
 			return findRequestByResponse(responseId);
 		}
 		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_TRANSFER_REQUESTED", "COURSE_TRANSFER_REQUEST", requestId, Map.of("sourceEnrollmentId", uuid(source, "source_enrollment_id").toString(), "sourceRunId", uuid(source, "source_run_id").toString())));
-		for (UUID managerId : db.queryForList("select id from accounts where role='MANAGER' and status='ACTIVE'", UUID.class)) notifications.write("course-transfer-requested:" + requestId + ":" + managerId, managerId, "COURSE_TRANSFER_REQUESTED", "COURSE_TRANSFER_REQUEST", requestId, Map.of("requestId", requestId.toString(), "actorAccountId", actorId.toString(), "memberAccountId", memberId.toString()));
+		for (UUID managerId : courseTransferRepository.requestFromScheduleChangeFindAccounts()) notifications.write("course-transfer-requested:" + requestId + ":" + managerId, managerId, "COURSE_TRANSFER_REQUESTED", "COURSE_TRANSFER_REQUEST", requestId, Map.of("requestId", requestId.toString(), "actorAccountId", actorId.toString(), "memberAccountId", memberId.toString()));
 		return findRequest(requestId);
 	}
 
 	@Transactional(readOnly = true)
 	List<TransferRequest> managerQueue(UUID managerId) {
 		active(managerId, AccountRole.MANAGER);
-		return db.query(requestSelect() + " order by tr.requested_at,tr.id", this::mapRequest);
+		return courseTransferRepository.managerQueueFindRows();
 	}
 
 	@Transactional(readOnly = true)
@@ -97,15 +88,7 @@ public class CourseTransferService {
 		if (!List.of("PENDING", "OFFERED").contains(request.status()))
 			throw CourseTransferException.notFound();
 		Instant now = clock.instant();
-		return db.query("""
-			select r.id,r.run_code,c.code course_code,c.name course_name,r.tuition_vnd,r.capacity,
-				r.registration_closes_at,(select min(s.start_at) from course_sessions s where s.course_run_id=r.id
-					and s.status in ('SCHEDULED','MAKEUP_SCHEDULED') and s.start_at>?) next_session_at
-			from course_runs r join courses c on c.id=r.course_id
-			where r.id<>? and r.status='OPEN_FOR_REGISTRATION' and c.status='PUBLISHED'
-			  and r.registration_opens_at<=? and r.registration_closes_at>?
-			order by r.registration_closes_at,r.id
-			""", (rs, n) -> target(rs, now), Timestamp.from(now), request.sourceRunId(), Timestamp.from(now), Timestamp.from(now)).stream().filter(target -> target.usedSeats() < target.capacity()).toList();
+		return courseTransferRepository.eligibleTargetsFindCourseSessions(now, Timestamp.from(now), request.sourceRunId(), Timestamp.from(now), Timestamp.from(now)).stream().filter(target -> target.usedSeats() < target.capacity()).toList();
 	}
 
 	@Transactional
@@ -128,15 +111,10 @@ public class CourseTransferService {
 		lockRuns(request.sourceRunId(), targetRunId);
 		Instant now = clock.instant();
 		expireDueForRun(targetRunId, now);
-		Map<String, Object> target = rows("""
-			select r.id,r.tuition_vnd,r.capacity,r.registration_opens_at,r.registration_closes_at,r.status,c.status course_status,
-			 (select min(s.start_at) from course_sessions s where s.course_run_id=r.id
-			  and s.status in ('SCHEDULED','MAKEUP_SCHEDULED') and s.start_at>?) next_session_at
-			from course_runs r join courses c on c.id=r.course_id where r.id=?
-			""", Timestamp.from(now), targetRunId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		Map<String, Object> target = courseTransferRepository.approveRowsCourseSessions(Timestamp.from(now), targetRunId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
 		if (!"OPEN_FOR_REGISTRATION".equals(text(target, "status")) || !"PUBLISHED".equals(text(target, "course_status")) || now.isBefore(instant(target, "registration_opens_at")) || !now.isBefore(instant(target, "registration_closes_at")))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_TARGET_UNAVAILABLE", "The target Run is not open for transfer.");
-		if (!"ACTIVE".equals(db.queryForObject("select lifecycle_status from course_enrollments where id=? for update", String.class, request.sourceEnrollmentId())))
+		if (!"ACTIVE".equals(courseTransferRepository.approveFindCourseEnrollments(request.sourceEnrollmentId())))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_SOURCE_INACTIVE", "The source Enrollment is not active.");
 		if (activeEnrollmentExists(request.memberAccountId(), targetRunId))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_TARGET_DUPLICATE", "The Member already has an active target Enrollment.");
@@ -144,7 +122,7 @@ public class CourseTransferService {
 			throw CourseTransferException.conflict("COURSE_TRANSFER_TARGET_FULL", "The target Run has no available seat.");
 		if (hasScheduleConflict(request.memberAccountId(), request.sourceRunId(), targetRunId))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_SCHEDULE_CONFLICT", "The target Run conflicts with the Member schedule.");
-		for (Map<String, Object> session : rows("select start_at,end_at from course_sessions where course_run_id=? and status in ('SCHEDULED','MAKEUP_SCHEDULED')", targetRunId)) if (bookings.existsBookedOverlap(request.memberAccountId(), instant(session, "start_at"), instant(session, "end_at")))
+		for (Map<String, Object> session : courseTransferRepository.findTargetRunSessionTimes(targetRunId)) if (bookings.existsBookedOverlap(request.memberAccountId(), instant(session, "start_at"), instant(session, "end_at")))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_SCHEDULE_CONFLICT", "The target Run conflicts with a booked ClassSession.");
 		BigInteger credit = unusedCredit(request.sourceEnrollmentId(), now);
 		BigInteger tuition = amount(target, "tuition_vnd");
@@ -152,13 +130,9 @@ public class CourseTransferService {
 		if (!expiresAt.isAfter(now))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_DEADLINE_UNAVAILABLE", "No transfer acceptance window remains.");
 		UUID offerId = UUID.randomUUID();
-		db.update("""
-			insert into course_transfer_offers(id,transfer_request_id,source_enrollment_id,source_run_id,target_run_id,
-			 member_account_id,credit_vnd_snapshot,target_tuition_vnd_snapshot,difference_vnd_snapshot,expires_at,issued_at)
-			 values(?,?,?,?,?,?,?,?,?,?,?)
-			""", offerId, requestId, request.sourceEnrollmentId(), request.sourceRunId(), targetRunId, request.memberAccountId(), credit, tuition, tuition.subtract(credit), Timestamp.from(expiresAt), Timestamp.from(now));
-		db.update("insert into course_transfer_holds(id,transfer_offer_id,target_run_id,member_account_id,expires_at,created_at) values(?,?,?,?,?,?)", UUID.randomUUID(), offerId, targetRunId, request.memberAccountId(), Timestamp.from(expiresAt), Timestamp.from(now));
-		db.update("update course_transfer_requests set status='OFFERED',target_run_id=?,reason=?,decided_by_account_id=?,decided_at=? where id=?", targetRunId, normalizedReason, managerId, Timestamp.from(now), requestId);
+		courseTransferRepository.approveInsertCourseTransferOffers(offerId, requestId, request.sourceEnrollmentId(), request.sourceRunId(), targetRunId, request.memberAccountId(), credit, tuition, tuition.subtract(credit), Timestamp.from(expiresAt), Timestamp.from(now));
+		courseTransferRepository.approveInsertCourseTransferHolds(UUID.randomUUID(), offerId, targetRunId, request.memberAccountId(), Timestamp.from(expiresAt), Timestamp.from(now));
+		courseTransferRepository.approveUpdateCourseTransferRequests(targetRunId, normalizedReason, managerId, Timestamp.from(now), requestId);
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_TRANSFER_APPROVED", "COURSE_TRANSFER_REQUEST", requestId, normalizedReason, Map.of("status", "PENDING"), Map.of("status", "OFFERED", "offerId", offerId.toString(), "targetRunId", targetRunId.toString(), "creditVnd", credit.toString(), "targetTuitionVnd", tuition.toString())));
 		notifications.write("course-transfer-offered:" + offerId, request.memberAccountId(), "COURSE_TRANSFER_OFFERED", "COURSE_TRANSFER_OFFER", offerId, Map.of("sourceRunId", request.sourceRunId().toString(), "targetRunId", targetRunId.toString(), "creditVnd", credit.toString(), "targetTuitionVnd", tuition.toString(), "expiresAt", expiresAt.toString()));
 		return findOffer(offerId);
@@ -174,7 +148,7 @@ public class CourseTransferService {
 		if (!"PENDING".equals(request.status()))
 			throw CourseTransferException.conflict("COURSE_TRANSFER_ALREADY_DECIDED", "The request is no longer pending.");
 		Instant now = clock.instant();
-		db.update("update course_transfer_requests set status='REJECTED',reason=?,decided_by_account_id=?,decided_at=? where id=?", normalized, managerId, Timestamp.from(now), requestId);
+		courseTransferRepository.rejectUpdateCourseTransferRequests(normalized, managerId, Timestamp.from(now), requestId);
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_TRANSFER_REJECTED", "COURSE_TRANSFER_REQUEST", requestId, normalized, Map.of("status", "PENDING"), Map.of("status", "REJECTED")));
 		notifications.write("course-transfer-rejected:" + requestId, request.memberAccountId(), "COURSE_TRANSFER_REJECTED", "COURSE_TRANSFER_REQUEST", requestId, Map.of("reason", normalized));
 		return findRequest(requestId);
@@ -189,7 +163,7 @@ public class CourseTransferService {
 	@Transactional(readOnly = true)
 	List<TransferOffer> memberOffers(UUID memberId) {
 		active(memberId, AccountRole.MEMBER);
-		return db.query(offerSelect() + " where transfer.member_account_id=? order by transfer.issued_at desc,transfer.id", this::mapOffer, memberId);
+		return courseTransferRepository.memberOffersFindRows(memberId);
 	}
 
 	@Transactional(noRollbackFor = CourseTransferException.ExpiredOffer.class)
@@ -205,7 +179,7 @@ public class CourseTransferService {
 		String key = key(idempotencyKey);
 		TransferOffer offer = lockOffer(memberId, offerId);
 		if (offer.acceptedAt() != null) {
-			String existing = db.queryForObject("select acceptance_idempotency_key from course_transfer_offers where id=?", String.class, offerId);
+			String existing = courseTransferRepository.acceptFindCourseTransferOffers(offerId);
 			if (key.equals(existing))
 				return offer;
 			throw CourseTransferException.conflict("COURSE_TRANSFER_IDEMPOTENCY_CONFLICT", "The offer was accepted with another idempotency key.");
@@ -223,11 +197,11 @@ public class CourseTransferService {
 			throw CourseTransferException.conflict("COURSE_TRANSFER_TARGET_FULL", "The target Run has no available seat.");
 		if (offer.differenceVnd().signum() > 0) {
 			UUID orderId = createDifferenceOrder(offer, actorId, now);
-			db.update("update course_transfer_offers set status='PENDING_PAYMENT',acceptance_idempotency_key=?,difference_order_id=?,accepted_at=? where id=?", key, orderId, Timestamp.from(now), offerId);
+			courseTransferRepository.acceptUpdateCourseTransferOffers(key, orderId, Timestamp.from(now), offerId);
 			recordAcceptance(actorId, offer, orderId);
 			return findOffer(offerId);
 		}
-		db.update("update course_transfer_offers set acceptance_idempotency_key=?,accepted_at=? where id=?", key, Timestamp.from(now), offerId);
+		courseTransferRepository.recordOfferAcceptance(key, Timestamp.from(now), offerId);
 		completeTransfer(findOffer(offerId), null, null, actorId, now);
 		recordAcceptance(actorId, offer, null);
 		return findOffer(offerId);
@@ -239,7 +213,7 @@ public class CourseTransferService {
 
 	@Transactional
 	public CourseEnrollmentResponse completePaidDifference(UUID orderId, UUID paymentId, UUID actorId, Instant now) {
-		TransferOffer offer = db.query(offerSelect() + " where transfer.difference_order_id=? for update of transfer", this::mapOffer, orderId).stream().findFirst().orElse(null);
+		TransferOffer offer = courseTransferRepository.completePaidDifferenceFindOf(orderId).stream().findFirst().orElse(null);
 		if (offer == null)
 			return null;
 		if ("COMPLETED".equals(offer.status()))
@@ -252,7 +226,7 @@ public class CourseTransferService {
 
 	@Transactional
 	int expireDue(Instant now) {
-		List<TransferOffer> due = db.query(offerSelect() + " where transfer.status in ('OFFERED','PENDING_PAYMENT') and transfer.expires_at<=? order by transfer.id for update of transfer skip locked", this::mapOffer, Timestamp.from(now));
+		List<TransferOffer> due = courseTransferRepository.expireDueFindOf(Timestamp.from(now));
 		for (TransferOffer offer : due) expireOffer(offer, now);
 		return due.size();
 	}
@@ -267,32 +241,29 @@ public class CourseTransferService {
 		UUID orderId = UUID.randomUUID();
 		UUID reservationId = UUID.randomUUID();
 		String reference = "COR-" + orderId.toString().replace("-", "").toUpperCase(Locale.ROOT);
-		db.update("""
-			insert into course_orders(id,order_reference,member_account_id,actor_account_id,course_run_id,tuition_vnd_snapshot,
-			 currency_code,status,idempotency_key,created_at,updated_at) values(?,?,?,?,?,?,'VND','PENDING_PAYMENT',?,?,?)
-			""", orderId, reference, memberId, actorId, offer.targetRunId(), offer.differenceVnd(), "transfer:" + offer.id(), Timestamp.from(now), Timestamp.from(now));
-		db.update("insert into course_reservations(id,course_order_id,member_account_id,course_run_id,status,expires_at,created_at,updated_at) values(?,?,?,?,'HELD',?,?,?)", reservationId, orderId, memberId, offer.targetRunId(), Timestamp.from(expires), Timestamp.from(now), Timestamp.from(now));
-		db.update("update course_transfer_holds set status='RELEASED',expires_at=?,released_at=? where transfer_offer_id=? and status='HELD'", Timestamp.from(expires), Timestamp.from(now), offer.id());
+		courseTransferRepository.createDifferenceOrderInsertCourseOrders(orderId, reference, memberId, actorId, offer.targetRunId(), offer.differenceVnd(), "transfer:" + offer.id(), Timestamp.from(now), Timestamp.from(now));
+		courseTransferRepository.createDifferenceOrderInsertCourseReservations(reservationId, orderId, memberId, offer.targetRunId(), Timestamp.from(expires), Timestamp.from(now), Timestamp.from(now));
+		courseTransferRepository.createDifferenceOrderUpdateCourseTransferHolds(Timestamp.from(expires), Timestamp.from(now), offer.id());
 		return orderId;
 	}
 
 	private void expireOffer(TransferOffer offer, Instant now) {
 		if (!List.of("OFFERED", "PENDING_PAYMENT").contains(offer.status()))
 			return;
-		db.update("update course_transfer_offers set status='EXPIRED' where id=? and status in ('OFFERED','PENDING_PAYMENT')", offer.id());
-		db.update("update course_transfer_holds set status='RELEASED',released_at=? where transfer_offer_id=? and status='HELD'", Timestamp.from(now), offer.id());
-		db.update("update course_transfer_requests set status='EXPIRED' where id=? and status='OFFERED'", offer.requestId());
+		courseTransferRepository.expireOfferUpdateCourseTransferOffers(offer.id());
+		courseTransferRepository.expireOfferUpdateCourseTransferHolds(Timestamp.from(now), offer.id());
+		courseTransferRepository.expireOfferUpdateCourseTransferRequests(offer.requestId());
 		if (offer.differenceOrderId() != null) {
-			db.update("update course_reservations set status='EXPIRED',updated_at=? where course_order_id=? and status='HELD'", Timestamp.from(now), offer.differenceOrderId());
-			db.update("update course_orders set status='EXPIRED',updated_at=? where id=? and status='PENDING_PAYMENT'", Timestamp.from(now), offer.differenceOrderId());
-			db.update("update course_payments set status='FAILED',updated_at=? where course_order_id=? and status='PENDING'", Timestamp.from(now), offer.differenceOrderId());
+			courseTransferRepository.expireOfferUpdateCourseReservations(Timestamp.from(now), offer.differenceOrderId());
+			courseTransferRepository.expireOfferUpdateCourseOrders(Timestamp.from(now), offer.differenceOrderId());
+			courseTransferRepository.expireOfferUpdateCoursePayments(Timestamp.from(now), offer.differenceOrderId());
 		}
 	}
 
 	private void expireDueForRun(UUID runId, Instant now) {
-		db.update("update course_transfer_holds set status='RELEASED',released_at=? where target_run_id=? and status='HELD' and expires_at<=?", Timestamp.from(now), runId, Timestamp.from(now));
-		db.update("update course_transfer_requests set status='EXPIRED' where status='OFFERED' and id in " + "(select transfer_request_id from course_transfer_offers where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT') and expires_at<=?)", runId, Timestamp.from(now));
-		db.update("update course_transfer_offers set status='EXPIRED' where target_run_id=? and status in ('OFFERED','PENDING_PAYMENT') and expires_at<=?", runId, Timestamp.from(now));
+		courseTransferRepository.expireDueForRunUpdateCourseTransferHolds(Timestamp.from(now), runId, Timestamp.from(now));
+		courseTransferRepository.expireDueForRunUpdateCourseTransferRequests(runId, Timestamp.from(now));
+		courseTransferRepository.expireDueForRunUpdateCourseTransferOffers(runId, Timestamp.from(now));
 	}
 
 	private BigInteger unusedCredit(UUID enrollmentId, Instant now) {
@@ -370,26 +341,6 @@ public class CourseTransferService {
 
 	private CourseEnrollmentResponse targetEnrollment(UUID offerId) {
 		return courseTransferRepository.targetEnrollment(offerId);
-	}
-
-	private String requestSelect() {
-		return courseTransferRepository.requestSelect();
-	}
-
-	private String offerSelect() {
-		return courseTransferRepository.offerSelect();
-	}
-
-	private TransferRequest mapRequest(ResultSet rs, int n) throws SQLException {
-		return courseTransferRepository.mapRequest(rs, n);
-	}
-
-	private TransferOffer mapOffer(ResultSet rs, int n) throws SQLException {
-		return courseTransferRepository.mapOffer(rs, n);
-	}
-
-	private List<Map<String, Object>> rows(String sql, Object... args) {
-		return courseTransferCompletion.rows(sql, args);
 	}
 
 	private static UUID uuid(Map<String, Object> row, String key) {

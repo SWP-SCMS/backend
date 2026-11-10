@@ -1,6 +1,5 @@
 package com.scms.backend.emailverification;
 
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;

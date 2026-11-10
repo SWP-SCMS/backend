@@ -6,7 +6,6 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.course.enrollment.CourseEnrollmentResponse;
 import com.scms.backend.course.order.CoursePaymentResponse;
-import com.scms.backend.membership.Membership;
 import com.scms.backend.membership.PaymentException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -63,6 +62,7 @@ class SepayService {
 		this.bankAccountName = bankAccountName.trim();
 		this.bankDestinationSha256 = bankDestinationSha256.trim();
 		this.webhookApiKey = webhookApiKey;
+		this.sepayRepository = new SepayRepository(this.db, this.bankCode, this.bankAccount, this.bankAccountName);
 	}
 
 	SepayService(JdbcTemplate db, AccountRepository accounts, PaymentFulfillmentService fulfillment, Clock clock, String bankCode, String bankAccount, String bankAccountName, String webhookApiKey) {
@@ -84,10 +84,7 @@ class SepayService {
 		}
 		UUID memberId;
 		try {
-			memberId = db.queryForObject("""
-				select a.id from accounts a join member_profiles p on p.account_id=a.id
-				where p.member_code=? and a.role='MEMBER' and a.status='ACTIVE'
-				""", UUID.class, memberCode == null ? null : memberCode.trim());
+			memberId = sepayRepository.createForReceptionistFindAccounts(memberCode == null ? null : memberCode.trim());
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Active Member was not found");
 		}
@@ -130,18 +127,11 @@ class SepayService {
 	private CoursePaymentResponse createCoursePayment(UUID actor, UUID memberId, UUID orderId) {
 		Map<String, Object> order;
 		try {
-			UUID runId = db.queryForObject("select course_run_id from course_orders where id=? and member_account_id=?", UUID.class, orderId, memberId);
-			db.queryForObject("select id from course_runs where id=? for update", UUID.class, runId);
-			db.queryForObject("select id from course_orders where id=? and member_account_id=? for update", UUID.class, orderId, memberId);
-			db.queryForObject("select id from course_reservations where course_order_id=? for update", UUID.class, orderId);
-			order = db.queryForMap("""
-				select o.id order_id,o.order_reference,o.actor_account_id,o.tuition_vnd_snapshot,o.currency_code,
-					o.status order_status,r.id reservation_id,r.status reservation_status,r.expires_at,
-					r.course_run_id,run.status run_status
-				from course_orders o join course_reservations r on r.course_order_id=o.id
-				join course_runs run on run.id=r.course_run_id
-				where o.id=? and o.member_account_id=?
-				""", orderId, memberId);
+			UUID runId = sepayRepository.findCourseRunId(orderId, memberId);
+			sepayRepository.lockCourseRun(runId);
+			sepayRepository.lockCourseOrder(orderId, memberId);
+			sepayRepository.lockCourseReservation(orderId);
+			order = sepayRepository.findCoursePaymentContext(orderId, memberId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Course Order was not found");
 		}
@@ -150,7 +140,7 @@ class SepayService {
 		if (!"PENDING_PAYMENT".equals(order.get("order_status")) || !"HELD".equals(order.get("reservation_status")) || !courseRunPayable(order.get("run_status")) || expiresAt == null || !now.isBefore(expiresAt)) {
 			throw PaymentException.conflict("Course Order or Reservation is not payable");
 		}
-		List<Map<String, Object>> rows = db.queryForList("select * from course_payments where course_order_id=? for update", orderId);
+		List<Map<String, Object>> rows = sepayRepository.lockCoursePayments(orderId);
 		if (!rows.isEmpty()) {
 			Map<String, Object> payment = rows.getFirst();
 			if (!"PENDING".equals(payment.get("status")))
@@ -163,13 +153,8 @@ class SepayService {
 		requireBankConfiguration();
 		UUID paymentId = UUID.randomUUID();
 		String reference = (String) order.get("order_reference");
-		db.update("""
-			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,actor_account_id,
-				payment_reference,amount,currency_code,status,deadline_at,bank_code_snapshot,
-				bank_account_number_snapshot,bank_account_name_snapshot,method,provider,created_at,updated_at)
-			values(?,?,?,?,?,?,?,'VND','PENDING',?,?,?,?,'SEPAY','SEPAY',?,?)
-			""", paymentId, orderId, order.get("reservation_id"), memberId, order.get("actor_account_id"), reference, order.get("tuition_vnd_snapshot"), Timestamp.from(expiresAt), bankCode, bankAccount, bankAccountName, Timestamp.from(now), Timestamp.from(now));
-		return coursePaymentResponse(db.queryForMap("select * from course_payments where id=?", paymentId));
+		sepayRepository.createCoursePaymentInsertCoursePayments(paymentId, orderId, order.get("reservation_id"), memberId, order.get("actor_account_id"), reference, order.get("tuition_vnd_snapshot"), Timestamp.from(expiresAt), bankCode, bankAccount, bankAccountName, Timestamp.from(now), Timestamp.from(now));
+		return coursePaymentResponse(sepayRepository.findCoursePayment(paymentId));
 	}
 
 	private CoursePaymentResponse coursePaymentResponse(Map<String, Object> payment) {
@@ -194,7 +179,7 @@ class SepayService {
 	private SepayPaymentResponse createPayment(UUID actor, UUID memberId, UUID orderId) {
 		Map<String, Object> order;
 		try {
-			order = db.queryForMap("select * from membership_orders where id=? and member_account_id=? for update", orderId, memberId);
+			order = sepayRepository.createPaymentFindMembershipOrders(orderId, memberId);
 		} catch (EmptyResultDataAccessException exception) {
 			throw PaymentException.notFound("Membership Order was not found");
 		}
@@ -206,16 +191,11 @@ class SepayService {
 		if (payment == null) {
 			requireBankConfiguration();
 			expiresAt = clock.instant().plus(24, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
-			db.update("update membership_orders set expires_at=?,payment_method='BANK_TRANSFER',updated_at=current_timestamp where id=?", Timestamp.from(expiresAt), orderId);
+			sepayRepository.createPaymentUpdateMembershipOrders(Timestamp.from(expiresAt), orderId);
 			String reference = reference(order);
 			UUID paymentId = UUID.randomUUID();
-			db.update("""
-				insert into payments(id,order_id,method,status,amount,currency_code,bank_transfer_content,
-					bank_code_snapshot,bank_account_number_snapshot,bank_account_name_snapshot,
-					provider,provider_reference)
-				values(?,?,'BANK_TRANSFER','PENDING',?,'VND',?,?,?,?,'SEPAY',?)
-				""", paymentId, orderId, order.get("price_amount_snapshot"), reference, bankCode, bankAccount, bankAccountName, reference);
-			payment = db.queryForMap("select * from payments where id=?", paymentId);
+			sepayRepository.createPaymentInsertPayments(paymentId, orderId, order.get("price_amount_snapshot"), reference, bankCode, bankAccount, bankAccountName, reference);
+			payment = sepayRepository.createPaymentFindPayments(paymentId);
 		} else {
 			expiresAt = instant(order.get("expires_at"));
 			if (missingSnapshot(payment, "bank_code_snapshot") || missingSnapshot(payment, "bank_account_number_snapshot") || missingSnapshot(payment, "bank_account_name_snapshot"))
@@ -237,19 +217,19 @@ class SepayService {
 		UUID paymentId = null;
 		UUID coursePaymentId = null;
 		try {
-			paymentId = db.queryForObject("select id from payments where provider='SEPAY' and provider_reference=?", UUID.class, paymentReference);
+			paymentId = sepayRepository.findMembershipPaymentByReference(paymentReference);
 		} catch (EmptyResultDataAccessException exception) {
 			try {
-				paymentId = db.queryForObject("select id from payments where provider='SEPAY' and replace(provider_reference, '-', '')=?", UUID.class, normalizedPaymentReference);
+				paymentId = sepayRepository.findMembershipPaymentByNormalizedReference(normalizedPaymentReference);
 			} catch (EmptyResultDataAccessException ignored) {
 			}
 		}
 		if (paymentId == null) {
 			try {
-				coursePaymentId = db.queryForObject("select id from course_payments where payment_reference=?", UUID.class, paymentReference);
+				coursePaymentId = sepayRepository.findCoursePaymentByReference(paymentReference);
 			} catch (EmptyResultDataAccessException exception) {
 				try {
-					coursePaymentId = db.queryForObject("select id from course_payments where replace(payment_reference, '-', '')=?", UUID.class, normalizedPaymentReference);
+					coursePaymentId = sepayRepository.findCoursePaymentByNormalizedReference(normalizedPaymentReference);
 				} catch (EmptyResultDataAccessException ignored) {
 				}
 			}
@@ -280,7 +260,7 @@ class SepayService {
 	}
 
 	private Map<String, Object> pendingPayment(UUID orderId) {
-		var rows = db.queryForList("select * from payments where order_id=? and status='PENDING' order by created_at limit 1", orderId);
+		var rows = sepayRepository.pendingPaymentFindPayments(orderId);
 		return rows.isEmpty() ? null : rows.getFirst();
 	}
 
@@ -330,4 +310,6 @@ class SepayService {
 			return null;
 		return value instanceof Timestamp timestamp ? timestamp.toInstant() : (Instant) value;
 	}
+
+	private final SepayRepository sepayRepository;
 }

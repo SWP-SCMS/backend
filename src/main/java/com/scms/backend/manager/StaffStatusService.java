@@ -31,6 +31,7 @@ public class StaffStatusService {
 		this.audits = audits;
 		this.jdbc = jdbc;
 		this.clock = clock;
+		this.staffStatusRepository = new StaffStatusRepository(this.jdbc);
 	}
 
 	@Transactional
@@ -61,22 +62,9 @@ public class StaffStatusService {
 	}
 
 	private void ensureCoachHasNoOutstandingWork(UUID coachId) {
-		jdbc.update("""
-			update coach_assignments ca set status='ENDED', end_reason='PLUS membership expired',
-				ends_at=greatest(ca.starts_at, coalesce((select max(m.ends_at) from memberships m
-				where m.member_account_id=ca.member_account_id and m.plan_code_snapshot='PLUS'), current_timestamp)),
-				updated_at=current_timestamp, version=ca.version+1
-			where ca.coach_account_id=? and ca.status='ACTIVE' and not exists (
-				select 1 from memberships m where m.member_account_id=ca.member_account_id
-				and m.status='ACTIVE' and m.plan_code_snapshot='PLUS' and m.starts_at <= current_timestamp and m.ends_at > current_timestamp)
-			""", coachId);
-		Boolean hasFutureSessions = jdbc.queryForObject("""
-			select exists(select 1 from class_sessions where teaching_coach_account_id = ?
-				and end_time > ? and status in ('SCHEDULED', 'IN_PROGRESS'))
-			""", Boolean.class, coachId, Timestamp.from(clock.instant()));
-		Boolean hasActiveAssignments = jdbc.queryForObject("""
-			select exists(select 1 from coach_assignments where coach_account_id = ? and status = 'ACTIVE')
-			""", Boolean.class, coachId);
+		staffStatusRepository.endAssignmentsWithoutActivePlus(coachId);
+		Boolean hasFutureSessions = staffStatusRepository.hasFutureSessions(coachId, Timestamp.from(clock.instant()));
+		Boolean hasActiveAssignments = staffStatusRepository.hasActiveAssignments(coachId);
 		if (Boolean.TRUE.equals(hasFutureSessions) || Boolean.TRUE.equals(hasActiveAssignments)) {
 			throw new StaffStatusConflictException("Coach still has future sessions or active personal assignments");
 		}
@@ -90,4 +78,6 @@ public class StaffStatusService {
 			throw new StaffAccountValidationException("reason", "must be non-blank and at most 1000 characters");
 		}
 	}
+
+	private final StaffStatusRepository staffStatusRepository;
 }

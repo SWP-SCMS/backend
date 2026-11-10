@@ -1,8 +1,6 @@
 package com.scms.backend.emailverification.verification;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import com.scms.backend.emailverification.ManualActivationStatus;
-import com.scms.backend.emailverification.manualactivation.ManualActivationResponse;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;

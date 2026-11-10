@@ -94,6 +94,7 @@ public class RoomSuspensionService {
 		this.resourceLocks = resourceLocks;
 		this.roomAvailabilityAnalysis = new RoomAvailabilityAnalysis(this.rooms, this.sessions, this.roomService);
 		this.roomImpactPolicy = new RoomImpactPolicy(this.rooms, this.clock, this.sessions);
+		this.roomSuspensionJdbcRepository = new RoomSuspensionJdbcRepository(this.jdbc);
 	}
 
 	@Transactional(readOnly = true)
@@ -169,30 +170,6 @@ public class RoomSuspensionService {
 
 	private TargetRoomAvailability targetRoomAvailability(UUID sourceRoomId, List<ClassSession> affected) {
 		return roomAvailabilityAnalysis.targetRoomAvailability(sourceRoomId, affected);
-	}
-
-	private boolean supportsBulkMove(RoomAvailabilityResponse candidate, List<ClassSession> affected, Map<UUID, List<RoomAvailabilityResponse>> details, Map<UUID, Long> overlappingCapacity, boolean overlappingSessions) {
-		return roomAvailabilityAnalysis.supportsBulkMove(candidate, affected, details, overlappingCapacity, overlappingSessions);
-	}
-
-	private Map<UUID, Long> overlappingCapacity(List<ClassSession> sessions) {
-		return roomAvailabilityAnalysis.overlappingCapacity(sessions);
-	}
-
-	private long[] capacityPrefix(List<CapacityPoint> points) {
-		return roomAvailabilityAnalysis.capacityPrefix(points);
-	}
-
-	private int lowerBound(List<CapacityPoint> points, Instant time) {
-		return roomAvailabilityAnalysis.lowerBound(points, time);
-	}
-
-	private int upperBound(List<CapacityPoint> points, Instant time) {
-		return roomAvailabilityAnalysis.upperBound(points, time);
-	}
-
-	private boolean hasOverlappingSessions(List<ClassSession> sessions) {
-		return roomAvailabilityAnalysis.hasOverlappingSessions(sessions);
 	}
 
 	@Transactional
@@ -291,14 +268,6 @@ public class RoomSuspensionService {
 		return roomImpactPolicy.resolutionInputs(legacy, bulk, overrides);
 	}
 
-	private RoomBulkResolutionRequest normalizeBulkResolution(RoomBulkResolutionRequest request) {
-		return roomImpactPolicy.normalizeBulkResolution(request);
-	}
-
-	private Map<UUID, RoomSessionResolutionRequest> resolutionMap(List<RoomSessionResolutionRequest> requests, String field) {
-		return roomImpactPolicy.resolutionMap(requests, field);
-	}
-
 	private Map<UUID, RoomSessionResolutionRequest> effectiveResolutions(List<ClassSession> affected, ResolutionInputs inputs) {
 		return roomImpactPolicy.effectiveResolutions(affected, inputs);
 	}
@@ -340,26 +309,6 @@ public class RoomSuspensionService {
 		roomImpactPolicy.validateOperation(affected, resolutions, lockedRooms, impact);
 	}
 
-	private void validateMove(ClassSession session, RoomSessionResolutionRequest resolution, Map<UUID, Room> lockedRooms) {
-		roomImpactPolicy.validateMove(session, resolution, lockedRooms);
-	}
-
-	private void validateReschedule(ClassSession session, RoomSessionResolutionRequest resolution, Impact impact) {
-		roomImpactPolicy.validateReschedule(session, resolution, impact);
-	}
-
-	private void validateRescheduleTimes(Instant startTime, Instant endTime) {
-		roomImpactPolicy.validateRescheduleTimes(startTime, endTime);
-	}
-
-	private void validateCancel(ClassSession session) {
-		roomImpactPolicy.validateCancel(session);
-	}
-
-	private boolean overlaps(Instant start, Instant end, Instant otherStart, Instant otherEnd) {
-		return roomImpactPolicy.overlaps(start, end, otherStart, otherEnd);
-	}
-
 	private void validateResolutionSet(List<ClassSession> affected, Map<UUID, RoomSessionResolutionRequest> resolutions) {
 		roomImpactPolicy.validateResolutionSet(affected, resolutions);
 	}
@@ -385,10 +334,7 @@ public class RoomSuspensionService {
 		Map<String, Object> payload = Map.of("sessionId", session.getId().toString(), "roomId", session.getRoom().getId().toString(), "startTime", session.getStartTime().toString(), "endTime", session.getEndTime().toString());
 		String eventPrefix = notificationType + ":" + session.getId();
 		notifications.write(eventPrefix + ":COACH", session.getTeachingCoach().getId(), notificationType, "CLASS_SESSION", session.getId(), payload);
-		jdbc.queryForList("""
-			select member_account_id from bookings
-			where class_session_id = ? and status = 'BOOKED'
-			""", UUID.class, session.getId()).forEach(memberId -> notifications.write(eventPrefix + ":MEMBER:" + memberId, memberId, notificationType, "CLASS_SESSION", session.getId(), payload));
+		roomSuspensionJdbcRepository.notifyChangedSessionFindBookings(session.getId()).forEach(memberId -> notifications.write(eventPrefix + ":MEMBER:" + memberId, memberId, notificationType, "CLASS_SESSION", session.getId(), payload));
 	}
 
 	private String normalizeReason(String reason, boolean required) {
@@ -431,4 +377,6 @@ public class RoomSuspensionService {
 	private final RoomAvailabilityAnalysis roomAvailabilityAnalysis;
 
 	private final RoomImpactPolicy roomImpactPolicy;
+
+	private final RoomSuspensionJdbcRepository roomSuspensionJdbcRepository;
 }

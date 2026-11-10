@@ -29,19 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CourseSessionDisruptionService {
 
-	private static final String COMPLETABLE = """
-		(select count(*) from course_sessions original where original.course_run_id=run.id
-		 and original.is_makeup=false and original.status<>'REMOVED_BY_RUN_CHANGE')=run.total_units
-		and not exists (select 1 from course_sessions original
-		 left join course_sessions replacement on replacement.id=original.replacement_session_id
-		 where original.course_run_id=run.id and original.is_makeup=false and original.status<>'REMOVED_BY_RUN_CHANGE'
-		 and (coalesce(replacement.end_at,original.end_at)>?
-		  or not (coalesce(replacement.status,original.status) in ('SCHEDULED','MAKEUP_SCHEDULED','COMPLETED','UNRESOLVED','RESOLVED_BY_REFUND')
-		   or (original.status='CANCELLED_PENDING_MAKEUP' and original.replacement_session_id is null))))
-		and not exists (select 1 from course_sessions s where s.course_run_id=run.id
-		 and s.status in ('SCHEDULED','MAKEUP_SCHEDULED') and s.end_at>?)
-		""";
-
 	private final JdbcTemplate db;
 
 	private final CourseRunRepository runs;
@@ -67,6 +54,7 @@ public class CourseSessionDisruptionService {
 		this.audits = audits;
 		this.notifications = notifications;
 		this.clock = clock;
+		this.courseSessionDisruptionRepository = new CourseSessionDisruptionRepository(this.db);
 	}
 
 	@Transactional
@@ -101,7 +89,7 @@ public class CourseSessionDisruptionService {
 		session.cancelPendingMakeup();
 		if (original != null) {
 			original.linkReplacement(null, now);
-			db.update("update course_enrollment_sessions set course_session_id=? where course_session_id=? and disposition='ENROLLED'", original.getId(), sessionId);
+			courseSessionDisruptionRepository.cancelInternalUpdateCourseEnrollmentSessions(original.getId(), sessionId);
 			sessions.saveAndFlush(original);
 		}
 		sessions.saveAndFlush(session);
@@ -131,7 +119,7 @@ public class CourseSessionDisruptionService {
 		original.cancelPendingMakeup();
 		original.linkReplacement(makeup, now);
 		sessions.saveAndFlush(original);
-		db.update("update course_enrollment_sessions set course_session_id=? where course_session_id=? and disposition='ENROLLED'", makeup.getId(), sessionId);
+		courseSessionDisruptionRepository.cancelWithMakeupUpdateCourseEnrollmentSessions(makeup.getId(), sessionId);
 		audit(managerId, "COURSE_SESSION_CANCELLED", sessionId, before, snapshot(original));
 		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before, Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
 		notify(recipients, original, "COURSE_SESSION_CANCELLED", "cancelled");
@@ -159,7 +147,7 @@ public class CourseSessionDisruptionService {
 		Map<String, Object> before = snapshot(original);
 		original.linkReplacement(makeup, now);
 		sessions.saveAndFlush(original);
-		db.update("update course_enrollment_sessions set course_session_id=? where course_session_id=? and disposition='ENROLLED'", makeup.getId(), sessionId);
+		courseSessionDisruptionRepository.scheduleMakeupUpdateCourseEnrollmentSessions(makeup.getId(), sessionId);
 		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before, Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
 		notify(recipients, makeup, "COURSE_SESSION_MAKEUP_SCHEDULED", "makeup scheduled");
 		return new CourseMakeupResponse(CourseSessionResponse.from(original), CourseSessionResponse.from(makeup, original.getId()));
@@ -168,49 +156,35 @@ public class CourseSessionDisruptionService {
 	@Transactional
 	public List<UUID> advance(Instant now) {
 		Timestamp at = Timestamp.from(now), warningBefore = Timestamp.from(now.minusSeconds(30L * 86400));
-		List<UUID> runIds = db.queryForList("""
-			select run.id from course_runs run
-			where run.status in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS','SETTLEMENT_PENDING')
-			 and ((run.status='CONFIRMED' and run.planned_start_at<=?)
-			  or exists (select 1 from course_sessions s where s.course_run_id=run.id
-			   and s.status in ('SCHEDULED','MAKEUP_SCHEDULED') and s.end_at<=?)
-			  or exists (select 1 from course_sessions s where s.course_run_id=run.id
-			   and s.status='CANCELLED_PENDING_MAKEUP' and s.replacement_session_id is null
-			   and s.is_makeup=false and s.original_end_at<=? and s.makeup_warning_at is null)
-			  or (run.status in ('IN_PROGRESS','SETTLEMENT_PENDING') and
-			""" + COMPLETABLE + ")) order by run.id limit 100 for update of run skip locked", UUID.class, at, at, warningBefore, at, at);
+		List<UUID> runIds = courseSessionDisruptionRepository.advanceFindCourseRuns(at, at, warningBefore, at, at);
 		List<UUID> warnings = new ArrayList<>();
 		for (UUID runId : runIds) {
 			// Share Run-before-session lock order with attendance, withdrawal and schedule changes.
-			db.queryForList("select id from course_sessions where course_run_id=? order by id for update", UUID.class, runId);
-			warnings.addAll(db.queryForList("""
-				update course_sessions set makeup_warning_at=? where course_run_id=?
-				 and status='CANCELLED_PENDING_MAKEUP' and replacement_session_id is null
-				 and is_makeup=false and original_end_at<=? and makeup_warning_at is null returning id
-				""", UUID.class, at, runId, warningBefore));
-			db.update("update course_runs set status='IN_PROGRESS',version=version+1,updated_at=? " + "where id=? and status='CONFIRMED' and planned_start_at<=?", at, runId, at);
-			db.update("update course_sessions set status='COMPLETED',version=version+1,updated_at=? " + "where course_run_id=? and status in ('SCHEDULED','MAKEUP_SCHEDULED') and end_at<=?", at, runId, at);
-			if (Boolean.TRUE.equals(db.queryForObject("select exists(select 1 from course_runs run where run.id=? " + "and run.status in ('IN_PROGRESS','SETTLEMENT_PENDING') and " + COMPLETABLE + ")", Boolean.class, runId, at, at)))
+			courseSessionDisruptionRepository.advanceFindCourseSessions(runId);
+			warnings.addAll(courseSessionDisruptionRepository.markMakeupWarnings(at, runId, warningBefore));
+			courseSessionDisruptionRepository.advanceUpdateCourseRuns(at, runId, at);
+			courseSessionDisruptionRepository.advanceUpdateCourseSessions(at, runId, at);
+			if (Boolean.TRUE.equals(courseSessionDisruptionRepository.isRunCompletable(runId, at, at)))
 				settle(runId, now);
 		}
 		return warnings;
 	}
 
 	private void settle(UUID runId, Instant now) {
-		db.update("update course_sessions set status='UNRESOLVED',version=version+1,updated_at=? " + "where course_run_id=? and status='CANCELLED_PENDING_MAKEUP' and replacement_session_id is null " + "and is_makeup=false", Timestamp.from(now), runId);
-		db.update("update course_enrollment_sessions enrollment_session set disposition='UNRESOLVED' " + "from course_sessions session where enrollment_session.course_session_id=session.id " + "and session.course_run_id=? and session.status='UNRESOLVED' and enrollment_session.disposition='ENROLLED'", runId);
+		courseSessionDisruptionRepository.settleUpdateCourseSessions(Timestamp.from(now), runId);
+		courseSessionDisruptionRepository.settleUpdateCourseEnrollmentSessions(runId);
 		CourseUnitRefunds.settled(db, runId, now);
-		int obligationCount = db.queryForObject("select count(*) from course_refund_obligations " + "where course_run_id=? and source_type='UNRESOLVED_SESSIONS'", Integer.class, runId);
-		if (db.update("update course_runs set status='SETTLEMENT_PENDING',version=version+1,updated_at=? " + "where id=? and status='IN_PROGRESS'", Timestamp.from(now), runId) == 1)
+		int obligationCount = courseSessionDisruptionRepository.settleFindCourseRefundObligations(runId);
+		if (courseSessionDisruptionRepository.settleUpdateCourseRuns(Timestamp.from(now), runId) == 1)
 			audits.save(new AuditEvent(UUID.randomUUID(), "COURSE_RUN_SETTLEMENT_PENDING", "COURSE_RUN", runId, Map.of("unresolvedRefundObligationCount", obligationCount)));
-		if (db.update("update course_runs set status='COMPLETED',version=version+1,updated_at=? " + "where id=? and status='SETTLEMENT_PENDING'", Timestamp.from(now), runId) != 1)
+		if (courseSessionDisruptionRepository.completeSettledRun(Timestamp.from(now), runId) != 1)
 			return;
 		audits.save(new AuditEvent(UUID.randomUUID(), "COURSE_RUN_COMPLETED", "COURSE_RUN", runId, Map.of("status", "COMPLETED", "unresolvedRefundObligationCount", obligationCount)));
-		for (UUID memberId : db.queryForList("select distinct member_account_id from course_enrollments where course_run_id=? order by member_account_id", UUID.class, runId)) notifications.write("course-run-completed:" + runId + ":" + memberId, memberId, "COURSE_RUN_COMPLETED", "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
+		for (UUID memberId : courseSessionDisruptionRepository.settleFindCourseEnrollments(runId)) notifications.write("course-run-completed:" + runId + ":" + memberId, memberId, "COURSE_RUN_COMPLETED", "COURSE_RUN", runId, Map.of("courseRunId", runId.toString()));
 	}
 
 	private List<UUID> enrolledMembers(UUID sessionId) {
-		return db.query("select e.member_account_id from course_enrollment_sessions es " + "join course_enrollments e on e.id=es.course_enrollment_id " + "where es.course_session_id=? and es.disposition='ENROLLED' and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by e.member_account_id", (row, index) -> row.getObject(1, UUID.class), sessionId);
+		return courseSessionDisruptionRepository.enrolledMembersFindCourseEnrollmentSessions(sessionId);
 	}
 
 	private void notify(List<UUID> recipients, CourseSession session, String type, String verb) {
@@ -252,4 +226,6 @@ public class CourseSessionDisruptionService {
 
 	public record CourseMakeupResponse(CourseSessionResponse originalSession, CourseSessionResponse makeupSession) {
 	}
+
+	private final CourseSessionDisruptionRepository courseSessionDisruptionRepository;
 }

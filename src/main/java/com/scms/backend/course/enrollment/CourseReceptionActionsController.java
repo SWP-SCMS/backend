@@ -1,20 +1,16 @@
 package com.scms.backend.course.enrollment;
 
 import com.scms.backend.course.order.CourseOrderResponse;
-import com.scms.backend.course.refund.CourseRefundApiModels;
 import com.scms.backend.course.refund.CourseRefundApiModels.MemberRefundObligation;
 import com.scms.backend.course.refund.CourseRefundApiModels.MemberRefundObligationPage;
 import com.scms.backend.course.refund.CourseRefundObligationService;
-import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeService;
-import com.scms.backend.course.transfer.CourseTransferApiModels;
 import com.scms.backend.course.transfer.CourseTransferApiModels.TransferOffer;
 import com.scms.backend.course.transfer.CourseTransferService;
 import com.scms.backend.course.waitlist.CourseWaitlistResponse;
 import com.scms.backend.course.waitlist.CourseWaitlistService;
-import com.scms.backend.course.withdrawal.CourseWithdrawalApiModels;
 import com.scms.backend.course.withdrawal.CourseWithdrawalApiModels.WithdrawalRequest;
 import com.scms.backend.course.withdrawal.CourseWithdrawalService;
 import io.swagger.v3.oas.annotations.Parameter;

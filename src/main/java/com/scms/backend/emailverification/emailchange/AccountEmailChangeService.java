@@ -72,6 +72,7 @@ public class AccountEmailChangeService {
 		this.refreshTokens = refreshTokens;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.accountEmailChangeRepository = new AccountEmailChangeRepository(this.db);
 	}
 
 	@Transactional(noRollbackFor = EmailVerificationException.class)
@@ -109,11 +110,7 @@ public class AccountEmailChangeService {
 		String hmacVersion = properties.getHmacActiveVersion();
 		Instant expires = now.plus(properties.getOtpTtl());
 		Instant resend = now.plus(properties.getResendCooldown());
-		db.update("""
-			insert into staff_email_change_requests(id,account_id,pending_email,generation,otp_digest,
-			 hmac_key_version,expires_at,resend_available_at,max_attempts,status,created_at,updated_at,purpose_bound)
-			values (?,?,?,?,?,?,?,?,?,'PENDING',?,?,true)
-			""", id, accountId, email, generation, digest(id, generation, otp, hmacVersion), hmacVersion, Timestamp.from(expires), Timestamp.from(resend), properties.getMaxAttempts(), Timestamp.from(now), Timestamp.from(now));
+		accountEmailChangeRepository.createInsertStaffEmailChangeRequests(id, accountId, email, generation, digest(id, generation, otp, hmacVersion), hmacVersion, Timestamp.from(expires), Timestamp.from(resend), properties.getMaxAttempts(), Timestamp.from(now), Timestamp.from(now));
 		enqueue(id, accountId, email, otp, generation, expires, now);
 		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "ACCOUNT_EMAIL_CHANGE_REQUESTED", "ACCOUNT", accountId, Map.of("requestId", id.toString(), "pendingEmail", EmailVerificationService.mask(email))));
 		notifications.write("ACCOUNT_EMAIL_CHANGE_REQUESTED:" + id, accountId, "ACCOUNT_EMAIL_CHANGE_REQUESTED", "ACCOUNT", accountId, Map.of("requestId", id.toString(), "pendingEmail", EmailVerificationService.mask(email), "securityEvent", true));
@@ -127,10 +124,7 @@ public class AccountEmailChangeService {
 		Instant now = clock.instant();
 		List<Row> rows = pendingForUpdate(accountId);
 		if (rows.isEmpty()) {
-			List<String> completed = db.query("""
-				select pending_email from staff_email_change_requests where account_id=?
-				and status in ('COMPLETED','VERIFIED') order by coalesce(completed_at,verified_at) desc nulls last limit 1
-				""", (rs, n) -> rs.getString(1), accountId);
+			List<String> completed = accountEmailChangeRepository.verifyFindStaffEmailChangeRequests(accountId);
 			if (!completed.isEmpty())
 				return new AccountEmailChangeVerifyResponse(true, completed.getFirst());
 			throw invalidOtp();
@@ -144,7 +138,7 @@ public class AccountEmailChangeService {
 		if (!crypto.matchesOtp(candidate, row.digest(), row.keyVersion())) {
 			int attempts = row.attempts() + 1;
 			String status = attempts >= row.maximum() ? "EXPIRED" : "PENDING";
-			db.update("update staff_email_change_requests set attempt_count=?,status=?,updated_at=?,version=version+1 where id=?", attempts, status, Timestamp.from(now), row.id());
+			accountEmailChangeRepository.verifyUpdateStaffEmailChangeRequests(attempts, status, Timestamp.from(now), row.id());
 			if ("EXPIRED".equals(status)) {
 				cancelOutbox(row.id(), now);
 				audits.save(new AuditEvent(UUID.randomUUID(), "ACCOUNT_EMAIL_CHANGE_EXPIRED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "reason", "ATTEMPT_LIMIT")));
@@ -159,10 +153,7 @@ public class AccountEmailChangeService {
 		}
 		account.changeVerifiedEmail(row.email(), now);
 		accounts.flush();
-		db.update("""
-			update staff_email_change_requests set status='COMPLETED',verified_at=?,completed_at=?,updated_at=?,
-			 version=version+1 where id=?
-			""", Timestamp.from(now), Timestamp.from(now), Timestamp.from(now), row.id());
+		accountEmailChangeRepository.markEmailChangeCompleted(Timestamp.from(now), Timestamp.from(now), Timestamp.from(now), row.id());
 		cancelOutbox(row.id(), now);
 		refreshTokens.revokeAll(accountId);
 		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "ACCOUNT_EMAIL_CHANGE_COMPLETED", "ACCOUNT", accountId, Map.of("requestId", row.id().toString(), "oldEmail", EmailVerificationService.mask(row.currentEmail()), "newEmail", EmailVerificationService.mask(row.email()))));
@@ -190,10 +181,7 @@ public class AccountEmailChangeService {
 		String hmacVersion = properties.getHmacActiveVersion();
 		Instant expires = now.plus(properties.getOtpTtl());
 		Instant resend = now.plus(properties.getResendCooldown());
-		db.update("""
-			update staff_email_change_requests set generation=?,otp_digest=?,hmac_key_version=?,expires_at=?,
-			 resend_available_at=?,attempt_count=0,purpose_bound=true,updated_at=?,version=version+1 where id=?
-			""", generation, digest(row.id(), generation, otp, hmacVersion), hmacVersion, Timestamp.from(expires), Timestamp.from(resend), Timestamp.from(now), row.id());
+		accountEmailChangeRepository.resendUpdateStaffEmailChangeRequests(generation, digest(row.id(), generation, otp, hmacVersion), hmacVersion, Timestamp.from(expires), Timestamp.from(resend), Timestamp.from(now), row.id());
 		cancelOutbox(row.id(), now);
 		enqueue(row.id(), accountId, row.email(), otp, generation, expires, now);
 		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "ACCOUNT_EMAIL_CHANGE_RESENT", "ACCOUNT", accountId, Map.of("requestId", row.id().toString(), "generation", generation, "pendingEmail", EmailVerificationService.mask(row.email()))));
@@ -207,7 +195,7 @@ public class AccountEmailChangeService {
 		if (rows.isEmpty())
 			return;
 		Row row = rows.getFirst();
-		db.update("update staff_email_change_requests set status='CANCELLED',cancelled_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), row.id());
+		accountEmailChangeRepository.cancelUpdateStaffEmailChangeRequests(Timestamp.from(now), Timestamp.from(now), row.id());
 		cancelOutbox(row.id(), now);
 		audits.save(new AuditEvent(UUID.randomUUID(), accountId, "ACCOUNT_EMAIL_CHANGE_CANCELLED", "ACCOUNT", accountId, Map.of("requestId", row.id().toString(), "pendingEmail", EmailVerificationService.mask(row.email()))));
 	}
@@ -216,10 +204,7 @@ public class AccountEmailChangeService {
 	public AccountEmailChangeStatus status(UUID accountId) {
 		active(accountId);
 		Instant now = clock.instant();
-		List<AccountEmailChangeStatus> rows = db.query("""
-			select pending_email,expires_at,resend_available_at from staff_email_change_requests
-			where account_id=? and status='PENDING' and expires_at>?
-			""", (rs, n) -> new AccountEmailChangeStatus(true, EmailVerificationService.mask(rs.getString(1)), instant(rs, 2), instant(rs, 3)), accountId, Timestamp.from(now));
+		List<AccountEmailChangeStatus> rows = accountEmailChangeRepository.statusFindStaffEmailChangeRequests(accountId, Timestamp.from(now));
 		return rows.isEmpty() ? AccountEmailChangeStatus.none() : rows.getFirst();
 	}
 
@@ -227,10 +212,7 @@ public class AccountEmailChangeService {
 	@Transactional
 	public void expirePending() {
 		Instant now = clock.instant();
-		List<Expired> rows = db.query("""
-			update staff_email_change_requests set status='EXPIRED',updated_at=?,version=version+1
-			where status='PENDING' and expires_at<=? returning id,account_id,pending_email
-			""", (rs, n) -> new Expired(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3)), Timestamp.from(now), Timestamp.from(now));
+		List<Expired> rows = accountEmailChangeRepository.expirePendingFindStaffEmailChangeRequests(Timestamp.from(now), Timestamp.from(now));
 		for (Expired row : rows) {
 			cancelOutbox(row.id(), now);
 			audits.save(new AuditEvent(UUID.randomUUID(), "ACCOUNT_EMAIL_CHANGE_EXPIRED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "pendingEmail", EmailVerificationService.mask(row.email()), "reason", "OTP_EXPIRED")));
@@ -238,13 +220,13 @@ public class AccountEmailChangeService {
 	}
 
 	private void supersede(Row row, Instant now) {
-		db.update("update staff_email_change_requests set status='SUPERSEDED',superseded_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), row.id());
+		accountEmailChangeRepository.supersedeUpdateStaffEmailChangeRequests(Timestamp.from(now), Timestamp.from(now), row.id());
 		cancelOutbox(row.id(), now);
 		audits.save(new AuditEvent(UUID.randomUUID(), row.accountId(), "ACCOUNT_EMAIL_CHANGE_SUPERSEDED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "pendingEmail", EmailVerificationService.mask(row.email()))));
 	}
 
 	private void expire(Row row, Instant now, String reason) {
-		db.update("update staff_email_change_requests set status='EXPIRED',updated_at=?,version=version+1 where id=?", Timestamp.from(now), row.id());
+		accountEmailChangeRepository.expireUpdateStaffEmailChangeRequests(Timestamp.from(now), row.id());
 		cancelOutbox(row.id(), now);
 		audits.save(new AuditEvent(UUID.randomUUID(), "ACCOUNT_EMAIL_CHANGE_EXPIRED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "pendingEmail", EmailVerificationService.mask(row.email()), "reason", reason)));
 	}
@@ -254,20 +236,11 @@ public class AccountEmailChangeService {
 	}
 
 	private void cancelOutbox(UUID requestId, Instant now) {
-		db.update("""
-			update email_outbox set status='CANCELLED',payload_ciphertext=null,payload_nonce=null,locked_at=null,
-			 locked_by=null,updated_at=? where (event_key like ? or event_key like ?)
-			 and status in ('PENDING','FAILED','PROCESSING')
-			""", Timestamp.from(now), EVENT_PREFIX + requestId + ":%", "STAFF_EMAIL_CHANGE_OTP:" + requestId + ":%");
+		accountEmailChangeRepository.cancelOutboxUpdateEmailOutbox(Timestamp.from(now), EVENT_PREFIX + requestId + ":%", "STAFF_EMAIL_CHANGE_OTP:" + requestId + ":%");
 	}
 
 	private List<Row> pendingForUpdate(UUID accountId) {
-		return db.query("""
-			select r.id,r.account_id,r.pending_email,r.generation,r.otp_digest,r.hmac_key_version,r.expires_at,
-			 r.resend_available_at,r.attempt_count,r.max_attempts,a.email,r.purpose_bound
-			from staff_email_change_requests r join accounts a on a.id=r.account_id
-			where r.account_id=? and r.status='PENDING' for update of r
-			""", this::row, accountId);
+		return accountEmailChangeRepository.pendingForUpdateFindStaffEmailChangeRequests(accountId);
 	}
 
 	private Account activeForUpdate(UUID id) {
@@ -279,7 +252,7 @@ public class AccountEmailChangeService {
 	}
 
 	private void lockEmailClaim(String email) {
-		db.query("select pg_advisory_xact_lock(hashtextextended(lower(?),0))", (rs, n) -> 0, email);
+		accountEmailChangeRepository.lockEmailClaimFindRows(email);
 	}
 
 	private String digest(UUID requestId, int generation, String otp, String version) {
@@ -292,10 +265,6 @@ public class AccountEmailChangeService {
 
 	private AccountEmailChangeResponse response(String email, Instant expires, Instant resend, Instant now) {
 		return new AccountEmailChangeResponse(true, EmailVerificationService.mask(email), expires, resend, now);
-	}
-
-	private Row row(ResultSet rs, int n) throws SQLException {
-		return new Row(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3), rs.getInt(4), rs.getString(5), rs.getString(6), instant(rs, 7), instant(rs, 8), rs.getInt(9), rs.getInt(10), rs.getString(11), rs.getBoolean(12));
 	}
 
 	private Instant instant(ResultSet rs, int index) throws SQLException {
@@ -323,9 +292,11 @@ public class AccountEmailChangeService {
 		return new EmailVerificationException(status, code, message);
 	}
 
-	private record Row(UUID id, UUID accountId, String email, int generation, String digest, String keyVersion, Instant expiresAt, Instant resendAt, int attempts, int maximum, String currentEmail, boolean purposeBound) {
+	record Row(UUID id, UUID accountId, String email, int generation, String digest, String keyVersion, Instant expiresAt, Instant resendAt, int attempts, int maximum, String currentEmail, boolean purposeBound) {
 	}
 
-	private record Expired(UUID id, UUID accountId, String email) {
+	record Expired(UUID id, UUID accountId, String email) {
 	}
+
+	private final AccountEmailChangeRepository accountEmailChangeRepository;
 }

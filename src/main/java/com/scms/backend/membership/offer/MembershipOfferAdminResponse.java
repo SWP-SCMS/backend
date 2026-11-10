@@ -3,8 +3,6 @@ package com.scms.backend.membership.offer;
 import com.scms.backend.membership.MembershipOffer;
 import com.scms.backend.membership.MembershipOfferStatus;
 import java.math.BigInteger;
-import java.util.Comparator;
-import java.util.List;
 import java.util.UUID;
 
 record MembershipOfferAdminResponse(UUID offerId, String planCode, String name, String description, BigInteger priceAmount, String currencyCode, int durationDays, MembershipOfferStatus status) {

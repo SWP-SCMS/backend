@@ -1,7 +1,6 @@
 package com.scms.backend.course.session;
 
 import com.scms.backend.course.CourseSession;
-import com.scms.backend.course.CourseSessionStatus;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;

@@ -71,6 +71,7 @@ public class MembershipFreezeExecutionService {
 		this.clock = clock;
 		this.transactions = new TransactionTemplate(transactionManager);
 		this.waitlistPromotions = waitlistPromotions;
+		this.membershipFreezeExecutionRepository = new MembershipFreezeExecutionRepository(this.db);
 	}
 
 	public void reconcileDue(Instant now) {
@@ -117,14 +118,14 @@ public class MembershipFreezeExecutionService {
 		if (request.getStatus() != MembershipFreezeRequestStatus.SCHEDULED)
 			return;
 		if (membership.getStatus() != MembershipStatus.ACTIVE) {
-			db.update("update membership_freeze_periods set status='OBSOLETE', updated_at=current_timestamp, version=version+1 where request_id=? and status='SCHEDULED'", requestId);
+			membershipFreezeExecutionRepository.markScheduledObsolete(requestId);
 			request.obsolete();
 			requests.saveAndFlush(request);
 			return;
 		}
 		if (!request.getEndDate().isAfter(today)) {
 			int creditedDays = Math.toIntExact(ChronoUnit.DAYS.between(request.getStartDate(), request.getEndDate()));
-			int completed = db.update("update membership_freeze_periods set status='COMPLETED', actual_start_date=?, actual_end_date=?, credited_days=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='SCHEDULED'", Date.valueOf(request.getStartDate()), Date.valueOf(request.getEndDate()), creditedDays, requestId);
+			int completed = membershipFreezeExecutionRepository.completeScheduledPeriod(Date.valueOf(request.getStartDate()), Date.valueOf(request.getEndDate()), creditedDays, requestId);
 			if (completed != 1)
 				return;
 			membership.extendTo(membership.getEndsAt().plus(creditedDays, ChronoUnit.DAYS));
@@ -135,7 +136,7 @@ public class MembershipFreezeExecutionService {
 			notifications.write("MEMBERSHIP_FREEZE_COMPLETED:" + requestId, request.getMemberAccountId(), "MEMBERSHIP_FREEZE_COMPLETED", "MEMBERSHIP_FREEZE_REQUEST", requestId, Map.of("creditedDays", creditedDays));
 			return;
 		}
-		int activated = db.update("update membership_freeze_periods set status='ACTIVE', actual_start_date=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='SCHEDULED'", Date.valueOf(request.getStartDate()), requestId);
+		int activated = membershipFreezeExecutionRepository.activateScheduledPeriod(Date.valueOf(request.getStartDate()), requestId);
 		if (activated != 1)
 			return;
 		request.activate();
@@ -173,11 +174,11 @@ public class MembershipFreezeExecutionService {
 			return;
 		if (membership.getStatus() != MembershipStatus.ACTIVE)
 			throw new IllegalStateException("Frozen Membership is not ACTIVE");
-		LocalDate actualStart = db.queryForObject("select actual_start_date from membership_freeze_periods where request_id=? and status='ACTIVE' for update", LocalDate.class, requestId);
+		LocalDate actualStart = membershipFreezeExecutionRepository.completeFindMembershipFreezePeriods(requestId);
 		int creditedDays = Math.toIntExact(ChronoUnit.DAYS.between(actualStart, request.getEndDate()));
 		if (creditedDays < 1)
 			throw new IllegalStateException("Active freeze period must credit at least one day");
-		int completed = db.update("update membership_freeze_periods set status='COMPLETED', actual_end_date=?, credited_days=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='ACTIVE'", Date.valueOf(request.getEndDate()), creditedDays, requestId);
+		int completed = membershipFreezeExecutionRepository.completeUpdateMembershipFreezePeriods(Date.valueOf(request.getEndDate()), creditedDays, requestId);
 		if (completed != 1)
 			return;
 		membership.extendTo(membership.getEndsAt().plus(creditedDays, ChronoUnit.DAYS));
@@ -199,9 +200,9 @@ public class MembershipFreezeExecutionService {
 		if (request.getStatus() != MembershipFreezeRequestStatus.ACTIVE)
 			return;
 		Membership membership = memberships.findByIdForUpdate(request.getMembershipId()).orElseThrow(MembershipFreezeException::notFound);
-		LocalDate actualStart = db.queryForObject("select actual_start_date from membership_freeze_periods where request_id=? and status='ACTIVE' for update", LocalDate.class, requestId);
+		LocalDate actualStart = membershipFreezeExecutionRepository.endEarlyForTerminationFindMembershipFreezePeriods(requestId);
 		int creditedDays = Math.toIntExact(ChronoUnit.DAYS.between(actualStart, today));
-		int ended = db.update("update membership_freeze_periods set status='ENDED_EARLY', actual_end_date=?, credited_days=?, updated_at=current_timestamp, version=version+1 where request_id=? and status='ACTIVE'", Date.valueOf(today), creditedDays, requestId);
+		int ended = membershipFreezeExecutionRepository.endEarlyForTerminationUpdateMembershipFreezePeriods(Date.valueOf(today), creditedDays, requestId);
 		if (ended != 1)
 			return;
 		if (creditedDays > 0)
@@ -211,4 +212,6 @@ public class MembershipFreezeExecutionService {
 		audits.save(new AuditEvent(UUID.randomUUID(), "MEMBERSHIP_FREEZE_ENDED_EARLY", "MEMBERSHIP_FREEZE_REQUEST", requestId, Map.of("membershipId", request.getMembershipId().toString(), "creditedDays", creditedDays)));
 		notifications.write("MEMBERSHIP_FREEZE_ENDED_EARLY:" + requestId, request.getMemberAccountId(), "MEMBERSHIP_FREEZE_ENDED_EARLY", "MEMBERSHIP_FREEZE_REQUEST", requestId, Map.of("creditedDays", creditedDays));
 	}
+
+	private final MembershipFreezeExecutionRepository membershipFreezeExecutionRepository;
 }

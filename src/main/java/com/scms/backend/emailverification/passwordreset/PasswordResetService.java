@@ -69,6 +69,7 @@ public class PasswordResetService {
 		this.notifications = notifications;
 		this.clock = clock;
 		this.outbox = outbox;
+		this.passwordResetRepository = new PasswordResetRepository(this.db);
 	}
 
 	@Transactional(noRollbackFor = EmailVerificationException.class)
@@ -85,10 +86,7 @@ public class PasswordResetService {
 		if (account == null)
 			return new PasswordResetAcceptedResponse(true);
 		Instant now = clock.instant();
-		var active = db.query("""
-			select id,status,generation,resend_available_at from password_reset_requests
-			where account_id=? and status in ('PENDING','VERIFIED') for update
-			""", (rs, n) -> new ActiveRequest(rs.getObject(1, UUID.class), rs.getString(2), rs.getInt(3), rs.getTimestamp(4).toInstant()), account.getId()).stream().findFirst().orElse(null);
+		var active = passwordResetRepository.requestFindPasswordResetRequests(account.getId()).stream().findFirst().orElse(null);
 		if (active != null && "PENDING".equals(active.status()) && active.resendAt().isAfter(now))
 			return new PasswordResetAcceptedResponse(true);
 		UUID requestId;
@@ -101,8 +99,8 @@ public class PasswordResetService {
 			generation = active.generation() + 1;
 			cancelOtpOutbox(requestId, now);
 		} else {
-			db.update("update password_reset_requests set status='SUPERSEDED',updated_at=?,version=version+1 where id=?", Timestamp.from(now), active.id());
-			db.update("update password_reset_sessions set revoked_at=?,updated_at=? where request_id=? and used_at is null and revoked_at is null", Timestamp.from(now), Timestamp.from(now), active.id());
+			passwordResetRepository.requestUpdatePasswordResetRequests(Timestamp.from(now), active.id());
+			passwordResetRepository.requestUpdatePasswordResetSessions(Timestamp.from(now), Timestamp.from(now), active.id());
 			requestId = UUID.randomUUID();
 			generation = 1;
 		}
@@ -112,16 +110,10 @@ public class PasswordResetService {
 		Instant resendAt = now.plus(properties.getResendCooldown());
 		String digest = crypto.otpDigest(boundOtp(requestId, generation, otp), hmacVersion);
 		if (active == null || "VERIFIED".equals(active.status())) {
-			db.update("""
-				insert into password_reset_requests(id,account_id,status,generation,otp_digest,hmac_key_version,
-				 expires_at,max_attempts,resend_available_at) values (?,?,'PENDING',?,?,?,?,?,?)
-				""", requestId, account.getId(), generation, digest, hmacVersion, Timestamp.from(expiresAt), properties.getMaxAttempts(), Timestamp.from(resendAt));
+			passwordResetRepository.requestInsertPasswordResetRequests(requestId, account.getId(), generation, digest, hmacVersion, Timestamp.from(expiresAt), properties.getMaxAttempts(), Timestamp.from(resendAt));
 			audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_REQUESTED", "ACCOUNT", account.getId(), Map.of("requestId", requestId.toString())));
 		} else {
-			db.update("""
-				update password_reset_requests set generation=?,otp_digest=?,hmac_key_version=?,expires_at=?,
-				 attempt_count=0,max_attempts=?,resend_available_at=?,updated_at=?,version=version+1 where id=?
-				""", generation, digest, hmacVersion, Timestamp.from(expiresAt), properties.getMaxAttempts(), Timestamp.from(resendAt), Timestamp.from(now), requestId);
+			passwordResetRepository.regenerateResetChallenge(generation, digest, hmacVersion, Timestamp.from(expiresAt), properties.getMaxAttempts(), Timestamp.from(resendAt), Timestamp.from(now), requestId);
 			audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_OTP_RESENT", "ACCOUNT", account.getId(), Map.of("requestId", requestId.toString(), "generation", generation)));
 		}
 		enqueueOtp(account, requestId, generation, otp, expiresAt, now);
@@ -135,12 +127,7 @@ public class PasswordResetService {
 		String email = normalize(request.email());
 		limits.check("PASSWORD_RESET_VERIFY_IP", ip, 5, Duration.ofMinutes(1));
 		Instant now = clock.instant();
-		var rows = db.query("""
-			select r.id,r.account_id,r.status,r.generation,r.otp_digest,r.hmac_key_version,r.expires_at,
-			 r.attempt_count,r.max_attempts from password_reset_requests r join accounts a on a.id=r.account_id
-			where lower(a.email)=lower(?) and a.status='ACTIVE' and r.status='PENDING'
-			order by r.created_at desc limit 1 for update of r,a
-			""", this::requestRow, email);
+		var rows = passwordResetRepository.verifyFindPasswordResetRequests(email);
 		if (rows.isEmpty())
 			invalidOtp();
 		RequestRow row = rows.getFirst();
@@ -152,7 +139,7 @@ public class PasswordResetService {
 		if (!matches) {
 			int attempts = row.attempts() + 1;
 			String status = attempts >= row.maxAttempts() ? "EXPIRED" : "PENDING";
-			db.update("update password_reset_requests set attempt_count=?,status=?,updated_at=?,version=version+1 where id=?", attempts, status, Timestamp.from(now), row.id());
+			passwordResetRepository.verifyUpdatePasswordResetRequests(attempts, status, Timestamp.from(now), row.id());
 			if ("EXPIRED".equals(status)) {
 				cancelOtpOutbox(row.id(), now);
 				audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_EXPIRED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "reason", "ATTEMPT_LIMIT")));
@@ -161,10 +148,10 @@ public class PasswordResetService {
 		}
 		String rawToken = crypto.token();
 		Instant sessionExpiresAt = now.plus(SESSION_TTL);
-		db.update("update password_reset_requests set status='VERIFIED',verified_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), row.id());
+		passwordResetRepository.markResetRequestVerified(Timestamp.from(now), Timestamp.from(now), row.id());
 		cancelOtpOutbox(row.id(), now);
-		db.update("update password_reset_sessions set revoked_at=?,updated_at=? where account_id=? and used_at is null and revoked_at is null", Timestamp.from(now), Timestamp.from(now), row.accountId());
-		db.update("insert into password_reset_sessions(id,request_id,account_id,token_hash,expires_at) values (?,?,?,?,?)", UUID.randomUUID(), row.id(), row.accountId(), crypto.sha256(rawToken), Timestamp.from(sessionExpiresAt));
+		passwordResetRepository.verifyUpdatePasswordResetSessions(Timestamp.from(now), Timestamp.from(now), row.accountId());
+		passwordResetRepository.verifyInsertPasswordResetSessions(UUID.randomUUID(), row.id(), row.accountId(), crypto.sha256(rawToken), Timestamp.from(sessionExpiresAt));
 		audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_OTP_VERIFIED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString())));
 		return new VerifyResult(new PasswordResetVerifiedResponse(true, sessionExpiresAt), rawToken);
 	}
@@ -175,11 +162,7 @@ public class PasswordResetService {
 		if (rawSession == null || rawSession.isBlank())
 			invalidSession();
 		Instant now = clock.instant();
-		var rows = db.query("""
-			select s.id,s.request_id,s.account_id,s.expires_at,s.used_at,s.revoked_at,r.status
-			from password_reset_sessions s join password_reset_requests r on r.id=s.request_id
-			where s.token_hash=? for update of s,r
-			""", this::sessionRow, crypto.sha256(rawSession));
+		var rows = passwordResetRepository.confirmFindPasswordResetSessions(crypto.sha256(rawSession));
 		if (rows.isEmpty())
 			invalidSession();
 		SessionRow session = rows.getFirst();
@@ -190,9 +173,9 @@ public class PasswordResetService {
 			throw new PasswordResetException(HttpStatus.BAD_REQUEST, "NEW_PASSWORD_SAME_AS_CURRENT", "The new password must differ from the current password.");
 		account.changePassword(passwords.encode(request.newPassword()));
 		refreshTokens.revokeAll(account.getId());
-		db.update("update password_reset_sessions set used_at=?,updated_at=? where id=?", Timestamp.from(now), Timestamp.from(now), session.id());
-		db.update("update password_reset_requests set status='COMPLETED',completed_at=?,updated_at=?,version=version+1 where id=?", Timestamp.from(now), Timestamp.from(now), session.requestId());
-		db.update("update password_reset_sessions set revoked_at=?,updated_at=? where account_id=? and id<>? and used_at is null and revoked_at is null", Timestamp.from(now), Timestamp.from(now), account.getId(), session.id());
+		passwordResetRepository.confirmUpdatePasswordResetSessions(Timestamp.from(now), Timestamp.from(now), session.id());
+		passwordResetRepository.confirmUpdatePasswordResetRequests(Timestamp.from(now), Timestamp.from(now), session.requestId());
+		passwordResetRepository.revokeOtherResetSessions(Timestamp.from(now), Timestamp.from(now), account.getId(), session.id());
 		audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_COMPLETED", "ACCOUNT", account.getId(), Map.of("requestId", session.requestId().toString())));
 		notifications.write("PASSWORD_RESET_COMPLETED:" + session.requestId(), account.getId(), "PASSWORD_RESET_COMPLETED", "ACCOUNT", account.getId(), Map.of("securityEvent", true));
 	}
@@ -202,14 +185,11 @@ public class PasswordResetService {
 	}
 
 	private void cancelOtpOutbox(UUID requestId, Instant now) {
-		db.update("""
-			update email_outbox set status='CANCELLED',payload_ciphertext=null,payload_nonce=null,locked_at=null,
-			 locked_by=null,updated_at=? where event_key like ? and status in ('PENDING','FAILED','PROCESSING')
-			""", Timestamp.from(now), "PASSWORD_RESET_OTP:" + requestId + ":%");
+		passwordResetRepository.cancelOtpOutboxUpdateEmailOutbox(Timestamp.from(now), "PASSWORD_RESET_OTP:" + requestId + ":%");
 	}
 
 	private void expire(RequestRow row, Instant now) {
-		db.update("update password_reset_requests set status='EXPIRED',updated_at=?,version=version+1 where id=? and status='PENDING'", Timestamp.from(now), row.id());
+		passwordResetRepository.expireUpdatePasswordResetRequests(Timestamp.from(now), row.id());
 		cancelOtpOutbox(row.id(), now);
 		audits.save(new AuditEvent(UUID.randomUUID(), "PASSWORD_RESET_EXPIRED", "ACCOUNT", row.accountId(), Map.of("requestId", row.id().toString(), "reason", "OTP_EXPIRED")));
 	}
@@ -234,14 +214,6 @@ public class PasswordResetService {
 		return new PasswordResetException(HttpStatus.UNAUTHORIZED, "INVALID_PASSWORD_RESET_SESSION", "The password reset session is invalid or expired.");
 	}
 
-	private RequestRow requestRow(ResultSet rs, int n) throws SQLException {
-		return new RequestRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getString(3), rs.getInt(4), rs.getString(5), rs.getString(6), rs.getTimestamp(7).toInstant(), rs.getInt(8), rs.getInt(9));
-	}
-
-	private SessionRow sessionRow(ResultSet rs, int n) throws SQLException {
-		return new SessionRow(rs.getObject(1, UUID.class), rs.getObject(2, UUID.class), rs.getObject(3, UUID.class), rs.getTimestamp(4).toInstant(), instant(rs, 5), instant(rs, 6), rs.getString(7));
-	}
-
 	private Instant instant(ResultSet rs, int index) throws SQLException {
 		Timestamp value = rs.getTimestamp(index);
 		return value == null ? null : value.toInstant();
@@ -250,12 +222,14 @@ public class PasswordResetService {
 	public record VerifyResult(PasswordResetVerifiedResponse response, String sessionToken) {
 	}
 
-	private record ActiveRequest(UUID id, String status, int generation, Instant resendAt) {
+	record ActiveRequest(UUID id, String status, int generation, Instant resendAt) {
 	}
 
-	private record RequestRow(UUID id, UUID accountId, String status, int generation, String digest, String hmacVersion, Instant expiresAt, int attempts, int maxAttempts) {
+	record RequestRow(UUID id, UUID accountId, String status, int generation, String digest, String hmacVersion, Instant expiresAt, int attempts, int maxAttempts) {
 	}
 
-	private record SessionRow(UUID id, UUID requestId, UUID accountId, Instant expiresAt, Instant usedAt, Instant revokedAt, String requestStatus) {
+	record SessionRow(UUID id, UUID requestId, UUID accountId, Instant expiresAt, Instant usedAt, Instant revokedAt, String requestStatus) {
 	}
+
+	private final PasswordResetRepository passwordResetRepository;
 }

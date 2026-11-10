@@ -65,8 +65,8 @@ public class CourseRefundObligationService {
 		if (page < 0 || size < 1 || size > 100)
 			throw CourseRefundException.invalid("Invalid page or size.");
 		String normalizedStatus = status(status);
-		long total = db.queryForObject("select count(*) from course_refund_obligations where " + "(cast(? as varchar) is null or status=?)", Long.class, normalizedStatus, normalizedStatus);
-		List<RefundObligation> items = db.query(select() + " where (cast(? as varchar) is null or obligation.status=?) " + "order by case when obligation.status='PENDING_REVIEW' then 0 else 1 end,obligation.created_at,obligation.id limit ? offset ?", this::map, normalizedStatus, normalizedStatus, size, (long) page * size);
+		long total = courseRefundObligationRepository.listFindCourseRefundObligations(normalizedStatus, normalizedStatus);
+		List<RefundObligation> items = courseRefundObligationRepository.listFindRows(normalizedStatus, normalizedStatus, size, (long) page * size);
 		return new RefundObligationPage(items, page, size, total, (int) ((total + size - 1) / size));
 	}
 
@@ -92,32 +92,28 @@ public class CourseRefundObligationService {
 	MemberRefundObligationPage listForMember(UUID memberId, int page, int size) {
 		active(memberId, AccountRole.MEMBER, false);
 		page(page, size);
-		long total = db.queryForObject("select count(*) from course_refund_obligations where member_account_id=?", Long.class, memberId);
-		List<MemberRefundObligation> items = db.query(select() + " where obligation.member_account_id=? " + "order by obligation.created_at desc,obligation.id desc limit ? offset ?", this::map, memberId, size, (long) page * size).stream().map(this::member).toList();
+		long total = courseRefundObligationRepository.listForMemberFindCourseRefundObligations(memberId);
+		List<MemberRefundObligation> items = courseRefundObligationRepository.listForMemberFindRows(memberId, size, (long) page * size).stream().map(this::member).toList();
 		return new MemberRefundObligationPage(items, page, size, total, (int) ((total + size - 1) / size));
 	}
 
 	@Transactional(readOnly = true)
 	MemberRefundObligation detailForMember(UUID memberId, UUID obligationId) {
 		active(memberId, AccountRole.MEMBER, false);
-		return db.query(select() + " where obligation.id=? and obligation.member_account_id=?", this::map, obligationId, memberId).stream().findFirst().map(this::member).orElseThrow(CourseRefundException::notFound);
+		return courseRefundObligationRepository.detailForMemberFindRows(obligationId, memberId).stream().findFirst().map(this::member).orElseThrow(CourseRefundException::notFound);
 	}
 
 	@Transactional(readOnly = true)
 	ReceptionCourseRefundPage listForReceptionist(UUID receptionistId, int page, int size, Boolean eligible) {
 		active(receptionistId, AccountRole.RECEPTIONIST, false);
 		page(page, size);
-		String source = receptionSelect();
-		String filter = " where status='APPROVED' and (cast(? as boolean) is null or disbursement_eligible=?)";
-		long total = db.queryForObject("select count(*) from (" + source + ") refunds" + filter, Long.class, eligible, eligible);
-		List<ReceptionCourseRefund> items = db.query("select * from (" + source + ") refunds" + filter + " order by approved_at desc,refund_id desc limit ? offset ?", this::mapReception, eligible, eligible, size, (long) page * size);
-		return new ReceptionCourseRefundPage(items, page, size, total, (int) ((total + size - 1) / size));
+		return receptionRefundPage(page, size, eligible);
 	}
 
 	@Transactional(readOnly = true)
 	ReceptionCourseRefund detailForReceptionist(UUID receptionistId, UUID refundId) {
 		active(receptionistId, AccountRole.RECEPTIONIST, false);
-		return db.query("select * from (" + receptionSelect() + ") refunds where refund_id=? and status='APPROVED'", this::mapReception, refundId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
+		return courseRefundObligationRepository.detailForReceptionistFindRows(refundId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
 	}
 
 	@Transactional
@@ -136,11 +132,7 @@ public class CourseRefundObligationService {
 			throw CourseRefundException.conflict("COURSE_REFUND_AMOUNT_EXCEEDS_AVAILABLE", "The refund would exceed the Enrollment paid amount after prior committed refunds.");
 		}
 		Instant now = clock.instant();
-		int changed = db.update("""
-			update course_refund_obligations set status='APPROVED',approved_amount_vnd=amount_vnd,
-			 approved_by_account_id=?,approval_reason=?,approved_at=?,version=version+1,updated_at=?
-			where id=? and status='PENDING_REVIEW' and version=?
-			""", managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, expectedVersion);
+		int changed = courseRefundObligationRepository.approveUpdateCourseRefundObligations(managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, expectedVersion);
 		if (changed != 1)
 			throw changed();
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_REFUND_APPROVED", "COURSE_REFUND_OBLIGATION", obligationId, normalizedReason, Map.of("status", "PENDING_REVIEW"), Map.of("status", "APPROVED", "amountVnd", obligation.grossObligationVnd().toString(), "source", obligation.source())));
@@ -159,10 +151,7 @@ public class CourseRefundObligationService {
 			throw alreadyDecided();
 		version(obligation, expectedVersion);
 		Instant now = clock.instant();
-		int changed = db.update("""
-			update course_refund_obligations set status='REJECTED',rejected_by_account_id=?,rejection_reason=?,
-			 rejected_at=?,version=version+1,updated_at=? where id=? and status='PENDING_REVIEW' and version=?
-			""", managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, expectedVersion);
+		int changed = courseRefundObligationRepository.rejectUpdateCourseRefundObligations(managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, expectedVersion);
 		if (changed != 1)
 			throw changed();
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_REFUND_REJECTED", "COURSE_REFUND_OBLIGATION", obligationId, normalizedReason, Map.of("status", "PENDING_REVIEW"), Map.of("status", "REJECTED", "source", obligation.source())));
@@ -181,7 +170,7 @@ public class CourseRefundObligationService {
 				return obligation;
 			throw idempotencyConflict();
 		}
-		UUID reused = db.query("select id from course_refund_obligations where disbursed_by_account_id=? " + "and disbursement_idempotency_key=?", (rs, row) -> rs.getObject(1, UUID.class), receptionistId, key).stream().findFirst().orElse(null);
+		UUID reused = courseRefundObligationRepository.recordDisbursementFindCourseRefundObligations(receptionistId, key).stream().findFirst().orElse(null);
 		if (reused != null)
 			throw idempotencyConflict();
 		if (!"APPROVED".equals(obligation.status())) {
@@ -197,12 +186,7 @@ public class CourseRefundObligationService {
 			throw CourseRefundException.conflict("COURSE_REFUND_AMOUNT_MISMATCH", "The disbursement amount must equal the approved refund amount.");
 		}
 		Instant now = clock.instant();
-		int changed = db.update("""
-			update course_refund_obligations set status='DISBURSEMENT_RECORDED',disbursed_amount_vnd=?,
-			 disbursed_by_account_id=?,disbursed_at=?,disbursement_method=?,disbursement_reference=?,
-			 evidence_reference=?,disbursement_idempotency_key=?,version=version+1,updated_at=?
-			where id=? and status='APPROVED' and version=?
-			""", input.amount(), receptionistId, Timestamp.from(now), input.method(), input.reference(), input.evidence(), key, Timestamp.from(now), obligationId, input.expectedVersion());
+		int changed = courseRefundObligationRepository.recordDisbursementUpdateCourseRefundObligations(input.amount(), receptionistId, Timestamp.from(now), input.method(), input.reference(), input.evidence(), key, Timestamp.from(now), obligationId, input.expectedVersion());
 		if (changed != 1)
 			throw changed();
 		audits.save(new AuditEvent(UUID.randomUUID(), receptionistId, "COURSE_REFUND_DISBURSED", "COURSE_REFUND_OBLIGATION", obligationId, null, Map.of("status", "APPROVED"), Map.of("status", "DISBURSEMENT_RECORDED", "amountVnd", input.amount().toString(), "method", input.method())));
@@ -232,16 +216,12 @@ public class CourseRefundObligationService {
 		Instant now = clock.instant();
 		long version = input.expectedVersion();
 		if ("DISBURSEMENT_RECORDED".equals(obligation.status())) {
-			int queued = db.update("update course_refund_obligations set status='PENDING_VERIFICATION'," + "version=version+1,updated_at=? where id=? and status='DISBURSEMENT_RECORDED' and version=?", Timestamp.from(now), obligationId, version);
+			int queued = courseRefundObligationRepository.verifyUpdateCourseRefundObligations(Timestamp.from(now), obligationId, version);
 			if (queued != 1)
 				throw changed();
 			version++;
 		}
-		int changed = db.update("""
-			update course_refund_obligations set status='COMPLETED',verified_amount_vnd=?,
-			 verified_by_account_id=?,verification_reason=?,verified_at=?,version=version+1,updated_at=?
-			where id=? and status='PENDING_VERIFICATION' and version=?
-			""", input.amount(), managerId, input.reason(), Timestamp.from(now), Timestamp.from(now), obligationId, version);
+		int changed = courseRefundObligationRepository.completeVerifiedRefund(input.amount(), managerId, input.reason(), Timestamp.from(now), Timestamp.from(now), obligationId, version);
 		if (changed != 1)
 			throw changed();
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_REFUND_VERIFIED", "COURSE_REFUND_OBLIGATION", obligationId, input.reason(), Map.of("status", obligation.status()), Map.of("status", "COMPLETED", "amountVnd", input.amount().toString())));
@@ -270,7 +250,7 @@ public class CourseRefundObligationService {
 			throw transition();
 		version(obligation, expectedVersion);
 		Instant now = clock.instant();
-		int changed = db.update("update course_refund_obligations set status=?,terminal_by_account_id=?," + "terminal_reason=?,terminal_at=?,version=version+1,updated_at=? where id=? and status=? and version=?", target.name(), managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, obligation.status(), expectedVersion);
+		int changed = courseRefundObligationRepository.terminalUpdateCourseRefundObligations(target.name(), managerId, normalizedReason, Timestamp.from(now), Timestamp.from(now), obligationId, obligation.status(), expectedVersion);
 		if (changed != 1)
 			throw changed();
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "COURSE_REFUND_" + target.name(), "COURSE_REFUND_OBLIGATION", obligationId, normalizedReason, Map.of("status", obligation.status()), Map.of("status", target.name())));
@@ -284,14 +264,14 @@ public class CourseRefundObligationService {
 
 	private DecisionContext lock(UUID actorId, AccountRole role, UUID obligationId) {
 		active(actorId, role, true);
-		Map<String, Object> visible = db.queryForList("select course_enrollment_id,course_run_id " + "from course_refund_obligations where id=?", obligationId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
+		Map<String, Object> visible = courseRefundObligationRepository.lockFindCourseRefundObligations(obligationId).stream().findFirst().orElseThrow(CourseRefundException::notFound);
 		UUID runId = (UUID) visible.get("course_run_id");
 		UUID enrollmentId = (UUID) visible.get("course_enrollment_id");
-		String courseRunStatus = db.queryForObject("select status from course_runs where id=? for update", String.class, runId);
-		BigInteger amountPaid = db.queryForObject("select amount_paid_vnd_snapshot from course_enrollments " + "where id=? and course_run_id=? for update", BigDecimal.class, enrollmentId, runId).toBigIntegerExact();
-		List<RefundObligation> all = db.query(select() + " where obligation.course_enrollment_id=? order by obligation.id for update of obligation", this::map, enrollmentId);
+		String courseRunStatus = courseRefundObligationRepository.lockFindCourseRuns(runId);
+		BigInteger amountPaid = courseRefundObligationRepository.lockFindCourseEnrollments(enrollmentId, runId).toBigIntegerExact();
+		List<RefundObligation> all = courseRefundObligationRepository.lockFindOf(enrollmentId);
 		RefundObligation obligation = all.stream().filter(item -> item.id().equals(obligationId)).findFirst().orElseThrow(CourseRefundException::notFound);
-		String disbursementKey = db.queryForObject("select disbursement_idempotency_key " + "from course_refund_obligations where id=?", String.class, obligationId);
+		String disbursementKey = courseRefundObligationRepository.findDisbursementIdempotencyKey(obligationId);
 		return new DecisionContext(obligation, all, amountPaid, disbursementKey, courseRunStatus);
 	}
 
@@ -330,14 +310,6 @@ public class CourseRefundObligationService {
 		return CourseRefundValidation.verification(request);
 	}
 
-	private boolean vnd(BigInteger value) {
-		return CourseRefundValidation.vnd(value);
-	}
-
-	private boolean blank(String value, int maximum) {
-		return CourseRefundValidation.blank(value, maximum);
-	}
-
 	private boolean matches(RefundObligation obligation, DisbursementInput input) {
 		return CourseRefundValidation.matches(obligation, input);
 	}
@@ -366,20 +338,8 @@ public class CourseRefundObligationService {
 		return courseRefundObligationRepository.find(id);
 	}
 
-	private String select() {
-		return courseRefundObligationRepository.select();
-	}
-
-	private String receptionSelect() {
-		return courseRefundObligationRepository.receptionSelect();
-	}
-
 	private RefundObligation map(ResultSet rs, int row) throws SQLException {
 		return courseRefundObligationRepository.map(rs, row);
-	}
-
-	private ReceptionCourseRefund mapReception(ResultSet rs, int row) throws SQLException {
-		return courseRefundObligationRepository.mapReception(rs, row);
 	}
 
 	private MemberRefundObligation member(RefundObligation value) {
@@ -408,4 +368,8 @@ public class CourseRefundObligationService {
 	}
 
 	private final CourseRefundObligationRepository courseRefundObligationRepository;
+
+	private ReceptionCourseRefundPage receptionRefundPage(int page, int size, Boolean eligible) {
+		return courseRefundObligationRepository.receptionRefundPage(page, size, eligible);
+	}
 }

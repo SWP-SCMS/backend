@@ -45,6 +45,7 @@ public class MemberStatusService {
 		this.waitlistPromotions = waitlistPromotions;
 		this.courseWaitlists = courseWaitlists;
 		this.clock = clock;
+		this.memberStatusRepository = new MemberStatusRepository(this.jdbcTemplate);
 	}
 
 	@Transactional
@@ -78,24 +79,12 @@ public class MemberStatusService {
 
 	private List<CancelledBooking> cancelFutureBookings(UUID memberId, UUID managerId) {
 		Instant now = clock.instant();
-		List<CancelledBooking> affected = jdbcTemplate.query("""
-			select b.id, b.class_session_id from bookings b
-			join class_sessions s on s.id=b.class_session_id
-			where b.member_account_id=? and b.status='BOOKED' and s.start_time > ?
-			for update of b
-			""", (rs, row) -> new CancelledBooking(rs.getObject("id", UUID.class), rs.getObject("class_session_id", UUID.class)), memberId, Timestamp.from(now));
-		jdbcTemplate.update("""
-			update bookings b
-			set status = 'CANCELLED', cancelled_by_account_id = ?,
-				cancellation_source = 'MEMBER_SUSPENDED', cancelled_at = ?, updated_at = ?, version = b.version + 1
-			from class_sessions s
-			where b.class_session_id = s.id and b.member_account_id = ?
-				and b.status = 'BOOKED' and s.start_time > ?
-			""", managerId, Timestamp.from(now), Timestamp.from(now), memberId, Timestamp.from(now));
+		List<CancelledBooking> affected = memberStatusRepository.lockFutureBookings(memberId, Timestamp.from(now));
+		memberStatusRepository.cancelFutureBookings(managerId, Timestamp.from(now), Timestamp.from(now), memberId, Timestamp.from(now));
 		return affected;
 	}
 
-	private record CancelledBooking(UUID id, UUID sessionId) {
+	record CancelledBooking(UUID id, UUID sessionId) {
 	}
 
 	private void ensureActiveManager(UUID managerId) {
@@ -112,4 +101,6 @@ public class MemberStatusService {
 			throw new StaffAccountValidationException("reason", "must be non-blank and at most 1000 characters");
 		}
 	}
+
+	private final MemberStatusRepository memberStatusRepository;
 }

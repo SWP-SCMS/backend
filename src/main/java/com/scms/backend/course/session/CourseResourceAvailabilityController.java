@@ -45,6 +45,7 @@ class CourseResourceAvailabilityController {
 		this.rooms = rooms;
 		this.sessions = sessions;
 		this.db = db;
+		this.courseResourceAvailabilityRepository = new CourseResourceAvailabilityRepository(this.db);
 	}
 
 	record Window(@NotNull Instant startAt, @NotNull Instant endAt) {
@@ -77,20 +78,7 @@ class CourseResourceAvailabilityController {
 		Instant start = request.windows().stream().map(Window::startAt).min(Comparator.naturalOrder()).orElseThrow();
 		Instant end = request.windows().stream().map(Window::endAt).max(Comparator.naturalOrder()).orElseThrow();
 		// Fetch occupied intervals once; only intervals overlapping actual requested windows block resources.
-		List<Occupied> occupied = db.query("""
-			select coach_id, room_id, start_at, end_at from (
-			    select teaching_coach_account_id coach_id, room_id, start_time start_at, end_time end_at
-			    from class_sessions where status in ('SCHEDULED','IN_PROGRESS')
-			    union all
-			    select coach_account_id, room_id, start_at, end_at from course_sessions
-			    where status in ('SCHEDULED','MAKEUP_SCHEDULED')
-			      and id <> coalesce(cast(? as uuid), '00000000-0000-0000-0000-000000000000'::uuid)
-			    union all
-			    select coach_account_id, null::uuid, start_time, end_time from coach_leave_requests where status='APPROVED'
-			    union all
-			    select null::uuid, room_id, start_time, end_time from room_suspensions
-			) busy where start_at < ? and end_at > ?
-			""", (rs, row) -> new Occupied(rs.getObject("coach_id", UUID.class), rs.getObject("room_id", UUID.class), rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant()), request.excludeSessionId(), Timestamp.from(end), Timestamp.from(start));
+		List<Occupied> occupied = courseResourceAvailabilityRepository.availableFindClassSessions(request.excludeSessionId(), Timestamp.from(end), Timestamp.from(start));
 		Set<UUID> busyCoaches = new HashSet<>();
 		Set<UUID> busyRooms = new HashSet<>();
 		for (Occupied item : occupied) {
@@ -105,4 +93,6 @@ class CourseResourceAvailabilityController {
 		var roomOptions = rooms.findAll().stream().filter(r -> r.getStatus() == RoomStatus.ACTIVE && r.getCapacity() >= request.capacity() && !busyRooms.contains(r.getId())).sorted(Comparator.comparing(Room::getName)).map(r -> new RoomOption(r.getId(), r.getName(), r.getCapacity())).toList();
 		return new Response(coachOptions, roomOptions);
 	}
+
+	private final CourseResourceAvailabilityRepository courseResourceAvailabilityRepository;
 }

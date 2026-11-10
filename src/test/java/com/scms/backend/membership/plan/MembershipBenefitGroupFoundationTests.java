@@ -2,8 +2,6 @@ package com.scms.backend.membership.plan;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import com.scms.backend.membership.MembershipBenefit;
-import com.scms.backend.membership.MembershipBenefitGroup;
-import jakarta.persistence.Column;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import java.nio.charset.StandardCharsets;

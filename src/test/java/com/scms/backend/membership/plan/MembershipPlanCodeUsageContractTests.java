@@ -1,9 +1,6 @@
 package com.scms.backend.membership.plan;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import com.scms.backend.membership.MembershipOrder;
-import com.scms.backend.membership.MembershipPlanCode;
-import com.scms.backend.membership.offer.MembershipOfferResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;

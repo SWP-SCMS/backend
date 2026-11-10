@@ -2,7 +2,6 @@ package com.scms.backend.membership.payment;
 
 import com.scms.backend.course.enrollment.CourseEnrollmentResponse;
 import com.scms.backend.course.order.CoursePaymentResponse;
-import com.scms.backend.membership.Membership;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController

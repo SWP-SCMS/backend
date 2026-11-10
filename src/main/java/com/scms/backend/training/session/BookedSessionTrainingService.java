@@ -54,6 +54,7 @@ public class BookedSessionTrainingService {
 		this.assignments = assignments;
 		this.audits = audits;
 		this.clock = clock;
+		this.bookedSessionTrainingRepository = new BookedSessionTrainingRepository(this.db);
 	}
 
 	@Transactional(readOnly = true)
@@ -117,30 +118,11 @@ public class BookedSessionTrainingService {
 	private Session session(UUID coachId, UUID id, boolean course, boolean lock) {
 		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE))
 			throw TrainingResultException.actorNotActiveCoach();
-		if (course && lock) {
-			// Match the Course mutation lock order: Run, then Session, then enrollment.
-			db.queryForList("select id from course_runs where id=(select course_run_id from course_sessions where id=? and coach_account_id=?) for update", id, coachId);
-		}
-		String query = course ? """
-			select s.start_at starts_at,s.end_at ends_at,s.status,r.status run_status
-			from course_sessions s join course_runs r on r.id=s.course_run_id
-			where s.id=? and s.coach_account_id=?
-			""" : """
-			select s.start_time starts_at,s.end_time ends_at,s.status,'IN_PROGRESS' run_status
-			from class_sessions s join sport_classes c on c.id=s.sport_class_id
-			where s.id=? and s.teaching_coach_account_id=? and c.class_type='PT_1_1'
-			""";
-		return db.query(query + (lock ? " for update of s" : ""), (rs, row) -> new Session(rs.getTimestamp("starts_at").toInstant(), rs.getTimestamp("ends_at").toInstant(), rs.getString("status"), rs.getString("run_status")), id, coachId).stream().findFirst().orElseThrow(TrainingResultException::bookedSessionNotFound);
+		return sessionRow(coachId, id, course, lock);
 	}
 
 	private boolean enrolled(UUID sessionId, UUID memberId, boolean course, boolean lock) {
-		String query = course ? """
-			select es.id from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
-			where es.course_session_id=? and e.member_account_id=? and es.disposition='ENROLLED' and e.lifecycle_status='ACTIVE'
-			""" : "select id from bookings where class_session_id=? and member_account_id=? and status='BOOKED'";
-		if (lock)
-			query += course ? " for update of e,es" : " for update";
-		return !db.queryForList(query, UUID.class, sessionId, memberId).isEmpty();
+		return bookedSessionTrainingRepository.enrolled(sessionId, memberId, course, lock);
 	}
 
 	private Map<String, Object> resultSnapshot(TrainingResult result) {
@@ -158,7 +140,7 @@ public class BookedSessionTrainingService {
 		return new Summary(result == null ? null : TrainingResultResponse.from(result), comment == null ? null : TrainingFeedbackResponse.from(comment, result.getClassSessionId(), result.getCourseSessionId(), result.getActivityAt()), writable);
 	}
 
-	private record Session(Instant start, Instant end, String status, String runStatus) {
+	record Session(Instant start, Instant end, String status, String runStatus) {
 
 		boolean writable(Instant now) {
 			return !now.isBefore(end) && (status.equals("SCHEDULED") || status.equals("COMPLETED") || status.equals("MAKEUP_SCHEDULED")) && (runStatus.equals("IN_PROGRESS") || runStatus.equals("CONFIRMED") || runStatus.equals("SETTLEMENT_PENDING") || runStatus.equals("COMPLETED"));
@@ -167,4 +149,10 @@ public class BookedSessionTrainingService {
 
 	public record Summary(TrainingResultResponse result, TrainingFeedbackResponse feedback, boolean writable) {
 	}
+
+	private Session sessionRow(UUID coachId, UUID id, boolean course, boolean lock) {
+		return bookedSessionTrainingRepository.sessionRow(coachId, id, course, lock);
+	}
+
+	private final BookedSessionTrainingRepository bookedSessionTrainingRepository;
 }

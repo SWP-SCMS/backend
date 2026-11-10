@@ -1,6 +1,5 @@
 package com.scms.backend.course.refund;
 
-import com.scms.backend.course.Course;
 import com.scms.backend.course.refund.CourseRefundApiModels.MemberRefundObligation;
 import com.scms.backend.course.refund.CourseRefundApiModels.MemberRefundObligationPage;
 import com.scms.backend.course.refund.CourseRefundApiModels.ReceptionCourseRefund;

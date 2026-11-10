@@ -9,6 +9,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -101,5 +102,97 @@ final class CourseScheduleChangeRepository {
 				and gym.start_time < coalesce(cast(? as timestamptz),current_session.end_at)
 				and gym.end_time > coalesce(cast(? as timestamptz),current_session.start_at)))
 			""", UUID.class, runId, sessionId, sessionId, excludeCurrentRun, timestamp(endAt), timestamp(startAt), timestamp(endAt), timestamp(startAt)));
+	}
+
+	List<Map<java.lang.String, java.lang.Object>> notifyRescheduleFindCourseEnrollmentSessions(UUID sessionId) {
+		return db.queryForList("""
+			select es.id enrollment_session_id, e.member_account_id
+			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
+			where es.course_session_id=? and es.disposition='ENROLLED'
+			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING')
+			order by es.id
+			""", sessionId);
+	}
+
+	int notifyRescheduleInsertCourseScheduleChangeEvents(UUID eventId, UUID value2, java.lang.String cause, Timestamp value4, Timestamp value5, Timestamp value6, Timestamp value7, int value8, int value9) {
+		return db.update("""
+			insert into course_schedule_change_events(id,course_run_id,cause_code,old_planned_start_at,
+			old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
+			values(?,?,?,?,?,?,?,?,?)
+			""", eventId, value2, cause, value4, value5, value6, value7, value8, value9);
+	}
+
+	int notifyRescheduleUpdateCourseScheduleChangeResponses(UUID sessionId) {
+		return db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING'" + " and enrollment_session_id in (select id from course_enrollment_sessions where course_session_id=?)", sessionId);
+	}
+
+	int notifyRescheduleInsertCourseScheduleChangeResponses(UUID recordId, java.lang.Object enrollmentSessionId, Timestamp oldStartTimestamp, Timestamp oldEndTimestamp, Timestamp newStartTimestamp, Timestamp newEndTimestamp, Timestamp sentAtTimestamp, Timestamp deadlineTimestamp, java.lang.String memberCause, UUID eventId) {
+		return db.update("""
+			insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
+			new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id)
+			values(?,?,?,?,?,?,?,?,?,?)
+			""", recordId, enrollmentSessionId, oldStartTimestamp, oldEndTimestamp, newStartTimestamp, newEndTimestamp, sentAtTimestamp, deadlineTimestamp, memberCause, eventId);
+	}
+
+	List<Map<java.lang.String, java.lang.Object>> createRunScheduleResponsesFindCourseEnrollmentSessions(UUID runId, Timestamp sentAtTimestamp) {
+		return db.queryForList("""
+			select es.id enrollment_session_id,e.member_account_id,s.start_at,s.end_at
+			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
+			join course_sessions s on s.id=es.course_session_id
+			where e.course_run_id=? and es.disposition in ('ENROLLED','REMOVED_BY_RUN_CHANGE') and s.start_at>?
+			  and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by es.id
+			""", runId, sentAtTimestamp);
+	}
+
+	int createRunScheduleResponsesUpdateCourseScheduleChangeResponses(UUID runId) {
+		return db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING'" + " and enrollment_session_id in (select id from course_enrollment_sessions where course_run_id=?)", runId);
+	}
+
+	int createRunScheduleResponsesInsertCourseScheduleChangeResponses(UUID responseId, java.lang.Object enrollmentSessionId, java.lang.Object startAt, java.lang.Object endAt, java.lang.Object startAt2, java.lang.Object endAt2, Timestamp sentAtTimestamp, Timestamp deadlineTimestamp, java.lang.String memberCause, UUID eventId) {
+		return db.update("""
+			insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
+			new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id)
+			values(?,?,?,?,?,?,?,?,?,?)
+			""", responseId, enrollmentSessionId, startAt, endAt, startAt2, endAt2, sentAtTimestamp, deadlineTimestamp, memberCause, eventId);
+	}
+
+	List<Map<java.lang.String, java.lang.Object>> prepareAtomicRunResponsesFindCourseEnrollmentSessions(UUID runId) {
+		return db.queryForList("""
+			select es.id enrollment_session_id,es.course_session_id,e.member_account_id
+			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
+			where e.course_run_id=? and es.disposition='ENROLLED'
+			 and e.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') order by es.id
+			""", runId);
+	}
+
+	int writeAtomicRunResponsesUpdateCourseScheduleChangeResponses(UUID enrollmentSessionId) {
+		return db.update("update course_schedule_change_responses set status='SUPERSEDED' where status='PENDING' and enrollment_session_id=?", enrollmentSessionId);
+	}
+
+	int writeAtomicRunResponsesInsertCourseScheduleChangeResponses(UUID responseId, UUID enrollmentSessionId, Timestamp value3, Timestamp value4, Timestamp value5, Timestamp value6, Timestamp value7, Timestamp value8, java.lang.String value9, UUID eventId) {
+		return db.update("""
+			insert into course_schedule_change_responses(id,enrollment_session_id,old_start_at,old_end_at,
+			 new_start_at,new_end_at,notification_sent_at,response_deadline,cause_code,change_event_id) values(?,?,?,?,?,?,?,?,?,?)
+			""", responseId, enrollmentSessionId, value3, value4, value5, value6, value7, value8, value9, eventId);
+	}
+
+	List<com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange> listFindRows(Timestamp now, Timestamp now2, UUID memberId) {
+		return db.query(select() + " where e.member_account_id=? order by r.created_at desc,r.id", this::map, now, now2, memberId);
+	}
+
+	List<UUID> respondFindCourseScheduleChangeResponses(UUID responseId, UUID memberId) {
+		return db.queryForList("select e.course_run_id from course_schedule_change_responses r " + "join course_enrollment_sessions es on es.id=r.enrollment_session_id " + "join course_enrollments e on e.id=es.course_enrollment_id where r.id=? and e.member_account_id=?", UUID.class, responseId, memberId);
+	}
+
+	UUID respondFindCourseRuns(UUID first) {
+		return db.queryForObject("select id from course_runs where id=? for update", UUID.class, first);
+	}
+
+	List<com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange> respondFindOf(Timestamp queryTime, Timestamp queryTime2, UUID responseId, UUID memberId) {
+		return db.query(select() + " where r.id=? and e.member_account_id=? for update of r", this::map, queryTime, queryTime2, responseId, memberId);
+	}
+
+	int respondUpdateCourseScheduleChangeResponses(java.lang.String choice, Timestamp nowTimestamp, UUID responseId) {
+		return db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?", choice, nowTimestamp, responseId);
 	}
 }

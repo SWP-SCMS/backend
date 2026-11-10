@@ -1,6 +1,9 @@
 package com.scms.backend.membership.payment;
 
 import com.scms.backend.membership.PaymentException;
+import com.scms.backend.membership.payment.PaymentFulfillmentService.CourseUnit;
+import java.math.BigInteger;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -136,5 +139,130 @@ final class PaymentFulfillmentRepository {
 
 	static UUID uuid(Map<String, Object> row, String key) {
 		return (UUID) row.get(key);
+	}
+
+	int fulfillCourseInsertCoursePayments(java.util.UUID paymentId, java.util.UUID orderId, java.util.UUID reservationId, java.util.UUID memberAccountId, java.util.UUID actorAccountId, java.lang.String orderReference, java.lang.Object paymentAmount, java.sql.Timestamp value8, java.util.UUID actorId, java.sql.Timestamp nowTimestamp, java.sql.Timestamp nowTimestamp2, java.sql.Timestamp nowTimestamp3) {
+		return db.update("""
+			insert into course_payments(id,course_order_id,course_reservation_id,member_account_id,
+				actor_account_id,payment_reference,amount,currency_code,status,deadline_at,method,
+				processed_by_account_id,paid_at,created_at,updated_at)
+			values(?,?,?,?,?,?,?,'VND','PAID',?,'CASH',?,?,?,?)
+			""", paymentId, orderId, reservationId, memberAccountId, actorAccountId, orderReference, paymentAmount, value8, actorId, nowTimestamp, nowTimestamp2, nowTimestamp3);
+	}
+
+	int fulfillCourseUpdateCoursePayments(java.lang.String method, java.lang.Object value2, java.lang.String providerTransactionId, java.util.UUID actorId, java.sql.Timestamp nowTimestamp, java.util.UUID paymentId) {
+		return db.update("""
+			update course_payments set status='PAID',method=?,provider=?,provider_transaction_id=?,
+				processed_by_account_id=?,paid_at=?,updated_at=current_timestamp where id=? and status='PENDING'
+			""", method, value2, providerTransactionId, actorId, nowTimestamp, paymentId);
+	}
+
+	int fulfillCourseUpdateCourseOrders(java.util.UUID orderId) {
+		return db.update("update course_orders set status='PAID',updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'", orderId);
+	}
+
+	int fulfillCourseUpdateCourseReservations(java.util.UUID reservationId) {
+		return db.update("update course_reservations set status='ENROLLED',updated_at=current_timestamp where id=? and status='HELD'", reservationId);
+	}
+
+	int fulfillCourseInsertCourseEnrollments(java.util.UUID enrollmentId, java.util.UUID orderId, java.util.UUID reservationId, java.util.UUID paymentId, java.util.UUID memberAccountId, java.util.UUID actorAccountId, java.util.UUID actorId, java.util.UUID courseRunId, java.math.BigInteger paidAmount, int size, java.sql.Timestamp nowTimestamp, java.math.BigInteger paidAmount2) {
+		return db.update("""
+			insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,
+				member_account_id,actor_account_id,processed_by_account_id,course_run_id,
+				amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at,credit_applied_vnd,cash_paid_vnd)
+			values(?,?,?,?,?,?,?,?,?,?,?,0,?)
+			""", enrollmentId, orderId, reservationId, paymentId, memberAccountId, actorAccountId, actorId, courseRunId, paidAmount, size, nowTimestamp, paidAmount2);
+	}
+
+	int fulfillCourseInsertCourseEnrollmentSessions(java.util.UUID randomUUID, java.util.UUID enrollmentId, java.util.UUID unitId, java.util.UUID courseRunId, int unitNumber, java.math.BigInteger allocation, java.lang.String disposition) {
+		return db.update("""
+				insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,
+					unit_number,allocation_vnd,disposition) values(?,?,?,?,?,?,?)
+			""", randomUUID, enrollmentId, unitId, courseRunId, unitNumber, allocation, disposition);
+	}
+
+	int fulfillLockedUpdatePayments(java.lang.String provider, java.lang.String providerTransactionId, java.lang.String evidence, java.util.UUID actorId, java.sql.Timestamp nowTimestamp, java.util.UUID paymentId) {
+		return db.update("""
+			update payments set status='PAID', provider=?, provider_transaction_id=?, evidence=?,
+				processed_by_account_id=?, paid_at=?, updated_at=current_timestamp
+			where id=? and status='PENDING'
+			""", provider, providerTransactionId, evidence, actorId, nowTimestamp, paymentId);
+	}
+
+	int fulfillLockedUpdateMembershipOrders(java.sql.Timestamp nowTimestamp, java.util.UUID orderId) {
+		return db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'", nowTimestamp, orderId);
+	}
+
+	int createArtifactsInsertMemberships(java.util.UUID membershipId, java.util.UUID memberId, java.util.UUID orderId, java.util.UUID offerId, java.lang.Object planCodeSnapshot, java.lang.Object offerNameSnapshot, java.lang.Object priceAmountSnapshot, java.lang.Object currencyCodeSnapshot, java.lang.Object durationDaysSnapshot, java.lang.Object value10, java.lang.Object value11, java.lang.Object value12) {
+		return db.update("""
+			insert into memberships(id,member_account_id,order_id,offer_id,plan_code_snapshot,
+				offer_name_snapshot,price_amount_snapshot,currency_code_snapshot,duration_days_snapshot,
+				status,starts_at,ends_at)
+			values(?,?,?,?,?,?,?,?,?,?,?,?)
+			""", membershipId, memberId, orderId, offerId, planCodeSnapshot, offerNameSnapshot, priceAmountSnapshot, currencyCodeSnapshot, durationDaysSnapshot, value10, value11, value12);
+	}
+
+	int createArtifactsInsertReceipts(java.util.UUID receiptId, java.lang.String value2, java.util.UUID paymentId, java.util.UUID orderId, java.util.UUID memberId, java.lang.Object paymentAmount, java.lang.Object paymentCurrency, java.lang.Object paymentMethod) {
+		return db.update("""
+			insert into receipts(id,receipt_number,payment_id,order_id,member_account_id,amount_snapshot,
+				currency_code_snapshot,payment_method_snapshot)
+			values(?,?,?,?,?,?,?,?)
+			""", receiptId, value2, paymentId, orderId, memberId, paymentAmount, paymentCurrency, paymentMethod);
+	}
+
+	java.util.List<com.scms.backend.membership.payment.PaymentFulfillmentService.CourseUnit> courseUnitsFindCourseSessions(java.util.UUID courseRunId) {
+		return db.query("""
+			select coalesce(replacement.id, original.id) id,original.unit_number,
+				coalesce(replacement.start_at, original.start_at) start_at
+			from course_sessions original
+			left join course_sessions replacement on replacement.id=original.replacement_session_id
+			where original.course_run_id=? and original.is_makeup=false
+			  and not exists (select 1 from course_sessions replaced_by
+				where replaced_by.replacement_session_id=original.id)
+			order by original.unit_number,original.id
+			""", (result, index) -> new CourseUnit(result.getObject("id", UUID.class), result.getInt("unit_number"), result.getTimestamp("start_at").toInstant()), courseRunId);
+	}
+
+	java.util.Map<java.lang.String, java.lang.Object> courseEnrollmentFindCourseEnrollments(java.util.UUID orderId, java.util.UUID memberId) {
+		return db.queryForMap("""
+			select id,course_order_id,member_account_id,course_run_id,amount_paid_vnd_snapshot,
+				total_units_snapshot,enrolled_at from course_enrollments where course_order_id=? and member_account_id=?
+			""", orderId, memberId);
+	}
+
+	java.util.Map<java.lang.String, java.lang.Object> fulfillCashFindMembershipOrders(java.util.UUID paymentId, java.util.UUID orderId) {
+		return db.queryForMap("""
+			select ?::uuid payment_id,o.id order_id,'CASH' payment_method,'PENDING' payment_status,
+				o.order_number,a.full_name member_name,m.member_code,null::text provider_reference,
+				o.price_amount_snapshot payment_amount,o.currency_code_snapshot payment_currency,
+				o.status order_status,o.fulfillment_mode,o.member_account_id,o.offer_id,o.plan_code_snapshot,
+				o.offer_name_snapshot,o.price_amount_snapshot,o.currency_code_snapshot,
+				o.duration_days_snapshot
+			from membership_orders o join accounts a on a.id=o.member_account_id
+			join member_profiles m on m.account_id=a.id where o.id=? for update of o
+			""", paymentId, orderId);
+	}
+
+	int fulfillCashInsertPayments(java.util.UUID paymentId, java.util.UUID orderId, java.lang.Object paymentAmount, java.util.UUID actorId, java.sql.Timestamp nowTimestamp) {
+		return db.update("""
+			insert into payments(id,order_id,method,status,amount,currency_code,processed_by_account_id,paid_at)
+			values(?,?,'CASH','PAID',?,'VND',?,?)
+			""", paymentId, orderId, paymentAmount, actorId, nowTimestamp);
+	}
+
+	int fulfillCashUpdateMembershipOrders(java.sql.Timestamp nowTimestamp, java.util.UUID orderId) {
+		return db.update("update membership_orders set status='PAID',paid_at=?,expires_at=null,updated_at=current_timestamp where id=? and status='PENDING_PAYMENT'", nowTimestamp, orderId);
+	}
+
+	java.lang.Integer ensureMembershipCanFulfillFindMemberships(java.util.UUID memberAccountId) {
+		return db.queryForObject("select count(*) from memberships where member_account_id=? and status='ACTIVE'", Integer.class, memberAccountId);
+	}
+
+	java.util.Map<java.lang.String, java.lang.Object> resultFindMemberships(java.util.UUID orderId) {
+		return db.queryForMap("""
+			select m.id membership_id,r.id receipt_id,o.fulfillment_mode from memberships m
+			join receipts r on r.order_id=m.order_id join membership_orders o on o.id=m.order_id
+			where m.order_id=?
+			""", orderId);
 	}
 }

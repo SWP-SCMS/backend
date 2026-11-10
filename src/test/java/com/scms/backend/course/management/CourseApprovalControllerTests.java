@@ -12,7 +12,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.scms.backend.auth.ActiveAccountJwtValidator;
 import com.scms.backend.common.error.SecurityProblemDetailHandler;
 import com.scms.backend.config.SecurityConfiguration;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseStatus;
 import java.time.Instant;
 import java.util.List;

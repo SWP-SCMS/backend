@@ -5,7 +5,6 @@ import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.MemberEnroll
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.ReceptionCourseEnrollment;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.ReceptionCourseEnrollmentPage;
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.RosterEntry;
-import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import java.util.List;

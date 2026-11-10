@@ -6,7 +6,6 @@ import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseException;
 import com.scms.backend.course.CourseStatus;
 import com.scms.backend.course.VersionRequest;
