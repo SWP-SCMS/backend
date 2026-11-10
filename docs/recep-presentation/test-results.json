@@ -1,0 +1,86 @@
+{
+  "sourceCommit": "9c08093505df43da557b7fa6ff91478f4bef770d",
+  "finalRuns": [
+    {
+      "label": "final-unit",
+      "tests": 1067,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "local-evidence/final-unit.log"
+    },
+    {
+      "label": "final-integration-0",
+      "tests": 176,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "local-evidence/final-integration-0.log"
+    },
+    {
+      "label": "final-integration-1",
+      "tests": 119,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "local-evidence/final-integration-1.log"
+    },
+    {
+      "label": "final-integration-2",
+      "tests": 143,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "local-evidence/final-integration-2.log"
+    },
+    {
+      "label": "final-integration-3",
+      "tests": 228,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "local-evidence/final-integration-3.log"
+    }
+  ],
+  "totalTests": 1733,
+  "http": {
+    "/v3/api-docs": 200,
+    "/reception/members": 401,
+    "/docs": 200
+  },
+  "structure": {
+    "annotatedEntrypoints": 798,
+    "advice": [
+      "GlobalExceptionHandler"
+    ],
+    "unchangedResourceFiles": 133,
+    "pomUnchanged": true,
+    "workingCopyHasGit": false
+  },
+  "original": {
+    "source": "baseline@9c08093",
+    "expectedCommit": "9c08093505df43da557b7fa6ff91478f4bef770d",
+    "actualCommit": "9c08093505df43da557b7fa6ff91478f4bef770d",
+    "hashedFiles": 1114,
+    "changedInputFiles": [],
+    "sourceGitStatus": "",
+    "workingCopyGitAncestors": [],
+    "workingCopyHasEnv": false
+  },
+  "baselineBatch": {
+    "label": "baseline-batch-rollback",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "log": "local-evidence/baseline-batch-rollback.log"
+  },
+  "refactorBatch": {
+    "label": "g4-batch-rollback",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "log": "local-evidence/g4-batch-rollback.log"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "annotatedEntrypoints": 798,
+  "advice": [
+    "GlobalExceptionHandler"
+  ],
+  "unchangedResourceFiles": 133,
+  "pomUnchanged": true,
+  "workingCopyHasGit": false
+}
