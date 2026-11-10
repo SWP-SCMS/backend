@@ -8,7 +8,6 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseException;
 import com.scms.backend.course.CourseWithdrawalCause;
 import com.scms.backend.course.CourseWithdrawalException;
@@ -56,6 +55,8 @@ public class CourseWithdrawalService {
 		this.notifications = notifications;
 		this.promotions = promotions;
 		this.clock = clock;
+		this.courseWithdrawalRepository = new CourseWithdrawalRepository(this.db);
+		this.courseWithdrawalSnapshot = new CourseWithdrawalSnapshot(this.db);
 	}
 
 	@Transactional
@@ -276,18 +277,7 @@ public class CourseWithdrawalService {
 	}
 
 	private RefundSnapshot refundSnapshot(UUID enrollmentId, int totalUnits, BigInteger amountPaid, Instant now) {
-		List<Map<String, Object>> units = db.queryForList("""
-			select s.start_at,es.allocation_vnd from course_enrollment_sessions es
-			join course_sessions s on s.id=es.course_session_id
-			where es.course_enrollment_id=? and not exists (select 1 from course_refund_unit_claims c where c.enrollment_session_id=es.id) order by es.unit_number for update of es
-			""", enrollmentId);
-		int remaining = 0;
-		BigInteger unused = BigInteger.ZERO;
-		for (Map<String, Object> unit : units) if (instant(unit, "start_at").isAfter(now)) {
-			remaining++;
-			unused = unused.add(amount(unit, "allocation_vnd"));
-		}
-		return new RefundSnapshot(totalUnits, remaining, unused.min(amountPaid));
+		return courseWithdrawalSnapshot.refundSnapshot(enrollmentId, totalUnits, amountPaid, now);
 	}
 
 	private void promoteAfterCommit(UUID runId, Instant now) {
@@ -316,7 +306,7 @@ public class CourseWithdrawalService {
 	}
 
 	private String lockRun(UUID runId) {
-		return db.queryForObject("select status from course_runs where id=? for update", String.class, runId);
+		return courseWithdrawalRepository.lockRun(runId);
 	}
 
 	private void requireWithdrawableRun(String status) {
@@ -334,7 +324,7 @@ public class CourseWithdrawalService {
 	}
 
 	private Map<String, Object> lockEnrollment(UUID enrollmentId, UUID memberId) {
-		return db.queryForList("select id,course_run_id,lifecycle_status,total_units_snapshot,amount_paid_vnd_snapshot from course_enrollments " + "where id=? and member_account_id=? for update", enrollmentId, memberId).stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
+		return courseWithdrawalRepository.lockEnrollment(enrollmentId, memberId);
 	}
 
 	private String reason(String reason) {
@@ -348,28 +338,22 @@ public class CourseWithdrawalService {
 	}
 
 	private WithdrawalRequest lock(UUID id) {
-		return db.query(select() + " where w.id=? for update of w", this::map, id).stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
+		return courseWithdrawalRepository.lock(id);
 	}
 
 	private WithdrawalRequest find(UUID id) {
-		return db.query(select() + " where w.id=?", this::map, id).stream().findFirst().orElseThrow(CourseWithdrawalException::notFound);
+		return courseWithdrawalRepository.find(id);
 	}
 
 	private String select() {
-		return "select w.*,a.id member_id,mp.member_code,a.full_name member_name,c.id course_id," + "c.code course_code,c.name course_name,r.run_code,r.status course_run_status,e.lifecycle_status " + "from course_withdrawal_requests w join course_enrollments e on e.id=w.course_enrollment_id " + "join accounts a on a.id=e.member_account_id join member_profiles mp on mp.account_id=a.id " + "join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id";
+		return courseWithdrawalRepository.select();
 	}
 
 	private WithdrawalRequest map(ResultSet rs, int row) throws SQLException {
-		Instant capturedAt = instant(rs.getTimestamp("snapshot_captured_at"));
-		boolean pending = "PENDING".equals(rs.getString("status"));
-		boolean eligible = pending && capturedAt != null && !"CANCELLED".equals(rs.getString("course_run_status"));
-		BigInteger refund = amount(rs.getBigDecimal("refund_amount_vnd"));
-		String source = capturedAt != null ? "REQUEST_TIME" : refund != null ? "LEGACY_APPROVAL" : "UNAVAILABLE";
-		String eligibilityReason = eligible ? rs.getString("withdrawal_reason_snapshot") : capturedAt == null ? "LEGACY_SNAPSHOT_MISSING" : "REQUEST_NOT_PENDING";
-		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class), rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"), rs.getString("decision_reason"), CourseWithdrawalCause.valueOf(rs.getString("cause_code")), eligible, eligibilityReason, rs.getTimestamp("requested_at").toInstant(), rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")), rs.getObject("total_units_snapshot", Integer.class), rs.getObject("remaining_units_snapshot", Integer.class), amount(rs.getBigDecimal("refund_basis_vnd")), refund, rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"), rs.getString("run_code"), rs.getString("course_run_status"), eligible ? refund : null, rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("change_event_id", UUID.class), capturedAt, source, rs.getObject("withdrawal_eligible_snapshot", Boolean.class), rs.getString("withdrawal_reason_snapshot"), instant(rs.getTimestamp("cancelled_at")), rs.getObject("cancelled_by_account_id", UUID.class), rs.getString("cancellation_reason"), pending, "WITHDRAWAL_PENDING".equals(rs.getString("lifecycle_status")));
+		return courseWithdrawalRepository.map(rs, row);
 	}
 
-	private record RefundSnapshot(int totalUnits, int remainingUnits, BigInteger unusedAllocation) {
+	record RefundSnapshot(int totalUnits, int remainingUnits, BigInteger unusedAllocation) {
 	}
 
 	private static UUID uuid(Map<String, Object> row, String key) {
@@ -385,19 +369,22 @@ public class CourseWithdrawalService {
 	}
 
 	private static BigInteger amount(Map<String, Object> row, String key) {
-		return new BigDecimal(row.get(key).toString()).toBigIntegerExact();
+		return CourseWithdrawalSnapshot.amount(row, key);
 	}
 
 	private static BigInteger amount(BigDecimal value) {
-		return value == null ? null : value.toBigIntegerExact();
+		return CourseWithdrawalSnapshot.amount(value);
 	}
 
 	private static Instant instant(Map<String, Object> row, String key) {
-		Object value = row.get(key);
-		return value instanceof Instant instant ? instant : ((Timestamp) value).toInstant();
+		return CourseWithdrawalSnapshot.instant(row, key);
 	}
 
 	private static Instant instant(Timestamp value) {
-		return value == null ? null : value.toInstant();
+		return CourseWithdrawalSnapshot.instant(value);
 	}
+
+	private final CourseWithdrawalRepository courseWithdrawalRepository;
+
+	private final CourseWithdrawalSnapshot courseWithdrawalSnapshot;
 }

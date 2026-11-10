@@ -1,6 +1,5 @@
 package com.scms.backend.scheduling.waitlist;
 
-import com.scms.backend.scheduling.ClassSession;
 import com.scms.backend.scheduling.SessionWaitlist;
 import com.scms.backend.scheduling.WaitlistStatus;
 import java.time.Instant;

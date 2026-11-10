@@ -20,7 +20,6 @@ import com.scms.backend.scheduling.CoachLeaveException;
 import com.scms.backend.scheduling.CoachLeaveRequest;
 import com.scms.backend.scheduling.CoachLeaveStatus;
 import com.scms.backend.scheduling.RecurringScheduleException;
-import com.scms.backend.scheduling.Room;
 import com.scms.backend.scheduling.resource.SharedResourceLockService;
 import com.scms.backend.scheduling.session.AvailableCoachResponse;
 import com.scms.backend.scheduling.session.ClassSessionCancellationService;

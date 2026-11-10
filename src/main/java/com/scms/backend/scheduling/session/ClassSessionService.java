@@ -12,16 +12,13 @@ import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.Booking;
 import com.scms.backend.scheduling.ClassSession;
 import com.scms.backend.scheduling.ClassSessionStatus;
-import com.scms.backend.scheduling.DisciplineStatus;
 import com.scms.backend.scheduling.PtSessionAssignmentException;
 import com.scms.backend.scheduling.RecurringSchedule;
 import com.scms.backend.scheduling.RecurringScheduleException;
 import com.scms.backend.scheduling.Room;
 import com.scms.backend.scheduling.RoomStatus;
-import com.scms.backend.scheduling.RoomUsageMode;
 import com.scms.backend.scheduling.SessionWaitlist;
 import com.scms.backend.scheduling.SportClass;
-import com.scms.backend.scheduling.SportClassStatus;
 import com.scms.backend.scheduling.SportClassType;
 import com.scms.backend.scheduling.booking.BookingRepository;
 import com.scms.backend.scheduling.coachleave.CoachLeaveRepository;
@@ -106,6 +103,8 @@ public class ClassSessionService {
 		this.waitlists = waitlists;
 		this.courseSessions = courseSessions;
 		this.resourceLocks = resourceLocks;
+		this.classSessionCatalog = new ClassSessionCatalog(this.sessions, this.lifecycle, this.clock);
+		this.classSessionResources = new ClassSessionResources(this.sessions, this.classes, this.rooms, this.accounts, this.clock, this.coachLeaves, this.courseSessions, this.resourceLocks);
 	}
 
 	@Transactional
@@ -192,30 +191,11 @@ public class ClassSessionService {
 	}
 
 	private MemberClassSessionPageResponse futureCatalogue(Instant from, Instant to, UUID classId, UUID coachId, boolean ptOnly, Pageable pageable) {
-		if (from != null && to != null && !to.isAfter(from)) {
-			throw RecurringScheduleException.validation("to", "must be later than from");
-		}
-		advanceStatuses();
-		Instant now = clock.instant();
-		Specification<ClassSession> filters = (root, ignored, builder) -> builder.and(builder.equal(root.get("status"), ClassSessionStatus.SCHEDULED), builder.greaterThan(root.get("startTime"), now), ptOnly ? builder.equal(root.get("sportClass").get("classType"), SportClassType.PT_1_1) : builder.notEqual(root.get("sportClass").get("classType"), SportClassType.PT_1_1));
-		if (from != null)
-			filters = filters.and((root, ignored, builder) -> builder.greaterThan(root.get("endTime"), from));
-		if (to != null)
-			filters = filters.and((root, ignored, builder) -> builder.lessThan(root.get("startTime"), to));
-		if (classId != null)
-			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("sportClass").get("id"), classId));
-		if (coachId != null)
-			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("teachingCoach").get("id"), coachId));
-		var page = sessions.findAll(filters, pageable);
-		var ids = page.getContent().stream().map(ClassSession::getId).toList();
-		Map<UUID, Long> booked = ids.isEmpty() ? Map.of() : sessions.countBookedBySessionIds(ids).stream().collect(Collectors.toMap(ClassSessionRepository.BookingCountView::getSessionId, ClassSessionRepository.BookingCountView::getBookedCount));
-		Map<UUID, List<String>> requiredBenefits = ids.isEmpty() ? Map.of() : sessions.findRequiredBenefitsBySessionIds(ids).stream().collect(Collectors.groupingBy(ClassSessionRepository.SessionRequiredBenefitView::getSessionId, Collectors.mapping(ClassSessionRepository.SessionRequiredBenefitView::getBenefitCode, Collectors.toList())));
-		var content = page.getContent().stream().map(session -> MemberClassSessionResponse.from(session, booked.getOrDefault(session.getId(), 0L), now, requiredBenefits.getOrDefault(session.getId(), List.of()))).toList();
-		return new MemberClassSessionPageResponse(content, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+		return classSessionCatalog.futureCatalogue(from, to, classId, coachId, ptOnly, pageable);
 	}
 
 	private MemberClassSessionPageResponse emptyCatalogue(Pageable pageable) {
-		return new MemberClassSessionPageResponse(List.of(), pageable.getPageNumber(), pageable.getPageSize(), 0, 0);
+		return classSessionCatalog.emptyCatalogue(pageable);
 	}
 
 	@Transactional
@@ -356,7 +336,7 @@ public class ClassSessionService {
 	}
 
 	private void advanceStatuses() {
-		lifecycle.catchUp(clock.instant());
+		classSessionCatalog.advanceStatuses();
 	}
 
 	void ensureActiveManager(UUID managerId) {
@@ -366,64 +346,11 @@ public class ClassSessionService {
 	}
 
 	void validateTimes(Instant startTime, Instant endTime) {
-		if (startTime == null || !startTime.isAfter(clock.instant())) {
-			throw RecurringScheduleException.validation("startTime", "must be in the future");
-		}
-		if (endTime == null || !endTime.isAfter(startTime)) {
-			throw RecurringScheduleException.validation("endTime", "must be later than startTime");
-		}
-		if (Duration.between(startTime, endTime).compareTo(Duration.ofMinutes(30)) < 0) {
-			throw RecurringScheduleException.validation("endTime", "a Session cannot be shorter than 30 minutes");
-		}
-		if (Duration.between(startTime, endTime).compareTo(Duration.ofMinutes(90)) > 0) {
-			throw RecurringScheduleException.validation("endTime", "a Session cannot be longer than 90 minutes");
-		}
+		classSessionResources.validateTimes(startTime, endTime);
 	}
 
 	Resources validateResources(UUID classId, UUID coachId, UUID roomId, Integer capacity) {
-		if (classId == null)
-			throw RecurringScheduleException.validation("classId", "is required");
-		if (coachId == null)
-			throw RecurringScheduleException.validation("coachId", "is required");
-		if (capacity == null || capacity <= 0) {
-			throw RecurringScheduleException.validation("capacity", "must be greater than zero");
-		}
-		if (resourceLocks != null)
-			resourceLocks.lock(List.of(coachId), roomId == null ? List.of() : List.of(roomId));
-		Optional<SportClass> classResult = classes.findByIdForUpdate(classId);
-		if (classResult == null || classResult.isEmpty())
-			classResult = classes.findById(classId);
-		SportClass sportClass = classResult.orElseThrow(() -> RecurringScheduleException.notFound("class"));
-		if (sportClass.getStatus() != SportClassStatus.ACTIVE || sportClass.getDiscipline().getStatus() != DisciplineStatus.ACTIVE) {
-			throw RecurringScheduleException.inactive("class");
-		}
-		if (sportClass.getClassType() == SportClassType.YOGA || "yoga".equalsIgnoreCase(sportClass.getDiscipline().getName().trim())) {
-			throw RecurringScheduleException.legacyYoga();
-		}
-		boolean pt = sportClass.getClassType() == SportClassType.PT_1_1;
-		if (pt && capacity != 1)
-			throw RecurringScheduleException.ptCapacity();
-		if (!pt && roomId == null)
-			throw RecurringScheduleException.validation("roomId", "is required");
-		Optional<Account> coachResult = accounts.findByIdForUpdate(coachId);
-		if (coachResult == null || coachResult.isEmpty())
-			coachResult = accounts.findById(coachId);
-		Account coach = coachResult.orElseThrow(() -> RecurringScheduleException.notFound("coach"));
-		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE) {
-			throw RecurringScheduleException.coachInvalid();
-		}
-		Room room = null;
-		if (roomId != null) {
-			Optional<Room> roomResult = rooms.findByIdForUpdate(roomId);
-			if (roomResult == null || roomResult.isEmpty())
-				roomResult = rooms.findById(roomId);
-			room = roomResult.orElseThrow(() -> RecurringScheduleException.notFound("room"));
-			if (room.getStatus() != RoomStatus.ACTIVE)
-				throw RecurringScheduleException.inactive("room");
-			if (capacity > room.getCapacity())
-				throw RecurringScheduleException.capacityConflict();
-		}
-		return new Resources(sportClass, coach, room);
+		return classSessionResources.validateResources(classId, coachId, roomId, capacity);
 	}
 
 	private void lockAssignmentRooms(UUID sourceRoomId, UUID requestedRoomId) {
@@ -435,29 +362,7 @@ public class ClassSessionService {
 	}
 
 	void ensureAvailable(Resources resources, Instant startTime, Instant endTime, int requestedCapacity, UUID excludeSessionId) {
-		UUID roomId = resources.room() == null ? null : resources.room().getId();
-		if (courseSessions != null && courseSessions.existsResourceOverlap(resources.coach().getId(), roomId, startTime, endTime))
-			throw RecurringScheduleException.sessionConflict();
-		boolean coachConflict = excludeSessionId == null ? sessions.existsCoachOverlap(resources.coach().getId(), startTime, endTime) : sessions.existsCoachOverlapExcluding(excludeSessionId, resources.coach().getId(), startTime, endTime);
-		if (coachConflict) {
-			throw RecurringScheduleException.sessionConflict();
-		}
-		ensureCoachAvailable(resources.coach().getId(), startTime, endTime);
-		if (roomId == null)
-			return;
-		if (rooms.existsSuspensionOverlap(roomId, startTime, endTime)) {
-			throw RecurringScheduleException.sessionConflict();
-		}
-		boolean roomConflict = excludeSessionId == null ? sessions.existsRoomOverlap(roomId, startTime, endTime) : sessions.existsRoomOverlapExcluding(excludeSessionId, roomId, startTime, endTime);
-		if (resources.room().getUsageMode() == RoomUsageMode.EXCLUSIVE) {
-			if (roomConflict)
-				throw RecurringScheduleException.roomTimeConflict();
-			return;
-		}
-		long occupiedCapacity = excludeSessionId == null ? sessions.sumOverlappingCapacity(roomId, startTime, endTime) : sessions.sumOverlappingCapacityExcluding(excludeSessionId, roomId, startTime, endTime);
-		if (occupiedCapacity + requestedCapacity > resources.room().getCapacity()) {
-			throw RecurringScheduleException.sharedRoomCapacityExceeded(resources.room().getCapacity(), occupiedCapacity, requestedCapacity);
-		}
+		classSessionResources.ensureAvailable(resources, startTime, endTime, requestedCapacity, excludeSessionId);
 	}
 
 	@Transactional
@@ -524,9 +429,7 @@ public class ClassSessionService {
 	}
 
 	private void ensureCoachAvailable(UUID coachId, Instant startTime, Instant endTime) {
-		if (coachLeaves != null && coachLeaves.existsApprovedOverlap(coachId, startTime, endTime)) {
-			throw RecurringScheduleException.coachOnLeave();
-		}
+		classSessionResources.ensureCoachAvailable(coachId, startTime, endTime);
 	}
 
 	public void moveForRoomImpact(UUID managerId, ClassSession session, Room targetRoom, String reason) {
@@ -573,4 +476,8 @@ public class ClassSessionService {
 
 	record Resources(SportClass sportClass, Account coach, Room room) {
 	}
+
+	private final ClassSessionCatalog classSessionCatalog;
+
+	private final ClassSessionResources classSessionResources;
 }

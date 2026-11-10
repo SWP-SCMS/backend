@@ -1,6 +1,5 @@
 package com.scms.backend.scheduling.discipline;
 
-import com.scms.backend.scheduling.ClassSession;
 import com.scms.backend.scheduling.Discipline;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;

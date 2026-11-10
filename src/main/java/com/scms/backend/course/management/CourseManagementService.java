@@ -1,23 +1,13 @@
 package com.scms.backend.course.management;
 
-import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseException;
-import com.scms.backend.course.CourseFieldLimits;
 import com.scms.backend.course.CourseRun;
-import com.scms.backend.course.CourseRunStatus;
 import com.scms.backend.course.CourseSession;
-import com.scms.backend.course.CourseSessionStatus;
-import com.scms.backend.course.CourseStatus;
 import com.scms.backend.course.CourseWithdrawalCause;
 import com.scms.backend.course.VersionRequest;
-import com.scms.backend.course.refund.CourseUnitRefunds;
 import com.scms.backend.course.run.CourseRunClosureService;
 import com.scms.backend.course.run.CourseRunCreateRequest;
 import com.scms.backend.course.run.CourseRunOpenRequest;
@@ -32,20 +22,12 @@ import com.scms.backend.course.session.CourseSessionPatchRequest;
 import com.scms.backend.course.session.CourseSessionRepository;
 import com.scms.backend.course.session.CourseSessionResponse;
 import com.scms.backend.course.session.CourseSessionService;
-import com.scms.backend.scheduling.Discipline;
-import com.scms.backend.scheduling.DisciplineStatus;
 import com.scms.backend.scheduling.discipline.DisciplineRepository;
-import java.math.BigInteger;
-import java.sql.Timestamp;
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -93,314 +75,114 @@ public class CourseManagementService {
 		this.db = db;
 		this.scheduleChanges = scheduleChanges;
 		this.clock = clock;
+		this.courseAdministration = new CourseAdministration(this.courses, this.runs, this.disciplines, this.accounts, this.audits, this.runClosure, this.clock);
+		this.courseRunAdministration = new CourseRunAdministration(this.runs, this.sessions, this.accounts, this.runClosure, this.db, this.scheduleChanges, this.clock, this.courseAdministration);
 	}
 
 	@Transactional(readOnly = true)
 	CoursePageResponse listCourses(UUID managerId, Pageable pageable) {
-		ensureActiveManager(managerId);
-		return CoursePageResponse.from(courses.findAll(pageable));
+		return courseAdministration.listCourses(managerId, pageable);
 	}
 
 	@Transactional(readOnly = true)
 	public CourseResponse getCourse(UUID managerId, UUID courseId) {
-		ensureActiveManager(managerId);
-		return CourseResponse.from(courses.findDetailedById(courseId).orElseThrow(CourseException::notFound));
+		return courseAdministration.getCourse(managerId, courseId);
 	}
 
 	@Transactional
 	public CourseResponse createCourse(UUID managerId, CourseCreateRequest request) {
-		ensureActiveManager(managerId);
-		return CourseResponse.from(createDraftCourse(managerId, request));
+		return courseAdministration.createCourse(managerId, request);
 	}
 
 	@Transactional(readOnly = true)
 	CourseApprovalPageResponse listCourseApprovals(UUID managerId, Pageable pageable) {
-		ensureActiveManager(managerId);
-		return CourseApprovalPageResponse.from(courses.findByStatus(CourseStatus.PENDING_APPROVAL, pageable));
+		return courseAdministration.listCourseApprovals(managerId, pageable);
 	}
 
 	@Transactional(readOnly = true)
 	CourseApprovalResponse getCourseApproval(UUID managerId, UUID courseId) {
-		ensureActiveManager(managerId);
-		return CourseApprovalResponse.from(courses.findSubmittedById(courseId).orElseThrow(CourseException::notFound));
+		return courseAdministration.getCourseApproval(managerId, courseId);
 	}
 
 	@Transactional
 	CourseApprovalResponse approveCourse(UUID managerId, UUID courseId, CourseApprovalDecision request) {
-		return decideCourse(managerId, courseId, request, true);
+		return courseAdministration.approveCourse(managerId, courseId, request);
 	}
 
 	@Transactional
 	CourseApprovalResponse rejectCourse(UUID managerId, UUID courseId, CourseApprovalDecision request) {
-		return decideCourse(managerId, courseId, request, false);
+		return courseAdministration.rejectCourse(managerId, courseId, request);
 	}
 
 	private Course createDraftCourse(UUID actorId, CourseCreateRequest request) {
-		if (request == null)
-			throw CourseException.validation("request", "must be a JSON object");
-		String code = required(request.code(), 50, "code").toUpperCase(java.util.Locale.ROOT);
-		String name = required(request.name(), 200, "name");
-		if (request.defaultMinimumEnrollment() != null && request.defaultMinimumEnrollment() <= 0) {
-			throw CourseException.validation("defaultMinimumEnrollment", "must be greater than zero");
-		}
-		Discipline discipline = disciplines.findById(request.disciplineId()).orElseThrow(() -> CourseException.validation("disciplineId", "must identify an active discipline"));
-		if (discipline.getStatus() != DisciplineStatus.ACTIVE) {
-			throw CourseException.validation("disciplineId", "must identify an active discipline");
-		}
-		if (courses.existsByCode(code))
-			throw CourseException.duplicateCode();
-		String description = optional(request.description(), CourseFieldLimits.DESCRIPTION, "description");
-		String imageUrl = optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl");
-		Course course = new Course(UUID.randomUUID(), code, name, description, discipline, imageUrl, request.defaultMinimumEnrollment());
-		try {
-			courses.saveAndFlush(course);
-		} catch (DataIntegrityViolationException exception) {
-			throw CourseException.duplicateCode();
-		}
-		audit(actorId, "COURSE_CREATED", "COURSE", course.getId(), null, snapshot(course));
-		return course;
+		return courseAdministration.createDraftCourse(actorId, request);
 	}
 
 	private CourseApprovalResponse decideCourse(UUID managerId, UUID courseId, CourseApprovalDecision request, boolean approved) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		String reason = required(request.reason(), 1000, "reason");
-		Course course = lockCourse(courseId);
-		checkVersion(course.getVersion(), request.expectedVersion(), CourseException::changed);
-		Map<String, Object> before = snapshot(course);
-		if (approved)
-			course.approve(managerId, reason);
-		else
-			course.reject(managerId, reason);
-		courses.saveAndFlush(course);
-		audit(managerId, approved ? "COURSE_APPROVED" : "COURSE_REJECTED", "COURSE", courseId, before, snapshot(course));
-		return CourseApprovalResponse.from(course);
+		return courseAdministration.decideCourse(managerId, courseId, request, approved);
 	}
 
 	@Transactional
 	CourseResponse patchCourse(UUID managerId, UUID courseId, CoursePatchRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		if (!request.hasMutableField()) {
-			throw CourseException.validation("request", "at least one mutable field is required");
-		}
-		Course course = lockCourse(courseId);
-		checkVersion(course.getVersion(), request.expectedVersion(), CourseException::changed);
-		String name = request.hasName() ? required(request.name(), 200, "name") : course.getName();
-		String description = request.hasDescription() ? optional(request.description(), CourseFieldLimits.DESCRIPTION, "description") : course.getDescription();
-		String imageUrl = request.hasImageUrl() ? optional(request.imageUrl(), CourseFieldLimits.IMAGE_URL, "imageUrl") : course.getImageUrl();
-		Integer minimum = request.hasDefaultMinimumEnrollment() ? request.defaultMinimumEnrollment() : course.getDefaultMinimumEnrollment();
-		if (minimum != null && minimum <= 0) {
-			throw CourseException.validation("defaultMinimumEnrollment", "must be greater than zero");
-		}
-		boolean changed = !Objects.equals(name, course.getName()) || !Objects.equals(description, course.getDescription()) || !Objects.equals(imageUrl, course.getImageUrl()) || !Objects.equals(minimum, course.getDefaultMinimumEnrollment());
-		if (changed) {
-			Map<String, Object> before = snapshot(course);
-			course.update(name, description, imageUrl, minimum);
-			Map<String, Object> after = snapshot(course);
-			courses.saveAndFlush(course);
-			audit(managerId, "COURSE_UPDATED", "COURSE", courseId, before, after);
-		}
-		return CourseResponse.from(course);
+		return courseAdministration.patchCourse(managerId, courseId, request);
 	}
 
 	@Transactional
 	public CourseResponse publishCourse(UUID managerId, UUID courseId, VersionRequest request) {
-		return transitionCourse(managerId, courseId, request, "COURSE_PUBLISHED", Course::publish);
+		return courseAdministration.publishCourse(managerId, courseId, request);
 	}
 
 	@Transactional
 	public CourseResponse deactivateCourse(UUID managerId, UUID courseId, VersionRequest request) {
-		return transitionCourse(managerId, courseId, request, "COURSE_DEACTIVATED", Course::deactivate);
+		return courseAdministration.deactivateCourse(managerId, courseId, request);
 	}
 
 	@Transactional
 	public CourseResponse archiveCourse(UUID managerId, UUID courseId, VersionRequest request) {
-		return transitionCourse(managerId, courseId, request, "COURSE_ARCHIVED", Course::archive);
+		return courseAdministration.archiveCourse(managerId, courseId, request);
 	}
 
 	@Transactional(readOnly = true)
 	CourseRunPageResponse listRuns(UUID managerId, Pageable pageable) {
-		ensureActiveManager(managerId);
-		return CourseRunPageResponse.from(runs.findAll(pageable));
+		return courseRunAdministration.listRuns(managerId, pageable);
 	}
 
 	@Transactional(readOnly = true)
 	public CourseRunResponse getRun(UUID managerId, UUID runId) {
-		ensureActiveManager(managerId);
-		return CourseRunResponse.from(runs.findDetailedById(runId).orElseThrow(CourseException::runNotFound));
+		return courseRunAdministration.getRun(managerId, runId);
 	}
 
 	@Transactional
 	public CourseRunResponse createRun(UUID managerId, CourseRunCreateRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null)
-			throw CourseException.validation("request", "must be a JSON object");
-		String code = required(request.runCode(), 50, "runCode").toUpperCase(java.util.Locale.ROOT);
-		validateRun(request);
-		// Serialize creation with course deactivation so a new run cannot escape the cascade.
-		Course course = lockCourse(request.courseId());
-		if (course.getStatus() != CourseStatus.PUBLISHED) {
-			throw CourseException.validation("courseId", "must identify a published course");
-		}
-		Account coach = accounts.findById(request.primaryCoachId()).orElseThrow(() -> CourseException.validation("primaryCoachId", "must identify an active coach"));
-		if (coach.getRole() != AccountRole.COACH || coach.getStatus() != AccountStatus.ACTIVE) {
-			throw CourseException.validation("primaryCoachId", "must identify an active coach");
-		}
-		if (runs.existsByRunCode(code))
-			throw CourseException.duplicateRunCode();
-		CourseRun run = new CourseRun(UUID.randomUUID(), code, course, coach, request.tuitionVnd(), request.capacity(), request.minimumEnrollment(), request.registrationOpensAt(), request.registrationClosesAt(), request.plannedStartAt(), request.plannedEndAt(), request.totalUnits(), request.namedCoachCommitment());
-		try {
-			runs.saveAndFlush(run);
-		} catch (DataIntegrityViolationException exception) {
-			throw CourseException.duplicateRunCode();
-		}
-		audit(managerId, "COURSE_RUN_CREATED", "COURSE_RUN", run.getId(), null, snapshot(run));
-		return CourseRunResponse.from(run);
+		return courseRunAdministration.createRun(managerId, request);
 	}
 
 	@Transactional
 	CourseRunResponse patchRun(UUID managerId, UUID runId, CourseRunPatchRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		CourseRun run = lockRun(runId);
-		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
-		Map<String, Object> before = snapshot(run);
-		run.changeMinimumEnrollment(request.minimumEnrollment() == null ? 0 : request.minimumEnrollment());
-		runs.saveAndFlush(run);
-		audit(managerId, "COURSE_RUN_UPDATED", "COURSE_RUN", runId, before, snapshot(run));
-		return CourseRunResponse.from(run);
+		return courseRunAdministration.patchRun(managerId, runId, request);
 	}
 
 	@Transactional
 	public CourseRunResponse openRun(UUID managerId, UUID runId, CourseRunOpenRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		CourseRun run = lockRun(runId);
-		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
-		Map<String, Object> before = snapshot(run);
-		validateOpeningSchedule(run);
-		run.openForRegistration(request.policyVersion());
-		runs.saveAndFlush(run);
-		audit(managerId, "COURSE_RUN_OPENED", "COURSE_RUN", runId, before, snapshot(run));
-		return CourseRunResponse.from(run);
+		return courseRunAdministration.openRun(managerId, runId, request);
 	}
 
 	private void validateOpeningSchedule(CourseRun run) {
-		if (run.getCourse().getStatus() != CourseStatus.PUBLISHED)
-			throw CourseException.validation("courseId", "Khóa học phải đang công khai trước khi mở đăng ký.");
-		var schedule = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId());
-		if (schedule.size() != run.getTotalUnits())
-			throw CourseException.validation("sessions", "Phải xếp đủ lịch cho tất cả buổi học trước khi mở đăng ký.");
-		var numbers = new java.util.HashSet<Integer>();
-		Instant previousEnd = null;
-		Instant now = clock.instant();
-		for (var session : schedule) {
-			if (session.isMakeup() || session.getReplacementSession() != null || session.getStatus() != CourseSessionStatus.SCHEDULED || session.getUnitNumber() < 1 || session.getUnitNumber() > run.getTotalUnits() || !numbers.add(session.getUnitNumber()) || !session.getStartAt().isBefore(session.getEndAt()) || !session.getStartAt().isAfter(now) || session.getStartAt().isBefore(run.getPlannedStartAt()) || session.getEndAt().isAfter(run.getPlannedEndAt()) || (previousEnd != null && session.getStartAt().isBefore(previousEnd))) {
-				throw CourseException.validation("sessions", "Lịch học phải đủ số buổi, không trùng giờ và nằm trong thời gian dự kiến.");
-			}
-			previousEnd = session.getEndAt();
-		}
+		courseRunAdministration.validateOpeningSchedule(run);
 	}
 
 	@Transactional
 	public CourseRunResponse patchRunSchedule(UUID managerId, UUID runId, CourseRunScheduleRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null || request.plannedStartAt() == null || request.plannedEndAt() == null || request.totalUnits() == null || !request.plannedStartAt().isBefore(request.plannedEndAt()) || request.totalUnits() <= 0) {
-			throw CourseException.validation("schedule", "must define an ordered schedule and positive totalUnits");
-		}
-		CourseRun run = lockRun(runId);
-		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
-		if (run.getStatus() == CourseRunStatus.COMPLETED || run.getStatus() == CourseRunStatus.CANCELLED || run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING)
-			throw CourseException.invalidTransition();
-		if (request.plannedStartAt().isBefore(run.getRegistrationClosesAt()))
-			throw CourseException.validation("plannedStartAt", "must not precede registration closing");
-		if (request.totalUnits() > run.getTotalUnits() && run.getStatus() != CourseRunStatus.DRAFT)
-			throw CourseException.validation("totalUnits", "cannot increase after the Run is opened");
-		List<CourseSession> current = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId);
-		for (CourseSession session : current) {
-			if (session.getStatus() == CourseSessionStatus.REMOVED_BY_RUN_CHANGE)
-				continue;
-			if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
-				CourseSession effective = session.getReplacementSession() == null ? session : session.getReplacementSession();
-				if (!effective.getStartAt().isAfter(clock.instant()) || effective.getStatus() == CourseSessionStatus.COMPLETED)
-					throw CourseException.validation("totalUnits", "cannot remove units that have already started");
-			}
-			if (session.getUnitNumber() <= request.totalUnits() && session.getReplacementSession() == null && (session.getStartAt().isBefore(request.plannedStartAt()) || session.getEndAt().isAfter(request.plannedEndAt()))) {
-				throw CourseException.validation("plannedStartAt", "retained sessions must have a schedule inside the Run window");
-			}
-		}
-		CourseWithdrawalCause cause = scheduleCause(run, request);
-		Map<String, Object> before = snapshot(run);
-		Instant oldStart = run.getPlannedStartAt(), oldEnd = run.getPlannedEndAt();
-		int oldUnits = run.getTotalUnits();
-		run.changeSchedule(request.plannedStartAt(), request.plannedEndAt(), request.totalUnits());
-		runs.saveAndFlush(run);
-		UUID eventId = UUID.randomUUID();
-		db.update("""
-			insert into course_schedule_change_events(id,course_run_id,actor_account_id,cause_code,
-			old_planned_start_at,old_planned_end_at,new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
-			values(?,?,?,?,?,?,?,?,?,?)
-			""", eventId, runId, managerId, cause.name(), Timestamp.from(oldStart), Timestamp.from(oldEnd), Timestamp.from(request.plannedStartAt()), Timestamp.from(request.plannedEndAt()), oldUnits, request.totalUnits());
-		if (request.totalUnits() < oldUnits) {
-			for (CourseSession session : current) if (!session.isMakeup() && session.getUnitNumber() > request.totalUnits()) {
-				session.removeByRunChange();
-				sessions.saveAndFlush(session);
-				if (session.getReplacementSession() != null) {
-					session.getReplacementSession().removeByRunChange();
-					sessions.saveAndFlush(session.getReplacementSession());
-				}
-				db.update("update course_enrollment_sessions set disposition='REMOVED_BY_RUN_CHANGE' " + "where course_run_id=? and unit_number=? and disposition='ENROLLED'", runId, session.getUnitNumber());
-			}
-		}
-		sessions.flush();
-		if (request.totalUnits() < oldUnits)
-			CourseUnitRefunds.reduced(db, runId, eventId, managerId, clock.instant());
-		if (scheduleChanges != null)
-			scheduleChanges.createRunScheduleResponses(eventId, run, cause);
-		Map<String, Object> after = snapshot(run);
-		after.put("changeEventId", eventId.toString());
-		after.put("cause", cause.name());
-		audit(managerId, "COURSE_RUN_SCHEDULE_CHANGED", "COURSE_RUN", runId, before, after);
-		return CourseRunResponse.from(run);
+		return courseRunAdministration.patchRunSchedule(managerId, runId, request);
 	}
 
 	private CourseWithdrawalCause scheduleCause(CourseRun run, CourseRunScheduleRequest request) {
-		if (request.totalUnits() < run.getTotalUnits())
-			return CourseWithdrawalCause.REDUCED_UNIT_COUNT;
-		if (Duration.between(run.getPlannedStartAt(), request.plannedStartAt()).compareTo(Duration.ofDays(7)) > 0)
-			return CourseWithdrawalCause.START_DELAY_OVER_7_DAYS;
-		return CourseWithdrawalCause.VOLUNTARY;
+		return courseRunAdministration.scheduleCause(run, request);
 	}
 
 	@Transactional
 	public CourseRunResponse cancelRun(UUID managerId, UUID runId, VersionRequest request) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		if (request.reason() != null && (request.reason().trim().length() < 5 || request.reason().length() > 1000))
-			throw CourseException.validation("reason", "must contain between 5 and 1000 characters");
-		CourseRun run = lockRun(runId);
-		checkVersion(run.getVersion(), request.expectedVersion(), CourseException::runChanged);
-		Map<String, Object> before = snapshot(run);
-		run.cancel();
-		runs.saveAndFlush(run);
-		runClosure.cancelEffects(managerId, run);
-		Map<String, Object> after = snapshot(run);
-		after.put("reasonCode", "MANAGER_CANCELLED");
-		if (request.reason() != null)
-			after.put("reason", request.reason().trim());
-		audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, before, after);
-		return CourseRunResponse.from(run);
+		return courseRunAdministration.cancelRun(managerId, runId, request);
 	}
 
 	@Transactional(readOnly = true)
@@ -468,146 +250,58 @@ public class CourseManagementService {
 	}
 
 	private CourseResponse transitionCourse(UUID managerId, UUID courseId, VersionRequest request, String action, java.util.function.Consumer<Course> transition) {
-		ensureActiveManager(managerId);
-		if (request == null || request.expectedVersion() == null) {
-			throw CourseException.validation("expectedVersion", "is required");
-		}
-		Course course = lockCourse(courseId);
-		checkVersion(course.getVersion(), request.expectedVersion(), CourseException::changed);
-		Map<String, Object> before = snapshot(course);
-		transition.accept(course);
-		courses.saveAndFlush(course);
-		Map<String, Object> after = snapshot(course);
-		if (course.getStatus() == CourseStatus.INACTIVE || course.getStatus() == CourseStatus.ARCHIVED) {
-			after.put("cancelledRunIds", cancelUnstartedRuns(managerId, courseId, action));
-		}
-		audit(managerId, action, "COURSE", courseId, before, after);
-		return CourseResponse.from(course);
+		return courseAdministration.transitionCourse(managerId, courseId, request, action, transition);
 	}
 
 	private List<String> cancelUnstartedRuns(UUID managerId, UUID courseId, String reasonCode) {
-		var cancelledIds = new java.util.ArrayList<String>();
-		for (UUID runId : runs.findIdsByCourseId(courseId)) {
-			CourseRun run = lockRun(runId);
-			// Check after locking, including the wall-clock boundary if the scheduler is late.
-			Instant now = clock.instant();
-			if (!run.getPlannedStartAt().isAfter(now) || (run.getStatus() != CourseRunStatus.DRAFT && run.getStatus() != CourseRunStatus.OPEN_FOR_REGISTRATION && run.getStatus() != CourseRunStatus.CONFIRMED))
-				continue;
-			Map<String, Object> beforeRun = snapshot(run);
-			run.cancel();
-			runs.saveAndFlush(run);
-			runClosure.cancelEffects(managerId, run, now);
-			Map<String, Object> afterRun = snapshot(run);
-			afterRun.put("reasonCode", reasonCode);
-			afterRun.put("courseId", courseId.toString());
-			audit(managerId, "COURSE_RUN_CANCELLED", "COURSE_RUN", runId, beforeRun, afterRun);
-			cancelledIds.add(runId.toString());
-		}
-		return cancelledIds;
+		return courseAdministration.cancelUnstartedRuns(managerId, courseId, reasonCode);
 	}
 
 	private Course lockCourse(UUID id) {
-		return courses.findByIdForUpdate(id).orElseThrow(CourseException::notFound);
+		return courseAdministration.lockCourse(id);
 	}
 
 	private CourseRun lockRun(UUID id) {
-		return runs.findByIdForUpdate(id).orElseThrow(CourseException::runNotFound);
+		return courseAdministration.lockRun(id);
 	}
 
 	private void ensureActiveManager(UUID managerId) {
-		if (!accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)) {
-			throw new InvalidAuthenticatedAccountException();
-		}
+		courseAdministration.ensureActiveManager(managerId);
 	}
 
 	private void validateRun(CourseRunCreateRequest request) {
-		BigInteger tuition = request.tuitionVnd();
-		if (tuition == null || tuition.signum() <= 0 || tuition.toString().length() > 19) {
-			throw CourseException.validation("tuitionVnd", "must be a positive integer with at most 19 digits");
-		}
-		if (request.capacity() <= 0)
-			throw CourseException.validation("capacity", "must be greater than zero");
-		if (request.minimumEnrollment() <= 0 || request.minimumEnrollment() > request.capacity()) {
-			throw CourseException.validation("minimumEnrollment", "must be between 1 and capacity");
-		}
-		if (request.registrationOpensAt() == null || request.registrationClosesAt() == null || request.plannedStartAt() == null || request.plannedEndAt() == null || !request.registrationOpensAt().isBefore(request.registrationClosesAt()) || request.registrationClosesAt().isAfter(request.plannedStartAt()) || !request.plannedStartAt().isBefore(request.plannedEndAt())) {
-			throw CourseException.validation("schedule", "must define ordered half-open registration and course windows");
-		}
-		if (request.totalUnits() <= 0)
-			throw CourseException.validation("totalUnits", "must be greater than zero");
+		courseRunAdministration.validateRun(request);
 	}
 
 	private String required(String value, int max, String field) {
-		if (value == null || value.trim().isEmpty() || value.trim().length() > max) {
-			throw CourseException.validation(field, "must be non-blank and at most " + max + " characters");
-		}
-		return value.trim();
+		return courseAdministration.required(value, max, field);
 	}
 
 	private String optional(String value, int max, String field) {
-		if (value == null)
-			return null;
-		if (value.length() > max) {
-			throw CourseException.validation(field, "must be at most " + max + " characters");
-		}
-		return value.trim().isEmpty() ? null : value.trim();
+		return courseAdministration.optional(value, max, field);
 	}
 
 	private void checkVersion(Long actual, Long expected, java.util.function.Supplier<CourseException> error) {
-		if (!Objects.equals(actual, expected))
-			throw error.get();
+		courseAdministration.checkVersion(actual, expected, error);
 	}
 
 	private void audit(UUID actorId, String action, String targetType, UUID targetId, Map<String, Object> before, Map<String, Object> after) {
-		audits.save(new AuditEvent(UUID.randomUUID(), actorId, action, targetType, targetId, null, before, after));
+		courseAdministration.audit(actorId, action, targetType, targetId, before, after);
 	}
 
 	private Map<String, Object> snapshot(Course course) {
-		Map<String, Object> data = new LinkedHashMap<>();
-		data.put("code", course.getCode());
-		data.put("name", course.getName());
-		data.put("description", course.getDescription());
-		data.put("disciplineId", course.getDiscipline().getId());
-		data.put("imageUrl", course.getImageUrl());
-		data.put("defaultMinimumEnrollment", course.getDefaultMinimumEnrollment());
-		data.put("status", course.getStatus().name());
-		data.put("submittedByAccountId", course.getSubmittedByAccountId());
-		data.put("submittedAt", course.getSubmittedAt() == null ? null : course.getSubmittedAt().toString());
-		data.put("reviewedByAccountId", course.getReviewedByAccountId());
-		data.put("reviewedAt", course.getReviewedAt() == null ? null : course.getReviewedAt().toString());
-		data.put("reviewReason", course.getReviewReason());
-		return data;
+		return CourseManagementSnapshots.snapshot(course);
 	}
 
 	private Map<String, Object> snapshot(CourseRun run) {
-		Map<String, Object> data = new LinkedHashMap<>();
-		data.put("runCode", run.getRunCode());
-		data.put("courseId", run.getCourse().getId());
-		data.put("primaryCoachId", run.getPrimaryCoach().getId());
-		data.put("tuitionVnd", run.getTuitionVnd());
-		data.put("capacity", run.getCapacity());
-		data.put("minimumEnrollment", run.getMinimumEnrollment());
-		data.put("registrationOpensAt", run.getRegistrationOpensAt().toString());
-		data.put("registrationClosesAt", run.getRegistrationClosesAt().toString());
-		data.put("plannedStartAt", run.getPlannedStartAt().toString());
-		data.put("plannedEndAt", run.getPlannedEndAt().toString());
-		data.put("totalUnits", run.getTotalUnits());
-		data.put("namedCoachCommitment", run.isNamedCoachCommitment());
-		data.put("policyVersionSnapshot", run.getPolicyVersionSnapshot());
-		data.put("status", run.getStatus().name());
-		return data;
+		return CourseManagementSnapshots.snapshot(run);
 	}
 
 	private Map<String, Object> snapshot(CourseSession session) {
-		Map<String, Object> data = new LinkedHashMap<>();
-		data.put("runId", session.getCourseRun().getId());
-		data.put("unitNumber", session.getUnitNumber());
-		data.put("roomId", session.getRoom().getId());
-		data.put("coachId", session.getCoach().getId());
-		data.put("startAt", session.getStartAt().toString());
-		data.put("endAt", session.getEndAt().toString());
-		data.put("allocationVnd", session.getAllocationVnd());
-		data.put("status", session.getStatus().name());
-		return data;
+		return CourseManagementSnapshots.snapshot(session);
 	}
+
+	private final CourseAdministration courseAdministration;
+
+	private final CourseRunAdministration courseRunAdministration;
 }

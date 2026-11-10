@@ -9,12 +9,10 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
-import com.scms.backend.course.Course;
 import com.scms.backend.course.CourseTransferException;
 import com.scms.backend.course.enrollment.CourseEnrollmentResponse;
 import com.scms.backend.notification.NotificationWriter;
 import com.scms.backend.scheduling.booking.BookingRepository;
-import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -52,6 +50,8 @@ public class CourseTransferService {
 		this.notifications = notifications;
 		this.bookings = bookings;
 		this.clock = clock;
+		this.courseTransferRepository = new CourseTransferRepository(this.db);
+		this.courseTransferCompletion = new CourseTransferCompletion(this.db, this.audits, this.notifications, this.courseTransferRepository);
 	}
 
 	@Transactional
@@ -258,51 +258,7 @@ public class CourseTransferService {
 	}
 
 	private CourseEnrollmentResponse completeTransfer(TransferOffer offer, UUID orderId, UUID paymentId, UUID actorId, Instant now) {
-		if (!"ACTIVE".equals(db.queryForObject("select lifecycle_status from course_enrollments where id=? for update", String.class, offer.sourceEnrollmentId())))
-			throw CourseTransferException.conflict("COURSE_TRANSFER_SOURCE_INACTIVE", "The source Enrollment is not active.");
-		UUID reservationId = orderId == null ? null : db.queryForObject("select id from course_reservations where course_order_id=?", UUID.class, orderId);
-		UUID enrollmentId = UUID.randomUUID();
-		UUID initiatorId = orderId == null ? actorId : db.queryForObject("select actor_account_id from course_orders where id=?", UUID.class, orderId);
-		int totalUnits = db.queryForObject("select total_units from course_runs where id=?", Integer.class, offer.targetRunId());
-		BigInteger appliedCredit = offer.creditVnd().min(offer.targetTuitionVnd());
-		BigInteger cashPaid = offer.targetTuitionVnd().subtract(appliedCredit);
-		db.update("""
-			insert into course_enrollments(id,course_order_id,course_reservation_id,course_payment_id,member_account_id,
-			 actor_account_id,processed_by_account_id,course_run_id,amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at,
-			 lifecycle_status,source_transfer_offer_id,credit_applied_vnd,cash_paid_vnd)
-			 values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-			""", enrollmentId, orderId, reservationId, paymentId, offer.memberAccountId(), initiatorId, actorId, offer.targetRunId(), offer.targetTuitionVnd(), totalUnits, Timestamp.from(now), "ACTIVE", offer.id(), appliedCredit, cashPaid);
-		List<Map<String, Object>> units = rows("select id,unit_number,start_at from course_sessions where course_run_id=? and is_makeup=false order by unit_number,id", offer.targetRunId());
-		if (units.size() != totalUnits)
-			throw CourseTransferException.conflict("COURSE_TRANSFER_TARGET_SCHEDULE_INVALID", "The target schedule does not match its unit count.");
-		BigInteger[] split = offer.targetTuitionVnd().divideAndRemainder(BigInteger.valueOf(totalUnits));
-		for (int index = 0; index < units.size(); index++) {
-			Map<String, Object> unit = units.get(index);
-			BigInteger allocation = index == units.size() - 1 ? split[0].add(split[1]) : split[0];
-			db.update("insert into course_enrollment_sessions(id,course_enrollment_id,course_session_id,course_run_id,unit_number,allocation_vnd,disposition) values(?,?,?,?,?,?,?)", UUID.randomUUID(), enrollmentId, uuid(unit, "id"), offer.targetRunId(), number(unit, "unit_number"), allocation, instant(unit, "start_at").isBefore(now) ? "NOT_ENROLLED" : "ENROLLED");
-		}
-		db.update("update course_enrollments set lifecycle_status='TRANSFERRED' where id=? and lifecycle_status='ACTIVE'", offer.sourceEnrollmentId());
-		db.update("update course_reservations set status='TRANSFERRED',updated_at=? where id=(select course_reservation_id from course_enrollments where id=?) and status='ENROLLED'", Timestamp.from(now), offer.sourceEnrollmentId());
-		db.update("update course_transfer_holds set status='CONSUMED',released_at=? where transfer_offer_id=? and status='HELD'", Timestamp.from(now), offer.id());
-		db.update("update course_transfer_offers set status='COMPLETED',completed_at=? where id=?", Timestamp.from(now), offer.id());
-		db.update("update course_transfer_requests set status='COMPLETED',completed_at=? where id=?", Timestamp.from(now), offer.requestId());
-		if (offer.creditVnd().compareTo(offer.targetTuitionVnd()) > 0)
-			db.update("""
-				insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd,
-				 requester_account_id,request_reason)
-				values(?,?,?,'TRANSFER_CREDIT_EXCESS',?,?,'Unused Course transfer credit refund')
-				on conflict(course_enrollment_id,source_type,source_event_id) do nothing
-				""", UUID.randomUUID(), offer.sourceEnrollmentId(), offer.sourceRunId(), offer.creditVnd().subtract(offer.targetTuitionVnd()), actorId);
-		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_TRANSFER_COMPLETED", "COURSE_TRANSFER_OFFER", offer.id(), Map.of("sourceEnrollmentId", offer.sourceEnrollmentId().toString(), "targetEnrollmentId", enrollmentId.toString(), "creditVnd", appliedCredit.toString(), "cashPaidVnd", cashPaid.toString())));
-		Map<String, Object> completionPayload = new java.util.LinkedHashMap<>();
-		completionPayload.put("targetEnrollmentId", enrollmentId.toString());
-		completionPayload.put("targetRunId", offer.targetRunId().toString());
-		completionPayload.put("memberAccountId", offer.memberAccountId().toString());
-		completionPayload.put("actorAccountId", actorId == null ? null : actorId.toString());
-		completionPayload.put("initiatorAccountId", initiatorId.toString());
-		notifications.write("course-transfer-completed:" + offer.id(), offer.memberAccountId(), "COURSE_TRANSFER_COMPLETED", "COURSE_TRANSFER_OFFER", offer.id(), completionPayload);
-		for (UUID managerId : db.queryForList("select id from accounts where role='MANAGER' and status='ACTIVE'", UUID.class)) notifications.write("course-transfer-completed:" + offer.id() + ":" + managerId, managerId, "COURSE_TRANSFER_COMPLETED", "COURSE_TRANSFER_OFFER", offer.id(), completionPayload);
-		return new CourseEnrollmentResponse(enrollmentId, orderId, offer.memberAccountId(), offer.targetRunId(), offer.targetTuitionVnd(), totalUnits, now);
+		return courseTransferCompletion.completeTransfer(offer, orderId, paymentId, actorId, now);
 	}
 
 	private UUID createDifferenceOrder(TransferOffer offer, UUID actorId, Instant now) {
@@ -340,55 +296,35 @@ public class CourseTransferService {
 	}
 
 	private BigInteger unusedCredit(UUID enrollmentId, Instant now) {
-		List<CourseTransferPolicy.UnitAllocation> units = db.query("""
-			select s.start_at,es.allocation_vnd from course_enrollment_sessions es
-			join course_sessions s on s.id=es.course_session_id where es.course_enrollment_id=? and not exists (select 1 from course_refund_unit_claims c where c.enrollment_session_id=es.id)
-			""", (rs, n) -> new CourseTransferPolicy.UnitAllocation(rs.getTimestamp(1).toInstant(), rs.getBigDecimal(2).toBigIntegerExact()), enrollmentId);
-		return CourseTransferPolicy.unusedCredit(units, now);
+		return courseTransferRepository.unusedCredit(enrollmentId, now);
 	}
 
 	private long usedSeats(UUID runId, Instant now) {
-		return usedSeatsExcludingOffer(runId, null, now);
+		return courseTransferRepository.usedSeats(runId, now);
 	}
 
 	private long usedSeatsExcludingOffer(UUID runId, UUID excludedOfferId, Instant now) {
-		return db.queryForObject("""
-			select (select count(*) from course_enrollments where course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))
-			 +(select count(*) from course_reservations where course_run_id=? and status='HELD' and expires_at>?)
-			 +(select count(*) from course_waitlists where course_run_id=? and status='INVITED' and invitation_expires_at>?)
-			 +(select count(*) from course_transfer_holds where target_run_id=? and status='HELD' and expires_at>?
-			   and (?::uuid is null or transfer_offer_id<>?))
-			""", Long.class, runId, runId, Timestamp.from(now), runId, Timestamp.from(now), runId, Timestamp.from(now), excludedOfferId, excludedOfferId);
+		return courseTransferRepository.usedSeatsExcludingOffer(runId, excludedOfferId, now);
 	}
 
 	private boolean hasScheduleConflict(UUID memberId, UUID sourceRunId, UUID targetRunId) {
-		return Boolean.TRUE.equals(db.queryForObject("""
-			select exists(select 1 from course_sessions target
-			 join course_enrollment_sessions existing_session on existing_session.disposition='ENROLLED'
-			 join course_enrollments existing on existing.id=existing_session.course_enrollment_id
-			 join course_sessions existing_time on existing_time.id=existing_session.course_session_id
-			 where target.course_run_id=? and target.status in ('SCHEDULED','MAKEUP_SCHEDULED')
-			 and existing.member_account_id=? and existing.lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING') and existing.course_run_id<>?
-			 and existing_time.start_at<target.end_at and existing_time.end_at>target.start_at)
-			""", Boolean.class, targetRunId, memberId, sourceRunId));
+		return courseTransferRepository.hasScheduleConflict(memberId, sourceRunId, targetRunId);
 	}
 
 	private TransferTarget target(ResultSet rs, Instant now) throws SQLException {
-		UUID id = rs.getObject("id", UUID.class);
-		Timestamp next = rs.getTimestamp("next_session_at");
-		return new TransferTarget(id, rs.getString("run_code"), rs.getString("course_code"), rs.getString("course_name"), rs.getBigDecimal("tuition_vnd").toBigIntegerExact(), rs.getInt("capacity"), usedSeats(id, now), rs.getTimestamp("registration_closes_at").toInstant(), next == null ? null : next.toInstant());
+		return courseTransferRepository.target(rs, now);
 	}
 
 	private void lockRuns(UUID first, UUID second) {
-		for (UUID id : List.of(first, second).stream().distinct().sorted().toList()) db.queryForObject("select id from course_runs where id=? for update", UUID.class, id);
+		courseTransferRepository.lockRuns(first, second);
 	}
 
 	private int capacity(UUID runId) {
-		return db.queryForObject("select capacity from course_runs where id=?", Integer.class, runId);
+		return courseTransferRepository.capacity(runId);
 	}
 
 	private boolean activeEnrollmentExists(UUID memberId, UUID runId) {
-		return Boolean.TRUE.equals(db.queryForObject("select exists(select 1 from course_enrollments where member_account_id=? and course_run_id=? and lifecycle_status in ('ACTIVE','WITHDRAWAL_PENDING'))", Boolean.class, memberId, runId));
+		return courseTransferRepository.activeEnrollmentExists(memberId, runId);
 	}
 
 	private void active(UUID id, AccountRole role) {
@@ -409,56 +345,55 @@ public class CourseTransferService {
 	}
 
 	private TransferRequest lockRequest(UUID id) {
-		return db.query(requestSelect() + " where tr.id=? for update of tr", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		return courseTransferRepository.lockRequest(id);
 	}
 
 	private TransferRequest findRequest(UUID id) {
-		return db.query(requestSelect() + " where tr.id=?", this::mapRequest, id).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		return courseTransferRepository.findRequest(id);
 	}
 
 	private TransferRequest findRequestByResponse(UUID id) {
-		return db.query(requestSelect() + " where tr.schedule_change_response_id=?", this::mapRequest, id).stream().findFirst().orElse(null);
+		return courseTransferRepository.findRequestByResponse(id);
 	}
 
 	private TransferOffer lockOffer(UUID memberId, UUID id) {
-		return db.query(offerSelect() + " where transfer.id=? and transfer.member_account_id=? for update of transfer", this::mapOffer, id, memberId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		return courseTransferRepository.lockOffer(memberId, id);
 	}
 
 	private TransferOffer findOffer(UUID id) {
-		return db.query(offerSelect() + " where transfer.id=?", this::mapOffer, id).stream().findFirst().orElseThrow(CourseTransferException::notFound);
+		return courseTransferRepository.findOffer(id);
 	}
 
 	private TransferOffer findOfferByRequest(UUID id) {
-		return db.query(offerSelect() + " where transfer.transfer_request_id=?", this::mapOffer, id).stream().findFirst().orElse(null);
+		return courseTransferRepository.findOfferByRequest(id);
 	}
 
 	private CourseEnrollmentResponse targetEnrollment(UUID offerId) {
-		Map<String, Object> row = rows("select id,course_order_id,member_account_id,course_run_id,amount_paid_vnd_snapshot,total_units_snapshot,enrolled_at from course_enrollments where source_transfer_offer_id=?", offerId).stream().findFirst().orElseThrow(CourseTransferException::notFound);
-		return new CourseEnrollmentResponse(uuid(row, "id"), uuid(row, "course_order_id"), uuid(row, "member_account_id"), uuid(row, "course_run_id"), amount(row, "amount_paid_vnd_snapshot"), number(row, "total_units_snapshot"), instant(row, "enrolled_at"));
+		return courseTransferRepository.targetEnrollment(offerId);
 	}
 
 	private String requestSelect() {
-		return "select tr.*,member.id member_id,mp.member_code member_code_display,member.full_name member_name_display," + "source_course.id source_course_id_display,source_course.code source_course_code_display,source_course.name source_course_name_display," + "source_run.run_code source_run_code_display,source_run.status source_course_run_status_display," + "target_course.id target_course_id_display,target_course.code target_course_code_display,target_course.name target_course_name_display," + "target_run.run_code target_run_code_display,target_run.status target_course_run_status_display " + "from course_transfer_requests tr join accounts member on member.id=tr.member_account_id " + "left join member_profiles mp on mp.account_id=member.id " + "left join course_runs source_run on source_run.id=tr.source_run_id " + "left join courses source_course on source_course.id=source_run.course_id " + "left join course_runs target_run on target_run.id=tr.target_run_id " + "left join courses target_course on target_course.id=target_run.course_id";
+		return courseTransferRepository.requestSelect();
 	}
 
 	private String offerSelect() {
-		return "select transfer.*,member.id member_id,mp.member_code member_code_display,member.full_name member_name_display," + "source_course.id source_course_id_display,source_course.code source_course_code_display,source_course.name source_course_name_display," + "source_run.run_code source_run_code_display,source_run.status source_course_run_status_display," + "target_course.id target_course_id_display,target_course.code target_course_code_display,target_course.name target_course_name_display," + "target_run.run_code target_run_code_display,target_run.status target_course_run_status_display " + "from course_transfer_offers transfer join accounts member on member.id=transfer.member_account_id " + "left join member_profiles mp on mp.account_id=member.id " + "left join course_runs source_run on source_run.id=transfer.source_run_id " + "left join courses source_course on source_course.id=source_run.course_id " + "left join course_runs target_run on target_run.id=transfer.target_run_id " + "left join courses target_course on target_course.id=target_run.course_id";
+		return courseTransferRepository.offerSelect();
 	}
 
 	private TransferRequest mapRequest(ResultSet rs, int n) throws SQLException {
-		return new TransferRequest(rs.getObject("id", UUID.class), rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("source_enrollment_id", UUID.class), rs.getObject("source_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getString("status"), rs.getObject("target_run_id", UUID.class), rs.getString("reason"), rs.getTimestamp("requested_at").toInstant(), rs.getObject("decided_by_account_id", UUID.class), rs.getTimestamp("decided_at") == null ? null : rs.getTimestamp("decided_at").toInstant(), rs.getObject("member_id", UUID.class), rs.getString("member_code_display"), rs.getString("member_name_display"), rs.getObject("source_course_id_display", UUID.class), rs.getString("source_course_code_display"), rs.getString("source_course_name_display"), rs.getString("source_run_code_display"), rs.getString("source_course_run_status_display"), rs.getObject("target_course_id_display", UUID.class), rs.getString("target_course_code_display"), rs.getString("target_course_name_display"), rs.getString("target_run_code_display"), rs.getString("target_course_run_status_display"));
+		return courseTransferRepository.mapRequest(rs, n);
 	}
 
 	private TransferOffer mapOffer(ResultSet rs, int n) throws SQLException {
-		return new TransferOffer(rs.getObject("id", UUID.class), rs.getObject("transfer_request_id", UUID.class), rs.getObject("source_enrollment_id", UUID.class), rs.getObject("source_run_id", UUID.class), rs.getObject("target_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getBigDecimal("credit_vnd_snapshot").toBigIntegerExact(), rs.getBigDecimal("target_tuition_vnd_snapshot").toBigIntegerExact(), rs.getBigDecimal("difference_vnd_snapshot").toBigIntegerExact(), rs.getTimestamp("expires_at").toInstant(), rs.getString("status"), rs.getObject("difference_order_id", UUID.class), rs.getTimestamp("accepted_at") == null ? null : rs.getTimestamp("accepted_at").toInstant(), rs.getObject("member_id", UUID.class), rs.getString("member_code_display"), rs.getString("member_name_display"), rs.getObject("source_course_id_display", UUID.class), rs.getString("source_course_code_display"), rs.getString("source_course_name_display"), rs.getString("source_run_code_display"), rs.getString("source_course_run_status_display"), rs.getObject("target_course_id_display", UUID.class), rs.getString("target_course_code_display"), rs.getString("target_course_name_display"), rs.getString("target_run_code_display"), rs.getString("target_course_run_status_display"));
+		return courseTransferRepository.mapOffer(rs, n);
 	}
 
 	private List<Map<String, Object>> rows(String sql, Object... args) {
-		return db.queryForList(sql, args);
+		return courseTransferCompletion.rows(sql, args);
 	}
 
 	private static UUID uuid(Map<String, Object> row, String key) {
-		return (UUID) row.get(key);
+		return CourseTransferCompletion.uuid(row, key);
 	}
 
 	private static String text(Map<String, Object> row, String key) {
@@ -466,15 +401,18 @@ public class CourseTransferService {
 	}
 
 	private static int number(Map<String, Object> row, String key) {
-		return ((Number) row.get(key)).intValue();
+		return CourseTransferCompletion.number(row, key);
 	}
 
 	private static BigInteger amount(Map<String, Object> row, String key) {
-		return new BigDecimal(row.get(key).toString()).toBigIntegerExact();
+		return CourseTransferRepository.amount(row, key);
 	}
 
 	private static Instant instant(Map<String, Object> row, String key) {
-		Object value = row.get(key);
-		return value == null ? null : value instanceof Instant i ? i : ((Timestamp) value).toInstant();
+		return CourseTransferCompletion.instant(row, key);
 	}
+
+	private final CourseTransferRepository courseTransferRepository;
+
+	private final CourseTransferCompletion courseTransferCompletion;
 }

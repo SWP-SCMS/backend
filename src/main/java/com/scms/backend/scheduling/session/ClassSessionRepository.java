@@ -1,10 +1,6 @@
 package com.scms.backend.scheduling.session;
 
 import com.scms.backend.scheduling.ClassSession;
-import com.scms.backend.scheduling.ClassSessionStatus;
-import com.scms.backend.scheduling.CoachLeaveRequest;
-import com.scms.backend.scheduling.CoachLeaveStatus;
-import com.scms.backend.scheduling.SportClassType;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;

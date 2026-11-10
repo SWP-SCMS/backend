@@ -8,7 +8,6 @@ import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
 import com.scms.backend.notification.NotificationOutboxDispatcher;
-import com.scms.backend.scheduling.Booking;
 import com.scms.backend.scheduling.BookingException;
 import com.scms.backend.scheduling.BookingStatus;
 import com.scms.backend.scheduling.ClassSession;
