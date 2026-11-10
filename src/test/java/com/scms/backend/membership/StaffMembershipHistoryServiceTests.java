@@ -10,7 +10,17 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.membership.payment.PaymentFulfillmentService;
+import com.scms.backend.membership.payment.PaymentService;
+import com.scms.backend.membership.plan.MembershipBenefitResponse;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -20,15 +30,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.account.MemberProfile;
-import com.scms.backend.account.MemberProfileRepository;
-import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,18 +42,24 @@ import org.springframework.jdbc.core.RowMapper;
 class StaffMembershipHistoryServiceTests {
 
 	private static final Instant NOW = Instant.parse("2026-10-18T12:00:00Z");
+
 	private final JdbcTemplate db = mock(JdbcTemplate.class);
+
 	private final AccountRepository accounts = mock(AccountRepository.class);
+
 	private final AuditEventRepository audits = mock(AuditEventRepository.class);
+
 	private final PaymentFulfillmentService fulfillment = mock(PaymentFulfillmentService.class);
+
 	private final MemberProfileRepository profiles = mock(MemberProfileRepository.class);
+
 	private final MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
+
 	private PaymentService service;
 
 	@BeforeEach
 	void setUp() {
-		service = new PaymentService(db, accounts, audits, fulfillment, profiles, lifecycle,
-			Clock.fixed(NOW, ZoneOffset.UTC));
+		service = new PaymentService(db, accounts, audits, fulfillment, profiles, lifecycle, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
 	@ParameterizedTest
@@ -60,13 +67,9 @@ class StaffMembershipHistoryServiceTests {
 	void receptionistCanReadEmptyHistoryForVisibleMember(AccountStatus targetStatus) {
 		UUID actor = UUID.randomUUID();
 		Account member = account(AccountRole.MEMBER, targetStatus);
-		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
-			.thenReturn(true);
-		when(profiles.findVisibleMemberByCode("MB-100001", AccountRole.MEMBER,
-			List.of(AccountStatus.ACTIVE, AccountStatus.SUSPENDED)))
-			.thenReturn(Optional.of(new MemberProfile(member)));
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)).thenReturn(true);
+		when(profiles.findVisibleMemberByCode("MB-100001", AccountRole.MEMBER, List.of(AccountStatus.ACTIVE, AccountStatus.SUSPENDED))).thenReturn(Optional.of(new MemberProfile(member)));
 		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
-
 		assertThat(service.receptionMembershipHistory(actor, "MB-100001")).isEmpty();
 		verify(lifecycle).reconcile(member.getId(), NOW);
 	}
@@ -76,11 +79,9 @@ class StaffMembershipHistoryServiceTests {
 	void managerCanReadEmptyHistoryForMemberAccount(AccountStatus targetStatus) {
 		UUID actor = UUID.randomUUID();
 		Account member = account(AccountRole.MEMBER, targetStatus);
-		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MANAGER, AccountStatus.ACTIVE))
-			.thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(actor, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(accounts.findById(member.getId())).thenReturn(Optional.of(member));
 		when(db.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
-
 		assertThat(service.managerMembershipHistory(actor, member.getId())).isEmpty();
 		verify(lifecycle).reconcile(member.getId(), NOW);
 	}
@@ -88,11 +89,8 @@ class StaffMembershipHistoryServiceTests {
 	@Test
 	void inactiveAndCrossRoleStaffAreRejectedBeforeTargetLookup() {
 		UUID actor = UUID.randomUUID();
-
-		assertThatThrownBy(() -> service.receptionMembershipHistory(actor, "MB-100001"))
-			.isInstanceOf(InvalidAuthenticatedAccountException.class);
-		assertThatThrownBy(() -> service.managerMembershipHistory(actor, UUID.randomUUID()))
-			.isInstanceOf(InvalidAuthenticatedAccountException.class);
+		assertThatThrownBy(() -> service.receptionMembershipHistory(actor, "MB-100001")).isInstanceOf(InvalidAuthenticatedAccountException.class);
+		assertThatThrownBy(() -> service.managerMembershipHistory(actor, UUID.randomUUID())).isInstanceOf(InvalidAuthenticatedAccountException.class);
 		verify(profiles, never()).findVisibleMemberByCode(anyString(), any(), any());
 		verify(accounts, never()).findById(any());
 		verify(lifecycle, never()).reconcile(any(), any());
@@ -102,11 +100,8 @@ class StaffMembershipHistoryServiceTests {
 	void missingAndNonMemberTargetsUsePaymentNotFoundContract() {
 		UUID receptionist = UUID.randomUUID();
 		UUID manager = UUID.randomUUID();
-		when(accounts.existsByIdAndRoleAndStatus(receptionist, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
-			.thenReturn(true);
-		when(accounts.existsByIdAndRoleAndStatus(manager, AccountRole.MANAGER, AccountStatus.ACTIVE))
-			.thenReturn(true);
-
+		when(accounts.existsByIdAndRoleAndStatus(receptionist, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)).thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(manager, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
 		assertPaymentNotFound(() -> service.receptionMembershipHistory(receptionist, "MB-MISSING"));
 		assertPaymentNotFound(() -> service.managerMembershipHistory(manager, UUID.randomUUID()));
 		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE);
@@ -124,8 +119,7 @@ class StaffMembershipHistoryServiceTests {
 		Instant startsAt = Instant.parse("2026-10-01T01:02:03Z");
 		Instant firstEnd = Instant.parse("2026-11-01T01:02:03Z");
 		Instant secondEnd = Instant.parse("2026-10-18T11:59:59Z");
-		when(accounts.existsByIdAndRoleAndStatus(manager, AccountRole.MANAGER, AccountStatus.ACTIVE))
-			.thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(manager, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(accounts.findById(member.getId())).thenReturn(Optional.of(member));
 		ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
 		ArgumentCaptor<RowMapper<StaffMembershipResponse>> mapper = ArgumentCaptor.forClass(RowMapper.class);
@@ -142,18 +136,10 @@ class StaffMembershipHistoryServiceTests {
 				return List.of(benefitMapper.mapRow(rs, 0));
 			}
 			RowMapper<StaffMembershipResponse> historyMapper = invocation.getArgument(1);
-			return List.of(
-				map(historyMapper, firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd),
-				map(historyMapper, secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
+			return List.of(map(historyMapper, firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd), map(historyMapper, secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
 		});
-
 		List<StaffMembershipResponse> result = service.managerMembershipHistory(manager, member.getId());
-
-		assertThat(result).containsExactly(
-			new StaffMembershipResponse(firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd,
-				List.of("CLASS_BOOKING"), List.of(new MembershipBenefitResponse("CLASS_BOOKING", "Class booking",
-					"Book classes", MembershipBenefitStatus.ACTIVE))),
-			new StaffMembershipResponse(secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
+		assertThat(result).containsExactly(new StaffMembershipResponse(firstId, "PLUS", "Snapshot Plus", "ACTIVE", startsAt, firstEnd, List.of("CLASS_BOOKING"), List.of(new MembershipBenefitResponse("CLASS_BOOKING", "Class booking", "Book classes", MembershipBenefitStatus.ACTIVE))), new StaffMembershipResponse(secondId, "BASIC", "Snapshot Basic", "EXPIRED", startsAt, secondEnd));
 		assertThat(sql.getAllValues().getFirst()).contains("where member_account_id=?", "order by starts_at desc,id desc");
 		assertThat(sql.getAllValues().get(1)).contains("membership_plan_benefits", "where link.plan_code in (?,?)");
 		InOrder order = inOrder(lifecycle, db);
@@ -162,8 +148,7 @@ class StaffMembershipHistoryServiceTests {
 		order.verify(db).query(eq(sql.getAllValues().get(1)), any(RowMapper.class), any(Object[].class));
 	}
 
-	private StaffMembershipResponse map(RowMapper<StaffMembershipResponse> mapper, UUID id, String plan,
-			String offer, String status, Instant startsAt, Instant endsAt) throws Exception {
+	private StaffMembershipResponse map(RowMapper<StaffMembershipResponse> mapper, UUID id, String plan, String offer, String status, Instant startsAt, Instant endsAt) throws Exception {
 		ResultSet rs = mock(ResultSet.class);
 		when(rs.getObject("id", UUID.class)).thenReturn(id);
 		when(rs.getString("plan_code_snapshot")).thenReturn(plan);
@@ -176,8 +161,7 @@ class StaffMembershipHistoryServiceTests {
 
 	private Account account(AccountRole role, AccountStatus status) {
 		UUID id = UUID.randomUUID();
-		return new Account(id, role, status, role + " Test", "0900000000", id + "@example.test",
-			LocalDate.of(1990, 1, 1), "encoded-password");
+		return new Account(id, role, status, role + " Test", "0900000000", id + "@example.test", LocalDate.of(1990, 1, 1), "encoded-password");
 	}
 
 	private void assertPaymentNotFound(Runnable operation) {

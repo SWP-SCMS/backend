@@ -4,14 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import java.time.Clock;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.TimeZone;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -20,7 +12,12 @@ import com.scms.backend.account.MemberProfile;
 import com.scms.backend.account.MemberProfileRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
-
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.TimeZone;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -88,56 +85,36 @@ class FoundationIntegrationTests {
 	void postgresStartsFlywayAppliesAllMigrationsAndHibernateValidates() {
 		assertThat(postgres.isRunning()).isTrue();
 		assertThat(entityManagerFactory.isOpen()).isTrue();
-		assertThat(jdbcTemplate.queryForList(
-			"select version from flyway_schema_history where success order by installed_rank", String.class))
-			.containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13",
-				"14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74", "75", "76", "77");
+		assertThat(jdbcTemplate.queryForList("select version from flyway_schema_history where success order by installed_rank", String.class)).containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46", "47", "48", "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61", "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74", "75", "76", "77");
 		assertThat(jdbcTemplate.queryForObject("show timezone", String.class)).isIn("UTC", "Etc/UTC");
 	}
 
 	@Test
 	void sessionDurationMinimumConstraintsRemainNotValidForHistoricalRows() {
-		assertThat(jdbcTemplate.queryForObject(
-			"select convalidated from pg_constraint where conname = ?", Boolean.class,
-			"chk_class_sessions_min_duration")).isFalse();
-		assertThat(jdbcTemplate.queryForObject(
-			"select convalidated from pg_constraint where conname = ?", Boolean.class,
-			"chk_recurring_schedules_min_duration")).isFalse();
+		assertThat(jdbcTemplate.queryForObject("select convalidated from pg_constraint where conname = ?", Boolean.class, "chk_class_sessions_min_duration")).isFalse();
+		assertThat(jdbcTemplate.queryForObject("select convalidated from pg_constraint where conname = ?", Boolean.class, "chk_recurring_schedules_min_duration")).isFalse();
 	}
 
 	@Test
 	@Transactional
 	void accountAndMemberProfileRepositoriesUseTheMigratedSchema() {
 		UUID accountId = UUID.randomUUID();
-		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Foundation Member",
-			"090" + accountId.toString().substring(0, 8), accountId + "@example.test", LocalDate.of(1990, 1, 1),
-			"{noop}foundation-password");
-
+		Account account = new Account(accountId, AccountRole.MEMBER, AccountStatus.ACTIVE, "Foundation Member", "090" + accountId.toString().substring(0, 8), accountId + "@example.test", LocalDate.of(1990, 1, 1), "{noop}foundation-password");
 		Account savedAccount = accountRepository.saveAndFlush(account);
 		MemberProfile savedProfile = memberProfileRepository.saveAndFlush(new MemberProfile(account));
-
 		assertThat(savedAccount.getCreatedAt()).isNotNull();
 		assertThat(savedAccount.getUpdatedAt()).isNotNull();
 		assertThat(savedProfile.getMemberCode()).matches("MB-[0-9]+");
 		assertThat(savedProfile.getCreatedAt()).isNotNull();
 		assertThat(savedProfile.getUpdatedAt()).isNotNull();
 		entityManager.clear();
-
-		assertThat(accountRepository.findById(accountId))
-			.get()
-			.extracting(Account::getEmail)
-			.isEqualTo(accountId + "@example.test");
-		assertThat(memberProfileRepository.findById(accountId))
-			.get()
-			.extracting(MemberProfile::getMemberCode)
-			.asString()
-			.matches("MB-[0-9]+");
+		assertThat(accountRepository.findById(accountId)).get().extracting(Account::getEmail).isEqualTo(accountId + "@example.test");
+		assertThat(memberProfileRepository.findById(accountId)).get().extracting(MemberProfile::getMemberCode).asString().matches("MB-[0-9]+");
 	}
 
 	@Test
 	void passwordEncoderHashesAndVerifiesPasswords() {
 		String encoded = passwordEncoder.encode("correct horse battery staple");
-
 		assertThat(encoded).isNotEqualTo("correct horse battery staple");
 		assertThat(passwordEncoder.matches("correct horse battery staple", encoded)).isTrue();
 		assertThat(passwordEncoder.matches("wrong password", encoded)).isFalse();
@@ -146,8 +123,7 @@ class FoundationIntegrationTests {
 	@Test
 	void securityCorsAndUtcClockBeansStart() {
 		assertThat(securityFilterChain).isNotNull();
-		CorsConfiguration cors = corsConfigurationSource
-			.getCorsConfiguration(new MockHttpServletRequest("GET", "/api/v1/foundation"));
+		CorsConfiguration cors = corsConfigurationSource.getCorsConfiguration(new MockHttpServletRequest("GET", "/api/v1/foundation"));
 		assertThat(cors).isNotNull();
 		assertThat(cors.getAllowedOrigins()).containsExactly("http://localhost:5173");
 		assertThat(cors.getAllowCredentials()).isTrue();
@@ -156,12 +132,6 @@ class FoundationIntegrationTests {
 
 	@Test
 	void corsPreflightAllowsConfiguredCredentialedOrigin() throws Exception {
-		mockMvc.perform(options("/api/v1/foundation")
-			.contextPath("/api/v1")
-			.header(HttpHeaders.ORIGIN, "http://localhost:5173")
-			.header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
-			.andExpect(status().isOk())
-			.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173"))
-			.andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
+		mockMvc.perform(options("/api/v1/foundation").contextPath("/api/v1").header(HttpHeaders.ORIGIN, "http://localhost:5173").header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")).andExpect(status().isOk()).andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:5173")).andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true"));
 	}
 }

@@ -1,0 +1,166 @@
+package com.scms.backend.membership.order;
+
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.membership.FulfillmentMode;
+import com.scms.backend.membership.MemberNotActiveException;
+import com.scms.backend.membership.MembershipLifecycleService;
+import com.scms.backend.membership.MembershipOffer;
+import com.scms.backend.membership.MembershipOfferStatus;
+import com.scms.backend.membership.MembershipOfferUnavailableException;
+import com.scms.backend.membership.MembershipOrder;
+import com.scms.backend.membership.MembershipOrderMemberNotFoundException;
+import com.scms.backend.membership.MembershipOrderStatus;
+import com.scms.backend.membership.MembershipRenewalAlreadyExistsException;
+import com.scms.backend.membership.MembershipRepository;
+import com.scms.backend.membership.MembershipStatus;
+import com.scms.backend.membership.PendingMembershipOrderExistsException;
+import com.scms.backend.membership.offer.MembershipOfferRepository;
+import java.time.Instant;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class MembershipOrderService {
+
+	private static final Set<AccountStatus> ALL_MEMBER_STATUSES = Set.of(AccountStatus.values());
+
+	private final AccountRepository accountRepository;
+
+	private final MemberProfileRepository memberProfileRepository;
+
+	private final MembershipOfferRepository membershipOfferRepository;
+
+	private final MembershipRepository membershipRepository;
+
+	private final MembershipOrderRepository membershipOrderRepository;
+
+	private final MembershipLifecycleService lifecycle;
+
+	public MembershipOrderService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository, MembershipOfferRepository membershipOfferRepository, MembershipRepository membershipRepository, MembershipOrderRepository membershipOrderRepository, MembershipLifecycleService lifecycle) {
+		this.accountRepository = accountRepository;
+		this.memberProfileRepository = memberProfileRepository;
+		this.membershipOfferRepository = membershipOfferRepository;
+		this.membershipRepository = membershipRepository;
+		this.membershipOrderRepository = membershipOrderRepository;
+		this.lifecycle = lifecycle;
+	}
+
+	@Transactional
+	public MembershipOrderResponse createForMember(UUID actorAccountId, MembershipOrderCreateRequest request) {
+		MemberProfile member = findSelfMember(actorAccountId);
+		prepareMember(member);
+		MembershipOffer offer = findActiveOffer(request.offerId());
+		return create(actorAccountId, member, offer);
+	}
+
+	@Transactional
+	MembershipOrderResponse createForReceptionist(UUID actorAccountId, String memberId, MembershipOrderCreateRequest request) {
+		ensureActiveActor(actorAccountId, AccountRole.RECEPTIONIST);
+		MemberProfile member = findTargetMember(memberId);
+		prepareMember(member);
+		MembershipOffer offer = findActiveOffer(request.offerId());
+		return create(actorAccountId, member, offer);
+	}
+
+	@Transactional(readOnly = true)
+	Optional<MembershipOrderResponse> resumeForMember(UUID actorAccountId) {
+		MemberProfile member = findSelfMember(actorAccountId);
+		return findPending(member);
+	}
+
+	@Transactional(readOnly = true)
+	Optional<MembershipOrderResponse> resumeForReceptionist(UUID actorAccountId, String memberId) {
+		ensureActiveActor(actorAccountId, AccountRole.RECEPTIONIST);
+		return findPending(findTargetMember(memberId));
+	}
+
+	private MembershipOrderResponse create(UUID actorAccountId, MemberProfile member, MembershipOffer offer) {
+		UUID memberAccountId = member.getAccountId();
+		boolean active = membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.ACTIVE);
+		if (membershipRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipStatus.RESERVED)) {
+			throw new MembershipRenewalAlreadyExistsException();
+		}
+		if (membershipOrderRepository.existsByMemberAccountIdAndStatus(memberAccountId, MembershipOrderStatus.PENDING_PAYMENT)) {
+			if (active)
+				throw new MembershipRenewalAlreadyExistsException();
+			throw new PendingMembershipOrderExistsException();
+		}
+		UUID orderId = UUID.randomUUID();
+		String orderNumber = "ORD-" + orderId.toString().replace("-", "").toUpperCase(Locale.ROOT);
+		MembershipOrder order = new MembershipOrder(orderId, orderNumber, memberAccountId, actorAccountId, offer, active ? FulfillmentMode.RESERVED : FulfillmentMode.IMMEDIATE);
+		try {
+			membershipOrderRepository.saveAndFlush(order);
+		} catch (DataIntegrityViolationException exception) {
+			if (MembershipOrderConstraintDetector.isPendingMemberConstraint(exception)) {
+				if (active)
+					throw new MembershipRenewalAlreadyExistsException();
+				throw new PendingMembershipOrderExistsException();
+			}
+			throw exception;
+		}
+		return toResponse(order, member.getMemberCode());
+	}
+
+	private void prepareMember(MemberProfile member) {
+		ensureActiveMember(member);
+		lifecycle.reconcile(member.getAccountId(), Instant.now());
+		Account lockedMember = accountRepository.findByIdForUpdate(member.getAccountId()).orElseThrow(InvalidAuthenticatedAccountException::new);
+		if (lockedMember.getRole() != AccountRole.MEMBER)
+			throw new InvalidAuthenticatedAccountException();
+		if (lockedMember.getStatus() != AccountStatus.ACTIVE)
+			throw new MemberNotActiveException();
+	}
+
+	private Optional<MembershipOrderResponse> findPending(MemberProfile member) {
+		ensureActiveMember(member);
+		return membershipOrderRepository.findByMemberAccountIdAndStatus(member.getAccountId(), MembershipOrderStatus.PENDING_PAYMENT).map(order -> toResponse(order, member.getMemberCode()));
+	}
+
+	private MembershipOffer findActiveOffer(UUID offerId) {
+		membershipOfferRepository.findSellablePlanCodeForUpdate(offerId).orElseThrow(MembershipOfferUnavailableException::new);
+		return membershipOfferRepository.findByIdAndStatusAndActivePlan(offerId, MembershipOfferStatus.ACTIVE).orElseThrow(MembershipOfferUnavailableException::new);
+	}
+
+	private MemberProfile findSelfMember(UUID accountId) {
+		MemberProfile member = memberProfileRepository.findById(accountId).orElseThrow(InvalidAuthenticatedAccountException::new);
+		Account account = member.getAccount();
+		if (account.getRole() != AccountRole.MEMBER || account.getStatus() != AccountStatus.ACTIVE) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+		return member;
+	}
+
+	private MemberProfile findTargetMember(String memberId) {
+		if (memberId == null || memberId.isBlank()) {
+			throw new MembershipOrderMemberNotFoundException();
+		}
+		return memberProfileRepository.findVisibleMemberByCode(memberId.trim(), AccountRole.MEMBER, ALL_MEMBER_STATUSES).orElseThrow(MembershipOrderMemberNotFoundException::new);
+	}
+
+	private void ensureActiveActor(UUID accountId, AccountRole role) {
+		if (!accountRepository.existsByIdAndRoleAndStatus(accountId, role, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+	}
+
+	private void ensureActiveMember(MemberProfile member) {
+		if (member.getAccount().getStatus() != AccountStatus.ACTIVE) {
+			throw new MemberNotActiveException();
+		}
+	}
+
+	private MembershipOrderResponse toResponse(MembershipOrder order, String memberId) {
+		return new MembershipOrderResponse(order.getId(), order.getOrderNumber(), memberId, order.getOfferId(), order.getOfferNameSnapshot(), order.getPlanCodeSnapshot(), order.getPriceAmountSnapshot(), order.getCurrencyCodeSnapshot(), order.getDurationDaysSnapshot(), order.getPaymentMethod(), order.getStatus(), order.getCreatedAt(), order.getFulfillmentMode());
+	}
+}

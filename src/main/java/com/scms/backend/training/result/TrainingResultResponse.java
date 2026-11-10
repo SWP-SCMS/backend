@@ -1,0 +1,13 @@
+package com.scms.backend.training.result;
+
+import com.scms.backend.training.TrainingResult;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+public record TrainingResultResponse(UUID id, UUID memberAccountId, UUID coachAssignmentId, UUID trainingPlanVersionId, UUID classSessionId, Instant activityAt, Map<String, Object> content, UUID createdByAccountId, Instant createdAt, Instant updatedAt, UUID courseSessionId) {
+
+	public static TrainingResultResponse from(TrainingResult result) {
+		return new TrainingResultResponse(result.getId(), result.getMemberAccountId(), result.getCoachAssignmentId(), result.getTrainingPlanVersionId(), result.getClassSessionId(), result.getActivityAt(), result.getContent(), result.getCreatedByAccountId(), result.getCreatedAt(), result.getUpdatedAt(), result.getCourseSessionId());
+	}
+}

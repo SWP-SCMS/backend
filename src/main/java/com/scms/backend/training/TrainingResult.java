@@ -1,17 +1,16 @@
 package com.scms.backend.training;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -61,9 +60,7 @@ public class TrainingResult {
 	protected TrainingResult() {
 	}
 
-	public TrainingResult(UUID id, UUID memberAccountId, UUID coachAssignmentId,
-			UUID trainingPlanVersionId, Instant activityAt, Map<String, Object> content,
-			UUID createdByAccountId, Instant createdAt) {
+	public TrainingResult(UUID id, UUID memberAccountId, UUID coachAssignmentId, UUID trainingPlanVersionId, Instant activityAt, Map<String, Object> content, UUID createdByAccountId, Instant createdAt) {
 		this.id = Objects.requireNonNull(id);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
 		this.coachAssignmentId = Objects.requireNonNull(coachAssignmentId);
@@ -75,8 +72,7 @@ public class TrainingResult {
 		this.updatedAt = createdAt;
 	}
 
-	public static TrainingResult forClassSession(UUID id, UUID memberAccountId, UUID classSessionId,
-			Instant activityAt, Map<String, Object> content, UUID createdByAccountId, Instant createdAt) {
+	public static TrainingResult forClassSession(UUID id, UUID memberAccountId, UUID classSessionId, Instant activityAt, Map<String, Object> content, UUID createdByAccountId, Instant createdAt) {
 		TrainingResult result = new TrainingResult();
 		result.id = Objects.requireNonNull(id);
 		result.memberAccountId = Objects.requireNonNull(memberAccountId);
@@ -89,23 +85,23 @@ public class TrainingResult {
 		return result;
 	}
 
-	public void update(UUID trainingPlanVersionId, Instant activityAt, Map<String, Object> content,
-			Instant updatedAt) {
+	public void update(UUID trainingPlanVersionId, Instant activityAt, Map<String, Object> content, Instant updatedAt) {
 		this.trainingPlanVersionId = Objects.requireNonNull(trainingPlanVersionId);
 		this.activityAt = Objects.requireNonNull(activityAt);
 		this.content = new LinkedHashMap<>(Objects.requireNonNull(content));
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}
 
-	public static TrainingResult forCourseSession(UUID id, UUID memberId, UUID sessionId,
-			Instant activityAt, Map<String, Object> content, UUID coachId, Instant now) {
+	public static TrainingResult forCourseSession(UUID id, UUID memberId, UUID sessionId, Instant activityAt, Map<String, Object> content, UUID coachId, Instant now) {
 		TrainingResult result = forClassSession(id, memberId, sessionId, activityAt, content, coachId, now);
 		result.classSessionId = null;
 		result.courseSessionId = sessionId;
 		return result;
 	}
 
-	public void setSessionPlanVersion(UUID versionId) { this.trainingPlanVersionId = versionId; }
+	public void setSessionPlanVersion(UUID versionId) {
+		this.trainingPlanVersionId = versionId;
+	}
 
 	public void updateClassSessionResult(Instant activityAt, Map<String, Object> content, Instant updatedAt) {
 		this.activityAt = Objects.requireNonNull(activityAt);
@@ -113,18 +109,51 @@ public class TrainingResult {
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}
 
-	public UUID getId() { return id; }
-	public UUID getMemberAccountId() { return memberAccountId; }
-	public UUID getCoachAssignmentId() { return coachAssignmentId; }
-	public UUID getTrainingPlanVersionId() { return trainingPlanVersionId; }
-	public UUID getClassSessionId() { return classSessionId; }
-	public UUID getCourseSessionId() { return courseSessionId; }
-	public Instant getActivityAt() { return activityAt; }
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	public UUID getCoachAssignmentId() {
+		return coachAssignmentId;
+	}
+
+	public UUID getTrainingPlanVersionId() {
+		return trainingPlanVersionId;
+	}
+
+	public UUID getClassSessionId() {
+		return classSessionId;
+	}
+
+	public UUID getCourseSessionId() {
+		return courseSessionId;
+	}
+
+	public Instant getActivityAt() {
+		return activityAt;
+	}
+
 	public Map<String, Object> getContent() {
 		return Collections.unmodifiableMap(new LinkedHashMap<>(content));
 	}
-	public UUID getCreatedByAccountId() { return createdByAccountId; }
-	public Instant getCreatedAt() { return createdAt; }
-	public Instant getUpdatedAt() { return updatedAt; }
-	public Long getVersion() { return version; }
+
+	public UUID getCreatedByAccountId() {
+		return createdByAccountId;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public Instant getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
 }

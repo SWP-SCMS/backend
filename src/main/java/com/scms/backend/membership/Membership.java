@@ -1,11 +1,5 @@
 package com.scms.backend.membership;
 
-import java.math.BigInteger;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,6 +7,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -42,8 +41,7 @@ public class Membership {
 	@Column(name = "price_amount_snapshot", nullable = false, updatable = false)
 	private BigInteger priceAmountSnapshot;
 
-	@Column(name = "currency_code_snapshot", nullable = false, updatable = false, length = 3,
-		columnDefinition = "char(3)")
+	@Column(name = "currency_code_snapshot", nullable = false, updatable = false, length = 3, columnDefinition = "char(3)")
 	@JdbcTypeCode(SqlTypes.CHAR)
 	private String currencyCodeSnapshot;
 
@@ -73,9 +71,7 @@ public class Membership {
 	protected Membership() {
 	}
 
-	Membership(UUID id, UUID memberAccountId, UUID orderId, UUID offerId, String planCodeSnapshot,
-			String offerNameSnapshot, BigInteger priceAmountSnapshot, String currencyCodeSnapshot,
-			int durationDaysSnapshot, MembershipStatus status, Instant startsAt, Instant endsAt) {
+	public Membership(UUID id, UUID memberAccountId, UUID orderId, UUID offerId, String planCodeSnapshot, String offerNameSnapshot, BigInteger priceAmountSnapshot, String currencyCodeSnapshot, int durationDaysSnapshot, MembershipStatus status, Instant startsAt, Instant endsAt) {
 		this.id = Objects.requireNonNull(id);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
 		this.orderId = Objects.requireNonNull(orderId);
@@ -84,7 +80,8 @@ public class Membership {
 		this.offerNameSnapshot = Objects.requireNonNull(offerNameSnapshot);
 		this.priceAmountSnapshot = Objects.requireNonNull(priceAmountSnapshot);
 		this.currencyCodeSnapshot = Objects.requireNonNull(currencyCodeSnapshot);
-		if (durationDaysSnapshot < 1) throw new IllegalArgumentException("durationDaysSnapshot must be positive");
+		if (durationDaysSnapshot < 1)
+			throw new IllegalArgumentException("durationDaysSnapshot must be positive");
 		this.durationDaysSnapshot = durationDaysSnapshot;
 		this.status = Objects.requireNonNull(status);
 		this.startsAt = startsAt;
@@ -92,42 +89,68 @@ public class Membership {
 	}
 
 	void expire() {
-		if (status != MembershipStatus.ACTIVE) throw new IllegalStateException("Only ACTIVE Membership can expire");
+		if (status != MembershipStatus.ACTIVE)
+			throw new IllegalStateException("Only ACTIVE Membership can expire");
 		status = MembershipStatus.EXPIRED;
 	}
 
 	void activate(Instant startsAt) {
-		if (status != MembershipStatus.RESERVED) throw new IllegalStateException("Only RESERVED Membership can activate");
+		if (status != MembershipStatus.RESERVED)
+			throw new IllegalStateException("Only RESERVED Membership can activate");
 		this.startsAt = Objects.requireNonNull(startsAt);
 		this.endsAt = startsAt.plus(durationDaysSnapshot, ChronoUnit.DAYS);
 		status = MembershipStatus.ACTIVE;
 	}
 
 	void terminate(Instant terminatedAt) {
-		if (status != MembershipStatus.ACTIVE) throw new IllegalStateException("Only ACTIVE Membership can terminate");
+		if (status != MembershipStatus.ACTIVE)
+			throw new IllegalStateException("Only ACTIVE Membership can terminate");
 		Instant effectiveEnd = Objects.requireNonNull(terminatedAt);
-		if (!effectiveEnd.isAfter(startsAt)) effectiveEnd = startsAt.plusMillis(1);
-		if (effectiveEnd.isBefore(endsAt)) endsAt = effectiveEnd;
+		if (!effectiveEnd.isAfter(startsAt))
+			effectiveEnd = startsAt.plusMillis(1);
+		if (effectiveEnd.isBefore(endsAt))
+			endsAt = effectiveEnd;
 		status = MembershipStatus.TERMINATED;
 	}
 
-	void cancelReserved() {
-		if (status != MembershipStatus.RESERVED) throw new IllegalStateException("Only RESERVED Membership can be cancelled");
+	public void cancelReserved() {
+		if (status != MembershipStatus.RESERVED)
+			throw new IllegalStateException("Only RESERVED Membership can be cancelled");
 		status = MembershipStatus.CANCELLED;
 	}
 
-	void extendTo(Instant newEnd) {
+	public void extendTo(Instant newEnd) {
 		if (status != MembershipStatus.ACTIVE || !Objects.requireNonNull(newEnd).isAfter(endsAt)) {
 			throw new IllegalStateException("ACTIVE Membership end must be extended");
 		}
 		endsAt = newEnd;
 	}
 
-	public MembershipStatus getStatus() { return status; }
-	public UUID getId() { return id; }
-	public UUID getMemberAccountId() { return memberAccountId; }
-	public Instant getStartsAt() { return startsAt; }
-	public Instant getEndsAt() { return endsAt; }
-	public BigInteger getPriceAmountSnapshot() { return priceAmountSnapshot; }
-	public int getDurationDaysSnapshot() { return durationDaysSnapshot; }
+	public MembershipStatus getStatus() {
+		return status;
+	}
+
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	public Instant getStartsAt() {
+		return startsAt;
+	}
+
+	public Instant getEndsAt() {
+		return endsAt;
+	}
+
+	public BigInteger getPriceAmountSnapshot() {
+		return priceAmountSnapshot;
+	}
+
+	public int getDurationDaysSnapshot() {
+		return durationDaysSnapshot;
+	}
 }

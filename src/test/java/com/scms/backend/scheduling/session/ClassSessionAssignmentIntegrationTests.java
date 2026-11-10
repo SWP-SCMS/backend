@@ -1,0 +1,182 @@
+package com.scms.backend.scheduling.session;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.CoachLeaveRequest;
+import com.scms.backend.scheduling.Discipline;
+import com.scms.backend.scheduling.DisciplineStatus;
+import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.Room;
+import com.scms.backend.scheduling.RoomStatus;
+import com.scms.backend.scheduling.SportClass;
+import com.scms.backend.scheduling.SportClassStatus;
+import com.scms.backend.scheduling.SportClassType;
+import com.scms.backend.scheduling.coachleave.CoachLeaveRepository;
+import com.scms.backend.scheduling.discipline.DisciplineRepository;
+import com.scms.backend.scheduling.room.RoomRepository;
+import com.scms.backend.scheduling.sportclass.SportClassRepository;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
+@Testcontainers
+@SpringBootTest
+@ActiveProfiles("test")
+class ClassSessionAssignmentIntegrationTests {
+
+	@Container
+	@ServiceConnection
+	static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
+
+	@Autowired
+	ClassSessionService service;
+
+	@Autowired
+	ClassSessionRepository sessions;
+
+	@Autowired
+	AccountRepository accounts;
+
+	@Autowired
+	DisciplineRepository disciplines;
+
+	@Autowired
+	SportClassRepository classes;
+
+	@Autowired
+	RoomRepository rooms;
+
+	@Autowired
+	CoachLeaveRepository coachLeaves;
+
+	@Autowired
+	JdbcTemplate jdbc;
+
+	@Test
+	void discoversOnlyActiveCoachesWithoutOverlappingSessionsOrApprovedLeave() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Availability Manager");
+		Account assigned = saveAccount(AccountRole.COACH, "A Assigned Coach");
+		Account available = saveAccount(AccountRole.COACH, "B Available Coach");
+		Account busy = saveAccount(AccountRole.COACH, "C Busy Coach");
+		Account onLeave = saveAccount(AccountRole.COACH, "D Leave Coach");
+		Account inactive = accounts.saveAndFlush(new Account(UUID.randomUUID(), AccountRole.COACH, AccountStatus.INACTIVE, "E Inactive Coach", "0987654321", UUID.randomUUID() + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password"));
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Availability Pilates", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Availability Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room targetRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Availability Studio A", 20, RoomStatus.ACTIVE));
+		Room busyRoom = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Availability Studio B", 20, RoomStatus.ACTIVE));
+		Instant start = Instant.parse("2032-01-01T02:00:00Z");
+		Instant end = Instant.parse("2032-01-01T03:00:00Z");
+		ClassSession target = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, assigned, targetRoom, start, end, 12, manager.getId()));
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, busy, busyRoom, start, end, 12, manager.getId()));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), onLeave, start.minusSeconds(60), end.plusSeconds(60), "Approved leave");
+		leave.approve(manager.getId(), "Approved", Instant.parse("2031-12-01T00:00:00Z"));
+		coachLeaves.saveAndFlush(leave);
+		var result = service.availableCoaches(manager.getId(), target.getId());
+		assertThat(result).extracting(AvailableCoachResponse::coachAccountId).contains(assigned.getId(), available.getId()).doesNotContain(busy.getId(), onLeave.getId(), inactive.getId());
+		assertThat(result).extracting(AvailableCoachResponse::fullName).containsSubsequence("A Assigned Coach", "B Available Coach");
+	}
+
+	@Test
+	void discoversCoachAvailableForEveryProposedOccurrenceBeforeCreation() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Gap 026 Manager");
+		Account available = saveAccount(AccountRole.COACH, "Gap 026 Always Available");
+		Account busyOnSecond = saveAccount(AccountRole.COACH, "Gap 026 Busy Later");
+		Account leaveOnFirst = saveAccount(AccountRole.COACH, "Gap 026 Leave First");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Gap 026 Discipline", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Gap 026 Class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room room = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Gap 026 Room", 20, RoomStatus.ACTIVE));
+		Instant firstStart = Instant.parse("2033-01-01T02:00:00Z");
+		Instant firstEnd = Instant.parse("2033-01-01T03:00:00Z");
+		Instant secondStart = Instant.parse("2033-01-08T02:00:00Z");
+		Instant secondEnd = Instant.parse("2033-01-08T03:00:00Z");
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, busyOnSecond, room, secondStart, secondEnd, 10, manager.getId()));
+		CoachLeaveRequest leave = new CoachLeaveRequest(UUID.randomUUID(), leaveOnFirst, firstStart, firstEnd, "Approved leave");
+		leave.approve(manager.getId(), "Approved", Instant.parse("2032-12-01T00:00:00Z"));
+		coachLeaves.saveAndFlush(leave);
+		var result = service.availableCoaches(manager.getId(), List.of(firstStart, secondStart), List.of(firstEnd, secondEnd), null);
+		assertThat(result).extracting(AvailableCoachResponse::coachAccountId).contains(available.getId()).doesNotContain(busyOnSecond.getId(), leaveOnFirst.getId());
+	}
+
+	@Test
+	void updatesOnlyAssignmentAndRejectsConflictingResources() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Manager");
+		Account coachA = saveAccount(AccountRole.COACH, "Coach A");
+		Account coachB = saveAccount(AccountRole.COACH, "Coach B");
+		Account coachC = saveAccount(AccountRole.COACH, "Coach C");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Pilates", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Reformer", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room roomA = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio A", 20, RoomStatus.ACTIVE));
+		Room roomB = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio B", 20, RoomStatus.ACTIVE));
+		Room roomC = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Studio C", 20, RoomStatus.ACTIVE));
+		Instant start = Instant.parse("2030-01-01T02:00:00Z");
+		Instant end = Instant.parse("2030-01-01T03:00:00Z");
+		ClassSession target = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coachA, roomA, start, end, 12, manager.getId()));
+		sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coachC, roomC, start, end, 12, manager.getId()));
+		service.updateAssignment(manager.getId(), target.getId(), new ClassSessionAssignmentRequest(coachB.getId(), roomB.getId()));
+		Map<String, Object> row = jdbc.queryForMap("""
+			select teaching_coach_account_id, room_id, start_time, end_time, capacity
+			from class_sessions where id = ?
+			""", target.getId());
+		assertThat(row.get("teaching_coach_account_id")).isEqualTo(coachB.getId());
+		assertThat(row.get("room_id")).isEqualTo(roomB.getId());
+		assertThat(((java.sql.Timestamp) row.get("start_time")).toInstant()).isEqualTo(start);
+		assertThat(((java.sql.Timestamp) row.get("end_time")).toInstant()).isEqualTo(end);
+		assertThat(row.get("capacity")).isEqualTo(12);
+		Map<String, Object> audit = jdbc.queryForMap("""
+			select actor_account_id, target_type, target_id,
+				before_data ->> 'coachId' as before_coach_id,
+				before_data ->> 'roomId' as before_room_id,
+				after_data ->> 'coachId' as after_coach_id,
+				after_data ->> 'roomId' as after_room_id
+			from audit_events where action='SESSION_ASSIGNMENT_CHANGED' and target_id=?
+			""", target.getId());
+		assertThat(audit).containsEntry("actor_account_id", manager.getId()).containsEntry("target_type", "CLASS_SESSION").containsEntry("target_id", target.getId()).containsEntry("before_coach_id", coachA.getId().toString()).containsEntry("before_room_id", roomA.getId().toString()).containsEntry("after_coach_id", coachB.getId().toString()).containsEntry("after_room_id", roomB.getId().toString());
+		service.updateAssignment(manager.getId(), target.getId(), new ClassSessionAssignmentRequest(coachB.getId(), roomB.getId()));
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where target_id=?", Long.class, target.getId())).isOne();
+		assertThatThrownBy(() -> service.updateAssignment(manager.getId(), target.getId(), new ClassSessionAssignmentRequest(coachC.getId(), roomC.getId()))).isInstanceOf(RecurringScheduleException.class).extracting("code").isEqualTo("SESSION_CONFLICT");
+		assertThat(jdbc.queryForObject("select count(*) from audit_events where target_id=?", Long.class, target.getId())).isOne();
+	}
+
+	@Test
+	void auditFailureRollsBackAssignment() {
+		Account manager = saveAccount(AccountRole.MANAGER, "Rollback manager");
+		Account coachA = saveAccount(AccountRole.COACH, "Rollback coach A");
+		Account coachB = saveAccount(AccountRole.COACH, "Rollback coach B");
+		Discipline discipline = disciplines.saveAndFlush(new Discipline(UUID.randomUUID(), "Rollback Pilates", null, DisciplineStatus.ACTIVE));
+		SportClass sportClass = classes.saveAndFlush(new SportClass(UUID.randomUUID(), discipline, "Rollback class", SportClassType.GROUP, null, SportClassStatus.ACTIVE));
+		Room roomA = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Rollback studio A", 20, RoomStatus.ACTIVE));
+		Room roomB = rooms.saveAndFlush(new Room(UUID.randomUUID(), "Rollback studio B", 20, RoomStatus.ACTIVE));
+		ClassSession target = sessions.saveAndFlush(new ClassSession(UUID.randomUUID(), sportClass, null, coachA, roomA, Instant.parse("2031-01-01T02:00:00Z"), Instant.parse("2031-01-01T03:00:00Z"), 12, manager.getId()));
+		String constraint = "chk_audit_events_test_reject_assignment";
+		jdbc.execute("alter table audit_events add constraint " + constraint + " check (not (action='SESSION_ASSIGNMENT_CHANGED' and target_id='" + target.getId() + "'))");
+		try {
+			assertThatThrownBy(() -> service.updateAssignment(manager.getId(), target.getId(), new ClassSessionAssignmentRequest(coachB.getId(), roomB.getId()))).rootCause().hasMessageContaining(constraint);
+			Map<String, Object> row = jdbc.queryForMap("select teaching_coach_account_id, room_id from class_sessions where id=?", target.getId());
+			assertThat(row).containsEntry("teaching_coach_account_id", coachA.getId()).containsEntry("room_id", roomA.getId());
+			assertThat(jdbc.queryForObject("select count(*) from audit_events where target_id=?", Long.class, target.getId())).isZero();
+		} finally {
+			jdbc.execute("alter table audit_events drop constraint " + constraint);
+		}
+	}
+
+	private Account saveAccount(AccountRole role, String name) {
+		UUID id = UUID.randomUUID();
+		return accounts.saveAndFlush(new Account(id, role, AccountStatus.ACTIVE, name, "09" + id.toString().replace("-", "").substring(0, 8), id + "@example.test", LocalDate.of(1990, 1, 1), "{noop}password"));
+	}
+}

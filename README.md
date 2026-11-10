@@ -1,5 +1,7 @@
 # SCMS Backend
 
+Bản cleanup local từ `9c08093`: bắt đầu ở [chỉ mục source](docs/source-guide/README.md), [hướng dẫn chạy local](docs/source-guide/RUN_LOCAL.md) và [tài liệu lễ tân](docs/recep-presentation/README.md). Kết quả kiểm chứng và checkpoint được ghi trong `docs/source-guide/VALIDATION.md` và `PROGRESS.md`.
+
 Backend API của Sports Center Management System. Frontend chỉ gọi Spring Boot API dưới prefix
 `/api/v1`; frontend không truy vấn Supabase trực tiếp và SCMS không dùng Supabase Auth.
 

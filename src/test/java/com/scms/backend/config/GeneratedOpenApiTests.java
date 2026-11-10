@@ -4,7 +4,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import com.scms.backend.common.validation.PersonNameRules;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.WildcardType;
 import java.util.ArrayList;
@@ -15,15 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-
 import org.junit.jupiter.api.Test;
-import com.scms.backend.common.validation.PersonNameRules;
 import org.springdoc.core.configuration.SpringDocConfiguration;
 import org.springdoc.core.configuration.SpringDocSecurityConfiguration;
 import org.springdoc.core.properties.SpringDocConfigProperties;
@@ -45,582 +42,46 @@ import org.springframework.web.bind.annotation.RestController;
 @WebMvcTest(excludeAutoConfiguration = UserDetailsServiceAutoConfiguration.class)
 @AutoConfigureMockMvc(addFilters = false)
 @EnableConfigurationProperties(SpringDocConfigProperties.class)
-@Import({ OpenApiConfiguration.class, SpringDocConfiguration.class,
-	SpringDocSecurityConfiguration.class, SpringDocWebMvcConfiguration.class,
-	GeneratedOpenApiTests.ControllerDependencyMockConfiguration.class })
+@Import({ OpenApiConfiguration.class, SpringDocConfiguration.class, SpringDocSecurityConfiguration.class, SpringDocWebMvcConfiguration.class, GeneratedOpenApiTests.ControllerDependencyMockConfiguration.class })
 class GeneratedOpenApiTests {
-	private static final Set<String> UNAUTHORIZED_PROBLEM_CODES = Set.of(
-		"UNAUTHENTICATED", "INVALID_TOKEN", "INVALID_CREDENTIALS", "INVALID_REFRESH_TOKEN",
-		"INVALID_PENDING_SESSION", "INVALID_PASSWORD_RESET_SESSION", "PAYMENT_UNAUTHORIZED");
-	private static final Set<String> API_PROBLEM_PROPERTIES = Set.of(
-		"title", "status", "detail", "instance", "code", "errors", "affectedSessionIds",
-		"requiredBenefitCodes", "missingBenefitCodes", "affectedSessions", "traceId");
-	private static final Set<String> API_PROBLEM_REQUIRED = Set.of(
-		"title", "status", "detail", "instance", "code");
-	private static final Set<String> COURSE_PROBLEM_CODES = Set.of(
-		"VALIDATION_ERROR", "MALFORMED_REQUEST", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN",
-		"COURSE_VALIDATION_ERROR", "COURSE_NOT_FOUND", "COURSE_CODE_CONFLICT", "COURSE_INVALID_TRANSITION",
-		"COURSE_CHANGED", "COURSE_RUN_NOT_FOUND", "COURSE_RUN_CODE_CONFLICT", "COURSE_RUN_INVALID_OPENING",
-		"COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED", "COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT",
-		"COURSE_SESSION_NOT_FOUND", "COURSE_SESSION_INVALID", "COURSE_SESSION_RESOURCE_CONFLICT",
-		"COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED",
-		"COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID",
-		"COURSE_SCHEDULE_CHANGE_NOT_FOUND", "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT",
-		"COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED", "COURSE_SESSION_DISRUPTION_CONFLICT",
-		"COURSE_APPROVAL_INVALID_TRANSITION");
+
+	private static final Set<String> UNAUTHORIZED_PROBLEM_CODES = Set.of("UNAUTHENTICATED", "INVALID_TOKEN", "INVALID_CREDENTIALS", "INVALID_REFRESH_TOKEN", "INVALID_PENDING_SESSION", "INVALID_PASSWORD_RESET_SESSION", "PAYMENT_UNAUTHORIZED");
+
+	private static final Set<String> API_PROBLEM_PROPERTIES = Set.of("title", "status", "detail", "instance", "code", "errors", "affectedSessionIds", "requiredBenefitCodes", "missingBenefitCodes", "affectedSessions", "traceId");
+
+	private static final Set<String> API_PROBLEM_REQUIRED = Set.of("title", "status", "detail", "instance", "code");
+
+	private static final Set<String> COURSE_PROBLEM_CODES = Set.of("VALIDATION_ERROR", "MALFORMED_REQUEST", "UNAUTHENTICATED", "INVALID_TOKEN", "FORBIDDEN", "COURSE_VALIDATION_ERROR", "COURSE_NOT_FOUND", "COURSE_CODE_CONFLICT", "COURSE_INVALID_TRANSITION", "COURSE_CHANGED", "COURSE_RUN_NOT_FOUND", "COURSE_RUN_CODE_CONFLICT", "COURSE_RUN_INVALID_OPENING", "COURSE_RUN_INVALID_TRANSITION", "COURSE_RUN_IMMUTABLE", "COURSE_RUN_CHANGED", "COURSE_RESCHEDULE_IDEMPOTENCY_CONFLICT", "COURSE_SESSION_NOT_FOUND", "COURSE_SESSION_INVALID", "COURSE_SESSION_RESOURCE_CONFLICT", "COURSE_SESSION_ROOM_CAPACITY_CONFLICT", "COURSE_SESSION_CHANGED", "COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE", "COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID", "COURSE_SCHEDULE_CHANGE_NOT_FOUND", "COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT", "COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED", "COURSE_SESSION_DISRUPTION_CONFLICT", "COURSE_APPROVAL_INVALID_TRANSITION");
+
 	private static final Set<String> READ_COLLECTION_RESPONSES = Set.of("200", "400", "401", "403");
+
 	private static final Set<String> CREATE_RESPONSES = Set.of("201", "400", "401", "403", "409");
+
 	private static final Set<String> READ_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404");
+
 	private static final Set<String> MUTATE_ITEM_RESPONSES = Set.of("200", "400", "401", "403", "404", "409");
-	private static final List<CourseOperationContract> COURSE_OPERATION_CONTRACTS = List.of(
-		new CourseOperationContract("/manager/course-approval-requests", "get", READ_COLLECTION_RESPONSES),
-		new CourseOperationContract("/manager/course-approval-requests/{courseId}", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-approval-requests/{courseId}/approve", "post",
-			MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-approval-requests/{courseId}/reject", "post",
-			MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/courses", "get", READ_COLLECTION_RESPONSES),
-		new CourseOperationContract("/manager/courses", "post", CREATE_RESPONSES),
-		new CourseOperationContract("/manager/courses/{courseId}", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/courses/{courseId}", "patch", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/courses/{courseId}/publish", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/courses/{courseId}/deactivate", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/courses/{courseId}/archive", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs", "get", READ_COLLECTION_RESPONSES),
-		new CourseOperationContract("/manager/course-runs", "post", Set.of("201", "400", "401", "403", "404", "409")),
-		new CourseOperationContract("/manager/course-runs/{runId}", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}", "patch", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/open-registration", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/schedule", "patch", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/reschedule", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/cancel", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post",
-			Set.of("201", "400", "401", "403", "404", "409")),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post", MUTATE_ITEM_RESPONSES),
-		new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/makeup", "post", MUTATE_ITEM_RESPONSES)
-	);
-	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(
-		new CourseOperationContract("/courses", "get", Set.of("200", "400", "401")),
-		new CourseOperationContract("/courses/{courseId}", "get", Set.of("200", "400", "401", "404")),
-		new CourseOperationContract("/course-runs", "get", Set.of("200", "400", "401")),
-		new CourseOperationContract("/course-runs/{runId}", "get", Set.of("200", "400", "401", "404"))
-	);
-	private static final List<CourseOperationContract> COURSE_ORDER_OPERATION_CONTRACTS = List.of(
-		new CourseOperationContract("/members/me/course-orders", "post",
-			Set.of("200", "201", "400", "401", "403", "404", "409")),
-		new CourseOperationContract("/members/me/course-orders/{orderId}", "get",
-			Set.of("200", "400", "401", "403", "404")),
-		new CourseOperationContract("/reception/members/{memberId}/course-orders", "post",
-			Set.of("200", "201", "400", "401", "403", "404", "409")),
-		new CourseOperationContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
-			Set.of("200", "400", "401", "403", "404"))
-	);
-	private static final List<CourseOrderParameterContract> COURSE_ORDER_PARAMETER_CONTRACTS = List.of(
-		new CourseOrderParameterContract("/members/me/course-orders", "post", "Idempotency-Key", "header",
-			true, Set.of("string"), null, "1", "100", null),
-		new CourseOrderParameterContract("/members/me/course-orders/{orderId}", "get", "orderId", "path",
-			true, Set.of("string"), "uuid", null, null, null),
-		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post", "memberId",
-			"path", true, Set.of("string"), "uuid", null, null, null),
-		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post",
-			"Idempotency-Key", "header", true, Set.of("string"), null, "1", "100", null),
-		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
-			"memberId", "path", true, Set.of("string"), "uuid", null, null, null),
-		new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get",
-			"orderId", "path", true, Set.of("string"), "uuid", null, null, null)
-	);
-	private static final List<CatalogSchemaContract> COURSE_ORDER_SCHEMA_CONTRACTS = List.of(
-		new CatalogSchemaContract("CourseOrderCreateRequest", List.of(
-			new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null)
-		)),
-		new CatalogSchemaContract("CourseOrderResponse", List.of(
-			new CatalogPropertyContract("orderId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("orderReference", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("memberId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
-				Set.of(), null),
-			new CatalogPropertyContract("currencyCode", Set.of("string"), null, null, null, Set.of("VND"), null),
-			new CatalogPropertyContract("orderStatus", Set.of("string"), null, null, null,
-				Set.of("PENDING_PAYMENT", "EXPIRED", "PAID"), null),
-			new CatalogPropertyContract("reservationStatus", Set.of("string"), null, null, null,
-				Set.of("HELD", "EXPIRED", "ENROLLED"), null),
-			new CatalogPropertyContract("expiresAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("createdAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("payment", Set.of("object"), null, null, null, Set.of(), null)
-		))
-	);
-	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(
-		new CatalogParameterContract("/courses", "page", "query", false, Set.of("integer"), "int32",
-			"0", "0", null, Set.of()),
-		new CatalogParameterContract("/courses", "size", "query", false, Set.of("integer"), "int32",
-			"20", "1", "100", Set.of()),
-		new CatalogParameterContract("/courses/{courseId}", "courseId", "path", true, Set.of("string"),
-			"uuid", null, null, null, Set.of()),
-		new CatalogParameterContract("/course-runs", "page", "query", false, Set.of("integer"), "int32",
-			"0", "0", null, Set.of()),
-		new CatalogParameterContract("/course-runs", "size", "query", false, Set.of("integer"), "int32",
-			"20", "1", "100", Set.of()),
-		new CatalogParameterContract("/course-runs/{runId}", "runId", "path", true, Set.of("string"),
-			"uuid", null, null, null, Set.of())
-	);
-	private static final List<CatalogSchemaContract> COURSE_CATALOG_SCHEMA_CONTRACTS = List.of(
-		new CatalogSchemaContract("CatalogCourseResponse", List.of(
-			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("code", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("name", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("description", Set.of("string", "null"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("disciplineId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("disciplineName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("imageUrl", Set.of("string", "null"), null, null, null, Set.of(), null)
-		)),
-		new CatalogSchemaContract("CatalogCoursePageResponse", List.of(
-			new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(),
-				"CatalogCourseResponse"),
-			new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null),
-			new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null),
-			new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null),
-			new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null)
-		)),
-		new CatalogSchemaContract("CatalogCourseRunResponse", List.of(
-			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
-				Set.of(), null),
-			new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null),
-			new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null,
-				Set.of("UPCOMING", "OPEN", "CLOSED"), null),
-			new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null),
-			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
-				Set.of("OPEN_FOR_REGISTRATION"), null)
-		)),
-		new CatalogSchemaContract("CatalogCourseRunPageResponse", List.of(
-			new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(),
-				"CatalogCourseRunResponse"),
-			new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null),
-			new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null),
-			new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null),
-			new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null)
-		)),
-		new CatalogSchemaContract("CatalogCourseSessionResponse", List.of(
-			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("unitNumber", Set.of("integer"), "int32", "1", null, Set.of(), null),
-			new CatalogPropertyContract("roomId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("roomName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("coachId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("coachName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("startAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("endAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("originalStartAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("originalEndAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("allocationVnd", Set.of("integer"), null, "1", "9999999999999999999",
-				Set.of(), null),
-			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
-				Set.of("SCHEDULED", "CANCELLED", "CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED",
-					"RESOLVED_BY_REFUND"), null)
-		)),
-		new CatalogSchemaContract("CatalogCourseRunDetailResponse", List.of(
-			new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null),
-			new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null),
-			new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999",
-				Set.of(), null),
-			new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null),
-			new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null,
-				Set.of(), null),
-			new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null,
-				Set.of("UPCOMING", "OPEN", "CLOSED"), null),
-			new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null),
-			new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null),
-			new CatalogPropertyContract("status", Set.of("string"), null, null, null,
-				Set.of("OPEN_FOR_REGISTRATION"), null),
-			new CatalogPropertyContract("sessions", Set.of("array"), null, null, null, Set.of(),
-				"CatalogCourseSessionResponse")
-		))
-	);
 
-	private static final Set<String> EXPECTED_OPERATIONS = Set.of(
-		"GET /manager/coach-leave-requests/{requestId}/affected-sessions/{type}/{sessionId}/available-coaches",
-		"GET /manager/coach-leave-requests/{requestId}/impact",
-		"POST /manager/coach-leave-requests/{requestId}/batch",
-		"POST /manager/coach-leave-requests/{requestId}/batch/available-coaches",
-		"GET /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary",
-		"PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary",
-		"GET /coach/course-sessions/{sessionId}/members/{memberId}/training-summary",
-		"PUT /coach/course-sessions/{sessionId}/members/{memberId}/training-summary",
+	private static final List<CourseOperationContract> COURSE_OPERATION_CONTRACTS = List.of(new CourseOperationContract("/manager/course-approval-requests", "get", READ_COLLECTION_RESPONSES), new CourseOperationContract("/manager/course-approval-requests/{courseId}", "get", READ_ITEM_RESPONSES), new CourseOperationContract("/manager/course-approval-requests/{courseId}/approve", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-approval-requests/{courseId}/reject", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/courses", "get", READ_COLLECTION_RESPONSES), new CourseOperationContract("/manager/courses", "post", CREATE_RESPONSES), new CourseOperationContract("/manager/courses/{courseId}", "get", READ_ITEM_RESPONSES), new CourseOperationContract("/manager/courses/{courseId}", "patch", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/courses/{courseId}/publish", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/courses/{courseId}/deactivate", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/courses/{courseId}/archive", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs", "get", READ_COLLECTION_RESPONSES), new CourseOperationContract("/manager/course-runs", "post", Set.of("201", "400", "401", "403", "404", "409")), new CourseOperationContract("/manager/course-runs/{runId}", "get", READ_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}", "patch", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/open-registration", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/schedule", "patch", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/reschedule", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/cancel", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions", "get", READ_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions", "post", Set.of("201", "400", "401", "403", "404", "409")), new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "get", READ_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}", "patch", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post", MUTATE_ITEM_RESPONSES), new CourseOperationContract("/manager/course-runs/{runId}/sessions/{sessionId}/makeup", "post", MUTATE_ITEM_RESPONSES));
 
-		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-summary",
-		"DELETE /staff/me/profile/image",
-		"POST /manager/course-runs/resource-availability",
-		"POST /manager/course-runs/with-schedule",
-		"GET /manager/course-runs/{runId}/cancellation-impact",
-		"POST /payments/{paymentId}/evidence-images",
-		"GET /payments/{paymentId}/evidence-images/{evidenceId}",
-		"POST /manager/course-runs/preview-schedule",
-		"POST /manager/courses/images",
-		"GET /payments/{paymentId}/evidence-images",
+	private static final List<CourseOperationContract> COURSE_CATALOG_OPERATION_CONTRACTS = List.of(new CourseOperationContract("/courses", "get", Set.of("200", "400", "401")), new CourseOperationContract("/courses/{courseId}", "get", Set.of("200", "400", "401", "404")), new CourseOperationContract("/course-runs", "get", Set.of("200", "400", "401")), new CourseOperationContract("/course-runs/{runId}", "get", Set.of("200", "400", "401", "404")));
 
-		"GET /course-payments/reconciliation-queue",
-		"GET /course-payments/{paymentId}",
-		"GET /course-payments/{paymentId}/result",
-		"POST /course-payments/{paymentId}/reconcile",
-		"GET /reception/members/{memberId}/course-waitlists",
-		"POST /reception/members/{memberId}/course-runs/{runId}/waitlist",
-		"DELETE /reception/members/{memberId}/course-runs/{runId}/waitlist",
-		"POST /reception/members/{memberId}/course-waitlists/{waitlistId}/accept",
-		"GET /reception/members/{memberId}/course-schedule-changes",
-		"POST /reception/members/{memberId}/course-schedule-changes/{responseId}/response",
-		"GET /reception/members/{memberId}/course-transfer-offers",
-		"POST /reception/members/{memberId}/course-transfer-offers/{offerId}/accept",
-		"GET /reception/members/{memberId}/course-withdrawal-requests",
-		"GET /reception/members/{memberId}/course-withdrawal-requests/{requestId}",
-		"GET /reception/members/{memberId}/course-refund-obligations",
-		"GET /reception/members/{memberId}/course-refund-obligations/{obligationId}",
-		"POST /auth/login",
-		"POST /auth/refresh",
-		"POST /auth/logout",
-		"POST /auth/change-password",
-		"POST /auth/register",
-		"POST /auth/email-verification/verify",
-		"POST /auth/email-verification/resend",
-		"POST /auth/email-verification/change-email",
-		"POST /auth/password-reset/request",
-		"POST /auth/password-reset/verify",
-		"POST /auth/password-reset/confirm",
-		"GET /reception/email-verification/pending-accounts",
-		"POST /reception/email-verification/manual-activation-requests",
-		"GET /reception/email-verification/manual-activation-requests",
-		"GET /reception/email-verification/manual-activation-requests/{requestId}",
-		"GET /manager/email-verification/manual-activation-requests",
-		"GET /manager/email-verification/manual-activation-requests/{requestId}",
-		"POST /manager/email-verification/manual-activation-requests/{requestId}/approve",
-		"POST /manager/email-verification/manual-activation-requests/{requestId}/reject",
-		"GET /manager/members",
-		"GET /manager/members/{id}",
-		"PATCH /manager/members/{id}",
-		"PATCH /manager/members/{memberAccountId}/status",
-		"POST /manager/staff-accounts",
-		"GET /manager/staff-accounts",
-		"GET /manager/staff-accounts/{accountId}",
-		"PATCH /manager/staff-accounts/{accountId}",
-		"PATCH /manager/staff-accounts/{accountId}/status",
-		"POST /manager/staff-accounts/{accountId}/reset-password",
-		"GET /members/me/profile",
-		"PATCH /members/me/profile",
-		"POST /members/me/profile/image",
-		"POST /reception/members/{memberId}/membership-orders/{orderId}/payments/sepay",
-		"GET /staff/me/profile",
-		"PATCH /staff/me/profile",
-		"POST /staff/me/profile/image",
-		"POST /staff/me/email-change",
-		"POST /staff/me/email-change/verify",
-		"POST /staff/me/email-change/resend",
-		"DELETE /staff/me/email-change",
-		"GET /accounts/me/email-change",
-		"POST /accounts/me/email-change",
-		"PUT /accounts/me/email-change",
-		"POST /accounts/me/email-change/verify",
-		"POST /accounts/me/email-change/resend",
-		"DELETE /accounts/me/email-change",
-		"GET /membership-offers",
-		"GET /membership-offers/{offerId}",
-		"GET /courses",
-		"GET /courses/{courseId}",
-		"GET /course-runs",
-		"GET /course-runs/{runId}",
-		"GET /manager/membership-offers",
-		"GET /manager/membership-offers/{offerId}",
-		"POST /manager/membership-offers",
-		"PATCH /manager/membership-offers/{id}",
-		"GET /manager/membership-benefits",
-		"GET /manager/membership-plans",
-		"GET /manager/membership-plans/{planCode}",
-		"POST /manager/membership-plans",
-		"PATCH /manager/membership-plans/{planCode}",
-		"GET /members/me/membership-termination-requests",
-		"POST /members/me/membership-termination-requests",
-		"DELETE /members/me/membership-termination-requests/{requestId}",
-		"GET /reception/members/{memberCode}/membership-termination-requests",
-		"POST /reception/members/{memberCode}/membership-termination-requests",
-		"GET /manager/membership-termination-requests",
-		"POST /manager/membership-termination-requests/{requestId}/approve",
-		"POST /manager/membership-termination-requests/{requestId}/reject",
-		"POST /manager/members/{memberAccountId}/membership-termination-requests",
-		"GET /members/me/membership-freeze-requests",
-		"POST /members/me/membership-freeze-requests",
-		"DELETE /members/me/membership-freeze-requests/{requestId}",
-		"POST /members/me/membership-freeze-requests/{requestId}/end-early",
-		"GET /reception/members/{memberCode}/membership-freeze-requests",
-		"POST /reception/members/{memberCode}/membership-freeze-requests",
-		"POST /reception/membership-freeze-requests/{requestId}/end-early",
-		"GET /manager/membership-freeze-requests",
-		"POST /manager/membership-freeze-requests/{requestId}/approve",
-		"POST /manager/membership-freeze-requests/{requestId}/reject",
-		"POST /reception/membership-freeze-requests/{requestId}/cash-payment",
-		"GET /reception/refund-requests",
-		"GET /reception/members/{memberCode}/refund-eligible-sources",
-		"POST /reception/members/{memberCode}/refund-requests",
-		"POST /reception/refund-requests/{requestId}/cash-disbursement",
-		"GET /manager/refund-requests",
-		"POST /manager/refund-requests/{requestId}/first-approval",
-		"POST /manager/refund-requests/{requestId}/final-approval",
-		"POST /manager/refund-requests/{requestId}/reject",
-		"POST /members/me/membership-orders",
-		"GET /members/me/membership-orders/pending",
-		"POST /reception/members/{memberId}/membership-orders",
-		"GET /reception/members/{memberId}/membership-orders/pending",
-		"POST /members/me/course-orders",
-		"GET /members/me/course-orders/{orderId}",
-		"POST /members/me/course-orders/{orderId}/payments/sepay",
-		"POST /reception/members/{memberId}/course-orders",
-		"GET /reception/members/{memberId}/course-orders/{orderId}",
-		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay",
-		"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash",
-		"GET /members/me/course-enrollments",
-		"GET /reception/members/{memberId}/course-enrollments",
-		"GET /reception/members/{memberId}/course-enrollments/{enrollmentId}",
-		"POST /members/me/course-enrollments/{enrollmentId}/withdrawal-requests",
-		"POST /members/me/course-withdrawal-requests/{requestId}/cancel",
-		"POST /reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel",
-		"GET /members/me/course-withdrawal-requests",
-		"GET /members/me/course-withdrawal-requests/{requestId}",
-		"POST /reception/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests",
-		"GET /manager/course-withdrawal-requests",
-		"GET /manager/course-withdrawal-requests/{requestId}",
-		"POST /manager/course-withdrawal-requests/{requestId}/approve",
-		"POST /manager/course-withdrawal-requests/{requestId}/reject",
-		"GET /manager/course-refund-obligations",
-		"GET /manager/course-refund-obligations/{obligationId}",
-		"GET /reception/course-refunds",
-		"GET /reception/course-refunds/{refundId}",
-		"POST /manager/course-refund-obligations/{obligationId}/approve",
-		"POST /manager/course-refund-obligations/{obligationId}/reject",
-		"POST /reception/course-refund-obligations/{obligationId}/disburse",
-		"POST /manager/course-refund-obligations/{obligationId}/verify",
-		"POST /manager/course-refund-obligations/{obligationId}/fail",
-		"POST /manager/course-refund-obligations/{obligationId}/return",
-		"GET /members/me/course-refund-obligations",
-		"GET /members/me/course-refund-obligations/{obligationId}",
-		"POST /manager/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests",
-		"GET /members/me/course-schedule-changes",
-		"POST /members/me/course-schedule-changes/{responseId}/response",
-		"POST /course-runs/{runId}/waitlist",
-		"DELETE /course-runs/{runId}/waitlist",
-		"GET /members/me/course-waitlists",
-		"POST /course-waitlists/{waitlistId}/accept",
-		"GET /coach/course-sessions",
-		"GET /coach/course-sessions/{sessionId}",
-		"GET /coach/course-sessions/{sessionId}/roster",
-		"PATCH /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance",
-		"POST /reception/members/{memberId}/cash-payments",
-		"POST /reception/membership-orders/{orderId}/cash",
-		"POST /payments/{paymentId}/reconcile",
-		"PATCH /membership-orders/{orderId}/cancel",
-		"GET /payments/reconciliation-queue",
-		"GET /members/me/receipts",
-		"GET /reception/members/{memberId}/receipts",
-		"GET /receipts/{receiptId}",
-		"GET /payments/{paymentId}/result",
-		"GET /members/me/memberships",
-		"GET /reception/members/{memberCode}/memberships",
-		"GET /manager/members/{memberAccountId}/memberships",
-		"GET /manager/reports/membership-revenue",
-		"GET /manager/dashboard",
-		"GET /manager/reports/members",
-		"GET /manager/reports/bookings",
-		"GET /manager/reports/attendance",
-		"GET /manager/reports/center-visits",
-		"GET /manager/reports/class-utilization",
-		"GET /manager/reports/course-runs",
-		"POST /members/me/membership-orders/{orderId}/payments/sepay",
-		"POST /members/me/membership-orders/{orderId}/bank-transfer",
-		"POST /payments/sepay/webhook",
-		"POST /reception/members/{memberId}/reset-password",
-		"POST /reception/members",
-		"GET /reception/members/search",
-		"GET /reception/members/{memberId}/profile",
-		"PATCH /reception/members/{memberId}/profile",
-		"POST /reception/members/{memberId}/profile/image",
-		"POST /reception/center-visits",
-		"GET /members/me/center-visits/current",
-		"PATCH /members/me/center-visits/current/checkout",
-		"PATCH /reception/members/{memberAccountId}/center-visits/current/checkout",
-		"GET /reception/center-visits/open",
-		"POST /members/class-sessions/{sessionId}/bookings",
-		"POST /members/class-sessions/{sessionId}/waitlist",
-		"DELETE /members/class-sessions/{sessionId}/waitlist",
-		"GET /members/me/waitlists",
-		"POST /reception/members/{memberId}/class-sessions/{sessionId}/waitlist",
-		"DELETE /reception/members/{memberId}/class-sessions/{sessionId}/waitlist",
-		"GET /reception/class-sessions/{sessionId}/waitlist",
-		"GET /manager/class-sessions/{sessionId}/waitlist",
-		"GET /members/me/bookings",
-		"PATCH /members/me/bookings/{bookingId}/cancel",
-		"POST /reception/members/{memberId}/bookings",
-		"GET /reception/members/{memberId}/bookings",
-		"PATCH /reception/members/{memberId}/bookings/{bookingId}/cancel",
-		"GET /reception/class-sessions",
-		"GET /manager/disciplines",
-		"POST /manager/disciplines",
-		"GET /manager/disciplines/{disciplineId}",
-		"PATCH /manager/disciplines/{disciplineId}",
-		"GET /manager/course-approval-requests",
-		"GET /manager/course-approval-requests/{courseId}",
-		"POST /manager/course-approval-requests/{courseId}/approve",
-		"POST /manager/course-approval-requests/{courseId}/reject",
-		"GET /manager/courses",
-		"POST /manager/courses",
-		"GET /manager/courses/{courseId}",
-		"PATCH /manager/courses/{courseId}",
-		"POST /manager/courses/{courseId}/publish",
-		"POST /manager/courses/{courseId}/deactivate",
-		"POST /manager/courses/{courseId}/archive",
-		"GET /manager/course-runs",
-		"POST /manager/course-runs",
-		"GET /manager/course-runs/{runId}",
-		"PATCH /manager/course-runs/{runId}",
-		"POST /manager/course-runs/{runId}/open-registration",
-		"PATCH /manager/course-runs/{runId}/schedule",
-		"POST /manager/course-runs/{runId}/reschedule",
-		"POST /manager/course-runs/{runId}/cancel",
-		"GET /manager/course-runs/{runId}/sessions",
-		"POST /manager/course-runs/{runId}/sessions",
-		"GET /manager/course-runs/{runId}/sessions/{sessionId}",
-		"PATCH /manager/course-runs/{runId}/sessions/{sessionId}",
-		"POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel",
-		"POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup",
-		"POST /manager/course-runs/{runId}/sessions/{sessionId}/makeup",
-		"GET /manager/rooms",
-		"GET /manager/rooms/availability",
-		"POST /manager/rooms",
-		"GET /manager/rooms/{roomId}",
-		"PATCH /manager/rooms/{roomId}",
-		"GET /manager/rooms/{roomId}/suspensions",
-		"POST /manager/rooms/{roomId}/suspensions",
-		"PATCH /manager/rooms/{roomId}/suspensions/{suspensionId}",
-		"POST /manager/rooms/{roomId}/impact-preview",
-		"POST /manager/rooms/{roomId}/impact-apply",
-		"GET /manager/classes",
-		"GET /manager/classes/types",
-		"POST /manager/classes",
-		"GET /manager/classes/{classId}",
-		"PATCH /manager/classes/{classId}",
-		"POST /manager/class-sessions",
-		"GET /manager/class-sessions",
-		"GET /manager/class-sessions/{id}",
-		"GET /manager/class-sessions/{id}/available-coaches",
-		"GET /manager/coaches/available",
-		"PATCH /manager/class-sessions/{id}/assignment",
-		"PATCH /manager/class-sessions/{id}/schedule",
-		"PATCH /manager/class-sessions/{id}/cancel",
-		"POST /manager/class-sessions/cancellation-preview",
-		"POST /manager/class-sessions/bulk-cancel",
-		"POST /coach/leave-requests",
-		"GET /coach/me/leave-requests",
-		"DELETE /coach/leave-requests/{requestId}",
-		"PATCH /coach/leave-requests/{requestId}/cancel",
-		"GET /manager/coach-leave-requests",
-		"PATCH /manager/coach-leave-requests/{requestId}/approve",
-		"PATCH /manager/coach-leave-requests/{requestId}/reject",
-		"POST /manager/recurring-schedules",
-		"GET /members/class-sessions",
-		"GET /members/pt-sessions",
-		"GET /reception/pt-sessions",
-		"GET /manager/pt-sessions",
-		"GET /coach/pt-sessions",
-		"GET /coach/class-sessions",
-		"GET /coach/class-sessions/{id}",
-		"GET /coach/class-sessions/{sessionId}/attendance",
-		"PATCH /coach/class-sessions/{sessionId}/attendance/{attendanceId}",
-		"GET /coach/members",
-		"GET /coach/members/{memberId}",
-		"GET /coach/members/{memberId}/training-plans",
-		"POST /coach/members/{memberId}/training-plans",
-		"PUT /coach/members/{memberId}/training-plans/{planId}",
-		"GET /coach/members/{memberId}/training-plans/{planId}/versions",
-		"POST /coach/members/{memberId}/training-plans/{planId}/archive",
-		"POST /coach/members/{memberId}/training-results",
-		"GET /coach/members/{memberId}/training-results",
-		"PUT /coach/members/{memberId}/training-results/{resultId}",
-		"POST /coach/members/{memberId}/feedback",
-		"GET /coach/members/{memberId}/feedback",
-		"PUT /coach/members/{memberId}/feedback/{feedbackId}",
-		"POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
-		"GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
-		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}",
-		"POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
-		"GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
-		"PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}",
-		"GET /members/me/training-results",
-		"GET /members/me/feedback",
-		"GET /members/me/training-plans",
-		"GET /members/me/coach-assignment",
-		"GET /notifications",
-		"PATCH /notifications/{notificationId}/read",
-		"PATCH /notifications/read-all",
-		"GET /manager/audit-events",
-		"GET /manager/coach-assignments/candidates",
-		"GET /manager/coaches/assignment-workloads",
-		"POST /manager/members/{memberId}/coach-assignment",
-		"GET /manager/members/{memberId}/coach-assignment",
-		"GET /manager/members/{memberId}/coach-assignment/impact",
-		"GET /manager/members/{memberId}/coach-assignments",
-		"PATCH /manager/members/{memberId}/coach-assignment/end",
-		"GET /manager/course-transfer-requests",
-		"GET /manager/course-transfer-requests/{requestId}/targets",
-		"POST /manager/course-transfer-requests/{requestId}/approve",
-		"POST /manager/course-transfer-requests/{requestId}/reject",
-		"GET /members/me/course-transfer-offers",
-		"POST /members/me/course-transfer-offers/{offerId}/accept"
-	);
+	private static final List<CourseOperationContract> COURSE_ORDER_OPERATION_CONTRACTS = List.of(new CourseOperationContract("/members/me/course-orders", "post", Set.of("200", "201", "400", "401", "403", "404", "409")), new CourseOperationContract("/members/me/course-orders/{orderId}", "get", Set.of("200", "400", "401", "403", "404")), new CourseOperationContract("/reception/members/{memberId}/course-orders", "post", Set.of("200", "201", "400", "401", "403", "404", "409")), new CourseOperationContract("/reception/members/{memberId}/course-orders/{orderId}", "get", Set.of("200", "400", "401", "403", "404")));
 
-	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of(
-		"POST /auth/logout",
-		"POST /auth/change-password",
-		"POST /auth/password-reset/confirm",
-		"DELETE /staff/me/email-change",
-		"DELETE /accounts/me/email-change",
-		"DELETE /members/me/membership-termination-requests/{requestId}",
-		"DELETE /members/me/membership-freeze-requests/{requestId}",
-		"POST /manager/staff-accounts/{accountId}/reset-password",
-		"POST /reception/members/{memberId}/reset-password",
-		"GET /members/me/membership-orders/pending",
-		"GET /reception/members/{memberId}/membership-orders/pending",
-		"GET /manager/members/{memberId}/coach-assignment",
-		"GET /members/me/coach-assignment",
-		"GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
-		"GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback"
-	);
+	private static final List<CourseOrderParameterContract> COURSE_ORDER_PARAMETER_CONTRACTS = List.of(new CourseOrderParameterContract("/members/me/course-orders", "post", "Idempotency-Key", "header", true, Set.of("string"), null, "1", "100", null), new CourseOrderParameterContract("/members/me/course-orders/{orderId}", "get", "orderId", "path", true, Set.of("string"), "uuid", null, null, null), new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post", "memberId", "path", true, Set.of("string"), "uuid", null, null, null), new CourseOrderParameterContract("/reception/members/{memberId}/course-orders", "post", "Idempotency-Key", "header", true, Set.of("string"), null, "1", "100", null), new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get", "memberId", "path", true, Set.of("string"), "uuid", null, null, null), new CourseOrderParameterContract("/reception/members/{memberId}/course-orders/{orderId}", "get", "orderId", "path", true, Set.of("string"), "uuid", null, null, null));
 
-	private static final Set<String> HTTP_METHODS = Set.of(
-		"get", "post", "put", "patch", "delete", "head", "options", "trace"
-	);
-	private static final String CONFLICT_ONLY_OPERATION =
-		"POST /reception/membership-orders/{orderId}/cash";
+	private static final List<CatalogSchemaContract> COURSE_ORDER_SCHEMA_CONTRACTS = List.of(new CatalogSchemaContract("CourseOrderCreateRequest", List.of(new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null))), new CatalogSchemaContract("CourseOrderResponse", List.of(new CatalogPropertyContract("orderId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("orderReference", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("memberId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("courseRunId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999", Set.of(), null), new CatalogPropertyContract("currencyCode", Set.of("string"), null, null, null, Set.of("VND"), null), new CatalogPropertyContract("orderStatus", Set.of("string"), null, null, null, Set.of("PENDING_PAYMENT", "EXPIRED", "PAID"), null), new CatalogPropertyContract("reservationStatus", Set.of("string"), null, null, null, Set.of("HELD", "EXPIRED", "ENROLLED"), null), new CatalogPropertyContract("expiresAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("createdAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("payment", Set.of("object"), null, null, null, Set.of(), null))));
+
+	private static final List<CatalogParameterContract> COURSE_CATALOG_PARAMETER_CONTRACTS = List.of(new CatalogParameterContract("/courses", "page", "query", false, Set.of("integer"), "int32", "0", "0", null, Set.of()), new CatalogParameterContract("/courses", "size", "query", false, Set.of("integer"), "int32", "20", "1", "100", Set.of()), new CatalogParameterContract("/courses/{courseId}", "courseId", "path", true, Set.of("string"), "uuid", null, null, null, Set.of()), new CatalogParameterContract("/course-runs", "page", "query", false, Set.of("integer"), "int32", "0", "0", null, Set.of()), new CatalogParameterContract("/course-runs", "size", "query", false, Set.of("integer"), "int32", "20", "1", "100", Set.of()), new CatalogParameterContract("/course-runs/{runId}", "runId", "path", true, Set.of("string"), "uuid", null, null, null, Set.of()));
+
+	private static final List<CatalogSchemaContract> COURSE_CATALOG_SCHEMA_CONTRACTS = List.of(new CatalogSchemaContract("CatalogCourseResponse", List.of(new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("code", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("name", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("description", Set.of("string", "null"), null, null, null, Set.of(), null), new CatalogPropertyContract("disciplineId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("disciplineName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("imageUrl", Set.of("string", "null"), null, null, null, Set.of(), null))), new CatalogSchemaContract("CatalogCoursePageResponse", List.of(new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(), "CatalogCourseResponse"), new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null), new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null), new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null), new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null))), new CatalogSchemaContract("CatalogCourseRunResponse", List.of(new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999", Set.of(), null), new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null), new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null, Set.of("UPCOMING", "OPEN", "CLOSED"), null), new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null), new CatalogPropertyContract("status", Set.of("string"), null, null, null, Set.of("OPEN_FOR_REGISTRATION"), null))), new CatalogSchemaContract("CatalogCourseRunPageResponse", List.of(new CatalogPropertyContract("content", Set.of("array"), null, null, null, Set.of(), "CatalogCourseRunResponse"), new CatalogPropertyContract("page", Set.of("integer"), "int32", "0", null, Set.of(), null), new CatalogPropertyContract("size", Set.of("integer"), "int32", "1", "100", Set.of(), null), new CatalogPropertyContract("totalElements", Set.of("integer"), "int64", "0", null, Set.of(), null), new CatalogPropertyContract("totalPages", Set.of("integer"), "int32", "0", null, Set.of(), null))), new CatalogSchemaContract("CatalogCourseSessionResponse", List.of(new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("unitNumber", Set.of("integer"), "int32", "1", null, Set.of(), null), new CatalogPropertyContract("roomId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("roomName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("coachId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("coachName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("startAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("endAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("originalStartAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("originalEndAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("allocationVnd", Set.of("integer"), null, "1", "9999999999999999999", Set.of(), null), new CatalogPropertyContract("status", Set.of("string"), null, null, null, Set.of("SCHEDULED", "CANCELLED", "CANCELLED_PENDING_MAKEUP", "MAKEUP_SCHEDULED", "COMPLETED", "UNRESOLVED", "RESOLVED_BY_REFUND"), null))), new CatalogSchemaContract("CatalogCourseRunDetailResponse", List.of(new CatalogPropertyContract("id", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("runCode", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("courseId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("courseCode", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("courseName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("primaryCoachId", Set.of("string"), "uuid", null, null, Set.of(), null), new CatalogPropertyContract("primaryCoachName", Set.of("string"), null, null, null, Set.of(), null), new CatalogPropertyContract("tuitionVnd", Set.of("integer"), null, "1", "9999999999999999999", Set.of(), null), new CatalogPropertyContract("capacity", Set.of("integer"), "int32", "1", null, Set.of(), null), new CatalogPropertyContract("registrationOpensAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("registrationClosesAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("registrationStatus", Set.of("string"), null, null, null, Set.of("UPCOMING", "OPEN", "CLOSED"), null), new CatalogPropertyContract("plannedStartAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("plannedEndAt", Set.of("string"), "date-time", null, null, Set.of(), null), new CatalogPropertyContract("totalUnits", Set.of("integer"), "int32", "1", null, Set.of(), null), new CatalogPropertyContract("status", Set.of("string"), null, null, null, Set.of("OPEN_FOR_REGISTRATION"), null), new CatalogPropertyContract("sessions", Set.of("array"), null, null, null, Set.of(), "CatalogCourseSessionResponse"))));
+
+	private static final Set<String> EXPECTED_OPERATIONS = Set.of("GET /manager/coach-leave-requests/{requestId}/affected-sessions/{type}/{sessionId}/available-coaches", "GET /manager/coach-leave-requests/{requestId}/impact", "POST /manager/coach-leave-requests/{requestId}/batch", "POST /manager/coach-leave-requests/{requestId}/batch/available-coaches", "GET /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary", "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary", "GET /coach/course-sessions/{sessionId}/members/{memberId}/training-summary", "PUT /coach/course-sessions/{sessionId}/members/{memberId}/training-summary", "PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-summary", "DELETE /staff/me/profile/image", "POST /manager/course-runs/resource-availability", "POST /manager/course-runs/with-schedule", "GET /manager/course-runs/{runId}/cancellation-impact", "POST /payments/{paymentId}/evidence-images", "GET /payments/{paymentId}/evidence-images/{evidenceId}", "POST /manager/course-runs/preview-schedule", "POST /manager/courses/images", "GET /payments/{paymentId}/evidence-images", "GET /course-payments/reconciliation-queue", "GET /course-payments/{paymentId}", "GET /course-payments/{paymentId}/result", "POST /course-payments/{paymentId}/reconcile", "GET /reception/members/{memberId}/course-waitlists", "POST /reception/members/{memberId}/course-runs/{runId}/waitlist", "DELETE /reception/members/{memberId}/course-runs/{runId}/waitlist", "POST /reception/members/{memberId}/course-waitlists/{waitlistId}/accept", "GET /reception/members/{memberId}/course-schedule-changes", "POST /reception/members/{memberId}/course-schedule-changes/{responseId}/response", "GET /reception/members/{memberId}/course-transfer-offers", "POST /reception/members/{memberId}/course-transfer-offers/{offerId}/accept", "GET /reception/members/{memberId}/course-withdrawal-requests", "GET /reception/members/{memberId}/course-withdrawal-requests/{requestId}", "GET /reception/members/{memberId}/course-refund-obligations", "GET /reception/members/{memberId}/course-refund-obligations/{obligationId}", "POST /auth/login", "POST /auth/refresh", "POST /auth/logout", "POST /auth/change-password", "POST /auth/register", "POST /auth/email-verification/verify", "POST /auth/email-verification/resend", "POST /auth/email-verification/change-email", "POST /auth/password-reset/request", "POST /auth/password-reset/verify", "POST /auth/password-reset/confirm", "GET /reception/email-verification/pending-accounts", "POST /reception/email-verification/manual-activation-requests", "GET /reception/email-verification/manual-activation-requests", "GET /reception/email-verification/manual-activation-requests/{requestId}", "GET /manager/email-verification/manual-activation-requests", "GET /manager/email-verification/manual-activation-requests/{requestId}", "POST /manager/email-verification/manual-activation-requests/{requestId}/approve", "POST /manager/email-verification/manual-activation-requests/{requestId}/reject", "GET /manager/members", "GET /manager/members/{id}", "PATCH /manager/members/{id}", "PATCH /manager/members/{memberAccountId}/status", "POST /manager/staff-accounts", "GET /manager/staff-accounts", "GET /manager/staff-accounts/{accountId}", "PATCH /manager/staff-accounts/{accountId}", "PATCH /manager/staff-accounts/{accountId}/status", "POST /manager/staff-accounts/{accountId}/reset-password", "GET /members/me/profile", "PATCH /members/me/profile", "POST /members/me/profile/image", "POST /reception/members/{memberId}/membership-orders/{orderId}/payments/sepay", "GET /staff/me/profile", "PATCH /staff/me/profile", "POST /staff/me/profile/image", "POST /staff/me/email-change", "POST /staff/me/email-change/verify", "POST /staff/me/email-change/resend", "DELETE /staff/me/email-change", "GET /accounts/me/email-change", "POST /accounts/me/email-change", "PUT /accounts/me/email-change", "POST /accounts/me/email-change/verify", "POST /accounts/me/email-change/resend", "DELETE /accounts/me/email-change", "GET /membership-offers", "GET /membership-offers/{offerId}", "GET /courses", "GET /courses/{courseId}", "GET /course-runs", "GET /course-runs/{runId}", "GET /manager/membership-offers", "GET /manager/membership-offers/{offerId}", "POST /manager/membership-offers", "PATCH /manager/membership-offers/{id}", "GET /manager/membership-benefits", "GET /manager/membership-plans", "GET /manager/membership-plans/{planCode}", "POST /manager/membership-plans", "PATCH /manager/membership-plans/{planCode}", "GET /members/me/membership-termination-requests", "POST /members/me/membership-termination-requests", "DELETE /members/me/membership-termination-requests/{requestId}", "GET /reception/members/{memberCode}/membership-termination-requests", "POST /reception/members/{memberCode}/membership-termination-requests", "GET /manager/membership-termination-requests", "POST /manager/membership-termination-requests/{requestId}/approve", "POST /manager/membership-termination-requests/{requestId}/reject", "POST /manager/members/{memberAccountId}/membership-termination-requests", "GET /members/me/membership-freeze-requests", "POST /members/me/membership-freeze-requests", "DELETE /members/me/membership-freeze-requests/{requestId}", "POST /members/me/membership-freeze-requests/{requestId}/end-early", "GET /reception/members/{memberCode}/membership-freeze-requests", "POST /reception/members/{memberCode}/membership-freeze-requests", "POST /reception/membership-freeze-requests/{requestId}/end-early", "GET /manager/membership-freeze-requests", "POST /manager/membership-freeze-requests/{requestId}/approve", "POST /manager/membership-freeze-requests/{requestId}/reject", "POST /reception/membership-freeze-requests/{requestId}/cash-payment", "GET /reception/refund-requests", "GET /reception/members/{memberCode}/refund-eligible-sources", "POST /reception/members/{memberCode}/refund-requests", "POST /reception/refund-requests/{requestId}/cash-disbursement", "GET /manager/refund-requests", "POST /manager/refund-requests/{requestId}/first-approval", "POST /manager/refund-requests/{requestId}/final-approval", "POST /manager/refund-requests/{requestId}/reject", "POST /members/me/membership-orders", "GET /members/me/membership-orders/pending", "POST /reception/members/{memberId}/membership-orders", "GET /reception/members/{memberId}/membership-orders/pending", "POST /members/me/course-orders", "GET /members/me/course-orders/{orderId}", "POST /members/me/course-orders/{orderId}/payments/sepay", "POST /reception/members/{memberId}/course-orders", "GET /reception/members/{memberId}/course-orders/{orderId}", "POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay", "POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash", "GET /members/me/course-enrollments", "GET /reception/members/{memberId}/course-enrollments", "GET /reception/members/{memberId}/course-enrollments/{enrollmentId}", "POST /members/me/course-enrollments/{enrollmentId}/withdrawal-requests", "POST /members/me/course-withdrawal-requests/{requestId}/cancel", "POST /reception/members/{memberId}/course-withdrawal-requests/{requestId}/cancel", "GET /members/me/course-withdrawal-requests", "GET /members/me/course-withdrawal-requests/{requestId}", "POST /reception/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests", "GET /manager/course-withdrawal-requests", "GET /manager/course-withdrawal-requests/{requestId}", "POST /manager/course-withdrawal-requests/{requestId}/approve", "POST /manager/course-withdrawal-requests/{requestId}/reject", "GET /manager/course-refund-obligations", "GET /manager/course-refund-obligations/{obligationId}", "GET /reception/course-refunds", "GET /reception/course-refunds/{refundId}", "POST /manager/course-refund-obligations/{obligationId}/approve", "POST /manager/course-refund-obligations/{obligationId}/reject", "POST /reception/course-refund-obligations/{obligationId}/disburse", "POST /manager/course-refund-obligations/{obligationId}/verify", "POST /manager/course-refund-obligations/{obligationId}/fail", "POST /manager/course-refund-obligations/{obligationId}/return", "GET /members/me/course-refund-obligations", "GET /members/me/course-refund-obligations/{obligationId}", "POST /manager/members/{memberId}/course-enrollments/{enrollmentId}/withdrawal-requests", "GET /members/me/course-schedule-changes", "POST /members/me/course-schedule-changes/{responseId}/response", "POST /course-runs/{runId}/waitlist", "DELETE /course-runs/{runId}/waitlist", "GET /members/me/course-waitlists", "POST /course-waitlists/{waitlistId}/accept", "GET /coach/course-sessions", "GET /coach/course-sessions/{sessionId}", "GET /coach/course-sessions/{sessionId}/roster", "PATCH /coach/course-sessions/{sessionId}/roster/{enrollmentSessionId}/attendance", "POST /reception/members/{memberId}/cash-payments", "POST /reception/membership-orders/{orderId}/cash", "POST /payments/{paymentId}/reconcile", "PATCH /membership-orders/{orderId}/cancel", "GET /payments/reconciliation-queue", "GET /members/me/receipts", "GET /reception/members/{memberId}/receipts", "GET /receipts/{receiptId}", "GET /payments/{paymentId}/result", "GET /members/me/memberships", "GET /reception/members/{memberCode}/memberships", "GET /manager/members/{memberAccountId}/memberships", "GET /manager/reports/membership-revenue", "GET /manager/dashboard", "GET /manager/reports/members", "GET /manager/reports/bookings", "GET /manager/reports/attendance", "GET /manager/reports/center-visits", "GET /manager/reports/class-utilization", "GET /manager/reports/course-runs", "POST /members/me/membership-orders/{orderId}/payments/sepay", "POST /members/me/membership-orders/{orderId}/bank-transfer", "POST /payments/sepay/webhook", "POST /reception/members/{memberId}/reset-password", "POST /reception/members", "GET /reception/members/search", "GET /reception/members/{memberId}/profile", "PATCH /reception/members/{memberId}/profile", "POST /reception/members/{memberId}/profile/image", "POST /reception/center-visits", "GET /members/me/center-visits/current", "PATCH /members/me/center-visits/current/checkout", "PATCH /reception/members/{memberAccountId}/center-visits/current/checkout", "GET /reception/center-visits/open", "POST /members/class-sessions/{sessionId}/bookings", "POST /members/class-sessions/{sessionId}/waitlist", "DELETE /members/class-sessions/{sessionId}/waitlist", "GET /members/me/waitlists", "POST /reception/members/{memberId}/class-sessions/{sessionId}/waitlist", "DELETE /reception/members/{memberId}/class-sessions/{sessionId}/waitlist", "GET /reception/class-sessions/{sessionId}/waitlist", "GET /manager/class-sessions/{sessionId}/waitlist", "GET /members/me/bookings", "PATCH /members/me/bookings/{bookingId}/cancel", "POST /reception/members/{memberId}/bookings", "GET /reception/members/{memberId}/bookings", "PATCH /reception/members/{memberId}/bookings/{bookingId}/cancel", "GET /reception/class-sessions", "GET /manager/disciplines", "POST /manager/disciplines", "GET /manager/disciplines/{disciplineId}", "PATCH /manager/disciplines/{disciplineId}", "GET /manager/course-approval-requests", "GET /manager/course-approval-requests/{courseId}", "POST /manager/course-approval-requests/{courseId}/approve", "POST /manager/course-approval-requests/{courseId}/reject", "GET /manager/courses", "POST /manager/courses", "GET /manager/courses/{courseId}", "PATCH /manager/courses/{courseId}", "POST /manager/courses/{courseId}/publish", "POST /manager/courses/{courseId}/deactivate", "POST /manager/courses/{courseId}/archive", "GET /manager/course-runs", "POST /manager/course-runs", "GET /manager/course-runs/{runId}", "PATCH /manager/course-runs/{runId}", "POST /manager/course-runs/{runId}/open-registration", "PATCH /manager/course-runs/{runId}/schedule", "POST /manager/course-runs/{runId}/reschedule", "POST /manager/course-runs/{runId}/cancel", "GET /manager/course-runs/{runId}/sessions", "POST /manager/course-runs/{runId}/sessions", "GET /manager/course-runs/{runId}/sessions/{sessionId}", "PATCH /manager/course-runs/{runId}/sessions/{sessionId}", "POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel", "POST /manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "POST /manager/course-runs/{runId}/sessions/{sessionId}/makeup", "GET /manager/rooms", "GET /manager/rooms/availability", "POST /manager/rooms", "GET /manager/rooms/{roomId}", "PATCH /manager/rooms/{roomId}", "GET /manager/rooms/{roomId}/suspensions", "POST /manager/rooms/{roomId}/suspensions", "PATCH /manager/rooms/{roomId}/suspensions/{suspensionId}", "POST /manager/rooms/{roomId}/impact-preview", "POST /manager/rooms/{roomId}/impact-apply", "GET /manager/classes", "GET /manager/classes/types", "POST /manager/classes", "GET /manager/classes/{classId}", "PATCH /manager/classes/{classId}", "POST /manager/class-sessions", "GET /manager/class-sessions", "GET /manager/class-sessions/{id}", "GET /manager/class-sessions/{id}/available-coaches", "GET /manager/coaches/available", "PATCH /manager/class-sessions/{id}/assignment", "PATCH /manager/class-sessions/{id}/schedule", "PATCH /manager/class-sessions/{id}/cancel", "POST /manager/class-sessions/cancellation-preview", "POST /manager/class-sessions/bulk-cancel", "POST /coach/leave-requests", "GET /coach/me/leave-requests", "DELETE /coach/leave-requests/{requestId}", "PATCH /coach/leave-requests/{requestId}/cancel", "GET /manager/coach-leave-requests", "PATCH /manager/coach-leave-requests/{requestId}/approve", "PATCH /manager/coach-leave-requests/{requestId}/reject", "POST /manager/recurring-schedules", "GET /members/class-sessions", "GET /members/pt-sessions", "GET /reception/pt-sessions", "GET /manager/pt-sessions", "GET /coach/pt-sessions", "GET /coach/class-sessions", "GET /coach/class-sessions/{id}", "GET /coach/class-sessions/{sessionId}/attendance", "PATCH /coach/class-sessions/{sessionId}/attendance/{attendanceId}", "GET /coach/members", "GET /coach/members/{memberId}", "GET /coach/members/{memberId}/training-plans", "POST /coach/members/{memberId}/training-plans", "PUT /coach/members/{memberId}/training-plans/{planId}", "GET /coach/members/{memberId}/training-plans/{planId}/versions", "POST /coach/members/{memberId}/training-plans/{planId}/archive", "POST /coach/members/{memberId}/training-results", "GET /coach/members/{memberId}/training-results", "PUT /coach/members/{memberId}/training-results/{resultId}", "POST /coach/members/{memberId}/feedback", "GET /coach/members/{memberId}/feedback", "PUT /coach/members/{memberId}/feedback/{feedbackId}", "POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results", "GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results", "PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}", "POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback", "GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback", "PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}", "GET /members/me/training-results", "GET /members/me/feedback", "GET /members/me/training-plans", "GET /members/me/coach-assignment", "GET /notifications", "PATCH /notifications/{notificationId}/read", "PATCH /notifications/read-all", "GET /manager/audit-events", "GET /manager/coach-assignments/candidates", "GET /manager/coaches/assignment-workloads", "POST /manager/members/{memberId}/coach-assignment", "GET /manager/members/{memberId}/coach-assignment", "GET /manager/members/{memberId}/coach-assignment/impact", "GET /manager/members/{memberId}/coach-assignments", "PATCH /manager/members/{memberId}/coach-assignment/end", "GET /manager/course-transfer-requests", "GET /manager/course-transfer-requests/{requestId}/targets", "POST /manager/course-transfer-requests/{requestId}/approve", "POST /manager/course-transfer-requests/{requestId}/reject", "GET /members/me/course-transfer-offers", "POST /members/me/course-transfer-offers/{offerId}/accept");
+
+	private static final Set<String> INTENTIONAL_NO_CONTENT = Set.of("POST /auth/logout", "POST /auth/change-password", "POST /auth/password-reset/confirm", "DELETE /staff/me/email-change", "DELETE /accounts/me/email-change", "DELETE /members/me/membership-termination-requests/{requestId}", "DELETE /members/me/membership-freeze-requests/{requestId}", "POST /manager/staff-accounts/{accountId}/reset-password", "POST /reception/members/{memberId}/reset-password", "GET /members/me/membership-orders/pending", "GET /reception/members/{memberId}/membership-orders/pending", "GET /manager/members/{memberId}/coach-assignment", "GET /members/me/coach-assignment", "GET /coach/class-sessions/{sessionId}/members/{memberId}/training-results", "GET /coach/class-sessions/{sessionId}/members/{memberId}/feedback");
+
+	private static final Set<String> HTTP_METHODS = Set.of("get", "post", "put", "patch", "delete", "head", "options", "trace");
+
+	private static final String CONFLICT_ONLY_OPERATION = "POST /reception/membership-orders/{orderId}/cash";
 
 	@Autowired
 	MockMvc mockMvc;
@@ -629,8 +90,7 @@ class GeneratedOpenApiTests {
 
 	@Test
 	void courseReconciliationContractExistsIndependentlyOfMembership() throws Exception {
-		JsonNode document = objectMapper.readTree(mockMvc.perform(get("/v3/api-docs"))
-			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		JsonNode document = objectMapper.readTree(mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 		java.nio.file.Files.writeString(java.nio.file.Path.of("target/course-reconciliation-openapi.json"), document.toPrettyString());
 		JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-payment-reconciliation.yaml"));
 		contract.path("paths").properties().forEach(entry -> {
@@ -639,8 +99,7 @@ class GeneratedOpenApiTests {
 		contract.path("components").path("schemas").properties().forEach(entry -> {
 			assertThat(document.path("components").path("schemas").path(entry.getKey())).as(entry.getKey()).isEqualTo(entry.getValue());
 		});
-		for (String path : List.of("/course-payments/reconciliation-queue", "/course-payments/{paymentId}",
-				"/course-payments/{paymentId}/result")) {
+		for (String path : List.of("/course-payments/reconciliation-queue", "/course-payments/{paymentId}", "/course-payments/{paymentId}/result")) {
 			assertThat(document.path("paths").path(path).has("get")).as(path).isTrue();
 		}
 		JsonNode reconcile = document.path("paths").path("/course-payments/{paymentId}/reconcile").path("post");
@@ -651,34 +110,21 @@ class GeneratedOpenApiTests {
 	@Test
 	void receptionProxyContractsMatchGeneratedResponsesAndMemberSchemas() throws Exception {
 		JsonNode generated = generatedDocument();
-		for (String[] contract : List.of(
-			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists", "get", "CourseWaitlistResponse", "true", "false" },
-			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "post", "CourseWaitlistResponse", "false", "false" },
-			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "delete", "CourseWaitlistResponse", "false", "false" },
-			new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists/{waitlistId}/accept", "post", "CourseOrderResponse", "false", "true" },
-			new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes", "get", "ScheduleChange", "true", "false" },
-			new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes/{responseId}/response", "post", "ScheduleChange", "false", "false" },
-			new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers", "get", "TransferOffer", "true", "false" },
-			new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers/{offerId}/accept", "post", "TransferOffer", "false", "true" },
-			new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests", "get", "WithdrawalRequest", "true", "false" },
-			new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests/{requestId}", "get", "WithdrawalRequest", "false", "false" },
-			new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations", "get", "MemberRefundObligationPage", "false", "false" },
-			new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations/{obligationId}", "get", "MemberRefundObligation", "false", "false" })) {
+		for (String[] contract : List.of(new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists", "get", "CourseWaitlistResponse", "true", "false" }, new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "post", "CourseWaitlistResponse", "false", "false" }, new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-runs/{runId}/waitlist", "delete", "CourseWaitlistResponse", "false", "false" }, new String[] { "course-orders.yaml", "/reception/members/{memberId}/course-waitlists/{waitlistId}/accept", "post", "CourseOrderResponse", "false", "true" }, new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes", "get", "ScheduleChange", "true", "false" }, new String[] { "course-enrollment.yaml", "/reception/members/{memberId}/course-schedule-changes/{responseId}/response", "post", "ScheduleChange", "false", "false" }, new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers", "get", "TransferOffer", "true", "false" }, new String[] { "course-transfer.yaml", "/reception/members/{memberId}/course-transfer-offers/{offerId}/accept", "post", "TransferOffer", "false", "true" }, new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests", "get", "WithdrawalRequest", "true", "false" }, new String[] { "course-withdrawal.yaml", "/reception/members/{memberId}/course-withdrawal-requests/{requestId}", "get", "WithdrawalRequest", "false", "false" }, new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations", "get", "MemberRefundObligationPage", "false", "false" }, new String[] { "course-refund-obligations.yaml", "/reception/members/{memberId}/course-refund-obligations/{obligationId}", "get", "MemberRefundObligation", "false", "false" })) {
 			JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/" + contract[0]));
 			String path = contract[1], method = contract[2];
 			JsonNode expected = operation(documented, path, method), actual = operation(generated, path, method);
 			assertThat(actual.isMissingNode()).as(path).isFalse();
-			assertThat(actual.path("responses").properties().stream().map(Map.Entry::getKey).toList())
-				.as(path).containsExactlyInAnyOrderElementsOf(expected.path("responses").properties().stream().map(Map.Entry::getKey).toList());
+			assertThat(actual.path("responses").properties().stream().map(Map.Entry::getKey).toList()).as(path).containsExactlyInAnyOrderElementsOf(expected.path("responses").properties().stream().map(Map.Entry::getKey).toList());
 			for (JsonNode document : List.of(documented, generated)) {
 				JsonNode operation = operation(document, path, method);
 				assertThat(operationHasRequiredParameter(document, operation, "memberId", "path")).isTrue();
 				assertThat(effectiveSecurity(document, operation)).isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
 				JsonNode schema = response(document, path, method, "200").at("/content/application~1json/schema");
-				if (Boolean.parseBoolean(contract[4])) schema = schema.path("items");
+				if (Boolean.parseBoolean(contract[4]))
+					schema = schema.path("items");
 				assertThat(schema.path("$ref").asText()).as(path).endsWith("/" + contract[3]);
-				assertThat(resolve(document, schema).path("properties").properties().stream().map(Map.Entry::getKey).toList())
-					.doesNotContain("bankAccount", "evidenceReference", "trainingPlan", "trainingResults");
+				assertThat(resolve(document, schema).path("properties").properties().stream().map(Map.Entry::getKey).toList()).doesNotContain("bankAccount", "evidenceReference", "trainingPlan", "trainingResults");
 				if (Boolean.parseBoolean(contract[5])) {
 					JsonNode key = parameter(document, path, method, "Idempotency-Key");
 					assertThat(key.path("required").asBoolean()).isTrue();
@@ -686,8 +132,8 @@ class GeneratedOpenApiTests {
 					assertThat(key.at("/schema/maxLength").asInt()).isEqualTo(100);
 				}
 			}
-			if (path.endsWith("/response")) assertThat(expected.at("/requestBody/content/application~1json/schema/$ref"))
-				.isEqualTo(actual.at("/requestBody/content/application~1json/schema/$ref"));
+			if (path.endsWith("/response"))
+				assertThat(expected.at("/requestBody/content/application~1json/schema/$ref")).isEqualTo(actual.at("/requestBody/content/application~1json/schema/$ref"));
 		}
 	}
 
@@ -698,9 +144,7 @@ class GeneratedOpenApiTests {
 		for (var candidate : scanner.findCandidateComponents("com.scms.backend")) {
 			Class<?> controller = Class.forName(candidate.getBeanClassName());
 			for (var method : controller.getDeclaredMethods()) {
-				if (method.getGenericReturnType() instanceof ParameterizedType type
-						&& type.getRawType().getTypeName().equals("org.springframework.http.ResponseEntity")
-						&& type.getActualTypeArguments()[0] instanceof WildcardType) {
+				if (method.getGenericReturnType() instanceof ParameterizedType type && type.getRawType().getTypeName().equals("org.springframework.http.ResponseEntity") && type.getActualTypeArguments()[0] instanceof WildcardType) {
 					wildcardMethods.add(controller.getSimpleName() + "." + method.getName());
 				}
 			}
@@ -712,31 +156,25 @@ class GeneratedOpenApiTests {
 	void generatedContractContainsEveryRouteAndConcreteSuccessSchema() throws Exception {
 		JsonNode document = generatedDocument();
 		Set<String> actualOperations = operations(document);
-
 		assertThat(actualOperations).containsExactlyInAnyOrderElementsOf(EXPECTED_OPERATIONS);
-
-		document.path("paths").properties().forEach(pathEntry ->
-			pathEntry.getValue().properties().forEach(operationEntry -> {
-				if (!HTTP_METHODS.contains(operationEntry.getKey())) return;
-				String operation = operationEntry.getKey().toUpperCase() + " " + pathEntry.getKey();
-				List<java.util.Map.Entry<String, JsonNode>> successResponses = operationEntry.getValue()
-					.path("responses").properties().stream()
-					.filter(responseEntry -> responseEntry.getKey().matches("2\\d\\d"))
-					.toList();
-				if (operation.equals(CONFLICT_ONLY_OPERATION)) {
-					assertThat(successResponses).as(operation).isEmpty();
+		document.path("paths").properties().forEach(pathEntry -> pathEntry.getValue().properties().forEach(operationEntry -> {
+			if (!HTTP_METHODS.contains(operationEntry.getKey()))
+				return;
+			String operation = operationEntry.getKey().toUpperCase() + " " + pathEntry.getKey();
+			List<java.util.Map.Entry<String, JsonNode>> successResponses = operationEntry.getValue().path("responses").properties().stream().filter(responseEntry -> responseEntry.getKey().matches("2\\d\\d")).toList();
+			if (operation.equals(CONFLICT_ONLY_OPERATION)) {
+				assertThat(successResponses).as(operation).isEmpty();
+			} else {
+				assertThat(successResponses).as(operation).isNotEmpty();
+			}
+			successResponses.forEach(responseEntry -> {
+				if (responseEntry.getKey().equals("204")) {
+					assertThat(INTENTIONAL_NO_CONTENT).as(operation + " 204").contains(operation);
+					return;
 				}
-				else {
-					assertThat(successResponses).as(operation).isNotEmpty();
-				}
-				successResponses.forEach(responseEntry -> {
-					if (responseEntry.getKey().equals("204")) {
-						assertThat(INTENTIONAL_NO_CONTENT).as(operation + " 204").contains(operation);
-						return;
-					}
-					assertConcreteSchema(responseEntry.getValue(), operation + " " + responseEntry.getKey());
-				});
-			}));
+				assertConcreteSchema(responseEntry.getValue(), operation + " " + responseEntry.getKey());
+			});
+		}));
 		INTENTIONAL_NO_CONTENT.forEach(operation -> {
 			int separator = operation.indexOf(' ');
 			String method = operation.substring(0, separator).toLowerCase();
@@ -760,12 +198,9 @@ class GeneratedOpenApiTests {
 		JsonNode patch = document.at("/components/schemas/CoursePatchRequest");
 		assertThat(patch.at("/properties/description/maxLength").asInt()).isEqualTo(2000);
 		assertThat(patch.at("/properties/imageUrl/maxLength").asInt()).isEqualTo(500);
-		assertThat(document.at("/components/schemas/CourseResponse/properties/status/enum").toString())
-			.contains("DRAFT", "PUBLISHED", "INACTIVE", "ARCHIVED");
-		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/enum").toString())
-			.contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
-		assertThat(document.at("/components/schemas/CourseResponse/properties/createdAt/format").asText())
-			.isEqualTo("date-time");
+		assertThat(document.at("/components/schemas/CourseResponse/properties/status/enum").toString()).contains("DRAFT", "PUBLISHED", "INACTIVE", "ARCHIVED");
+		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/enum").toString()).contains("OPEN_FOR_REGISTRATION", "SETTLEMENT_PENDING", "CANCELLED");
+		assertThat(document.at("/components/schemas/CourseResponse/properties/createdAt/format").asText()).isEqualTo("date-time");
 	}
 
 	@Test
@@ -773,29 +208,15 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		JsonNode list = operation(document, "/reception/course-refunds", "get");
 		assertThat(list.path("parameters").toString()).contains("page", "size", "eligible");
-		JsonNode page = resolve(document, response(document, "/reception/course-refunds", "get", "200")
-			.at("/content/application~1json/schema"));
+		JsonNode page = resolve(document, response(document, "/reception/course-refunds", "get", "200").at("/content/application~1json/schema"));
 		JsonNode item = resolve(document, page.at("/properties/items/items"));
-		assertThat(item.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("refundId", "memberId", "memberCode", "memberName", "courseId",
-				"courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "source", "amount",
-				"approvedAt", "version", "disbursementEligible", "disbursementEligibilityReason")
-			.doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
-		assertThat(item.at("/properties/disbursementEligibilityReason/enum").toString())
-			.contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND")
-			.doesNotContain("REFUND_NOT_APPROVED", "REFUND_ALREADY_DISBURSED");
-		assertThat(operation(document, "/reception/course-refunds/{refundId}", "get")
-			.at("/responses/200/content/application~1json/schema/$ref").asText())
-			.isEqualTo("#/components/schemas/ReceptionCourseRefund");
-		assertThat(operation(document, "/reception/course-refund-obligations/{obligationId}/disburse", "post")
-			.at("/responses/409/$ref").asText())
-			.isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
-		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText())
-			.contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
-		JsonNode manager = resolve(document, response(document, "/manager/course-refund-obligations/{obligationId}", "get", "200")
-			.at("/content/*~1*/schema"));
-		assertThat(manager.path("properties").properties().stream().map(Map.Entry::getKey).toList())
-			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus");
+		assertThat(item.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("refundId", "memberId", "memberCode", "memberName", "courseId", "courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "source", "amount", "approvedAt", "version", "disbursementEligible", "disbursementEligibilityReason").doesNotContain("email", "phone", "evidenceReference", "disbursementReference", "bankAccount");
+		assertThat(item.at("/properties/disbursementEligibilityReason/enum").toString()).contains("ELIGIBLE", "AWAITING_COURSE_COMPLETION", "COURSE_RUN_NOT_FOUND").doesNotContain("REFUND_NOT_APPROVED", "REFUND_ALREADY_DISBURSED");
+		assertThat(operation(document, "/reception/course-refunds/{refundId}", "get").at("/responses/200/content/application~1json/schema/$ref").asText()).isEqualTo("#/components/schemas/ReceptionCourseRefund");
+		assertThat(operation(document, "/reception/course-refund-obligations/{obligationId}/disburse", "post").at("/responses/409/$ref").asText()).isEqualTo("#/components/responses/CourseRefundDisbursementConflict");
+		assertThat(document.at("/components/responses/CourseRefundDisbursementConflict/description").asText()).contains("COURSE_REFUND_DISBURSEMENT_NOT_ELIGIBLE");
+		JsonNode manager = resolve(document, response(document, "/manager/course-refund-obligations/{obligationId}", "get", "200").at("/content/*~1*/schema"));
+		assertThat(manager.path("properties").properties().stream().map(Map.Entry::getKey).toList()).contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus");
 	}
 
 	@Test
@@ -803,18 +224,14 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		JsonNode enrollment = document.at("/components/schemas/MemberEnrollment");
 		assertThat(enrollment.at("/properties/courseRunStatus").isMissingNode()).isFalse();
-		assertThat(enrollment.at("/properties/payment/$ref").asText())
-			.isEqualTo("#/components/schemas/MemberPaymentSummary");
+		assertThat(enrollment.at("/properties/payment/$ref").asText()).isEqualTo("#/components/schemas/MemberPaymentSummary");
 		assertThat(document.at("/components/schemas/MemberPaymentSummary/properties/status/type").toString()).contains("null");
 		assertThat(document.at("/components/schemas/MemberPaymentSummary/properties/method/type").toString()).contains("null");
 		JsonNode memberSession = document.at("/components/schemas/MemberSession");
-		assertThat(memberSession.path("properties").properties().stream().map(Map.Entry::getKey).toList())
-			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
-		assertThat(memberSession.path("required").toString())
-			.contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(memberSession.path("properties").properties().stream().map(Map.Entry::getKey).toList()).contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(memberSession.path("required").toString()).contains("sessionStatus", "isMakeup", "originalSessionId", "replacementSessionId");
 		JsonNode managerSession = document.at("/components/schemas/CourseSessionResponse");
-		assertThat(managerSession.path("properties").properties().stream().map(Map.Entry::getKey).toList())
-			.contains("isMakeup", "originalSessionId", "replacementSessionId");
+		assertThat(managerSession.path("properties").properties().stream().map(Map.Entry::getKey).toList()).contains("isMakeup", "originalSessionId", "replacementSessionId");
 		assertThat(managerSession.at("/properties/originalSessionId/type").toString()).contains("null");
 		assertThat(managerSession.at("/properties/replacementSessionId/type").toString()).contains("null");
 	}
@@ -824,29 +241,16 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		JsonNode list = operation(document, "/reception/members/{memberId}/course-enrollments", "get");
 		assertThat(list.path("parameters").toString()).contains("memberId", "page", "size", "status", "withdrawalEligible");
-		JsonNode schema = resolve(document, response(document, "/reception/members/{memberId}/course-enrollments", "get", "200")
-			.at("/content/*~1*/schema"));
+		JsonNode schema = resolve(document, response(document, "/reception/members/{memberId}/course-enrollments", "get", "200").at("/content/*~1*/schema"));
 		JsonNode item = resolve(document, schema.at("/properties/content/items"));
-		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList())
-			.contains("memberId", "memberCode", "memberName", "courseId", "courseCode", "courseName",
-				"courseRunId", "runCode", "courseRunStatus", "enrollmentId", "enrollmentStatus", "enrolledAt",
-				"totalUnits", "remainingUnits", "withdrawalEligible", "withdrawalReason", "estimatedRefundAmount")
-			.doesNotContain("email", "phone", "emergencyContactPhone");
+		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList()).contains("memberId", "memberCode", "memberName", "courseId", "courseCode", "courseName", "courseRunId", "runCode", "courseRunStatus", "enrollmentId", "enrollmentStatus", "enrolledAt", "totalUnits", "remainingUnits", "withdrawalEligible", "withdrawalReason", "estimatedRefundAmount").doesNotContain("email", "phone", "emergencyContactPhone");
 		assertThat(item.at("/properties/withdrawalReason/enum").toString()).contains("FINAL_UNIT_ALREADY_STARTED");
-		assertThat(operation(document, "/reception/members/{memberId}/course-enrollments/{enrollmentId}", "get")
-			.at("/responses/404").isMissingNode()).isFalse();
+		assertThat(operation(document, "/reception/members/{memberId}/course-enrollments/{enrollmentId}", "get").at("/responses/404").isMissingNode()).isFalse();
 		JsonNode withdrawal = document.at("/components/schemas/WithdrawalRequest/properties");
-		assertThat(withdrawal.properties().stream().map(Map.Entry::getKey).toList())
-			.contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus",
-				"totalUnits", "remainingUnits", "estimatedRefundAmount", "cause", "withdrawalEligible",
-				"withdrawalReason", "refundBasisVnd", "refundAmountVnd", "scheduleChangeResponseId", "changeEventId",
-				"snapshotCapturedAt", "snapshotSource", "snapshotWithdrawalEligible", "snapshotWithdrawalReason",
-				"cancelledAt", "cancelledByAccountId", "cancellationReason", "canCancel", "learningSuspended")
-			.doesNotContain("email", "phone", "emergencyContactPhone");
+		assertThat(withdrawal.properties().stream().map(Map.Entry::getKey).toList()).contains("memberCode", "memberName", "courseCode", "courseName", "runCode", "courseRunStatus", "totalUnits", "remainingUnits", "estimatedRefundAmount", "cause", "withdrawalEligible", "withdrawalReason", "refundBasisVnd", "refundAmountVnd", "scheduleChangeResponseId", "changeEventId", "snapshotCapturedAt", "snapshotSource", "snapshotWithdrawalEligible", "snapshotWithdrawalReason", "cancelledAt", "cancelledByAccountId", "cancellationReason", "canCancel", "learningSuspended").doesNotContain("email", "phone", "emergencyContactPhone");
 		assertThat(withdrawal.at("/status/enum").toString()).contains("PENDING", "APPROVED", "REJECTED", "CANCELLED");
 		assertThat(withdrawal.at("/snapshotSource/enum").toString()).contains("REQUEST_TIME", "LEGACY_APPROVAL", "UNAVAILABLE");
-		assertThat(withdrawal.at("/cause/enum").toString())
-			.contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
+		assertThat(withdrawal.at("/cause/enum").toString()).contains("START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT");
 	}
 
 	@Test
@@ -859,22 +263,13 @@ class GeneratedOpenApiTests {
 			assertThat(parameter.at("/schema/maxLength").asInt()).isEqualTo(100);
 		}
 		assertThat(atomic.at("/requestBody/content/application~1json/schema/$ref").asText()).endsWith("/CourseRunRescheduleRequest");
-		assertThat(document.at("/components/schemas/CourseRunRescheduleRequest/required").toString())
-			.contains("expectedVersion", "plannedStartAt", "plannedEndAt", "totalUnits", "sessions");
-		assertThat(document.at("/components/schemas/CourseSessionRescheduleRequest/required").toString())
-			.contains("sessionId", "expectedVersion", "startAt", "endAt").doesNotContain("roomId", "coachId");
-		assertThat(document.at("/components/schemas/CourseRunRescheduleResponse/required").toString())
-			.contains("run", "sessions", "changeEventId");
-		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/description").asText())
-			.contains("automatic", "does not mean refunds have been paid");
-		assertThat(operation(document, "/manager/course-runs/{runId}/schedule", "patch")
-			.at("/requestBody/content/application~1json/schema/$ref").asText())
-			.isEqualTo("#/components/schemas/CourseRunScheduleRequest");
-		assertThat(operation(document, "/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post")
-			.at("/requestBody/content/application~1json/schema/$ref").asText())
-			.isEqualTo("#/components/schemas/CourseSessionCancelWithMakeupRequest");
-		assertThat(document.at("/components/schemas/CourseSessionResponse/properties/status/enum").toString())
-			.contains("REMOVED_BY_RUN_CHANGE");
+		assertThat(document.at("/components/schemas/CourseRunRescheduleRequest/required").toString()).contains("expectedVersion", "plannedStartAt", "plannedEndAt", "totalUnits", "sessions");
+		assertThat(document.at("/components/schemas/CourseSessionRescheduleRequest/required").toString()).contains("sessionId", "expectedVersion", "startAt", "endAt").doesNotContain("roomId", "coachId");
+		assertThat(document.at("/components/schemas/CourseRunRescheduleResponse/required").toString()).contains("run", "sessions", "changeEventId");
+		assertThat(document.at("/components/schemas/CourseRunResponse/properties/status/description").asText()).contains("automatic", "does not mean refunds have been paid");
+		assertThat(operation(document, "/manager/course-runs/{runId}/schedule", "patch").at("/requestBody/content/application~1json/schema/$ref").asText()).isEqualTo("#/components/schemas/CourseRunScheduleRequest");
+		assertThat(operation(document, "/manager/course-runs/{runId}/sessions/{sessionId}/cancel-with-makeup", "post").at("/requestBody/content/application~1json/schema/$ref").asText()).isEqualTo("#/components/schemas/CourseSessionCancelWithMakeupRequest");
+		assertThat(document.at("/components/schemas/CourseSessionResponse/properties/status/enum").toString()).contains("REMOVED_BY_RUN_CHANGE");
 	}
 
 	@Test
@@ -887,14 +282,10 @@ class GeneratedOpenApiTests {
 			assertThat(operation.path("description").asText()).contains("Public course catalog");
 			assertThat(operation.path("responses").has("403")).as(path).isFalse();
 		}
-		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/status/enum").toString())
-			.isEqualTo("[\"OPEN_FOR_REGISTRATION\"]");
-		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/registrationStatus/enum")
-			.toString())
-			.isEqualTo("[\"UPCOMING\",\"OPEN\",\"CLOSED\"]");
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/status/enum").toString()).isEqualTo("[\"OPEN_FOR_REGISTRATION\"]");
+		assertThat(document.at("/components/schemas/CatalogCourseRunResponse/properties/registrationStatus/enum").toString()).isEqualTo("[\"UPCOMING\",\"OPEN\",\"CLOSED\"]");
 		JsonNode detail = document.at("/components/schemas/CatalogCourseRunDetailResponse");
-		assertThat(detail.at("/properties/sessions/items/$ref").asText())
-			.isEqualTo("#/components/schemas/CatalogCourseSessionResponse");
+		assertThat(detail.at("/properties/sessions/items/$ref").asText()).isEqualTo("#/components/schemas/CatalogCourseSessionResponse");
 		assertThat(detail.toString()).doesNotContain("capacityRemaining", "policyVersionSnapshot", "version");
 	}
 
@@ -904,32 +295,21 @@ class GeneratedOpenApiTests {
 		JsonNode list = operation(document, "/coach/course-sessions", "get");
 		assertThat(list.path("description").asText()).contains("Requires COACH role");
 		assertThat(list.path("parameters").toString()).contains("from", "to", "status", "page", "size", "sort");
-		JsonNode page = resolve(document, response(document, "/coach/course-sessions", "get", "200")
-			.at("/content/*~1*/schema"));
+		JsonNode page = resolve(document, response(document, "/coach/course-sessions", "get", "200").at("/content/*~1*/schema"));
 		JsonNode item = resolve(document, page.at("/properties/content/items"));
-		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList())
-			.contains("courseSessionId", "courseId", "courseRunId", "startsAt", "endsAt", "roomId",
-				"sessionStatus", "rosterCount", "attendanceWritable", "attendanceWriteReason");
-		assertThat(item.at("/properties/attendanceWriteReason/enum").toString())
-			.contains("WRITABLE", "TOO_EARLY", "WINDOW_CLOSED", "SESSION_CANCELLED",
-				"NOT_ASSIGNED_COACH", "COURSE_RUN_NOT_ACTIVE");
-		assertThat(operation(document, "/coach/course-sessions/{sessionId}", "get")
-			.at("/responses/200/content/*~1*/schema/$ref").asText())
-			.isEqualTo("#/components/schemas/CourseCoachSessionResponse");
+		assertThat(item.path("properties").properties().stream().map(Map.Entry::getKey).toList()).contains("courseSessionId", "courseId", "courseRunId", "startsAt", "endsAt", "roomId", "sessionStatus", "rosterCount", "attendanceWritable", "attendanceWriteReason");
+		assertThat(item.at("/properties/attendanceWriteReason/enum").toString()).contains("WRITABLE", "TOO_EARLY", "WINDOW_CLOSED", "SESSION_CANCELLED", "NOT_ASSIGNED_COACH", "COURSE_RUN_NOT_ACTIVE");
+		assertThat(operation(document, "/coach/course-sessions/{sessionId}", "get").at("/responses/200/content/*~1*/schema/$ref").asText()).isEqualTo("#/components/schemas/CourseCoachSessionResponse");
 	}
 
 	@Test
 	void staticAndGeneratedCourseCatalogContractsHaveNormalizedParity() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
-			getClass().getResourceAsStream("/openapi/course-catalog.yaml"));
-
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-catalog.yaml"));
 		for (CourseOperationContract contract : COURSE_CATALOG_OPERATION_CONTRACTS) {
 			String label = contract.method().toUpperCase() + " " + contract.path();
-			assertThat(responseStatuses(generated, contract)).as("generated " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
-			assertThat(responseStatuses(documented, contract)).as("static " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(generated, contract)).as("generated " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
 		}
 		assertExpectedCatalogContract(generated, "generated");
 		assertExpectedCatalogContract(documented, "static");
@@ -939,20 +319,15 @@ class GeneratedOpenApiTests {
 	@Test
 	void staticAndGeneratedCourseOrderContractsHaveParity() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
-			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
-
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-orders.yaml"));
 		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
 			String label = contract.method().toUpperCase() + " " + contract.path();
-			assertThat(responseStatuses(generated, contract)).as("generated " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
-			assertThat(responseStatuses(documented, contract)).as("static " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(generated, contract)).as("generated " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
 		}
 		assertExpectedCourseOrderContract(generated, "generated");
 		assertExpectedCourseOrderContract(documented, "static");
-		assertThat(normalizedCourseOrderContract(documented))
-			.isEqualTo(normalizedCourseOrderContract(generated));
+		assertThat(normalizedCourseOrderContract(documented)).isEqualTo(normalizedCourseOrderContract(generated));
 		for (JsonNode document : List.of(generated, documented)) {
 			JsonNode provider = document.at("/components/schemas/CoursePaymentResponse/properties/provider");
 			assertThat(provider.path("type").toString()).contains("null");
@@ -964,141 +339,99 @@ class GeneratedOpenApiTests {
 	@Test
 	void staticAndGeneratedCourseWaitlistContractsExposeOwnershipAndIdempotency() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
-			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
-		Map<String, Set<String>> methods = Map.of(
-			"/course-runs/{runId}/waitlist", Set.of("post", "delete"),
-			"/members/me/course-waitlists", Set.of("get"),
-			"/course-waitlists/{waitlistId}/accept", Set.of("post"));
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-orders.yaml"));
+		Map<String, Set<String>> methods = Map.of("/course-runs/{runId}/waitlist", Set.of("post", "delete"), "/members/me/course-waitlists", Set.of("get"), "/course-waitlists/{waitlistId}/accept", Set.of("post"));
 		for (Map.Entry<String, Set<String>> entry : methods.entrySet()) {
 			String path = entry.getKey();
 			assertThat(generated.path("paths").has(path)).as("generated " + path).isTrue();
 			assertThat(documented.path("paths").has(path)).as("static " + path).isTrue();
 			for (String method : entry.getValue()) {
-				assertThat(operation(generated, path, method).isMissingNode()).as("generated " + method + " " + path)
-					.isFalse();
-				assertThat(operation(documented, path, method).isMissingNode()).as("static " + method + " " + path)
-					.isFalse();
-				assertThat(responseStatuses(generated, new CourseOperationContract(path, method, Set.of())))
-					.as("generated responses " + method + " " + path)
-					.containsExactlyInAnyOrderElementsOf(responseStatuses(documented,
-						new CourseOperationContract(path, method, Set.of())));
+				assertThat(operation(generated, path, method).isMissingNode()).as("generated " + method + " " + path).isFalse();
+				assertThat(operation(documented, path, method).isMissingNode()).as("static " + method + " " + path).isFalse();
+				assertThat(responseStatuses(generated, new CourseOperationContract(path, method, Set.of()))).as("generated responses " + method + " " + path).containsExactlyInAnyOrderElementsOf(responseStatuses(documented, new CourseOperationContract(path, method, Set.of())));
 			}
 		}
 		for (JsonNode document : List.of(generated, documented)) {
 			JsonNode join = operation(document, "/course-runs/{runId}/waitlist", "post");
-			assertThat(effectiveSecurity(document, join)).isEqualTo(
-				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			assertThat(effectiveSecurity(document, join)).isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
 			JsonNode accept = operation(document, "/course-waitlists/{waitlistId}/accept", "post");
 			JsonNode key = parameter(document, "/course-waitlists/{waitlistId}/accept", "post", "Idempotency-Key");
 			assertThat(key.path("required").asBoolean()).isTrue();
 			assertThat(key.path("schema").path("maxLength").asInt()).isEqualTo(100);
-			assertThat(effectiveSecurity(document, accept)).isEqualTo(
-				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
-			assertThat(document.at("/components/schemas/CourseWaitlistResponse/properties").properties()
-				.stream().map(Map.Entry::getKey).toList()).containsExactlyInAnyOrder("id", "courseRunId", "status",
-					"courseName", "courseCode", "runCode", "position", "invitedAt", "invitationExpiresAt",
-					"createdAt");
+			assertThat(effectiveSecurity(document, accept)).isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			assertThat(document.at("/components/schemas/CourseWaitlistResponse/properties").properties().stream().map(Map.Entry::getKey).toList()).containsExactlyInAnyOrder("id", "courseRunId", "status", "courseName", "courseCode", "runCode", "position", "invitedAt", "invitationExpiresAt", "createdAt");
 		}
 	}
 
 	@Test
 	void staticAndGeneratedCoursePaymentOperationsRequireIdempotencyAndMatchResponses() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
-			getClass().getResourceAsStream("/openapi/course-orders.yaml"));
-		Map<String, String> operations = Map.of(
-			"POST /members/me/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse",
-			"POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse",
-			"POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash", "CourseEnrollmentResponse");
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-orders.yaml"));
+		Map<String, String> operations = Map.of("POST /members/me/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse", "POST /reception/members/{memberId}/course-orders/{orderId}/payments/sepay", "CoursePaymentResponse", "POST /reception/members/{memberId}/course-orders/{orderId}/payments/cash", "CourseEnrollmentResponse");
 		for (Map.Entry<String, String> contract : operations.entrySet()) {
 			String[] key = contract.getKey().split(" ", 2);
 			String path = key[1];
 			String method = key[0].toLowerCase();
 			JsonNode runtimeOperation = operation(generated, path, method);
 			JsonNode staticOperation = operation(documented, path, method);
-			assertThat(effectiveSecurity(generated, runtimeOperation)).isEqualTo(
-				objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
-			assertThat(normalizedParameters(generated, runtimeOperation.path("parameters")))
-				.isEqualTo(normalizedParameters(documented, staticOperation.path("parameters")));
+			assertThat(effectiveSecurity(generated, runtimeOperation)).isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			assertThat(normalizedParameters(generated, runtimeOperation.path("parameters"))).isEqualTo(normalizedParameters(documented, staticOperation.path("parameters")));
 			assertThat(operationHasRequiredParameter(generated, runtimeOperation, "Idempotency-Key", "header")).isTrue();
 			assertThat(operationHasRequiredParameter(documented, staticOperation, "Idempotency-Key", "header")).isTrue();
 			assertThat(runtimeOperation.has("requestBody")).isFalse();
 			assertThat(staticOperation.has("requestBody")).isFalse();
 			for (JsonNode document : List.of(generated, documented)) {
 				JsonNode success = resolve(document, response(document, path, method, "200"));
-				assertThat(normalizedSchema(document,
-					success.at("/content/application~1json/schema"))).isEqualTo(
-					normalizedSchema(document, document.at("/components/schemas/" + contract.getValue())));
+				assertThat(normalizedSchema(document, success.at("/content/application~1json/schema"))).isEqualTo(normalizedSchema(document, document.at("/components/schemas/" + contract.getValue())));
 			}
 		}
 	}
 
 	private boolean operationHasRequiredParameter(JsonNode document, JsonNode operation, String name, String location) {
-		return java.util.stream.StreamSupport.stream(operation.path("parameters").spliterator(), false)
-			.map(parameter -> resolve(document, parameter))
-			.anyMatch(parameter -> name.equals(parameter.path("name").asText())
-				&& location.equals(parameter.path("in").asText()) && parameter.path("required").asBoolean(false));
+		return java.util.stream.StreamSupport.stream(operation.path("parameters").spliterator(), false).map(parameter -> resolve(document, parameter)).anyMatch(parameter -> name.equals(parameter.path("name").asText()) && location.equals(parameter.path("in").asText()) && parameter.path("required").asBoolean(false));
 	}
 
 	@Test
 	void staticAndGeneratedCourseContractsHaveTableDrivenResponseAndProblemParity() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(
-			getClass().getResourceAsStream("/openapi/course-manager.yaml"));
-
+		JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(getClass().getResourceAsStream("/openapi/course-manager.yaml"));
 		for (CourseOperationContract contract : COURSE_OPERATION_CONTRACTS) {
 			String label = contract.method().toUpperCase() + " " + contract.path();
-			assertThat(responseStatuses(generated, contract)).as("generated " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
-			assertThat(responseStatuses(documented, contract)).as("static " + label)
-				.containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(generated, contract)).as("generated " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
+			assertThat(responseStatuses(documented, contract)).as("static " + label).containsExactlyInAnyOrderElementsOf(contract.statuses());
 			contract.statuses().stream().filter(status -> !status.startsWith("2")).forEach(status -> {
-				assertProblemResponse(generated, contract, status, "generated " + label,
-					"401".equals(status) ? "UnauthorizedProblem" : "ApiProblem");
+				assertProblemResponse(generated, contract, status, "generated " + label, "401".equals(status) ? "UnauthorizedProblem" : "ApiProblem");
 				assertProblemResponse(documented, contract, status, "static " + label, "CourseProblem");
 			});
 		}
-
-		assertThat(documented.at("/components/schemas/CourseProblem/required").toString())
-			.contains("title", "status", "detail", "instance", "code");
-		assertThat(documented.at("/components/responses/Unauthorized/description").asText())
-			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
+		assertThat(documented.at("/components/schemas/CourseProblem/required").toString()).contains("title", "status", "detail", "instance", "code");
+		assertThat(documented.at("/components/responses/Unauthorized/description").asText()).contains("UNAUTHENTICATED", "INVALID_TOKEN");
 		assertThat(documented.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
-		assertThat(generated.at("/components/responses/Unauthorized/description").asText())
-			.contains("UNAUTHENTICATED", "INVALID_TOKEN");
+		assertThat(generated.at("/components/responses/Unauthorized/description").asText()).contains("UNAUTHENTICATED", "INVALID_TOKEN");
 		assertThat(generated.at("/components/responses/Forbidden/description").asText()).contains("FORBIDDEN");
-		assertThat(documented.at("/components/schemas/CourseProblem/properties/code/enum").values())
-			.toIterable().extracting(JsonNode::asText)
-			.containsExactlyInAnyOrderElementsOf(COURSE_PROBLEM_CODES);
+		assertThat(documented.at("/components/schemas/CourseProblem/properties/code/enum").values()).toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(COURSE_PROBLEM_CODES);
 	}
 
 	@Test
 	void generatedUnauthorizedComponentEnumeratesEveryActualStable401Code() throws Exception {
 		JsonNode document = generatedDocument();
-
-		assertThat(response(document, "/auth/login", "post", "401").path("$ref").asText())
-			.isEqualTo("#/components/responses/Unauthorized");
-		assertThat(response(document, "/auth/refresh", "post", "401").path("$ref").asText())
-			.isEqualTo("#/components/responses/Unauthorized");
-		assertThat(document.at("/components/responses/Unauthorized/content/application~1problem+json/schema/$ref")
-			.asText()).isEqualTo("#/components/schemas/UnauthorizedProblem");
-		assertThat(document.at("/components/schemas/UnauthorizedProblem/properties/code/enum").values())
-			.toIterable().extracting(JsonNode::asText)
-			.containsExactlyInAnyOrderElementsOf(UNAUTHORIZED_PROBLEM_CODES);
+		assertThat(response(document, "/auth/login", "post", "401").path("$ref").asText()).isEqualTo("#/components/responses/Unauthorized");
+		assertThat(response(document, "/auth/refresh", "post", "401").path("$ref").asText()).isEqualTo("#/components/responses/Unauthorized");
+		assertThat(document.at("/components/responses/Unauthorized/content/application~1problem+json/schema/$ref").asText()).isEqualTo("#/components/schemas/UnauthorizedProblem");
+		assertThat(document.at("/components/schemas/UnauthorizedProblem/properties/code/enum").values()).toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(UNAUTHORIZED_PROBLEM_CODES);
 	}
 
 	@Test
 	void sepayWebhookDocumentsAnonymousApiKeyHeaderAuthentication() throws Exception {
 		JsonNode document = generatedDocument();
 		JsonNode webhook = operation(document, "/payments/sepay/webhook", "post");
-
 		assertThat(webhook.path("security").isArray()).isTrue();
 		assertThat(webhook.path("security")).isEmpty();
 		assertThat(webhook.path("description").asText()).contains("API key", "header");
 		JsonNode authorization = null;
 		for (JsonNode parameter : webhook.path("parameters")) {
-			if ("Authorization".equals(parameter.path("name").asText())) authorization = parameter;
+			if ("Authorization".equals(parameter.path("name").asText()))
+				authorization = parameter;
 		}
 		assertThat(authorization).isNotNull();
 		assertThat(authorization.path("in").asText()).isEqualTo("header");
@@ -1108,134 +441,84 @@ class GeneratedOpenApiTests {
 		assertThat(webhook.at("/responses/401/description").asText()).contains("API-key credentials");
 		assertThat(webhook.at("/responses/500/description").asText()).contains("Transient");
 		for (String status : List.of("400", "401", "500")) {
-			assertThat(webhook.at("/responses/" + status
-				+ "/content/application~1problem+json/schema/$ref").asText())
-				.as("webhook " + status)
-				.isEqualTo("#/components/schemas/ApiProblem");
+			assertThat(webhook.at("/responses/" + status + "/content/application~1problem+json/schema/$ref").asText()).as("webhook " + status).isEqualTo("#/components/schemas/ApiProblem");
 		}
 	}
 
 	@Test
 	void sepayWebhookAcknowledgementSchemaRequiresSuccessProcessedAndOutcome() throws Exception {
 		JsonNode document = generatedDocument();
-		JsonNode schema = response(document, "/payments/sepay/webhook", "post", "200")
-			.path("content").elements().next().path("schema");
-		if (schema.has("$ref")) schema = document.at(schema.path("$ref").asText().substring(1));
-
+		JsonNode schema = response(document, "/payments/sepay/webhook", "post", "200").path("content").elements().next().path("schema");
+		if (schema.has("$ref"))
+			schema = document.at(schema.path("$ref").asText().substring(1));
 		List<String> requiredFields = new ArrayList<>();
 		schema.path("required").forEach(field -> requiredFields.add(field.asText()));
 		assertThat(requiredFields).contains("success", "processed", "outcome");
-		assertThat(resolve(document, schema.at("/properties/outcome")).path("enum").values()).toIterable()
-			.extracting(JsonNode::asText).contains("COURSE_PAYMENT_RECORDED");
-		assertThat(operation(document, "/payments/sepay/webhook", "post").path("description").asText())
-			.contains("Course transfer fulfills", "Enrollment", "unit allocations atomically");
+		assertThat(resolve(document, schema.at("/properties/outcome")).path("enum").values()).toIterable().extracting(JsonNode::asText).contains("COURSE_PAYMENT_RECORDED");
+		assertThat(operation(document, "/payments/sepay/webhook", "post").path("description").asText()).contains("Course transfer fulfills", "Enrollment", "unit allocations atomically");
 	}
 
 	@Test
 	void sepayCreateOperationsDocumentConfigurationInvalidServiceUnavailable() throws Exception {
 		JsonNode document = generatedDocument();
-		for (String path : List.of(
-			"/members/me/membership-orders/{orderId}/payments/sepay",
-			"/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")) {
+		for (String path : List.of("/members/me/membership-orders/{orderId}/payments/sepay", "/reception/members/{memberId}/membership-orders/{orderId}/payments/sepay")) {
 			JsonNode unavailable = response(document, path, "post", "503");
-			assertThat(unavailable.path("description").asText().toLowerCase())
-				.as(path)
-				.contains("configuration", "invalid");
-			assertThat(unavailable.at("/content/application~1problem+json/schema/$ref").asText())
-				.as(path)
-				.isEqualTo("#/components/schemas/ApiProblem");
+			assertThat(unavailable.path("description").asText().toLowerCase()).as(path).contains("configuration", "invalid");
+			assertThat(unavailable.at("/content/application~1problem+json/schema/$ref").asText()).as(path).isEqualTo("#/components/schemas/ApiProblem");
 		}
 	}
 
 	@Test
 	void generatedContractDocumentsSecuritySchemasAndDynamicStatuses() throws Exception {
 		JsonNode document = generatedDocument();
-
 		assertThat(document.at("/security/0/bearerAuth").isArray()).isTrue();
-		for (String publicOperation : List.of(
-			"/paths/~1auth~1login/post", "/paths/~1auth~1refresh/post",
-			"/paths/~1auth~1logout/post", "/paths/~1auth~1register/post",
-			"/paths/~1auth~1email-verification~1verify/post",
-			"/paths/~1auth~1email-verification~1resend/post",
-			"/paths/~1auth~1email-verification~1change-email/post",
-			"/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get",
-			"/paths/~1courses/get", "/paths/~1courses~1{courseId}/get",
-			"/paths/~1course-runs/get", "/paths/~1course-runs~1{runId}/get",
-			"/paths/~1payments~1sepay~1webhook/post")) {
+		for (String publicOperation : List.of("/paths/~1auth~1login/post", "/paths/~1auth~1refresh/post", "/paths/~1auth~1logout/post", "/paths/~1auth~1register/post", "/paths/~1auth~1email-verification~1verify/post", "/paths/~1auth~1email-verification~1resend/post", "/paths/~1auth~1email-verification~1change-email/post", "/paths/~1membership-offers/get", "/paths/~1membership-offers~1{offerId}/get", "/paths/~1courses/get", "/paths/~1courses~1{courseId}/get", "/paths/~1course-runs/get", "/paths/~1course-runs~1{runId}/get", "/paths/~1payments~1sepay~1webhook/post")) {
 			assertThat(document.at(publicOperation + "/security").isArray()).as(publicOperation).isTrue();
 			assertThat(document.at(publicOperation + "/security")).as(publicOperation).isEmpty();
 		}
 		assertThat(document.at("/paths/~1members~1me~1profile/get/security").isMissingNode()).isTrue();
-		assertThat(document.at("/paths/~1members~1me~1profile/get/description").asText())
-			.contains("MEMBER", "ownership");
-		assertThat(document.at("/paths/~1manager~1staff-accounts/get/description").asText())
-			.contains("MANAGER");
-		assertThat(document.at("/paths/~1reception~1members~1{memberId}~1receipts/get/description").asText())
-			.contains("MANAGER", "RECEPTIONIST");
-
+		assertThat(document.at("/paths/~1members~1me~1profile/get/description").asText()).contains("MEMBER", "ownership");
+		assertThat(document.at("/paths/~1manager~1staff-accounts/get/description").asText()).contains("MANAGER");
+		assertThat(document.at("/paths/~1reception~1members~1{memberId}~1receipts/get/description").asText()).contains("MANAGER", "RECEPTIONIST");
 		for (String status : List.of("400", "401", "403")) {
 			JsonNode response = document.at("/paths/~1members~1me~1profile/get/responses/" + status);
 			assertThat(response.isMissingNode()).as(status).isFalse();
 			assertThat(response.path("$ref").asText()).startsWith("#/components/responses/");
 		}
-		assertThat(document.at("/components/responses/BadRequest/content/application~1problem+json")
-			.isMissingNode()).isFalse();
-		assertThat(document.at("/components/schemas/ApiProblem/required").toString())
-			.contains("title", "status", "detail", "instance", "code");
+		assertThat(document.at("/components/responses/BadRequest/content/application~1problem+json").isMissingNode()).isFalse();
+		assertThat(document.at("/components/schemas/ApiProblem/required").toString()).contains("title", "status", "detail", "instance", "code");
 		assertThat(document.at("/paths/~1auth~1login/post/responses/403").isMissingNode()).isTrue();
 		assertThat(document.at("/paths/~1manager~1staff-accounts/post/responses/409").isMissingNode()).isFalse();
-		for (String orderCreationPath : List.of(
-			"/members/me/membership-orders",
-			"/reception/members/{memberId}/membership-orders",
-			"/reception/members/{memberId}/cash-payments")) {
-			assertThat(response(document, orderCreationPath, "post", "409").path("$ref").asText())
-				.as(orderCreationPath)
-				.isEqualTo("#/components/responses/MembershipOrderConflict");
+		for (String orderCreationPath : List.of("/members/me/membership-orders", "/reception/members/{memberId}/membership-orders", "/reception/members/{memberId}/cash-payments")) {
+			assertThat(response(document, orderCreationPath, "post", "409").path("$ref").asText()).as(orderCreationPath).isEqualTo("#/components/responses/MembershipOrderConflict");
 		}
-		assertThat(document.at("/components/responses/MembershipOrderConflict/description").asText())
-			.contains("MEMBERSHIP_OFFER_NOT_AVAILABLE");
-		JsonNode cashParameters = operation(document, "/reception/members/{memberId}/cash-payments", "post")
-			.path("parameters");
+		assertThat(document.at("/components/responses/MembershipOrderConflict/description").asText()).contains("MEMBERSHIP_OFFER_NOT_AVAILABLE");
+		JsonNode cashParameters = operation(document, "/reception/members/{memberId}/cash-payments", "post").path("parameters");
 		List<JsonNode> cashParameterList = new ArrayList<>();
 		cashParameters.forEach(cashParameterList::add);
-		assertThat(cashParameterList).anyMatch(parameter -> "Idempotency-Key".equals(parameter.path("name").asText())
-			&& "header".equals(parameter.path("in").asText()) && !parameter.path("required").asBoolean());
-
+		assertThat(cashParameterList).anyMatch(parameter -> "Idempotency-Key".equals(parameter.path("name").asText()) && "header".equals(parameter.path("in").asText()) && !parameter.path("required").asBoolean());
 		assertProblemReference(document, "/reception/members/search", "get", "404");
 		assertProblemReference(document, "/coach/class-sessions/{sessionId}/attendance", "get", "409");
 		assertThat(response(document, "/reception/center-visits", "post", "200").isMissingNode()).isFalse();
-		assertConcreteSchema(response(document, "/reception/center-visits", "post", "201"),
-			"POST /reception/center-visits 201");
-		for (String pendingPath : List.of(
-			"/members/me/membership-orders/pending",
-			"/reception/members/{memberId}/membership-orders/pending")) {
+		assertConcreteSchema(response(document, "/reception/center-visits", "post", "201"), "POST /reception/center-visits 201");
+		for (String pendingPath : List.of("/members/me/membership-orders/pending", "/reception/members/{memberId}/membership-orders/pending")) {
 			assertThat(response(document, pendingPath, "get", "204").isMissingNode()).as(pendingPath).isFalse();
 		}
-		JsonNode deprecatedResponses = operation(document,
-			"/reception/membership-orders/{orderId}/cash", "post").path("responses");
-		assertThat(deprecatedResponses.path("409").path("$ref").asText())
-			.isEqualTo("#/components/responses/Conflict");
-		assertThat(deprecatedResponses.properties().stream().map(java.util.Map.Entry::getKey))
-			.noneMatch(status -> status.matches("2\\d\\d"));
-
+		JsonNode deprecatedResponses = operation(document, "/reception/membership-orders/{orderId}/cash", "post").path("responses");
+		assertThat(deprecatedResponses.path("409").path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		assertThat(deprecatedResponses.properties().stream().map(java.util.Map.Entry::getKey)).noneMatch(status -> status.matches("2\\d\\d"));
 		assertThat(document.at("/components/schemas/BookingResponse/properties/status/enum")).isNotEmpty();
-		assertThat(document.at("/paths/~1manager~1classes~1types/get/description").asText())
-			.contains("MANAGER");
-		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum")
-			.toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
-		assertThat(document.at("/paths/~1manager~1classes~1{classId}/patch/responses/409/$ref").asText())
-			.isEqualTo("#/components/responses/Conflict");
-		assertThat(document.at("/components/schemas/ApiProblem/properties/affectedSessions/items/properties/sessionId/format")
-			.asText()).isEqualTo("uuid");
+		assertThat(document.at("/paths/~1manager~1classes~1types/get/description").asText()).contains("MANAGER");
+		assertThat(document.at("/components/schemas/SportClassResponse/properties/classType/enum").toString()).isEqualTo("[\"GROUP\",\"YOGA\",\"PT_1_1\"]");
+		assertThat(document.at("/paths/~1manager~1classes~1{classId}/patch/responses/409/$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		assertThat(document.at("/components/schemas/ApiProblem/properties/affectedSessions/items/properties/sessionId/format").asText()).isEqualTo("uuid");
 	}
 
 	@Test
 	void generatedContractDocumentsDisciplineBenefitsAndBothBookingConflictVariants() throws Exception {
 		JsonNode document = generatedDocument();
-		for (String schema : List.of("DisciplineCreateRequest", "DisciplinePatchRequest", "DisciplineResponse",
-			"MemberClassSessionResponse")) {
-			JsonNode requiredBenefits = document.at("/components/schemas/" + schema
-				+ "/properties/requiredBenefitCodes");
+		for (String schema : List.of("DisciplineCreateRequest", "DisciplinePatchRequest", "DisciplineResponse", "MemberClassSessionResponse")) {
+			JsonNode requiredBenefits = document.at("/components/schemas/" + schema + "/properties/requiredBenefitCodes");
 			assertThat(requiredBenefits.path("type").asText()).as(schema).isEqualTo("array");
 			assertThat(requiredBenefits.path("items").path("type").asText()).as(schema).isEqualTo("string");
 		}
@@ -1244,83 +527,58 @@ class GeneratedOpenApiTests {
 		assertThat(problem.path("errors").path("additionalProperties").path("type").asText()).isEqualTo("array");
 		assertThat(problem.path("requiredBenefitCodes").path("type").asText()).isEqualTo("array");
 		assertThat(problem.path("missingBenefitCodes").path("type").asText()).isEqualTo("array");
-		for (String path : List.of("/members/class-sessions/{sessionId}/bookings",
-			"/reception/members/{memberId}/bookings")) {
-			assertThat(response(document, path, "post", "409").path("$ref").asText())
-				.as(path).isEqualTo("#/components/responses/BookingConflict");
+		for (String path : List.of("/members/class-sessions/{sessionId}/bookings", "/reception/members/{memberId}/bookings")) {
+			assertThat(response(document, path, "post", "409").path("$ref").asText()).as(path).isEqualTo("#/components/responses/BookingConflict");
 		}
 		JsonNode variants = document.at("/components/responses/BookingConflict/content/application~1problem+json/schema/oneOf");
 		assertThat(variants).hasSize(2);
-		assertThat(variants.get(0).path("$ref").asText())
-			.isEqualTo("#/components/schemas/OrdinaryBookingConflictProblem");
-		assertThat(variants.get(1).path("$ref").asText())
-			.isEqualTo("#/components/schemas/MembershipBenefitRequiredProblem");
+		assertThat(variants.get(0).path("$ref").asText()).isEqualTo("#/components/schemas/OrdinaryBookingConflictProblem");
+		assertThat(variants.get(1).path("$ref").asText()).isEqualTo("#/components/schemas/MembershipBenefitRequiredProblem");
 		JsonNode ordinaryCode = document.at("/components/schemas/OrdinaryBookingConflictProblem/properties/code");
 		assertThat(ordinaryCode.path("type").asText()).isEqualTo("string");
 		assertThat(ordinaryCode.at("/not/enum/0").asText()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
 		JsonNode benefitProblem = document.at("/components/schemas/MembershipBenefitRequiredProblem");
-		assertThat(benefitProblem.path("required").toString())
-			.contains("requiredBenefitCodes", "missingBenefitCodes");
-		assertThat(benefitProblem.at("/properties/code/enum/0").asText())
-			.isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
-		assertThat(document.at("/components/schemas/ApiProblem/required").toString())
-			.doesNotContain("requiredBenefitCodes", "missingBenefitCodes");
+		assertThat(benefitProblem.path("required").toString()).contains("requiredBenefitCodes", "missingBenefitCodes");
+		assertThat(benefitProblem.at("/properties/code/enum/0").asText()).isEqualTo("MEMBERSHIP_BENEFIT_REQUIRED");
+		assertThat(document.at("/components/schemas/ApiProblem/required").toString()).doesNotContain("requiredBenefitCodes", "missingBenefitCodes");
 	}
 
 	@Test
 	void generatedContractDocumentsStaffMembershipHistory() throws Exception {
 		JsonNode document = generatedDocument();
-		for (String path : List.of(
-			"/reception/members/{memberCode}/memberships",
-			"/manager/members/{memberAccountId}/memberships")) {
+		for (String path : List.of("/reception/members/{memberCode}/memberships", "/manager/members/{memberAccountId}/memberships")) {
 			JsonNode operation = operation(document, path, "get");
-			assertThat(operation.path("description").asText())
-				.contains("ACTIVE", "SUSPENDED", "snapshot", "UTC");
+			assertThat(operation.path("description").asText()).contains("ACTIVE", "SUSPENDED", "snapshot", "UTC");
 			JsonNode content = response(document, path, "get", "200").path("content");
-			assertThat(content.properties().stream().map(java.util.Map.Entry::getKey).toList())
-				.containsExactly("application/json");
+			assertThat(content.properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactly("application/json");
 			JsonNode item = content.path("application/json").path("schema").path("items");
 			assertThat(item.path("$ref").asText()).isEqualTo("#/components/schemas/StaffMembershipResponse");
 		}
 		JsonNode schema = document.at("/components/schemas/StaffMembershipResponse");
-		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt",
-				"benefitCodes", "benefits");
-		assertThat(schema.path("required").toString())
-			.contains("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt", "benefitCodes",
-				"benefits");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt", "benefitCodes", "benefits");
+		assertThat(schema.path("required").toString()).contains("membershipId", "planCode", "offerName", "status", "startsAt", "endsAt", "benefitCodes", "benefits");
 		assertThat(schema.at("/properties/startsAt/format").asText()).isEqualTo("date-time");
 		assertThat(schema.at("/properties/endsAt/format").asText()).isEqualTo("date-time");
-		assertThat(schema.at("/properties/status/enum").toString())
-			.isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\",\"CANCELLED\"]");
+		assertThat(schema.at("/properties/status/enum").toString()).isEqualTo("[\"RESERVED\",\"ACTIVE\",\"EXPIRED\",\"TERMINATED\",\"CANCELLED\"]");
 		assertThat(schema.at("/properties/benefitCodes/type").asText()).isEqualTo("array");
-		assertThat(schema.at("/properties/benefits/items/$ref").asText())
-			.isEqualTo("#/components/schemas/MembershipBenefitResponse");
+		assertThat(schema.at("/properties/benefits/items/$ref").asText()).isEqualTo("#/components/schemas/MembershipBenefitResponse");
 		JsonNode memberHistory = document.at("/components/schemas/MembershipHistoryResponse/properties");
-		assertThat(memberHistory.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("benefitCodes", "benefits");
+		assertThat(memberHistory.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("benefitCodes", "benefits");
 		assertThat(memberHistory.at("/status/enum").toString()).contains("CANCELLED");
 	}
 
 	@Test
 	void generatedAndStaticContractsDescribeRefundEligibleSources() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode generatedItems = response(generated,
-			"/reception/members/{memberCode}/refund-eligible-sources", "get", "200")
-			.path("content").path("application/json").path("schema").path("items");
-		assertThat(generatedItems.path("$ref").asText())
-			.isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
+		JsonNode generatedItems = response(generated, "/reception/members/{memberCode}/refund-eligible-sources", "get", "200").path("content").path("application/json").path("schema").path("items");
+		assertThat(generatedItems.path("$ref").asText()).isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
 		JsonNode generatedSchema = generated.at("/components/schemas/RefundEligibleSourceResponse");
 		assertRefundEligibleSourceSchema(generatedSchema);
 		assertThat(generatedSchema.at("/properties/paymentReference/type").toString()).contains("null");
-
 		try (var stream = getClass().getResourceAsStream("/openapi/membership-refund.yaml")) {
 			JsonNode documented = new ObjectMapper(new YAMLFactory()).readTree(stream);
-			JsonNode documentedItems = response(documented,
-				"/reception/members/{memberCode}/refund-eligible-sources", "get", "200")
-				.path("content").path("application/json").path("schema").path("items");
-			assertThat(documentedItems.path("$ref").asText())
-				.isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
+			JsonNode documentedItems = response(documented, "/reception/members/{memberCode}/refund-eligible-sources", "get", "200").path("content").path("application/json").path("schema").path("items");
+			assertThat(documentedItems.path("$ref").asText()).isEqualTo("#/components/schemas/RefundEligibleSourceResponse");
 			JsonNode documentedSchema = documented.at("/components/schemas/RefundEligibleSourceResponse");
 			assertRefundEligibleSourceSchema(documentedSchema);
 			assertThat(documentedSchema.at("/properties/paymentReference/nullable").asBoolean()).isTrue();
@@ -1338,27 +596,18 @@ class GeneratedOpenApiTests {
 					JsonNode property = schema.path("properties").path(field);
 					assertThat(property.isMissingNode()).as(field).isFalse();
 					assertThat(property.path("type").toString()).contains("string");
-					assertThat(property.path("nullable").asBoolean() || property.path("type").toString().contains("null"))
-						.as(field + " is nullable").isTrue();
+					assertThat(property.path("nullable").asBoolean() || property.path("type").toString().contains("null")).as(field + " is nullable").isTrue();
 				}
 				for (String field : List.of("id", "paymentId", "orderId", "membershipId", "receiptId", "memberAccountId")) {
 					assertThat(schema.path("properties").path(field).path("format").asText()).as(field).isEqualTo("uuid");
 				}
 				assertThat(schema.at("/properties/version/type").asText()).isEqualTo("integer");
 				for (String role : List.of("reception", "manager")) {
-					assertThat(response(document, "/" + role + "/refund-requests", "get", "200")
-						.path("content").elements().next().at("/schema/$ref").asText())
-						.isEqualTo("#/components/schemas/RefundRequestPageResponse");
+					assertThat(response(document, "/" + role + "/refund-requests", "get", "200").path("content").elements().next().at("/schema/$ref").asText()).isEqualTo("#/components/schemas/RefundRequestPageResponse");
 				}
-				assertThat(document.at("/components/schemas/RefundRequestPageResponse/properties/content/items/$ref").asText())
-					.isEqualTo("#/components/schemas/RefundRequestResponse");
-				for (String path : List.of("/reception/members/{memberCode}/refund-requests",
-					"/reception/refund-requests/{requestId}/cash-disbursement",
-					"/manager/refund-requests/{requestId}/first-approval",
-					"/manager/refund-requests/{requestId}/final-approval", "/manager/refund-requests/{requestId}/reject")) {
-					assertThat(response(document, path, "post", path.contains("{memberCode}") ? "201" : "200")
-						.path("content").elements().next().at("/schema/$ref").asText())
-						.isEqualTo("#/components/schemas/RefundRequestResponse");
+				assertThat(document.at("/components/schemas/RefundRequestPageResponse/properties/content/items/$ref").asText()).isEqualTo("#/components/schemas/RefundRequestResponse");
+				for (String path : List.of("/reception/members/{memberCode}/refund-requests", "/reception/refund-requests/{requestId}/cash-disbursement", "/manager/refund-requests/{requestId}/first-approval", "/manager/refund-requests/{requestId}/final-approval", "/manager/refund-requests/{requestId}/reject")) {
+					assertThat(response(document, path, "post", path.contains("{memberCode}") ? "201" : "200").path("content").elements().next().at("/schema/$ref").asText()).isEqualTo("#/components/schemas/RefundRequestResponse");
 				}
 			}
 		}
@@ -1367,52 +616,34 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedContractDocumentsEmailVerificationAndManualActivation() throws Exception {
 		JsonNode document = generatedDocument();
-		assertThat(document.at("/components/schemas/RegistrationRequest/properties/fullName/pattern").asText())
-			.isEqualTo(PersonNameRules.PATTERN);
-		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("verificationRequired", "maskedEmail", "csrfToken",
-				"otpExpiresAt", "resendAvailableAt", "registrationExpiresAt", "serverTime");
+		assertThat(document.at("/components/schemas/RegistrationRequest/properties/fullName/pattern").asText()).isEqualTo(PersonNameRules.PATTERN);
+		assertThat(document.at("/components/schemas/RegistrationResponse/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("verificationRequired", "maskedEmail", "csrfToken", "otpExpiresAt", "resendAvailableAt", "registrationExpiresAt", "serverTime");
 		assertThat(document.at("/components/schemas/RegistrationResponse/properties/accountId").isMissingNode()).isTrue();
-		assertThat(document.at("/components/schemas/VerifyEmailRequest/properties/otp/pattern").asText())
-			.isEqualTo("^[0-9]{6}$");
+		assertThat(document.at("/components/schemas/VerifyEmailRequest/properties/otp/pattern").asText()).isEqualTo("^[0-9]{6}$");
 		assertThat(response(document, "/auth/email-verification/resend", "post", "202").isMissingNode()).isFalse();
-		for (String path : List.of("/auth/register", "/auth/email-verification/verify",
-				"/auth/email-verification/resend", "/auth/email-verification/change-email")) {
+		for (String path : List.of("/auth/register", "/auth/email-verification/verify", "/auth/email-verification/resend", "/auth/email-verification/change-email")) {
 			assertThat(response(document, path, "post", "429").isMissingNode()).as(path).isFalse();
 		}
-		assertThat(document.at("/components/schemas/ManualActivationPageResponse/properties/content/type").asText())
-			.isEqualTo("array");
+		assertThat(document.at("/components/schemas/ManualActivationPageResponse/properties/content/type").asText()).isEqualTo("array");
 		JsonNode manualActivation = document.at("/components/schemas/ManualActivationResponse/properties");
-		assertThat(manualActivation.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("reasonCode", "reasonDetail", "verificationMethod", "evidenceNote",
-				"requestedByName", "requestedByRole", "reviewedByAccountId", "decisionNote");
-		for (String path : List.of("/reception/email-verification/manual-activation-requests",
-				"/manager/email-verification/manual-activation-requests")) {
+		assertThat(manualActivation.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("reasonCode", "reasonDetail", "verificationMethod", "evidenceNote", "requestedByName", "requestedByRole", "reviewedByAccountId", "decisionNote");
+		for (String path : List.of("/reception/email-verification/manual-activation-requests", "/manager/email-verification/manual-activation-requests")) {
 			JsonNode parameters = operation(document, path, "get").path("parameters");
 			assertThat(parameters.toString()).contains("status", "page", "size", "PENDING", "maximum");
 		}
-		assertThat(document.at("/paths/~1reception~1email-verification~1pending-accounts/get/description").asText())
-			.contains("RECEPTIONIST");
-		assertThat(document.at("/paths/~1manager~1email-verification~1manual-activation-requests/get/description").asText())
-			.contains("MANAGER");
-		assertThat(document.at("/components/schemas/StaffEmailChangeRequest/properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("newEmail", "currentPassword");
-		assertThat(document.at("/components/schemas/StaffEmailChangeVerifyRequest/properties/otp/pattern").asText())
-			.isEqualTo("^[0-9]{6}$");
-		assertThat(document.at("/components/schemas/StaffProfileResponse/properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("pendingEmailChange", "pendingEmailMasked",
-				"pendingEmailOtpExpiresAt", "pendingEmailResendAvailableAt");
+		assertThat(document.at("/paths/~1reception~1email-verification~1pending-accounts/get/description").asText()).contains("RECEPTIONIST");
+		assertThat(document.at("/paths/~1manager~1email-verification~1manual-activation-requests/get/description").asText()).contains("MANAGER");
+		assertThat(document.at("/components/schemas/StaffEmailChangeRequest/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("newEmail", "currentPassword");
+		assertThat(document.at("/components/schemas/StaffEmailChangeVerifyRequest/properties/otp/pattern").asText()).isEqualTo("^[0-9]{6}$");
+		assertThat(document.at("/components/schemas/StaffProfileResponse/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("pendingEmailChange", "pendingEmailMasked", "pendingEmailOtpExpiresAt", "pendingEmailResendAvailableAt");
 		assertThat(document.at("/components/schemas/StaffProfilePatchRequest/properties/email").isMissingNode()).isTrue();
-		assertThat(document.at("/components/schemas/CreateTrainingPlanRequest/properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("replaceActivePlanId", "expectedActivePlanVersion");
+		assertThat(document.at("/components/schemas/CreateTrainingPlanRequest/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("replaceActivePlanId", "expectedActivePlanVersion");
 	}
 
 	@Test
 	void generatedContractDocumentsAuditActorIdentity() throws Exception {
 		JsonNode properties = generatedDocument().at("/components/schemas/AuditHistoryResponse/properties");
-
-		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("actorName", "actorRole");
+		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("actorName", "actorRole");
 		assertThat(properties.path("actorName").path("type").toString()).contains("string", "null");
 		assertThat(properties.path("actorRole").path("type").toString()).contains("string", "null");
 	}
@@ -1425,76 +656,45 @@ class GeneratedOpenApiTests {
 		assertThat(offerPlanCode.path("enum").isMissingNode()).isTrue();
 		assertThat(offerPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
 		JsonNode offerResponse = document.at("/components/schemas/MembershipOfferResponse/properties");
-		assertThat(offerResponse.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("benefitCodes", "benefits", "supportsBooking", "supportsPersonalCoaching");
+		assertThat(offerResponse.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("benefitCodes", "benefits", "supportsBooking", "supportsPersonalCoaching");
 		JsonNode adminOfferResponse = document.at("/components/schemas/MembershipOfferAdminDetailResponse/properties");
-		assertThat(adminOfferResponse.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("planDisplayName", "benefitCodes", "benefits");
+		assertThat(adminOfferResponse.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("planDisplayName", "benefitCodes", "benefits");
 		JsonNode orderPlanCode = document.at("/components/schemas/MembershipOrderResponse/properties/planCode");
 		assertThat(orderPlanCode.path("type").asText()).isEqualTo("string");
 		assertThat(orderPlanCode.path("enum").isMissingNode()).isTrue();
 		assertThat(orderPlanCode.path("pattern").asText()).isEqualTo("^[A-Z][A-Z0-9_]{1,49}$");
-		assertThat(document.at("/components/schemas/MembershipOrderResponse/properties/fulfillmentMode/enum").toString())
-			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
-		assertThat(document.at("/components/schemas/MembershipOrderResponse/required").toString())
-			.contains("fulfillmentMode");
-		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/fulfillmentMode/enum").toString())
-			.isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
-		assertThat(document.at("/components/schemas/PaymentResultResponse/required").toString())
-			.contains("fulfillmentMode");
-		assertThat(document.at("/components/schemas/PaymentResultResponse/properties").properties()
-			.stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("orderNumber", "memberCode", "memberName", "paymentReference");
-		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/paymentReference/type").toString())
-			.isEqualTo("[\"string\",\"null\"]");
-		assertThat(document.at("/components/schemas/ReceiptResponse/properties").properties()
-			.stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("orderNumber", "paymentReference");
-		assertThat(document.at("/components/schemas/ReceiptResponse/properties/paymentReference/type").toString())
-			.isEqualTo("[\"string\",\"null\"]");
-		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties").properties()
-			.stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("memberCode", "paymentReference");
-		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties/paymentReference/type").toString())
-			.isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/MembershipOrderResponse/properties/fulfillmentMode/enum").toString()).isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
+		assertThat(document.at("/components/schemas/MembershipOrderResponse/required").toString()).contains("fulfillmentMode");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/fulfillmentMode/enum").toString()).isEqualTo("[\"IMMEDIATE\",\"RESERVED\"]");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/required").toString()).contains("fulfillmentMode");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("orderNumber", "memberCode", "memberName", "paymentReference");
+		assertThat(document.at("/components/schemas/PaymentResultResponse/properties/paymentReference/type").toString()).isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("orderNumber", "paymentReference");
+		assertThat(document.at("/components/schemas/ReceiptResponse/properties/paymentReference/type").toString()).isEqualTo("[\"string\",\"null\"]");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("memberCode", "paymentReference");
+		assertThat(document.at("/components/schemas/ReconciliationQueueItem/properties/paymentReference/type").toString()).isEqualTo("[\"string\",\"null\"]");
 		JsonNode response = document.at("/components/schemas/MembershipPlanResponse/properties");
-
-		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "benefits", "createdAt",
-				"updatedAt", "version", "benefitsLocked");
+		assertThat(response.properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("code", "displayName", "status", "benefitCodes", "benefits", "createdAt", "updatedAt", "version", "benefitsLocked");
 		assertThat(response.path("benefitsLocked").path("type").asText()).isEqualTo("boolean");
-		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString())
-			.contains("benefitsLocked");
-		assertThat(response.path("status").path("enum").toString())
-			.isEqualTo("[\"ACTIVE\",\"INACTIVE\"]");
+		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString()).contains("benefitsLocked");
+		assertThat(response.path("status").path("enum").toString()).isEqualTo("[\"ACTIVE\",\"INACTIVE\"]");
 		assertThat(response.path("benefitCodes").path("type").asText()).isEqualTo("array");
 		assertThat(response.path("createdAt").path("format").asText()).isEqualTo("date-time");
 		assertThat(response.path("updatedAt").path("format").asText()).isEqualTo("date-time");
-
 		JsonNode benefit = document.at("/components/schemas/MembershipBenefitResponse/properties");
-		assertThat(benefit.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("code", "displayName", "description", "status", "displayOrder",
-				"groupCode", "groupDisplayName", "groupDisplayOrder");
-		assertThat(document.at("/components/schemas/MembershipBenefitResponse/required").toString())
-			.contains("displayOrder", "groupCode", "groupDisplayName", "groupDisplayOrder");
+		assertThat(benefit.properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("code", "displayName", "description", "status", "displayOrder", "groupCode", "groupDisplayName", "groupDisplayOrder");
+		assertThat(document.at("/components/schemas/MembershipBenefitResponse/required").toString()).contains("displayOrder", "groupCode", "groupDisplayName", "groupDisplayOrder");
 		assertThat(benefit.at("/displayOrder/minimum").asInt()).isZero();
 		assertThat(benefit.at("/groupCode/type").toString()).contains("string", "null");
 		assertThat(benefit.at("/groupDisplayName/type").toString()).contains("string", "null");
 		assertThat(benefit.at("/groupDisplayOrder/type").toString()).contains("integer", "null");
 		assertThat(benefit.at("/groupDisplayOrder/minimum").asInt()).isZero();
-		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString())
-			.contains("benefits");
-
-		assertThat(operation(document, "/manager/membership-benefits", "get").path("description").asText())
-			.isEqualTo("Requires MANAGER role.");
-		assertThat(response(document, "/manager/membership-plans/{planCode}", "patch", "409")
-			.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
-		assertThat(operation(document, "/manager/membership-plans", "post")
-			.at("/requestBody/required").asBoolean()).isTrue();
-		assertThat(operation(document, "/manager/membership-plans/{planCode}", "patch")
-			.at("/requestBody/required").asBoolean()).isTrue();
-		assertThat(document.path("paths").path("/manager/membership-plans/{planCode}").has("delete"))
-			.isFalse();
+		assertThat(document.at("/components/schemas/MembershipPlanResponse/required").toString()).contains("benefits");
+		assertThat(operation(document, "/manager/membership-benefits", "get").path("description").asText()).isEqualTo("Requires MANAGER role.");
+		assertThat(response(document, "/manager/membership-plans/{planCode}", "patch", "409").path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+		assertThat(operation(document, "/manager/membership-plans", "post").at("/requestBody/required").asBoolean()).isTrue();
+		assertThat(operation(document, "/manager/membership-plans/{planCode}", "patch").at("/requestBody/required").asBoolean()).isTrue();
+		assertThat(document.path("paths").path("/manager/membership-plans/{planCode}").has("delete")).isFalse();
 	}
 
 	@Test
@@ -1502,8 +702,7 @@ class GeneratedOpenApiTests {
 		JsonNode document = generatedDocument();
 		for (String schemaName : List.of("MembershipTerminationRequestResponse", "MembershipFreezeRequestResponse")) {
 			JsonNode properties = document.at("/components/schemas/" + schemaName + "/properties");
-			assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
-				.contains("memberId", "memberFullName");
+			assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("memberId", "memberFullName");
 		}
 	}
 
@@ -1511,12 +710,9 @@ class GeneratedOpenApiTests {
 	void staticContractDocumentsAuditActorIdentity() throws Exception {
 		var resource = getClass().getResource("/openapi/us52-manager-audit-history.yaml");
 		assertThat(resource).isNotNull();
-		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
-			.readTree(resource);
+		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory()).readTree(resource);
 		JsonNode properties = document.at("/components/schemas/AuditHistoryResponse/properties");
-
-		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.contains("actorAccountId", "actorName", "actorRole");
+		assertThat(properties.properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("actorAccountId", "actorName", "actorRole");
 		assertThat(properties.path("actorName").path("type").toString()).contains("string", "null");
 		assertThat(properties.path("actorRole").path("type").toString()).contains("string", "null");
 	}
@@ -1524,49 +720,34 @@ class GeneratedOpenApiTests {
 	@Test
 	void generatedContractDocumentsCenterVisitMemberName() throws Exception {
 		JsonNode schema = generatedDocument().at("/components/schemas/CenterVisitResponse");
-
-		assertThat(schema.path("properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source",
-				"courseEnrollmentId", "courseSessionId");
-		assertThat(schema.path("required").toString()).contains("memberName", "source",
-			"courseEnrollmentId", "courseSessionId");
-		assertThat(generatedDocument().at("/components/schemas/CenterVisitRequest/properties/courseSessionId")
-			.path("format").asText()).isEqualTo("uuid");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source", "courseEnrollmentId", "courseSessionId");
+		assertThat(schema.path("required").toString()).contains("memberName", "source", "courseEnrollmentId", "courseSessionId");
+		assertThat(generatedDocument().at("/components/schemas/CenterVisitRequest/properties/courseSessionId").path("format").asText()).isEqualTo("uuid");
 	}
 
 	@Test
 	void staticContractDocumentsCenterVisitMemberName() throws Exception {
 		var resource = getClass().getResource("/openapi/us36-center-visit.yaml");
 		assertThat(resource).isNotNull();
-		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
-			.readTree(resource);
+		JsonNode document = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory()).readTree(resource);
 		JsonNode schema = document.at("/components/schemas/CenterVisitResponse");
-
-		assertThat(schema.path("properties").properties().stream()
-			.map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source",
-				"courseEnrollmentId", "courseSessionId");
-		assertThat(schema.path("required").toString()).contains("memberName", "source",
-			"courseEnrollmentId", "courseSessionId");
-		assertThat(document.at("/components/schemas/CenterVisitRequest/properties/courseSessionId/format")
-			.asText()).isEqualTo("uuid");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).contains("memberName", "source", "courseEnrollmentId", "courseSessionId");
+		assertThat(schema.path("required").toString()).contains("memberName", "source", "courseEnrollmentId", "courseSessionId");
+		assertThat(document.at("/components/schemas/CenterVisitRequest/properties/courseSessionId/format").asText()).isEqualTo("uuid");
 	}
 
 	@Test
 	void staticOfferContractsDocumentPublicActiveCatalogue() throws Exception {
 		ObjectMapper yaml = new ObjectMapper(new YAMLFactory());
-		for (String resourcePath : List.of("/openapi/us12-membership-offer-list.yaml",
-			"/openapi/us13-membership-offer-detail.yaml")) {
+		for (String resourcePath : List.of("/openapi/us12-membership-offer-list.yaml", "/openapi/us13-membership-offer-detail.yaml")) {
 			try (var stream = getClass().getResourceAsStream(resourcePath)) {
 				assertThat(stream).isNotNull();
 				JsonNode document = yaml.readTree(stream);
-				JsonNode operation = document.at(resourcePath.contains("us12")
-					? "/paths/~1membership-offers/get"
-					: "/paths/~1membership-offers~1{offerId}/get");
+				JsonNode operation = document.at(resourcePath.contains("us12") ? "/paths/~1membership-offers/get" : "/paths/~1membership-offers~1{offerId}/get");
 				assertThat(operation.path("security").isMissingNode()).as(resourcePath).isTrue();
 				assertThat(operation.path("responses").path("401").isMissingNode()).as(resourcePath).isTrue();
 				assertThat(operation.path("responses").path("403").isMissingNode()).as(resourcePath).isTrue();
-				assertThat(operation.path("description").asText().toLowerCase()).as(resourcePath)
-					.contains("public", "active", "plan");
+				assertThat(operation.path("description").asText().toLowerCase()).as(resourcePath).contains("public", "active", "plan");
 			}
 		}
 	}
@@ -1575,19 +756,11 @@ class GeneratedOpenApiTests {
 	void generatedContractDocumentsAssignmentDiscovery() throws Exception {
 		JsonNode document = generatedDocument();
 		JsonNode candidates = operation(document, "/manager/coach-assignments/candidates", "get");
-		assertThat(candidates.path("parameters").toString())
-			.contains("query", "assignmentStatus", "page", "size", "UNASSIGNED", "ASSIGNED", "ALL");
-		assertThat(response(document, "/manager/coach-assignments/candidates", "get", "200")
-			.at("/content/application~1json/schema/$ref").asText())
-			.isEqualTo("#/components/schemas/AssignmentCandidatePageResponse");
-
+		assertThat(candidates.path("parameters").toString()).contains("query", "assignmentStatus", "page", "size", "UNASSIGNED", "ASSIGNED", "ALL");
+		assertThat(response(document, "/manager/coach-assignments/candidates", "get", "200").at("/content/application~1json/schema/$ref").asText()).isEqualTo("#/components/schemas/AssignmentCandidatePageResponse");
 		JsonNode workloads = operation(document, "/manager/coaches/assignment-workloads", "get");
-		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200")
-			.at("/content/application~1json/schema/type").asText()).isEqualTo("array");
-		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200")
-			.at("/content/application~1json/schema/items/$ref").asText())
-			.isEqualTo("#/components/schemas/CoachAssignmentWorkloadResponse");
-
+		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200").at("/content/application~1json/schema/type").asText()).isEqualTo("array");
+		assertThat(response(document, "/manager/coaches/assignment-workloads", "get", "200").at("/content/application~1json/schema/items/$ref").asText()).isEqualTo("#/components/schemas/CoachAssignmentWorkloadResponse");
 		JsonNode workload = document.at("/components/schemas/CoachAssignmentWorkloadResponse/properties");
 		assertThat(workload.path("activeMemberCount").path("format").asText()).isEqualTo("int64");
 		assertThat(workload.path("maximumMemberCount").path("type").asText()).isEqualTo("integer");
@@ -1603,111 +776,65 @@ class GeneratedOpenApiTests {
 		JsonNode update = document.at("/components/schemas/UpdateTrainingPlanRequest");
 		assertThat(update.path("required").toString()).contains("expectedVersionNumber");
 		assertThat(update.at("/properties/expectedVersionNumber/minimum").asInt()).isEqualTo(1);
-		assertThat(document.at("/components/schemas/TrainingPlanContent/properties").properties()
-				.stream().map(java.util.Map.Entry::getKey).toList())
-				.containsExactlyInAnyOrder("goal", "schedule", "exercises", "notes");
+		assertThat(document.at("/components/schemas/TrainingPlanContent/properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("goal", "schedule", "exercises", "notes");
 		assertThat(response.path("contentSchemaVersion").path("type").asText()).isEqualTo("integer");
-		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/versions", "get", "200")
-				.isMissingNode()).isFalse();
-		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/archive", "post", "200")
-				.isMissingNode()).isFalse();
+		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/versions", "get", "200").isMissingNode()).isFalse();
+		assertThat(response(document, "/coach/members/{memberId}/training-plans/{planId}/archive", "post", "200").isMissingNode()).isFalse();
 	}
 
 	@Test
 	void generatedContractDocumentsTrainingBenefitEligibility() throws Exception {
 		JsonNode document = generatedDocument();
-		for (var requirement : java.util.Map.ofEntries(
-			java.util.Map.entry("POST /manager/members/{memberId}/coach-assignment", "PERSONAL_COACHING"),
-			java.util.Map.entry("GET /manager/coach-assignments/candidates", "PERSONAL_COACHING"),
-			java.util.Map.entry("POST /coach/members/{memberId}/training-plans", "TRAINING_PLAN"),
-			java.util.Map.entry("PUT /coach/members/{memberId}/training-plans/{planId}", "TRAINING_PLAN"),
-			java.util.Map.entry("POST /coach/members/{memberId}/training-results", "TRAINING_RESULT"),
-			java.util.Map.entry("PUT /coach/members/{memberId}/training-results/{resultId}", "TRAINING_RESULT"),
-			java.util.Map.entry("POST /coach/members/{memberId}/feedback", "TRAINING_FEEDBACK"),
-			java.util.Map.entry("PUT /coach/members/{memberId}/feedback/{feedbackId}", "TRAINING_FEEDBACK"),
-			java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results",
-				"TRAINING_RESULT"),
-			java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}",
-				"TRAINING_RESULT"),
-			java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback",
-				"TRAINING_FEEDBACK"),
-			java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}",
-				"TRAINING_FEEDBACK")).entrySet()) {
+		for (var requirement : java.util.Map.ofEntries(java.util.Map.entry("POST /manager/members/{memberId}/coach-assignment", "PERSONAL_COACHING"), java.util.Map.entry("GET /manager/coach-assignments/candidates", "PERSONAL_COACHING"), java.util.Map.entry("POST /coach/members/{memberId}/training-plans", "TRAINING_PLAN"), java.util.Map.entry("PUT /coach/members/{memberId}/training-plans/{planId}", "TRAINING_PLAN"), java.util.Map.entry("POST /coach/members/{memberId}/training-results", "TRAINING_RESULT"), java.util.Map.entry("PUT /coach/members/{memberId}/training-results/{resultId}", "TRAINING_RESULT"), java.util.Map.entry("POST /coach/members/{memberId}/feedback", "TRAINING_FEEDBACK"), java.util.Map.entry("PUT /coach/members/{memberId}/feedback/{feedbackId}", "TRAINING_FEEDBACK"), java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/training-results", "TRAINING_RESULT"), java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/training-results/{resultId}", "TRAINING_RESULT"), java.util.Map.entry("POST /coach/class-sessions/{sessionId}/members/{memberId}/feedback", "TRAINING_FEEDBACK"), java.util.Map.entry("PUT /coach/class-sessions/{sessionId}/members/{memberId}/feedback/{feedbackId}", "TRAINING_FEEDBACK")).entrySet()) {
 			int separator = requirement.getKey().indexOf(' ');
 			String method = requirement.getKey().substring(0, separator).toLowerCase();
 			String path = requirement.getKey().substring(separator + 1);
-			assertThat(operation(document, path, method).path("description").asText())
-				.as(requirement.getKey()).contains(requirement.getValue(), "Benefit");
+			assertThat(operation(document, path, method).path("description").asText()).as(requirement.getKey()).contains(requirement.getValue(), "Benefit");
 		}
 	}
 
 	@Test
 	void recurringScheduleContractDocumentsOptionalBoundedSessionCount() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode generatedCount = generated.at(
-			"/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
+		JsonNode generatedCount = generated.at("/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
 		assertThat(generatedCount.path("minimum").asInt()).isEqualTo(1);
 		assertThat(generatedCount.path("maximum").asInt()).isEqualTo(100);
 		assertThat(generatedCount.path("default").asInt()).isEqualTo(30);
-		assertThat(generated.at("/components/schemas/RecurringScheduleCreateRequest/required").toString())
-			.doesNotContain("sessionCount");
-
+		assertThat(generated.at("/components/schemas/RecurringScheduleCreateRequest/required").toString()).doesNotContain("sessionCount");
 		try (var stream = getClass().getResourceAsStream("/openapi/us23-manager-scheduling-changes.yaml")) {
-			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
-				.readTree(stream);
-			JsonNode documentedCount = documented.at(
-				"/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
+			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory()).readTree(stream);
+			JsonNode documentedCount = documented.at("/components/schemas/RecurringScheduleCreateRequest/properties/sessionCount");
 			assertThat(documentedCount.path("minimum").asInt()).isEqualTo(1);
 			assertThat(documentedCount.path("maximum").asInt()).isEqualTo(100);
 			assertThat(documentedCount.path("default").asInt()).isEqualTo(30);
-			assertThat(response(documented, "/manager/recurring-schedules", "post", "201")
-				.isMissingNode()).isFalse();
+			assertThat(response(documented, "/manager/recurring-schedules", "post", "201").isMissingNode()).isFalse();
 		}
 	}
 
 	@Test
 	void generatedAndStaticContractsDescribeRoomSuspensionExtension() throws Exception {
 		JsonNode generated = generatedDocument();
-		JsonNode generatedPatch = operation(generated,
-			"/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
-		assertThat(generatedPatch.path("requestBody").path("content").path("application/json")
-			.path("schema").path("$ref").asText())
-			.isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
+		JsonNode generatedPatch = operation(generated, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
+		assertThat(generatedPatch.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText()).isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
 		JsonNode generatedRequest = generated.at("/components/schemas/RoomSuspensionExtensionRequest/properties");
 		assertThat(generatedRequest.path("expectedEndTime").path("format").asText()).isEqualTo("date-time");
 		assertThat(generatedRequest.path("endTime").path("format").asText()).isEqualTo("date-time");
 		assertThat(generatedRequest.path("resolutions").path("type").asText()).isEqualTo("array");
-		assertThat(generatedRequest.path("bulkResolution").path("$ref").asText())
-			.isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
+		assertThat(generatedRequest.path("bulkResolution").path("$ref").asText()).isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
 		assertThat(generatedRequest.path("resolutionOverrides").path("type").asText()).isEqualTo("array");
-		assertThat(generated.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
-			.contains("expectedEndTime", "endTime", "reason")
-			.doesNotContain("resolutions", "bulkResolution");
-		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum").toString())
-			.contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
-		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/required").toString())
-			.contains("action");
-		assertThat(response(generated, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
-			.isMissingNode()).isFalse();
-
+		assertThat(generated.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString()).contains("expectedEndTime", "endTime", "reason").doesNotContain("resolutions", "bulkResolution");
+		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum").toString()).contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
+		assertThat(generated.at("/components/schemas/RoomBulkResolutionRequest/required").toString()).contains("action");
+		assertThat(response(generated, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409").isMissingNode()).isFalse();
 		try (var stream = getClass().getResourceAsStream("/openapi/us23-manager-scheduling-changes.yaml")) {
-			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory())
-				.readTree(stream);
-			JsonNode documentedPatch = operation(documented,
-				"/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
-			assertThat(documentedPatch.path("requestBody").path("content").path("application/json")
-				.path("schema").path("$ref").asText())
-				.isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
-			assertThat(documented.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString())
-				.contains("expectedEndTime", "endTime", "reason").doesNotContain("resolutions");
-			assertThat(documented.at("/components/schemas/RoomImpactPreviewRequest/properties/bulkResolution/$ref")
-				.asText()).isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
-			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum")
-				.toString()).contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
-			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/required").toString())
-				.contains("action");
-			assertThat(response(documented, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409")
-				.path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
+			JsonNode documented = new ObjectMapper(new com.fasterxml.jackson.dataformat.yaml.YAMLFactory()).readTree(stream);
+			JsonNode documentedPatch = operation(documented, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch");
+			assertThat(documentedPatch.path("requestBody").path("content").path("application/json").path("schema").path("$ref").asText()).isEqualTo("#/components/schemas/RoomSuspensionExtensionRequest");
+			assertThat(documented.at("/components/schemas/RoomSuspensionExtensionRequest/required").toString()).contains("expectedEndTime", "endTime", "reason").doesNotContain("resolutions");
+			assertThat(documented.at("/components/schemas/RoomImpactPreviewRequest/properties/bulkResolution/$ref").asText()).isEqualTo("#/components/schemas/RoomBulkResolutionRequest");
+			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/properties/action/enum").toString()).contains("MOVE", "CANCEL").doesNotContain("RESCHEDULE");
+			assertThat(documented.at("/components/schemas/RoomBulkResolutionRequest/required").toString()).contains("action");
+			assertThat(response(documented, "/manager/rooms/{roomId}/suspensions/{suspensionId}", "patch", "409").path("$ref").asText()).isEqualTo("#/components/responses/Conflict");
 		}
 	}
 
@@ -1742,10 +869,7 @@ class GeneratedOpenApiTests {
 	void generatedTransferResponsesIncludeDisplayIdentity() throws Exception {
 		JsonNode document = generatedDocument();
 		for (String schemaName : List.of("TransferRequest", "TransferOffer")) {
-			assertThat(document.at("/components/schemas/" + schemaName + "/properties").fieldNames())
-				.toIterable().contains("memberCode", "memberName", "sourceCourseCode", "sourceCourseName",
-					"sourceRunCode", "sourceCourseRunStatus", "targetCourseCode", "targetCourseName",
-					"targetRunCode", "targetCourseRunStatus");
+			assertThat(document.at("/components/schemas/" + schemaName + "/properties").fieldNames()).toIterable().contains("memberCode", "memberName", "sourceCourseCode", "sourceCourseName", "sourceRunCode", "sourceCourseRunStatus", "targetCourseCode", "targetCourseName", "targetRunCode", "targetCourseRunStatus");
 		}
 	}
 
@@ -1753,15 +877,13 @@ class GeneratedOpenApiTests {
 	void receptionSearchRequiresExplicitNullableMembershipInGeneratedAndStaticContracts() throws Exception {
 		JsonNode generated = generatedDocument().at("/components/schemas/ReceptionMemberSearchResponse");
 		JsonNode membership = generated.at("/properties/activeMembership");
-		assertThat(membership.path("type")).as(membership.toString()).containsExactlyInAnyOrder(
-			objectMapper.getNodeFactory().textNode("object"), objectMapper.getNodeFactory().textNode("null"));
+		assertThat(membership.path("type")).as(membership.toString()).containsExactlyInAnyOrder(objectMapper.getNodeFactory().textNode("object"), objectMapper.getNodeFactory().textNode("null"));
 		assertThat(membership.has("$ref")).as("An object-only reference would reject null despite the nullable type union").isFalse();
 		assertThat(membership.has("allOf") || membership.has("oneOf") || membership.has("anyOf")).isFalse();
 		assertReceptionMembershipSummary(membership);
 		assertThat(generated.path("required")).contains(objectMapper.getNodeFactory().textNode("activeMembership"));
 		try (var input = getClass().getResourceAsStream("/openapi/us11-receptionist-member-profile.yaml")) {
-			JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(input)
-				.at("/components/schemas/MemberSearchResponse");
+			JsonNode contract = new ObjectMapper(new YAMLFactory()).readTree(input).at("/components/schemas/MemberSearchResponse");
 			assertThat(contract.path("required")).contains(objectMapper.getNodeFactory().textNode("activeMembership"));
 			assertThat(contract.at("/properties/activeMembership/oneOf")).isEqualTo(objectMapper.readTree("""
 				[{"$ref":"#/components/schemas/ReceptionActiveMembershipResponse"},{"type":"null"}]
@@ -1770,9 +892,7 @@ class GeneratedOpenApiTests {
 	}
 
 	private void assertReceptionMembershipSummary(JsonNode schema) {
-		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("membershipId", "offerName", "planName", "effectiveStartDate",
-				"effectiveEndDate", "status", "benefitCodes", "frozen");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("membershipId", "offerName", "planName", "effectiveStartDate", "effectiveEndDate", "status", "benefitCodes", "frozen");
 		assertThat(schema.at("/properties/membershipId/format").asText()).isEqualTo("uuid");
 		assertThat(schema.at("/properties/effectiveStartDate/format").asText()).isEqualTo("date");
 		assertThat(schema.at("/properties/effectiveEndDate/format").asText()).isEqualTo("date");
@@ -1786,31 +906,34 @@ class GeneratedOpenApiTests {
 		assertThat(patch.path("additionalProperties").asBoolean()).isFalse();
 		assertThat(patch.path("properties").has("profileImageUrl")).isFalse();
 		JsonNode response = document.at("/components/schemas/StaffProfileResponse");
-		assertThat(response.path("required"))
-			.contains(objectMapper.getNodeFactory().textNode("profileImageUrl"));
-		assertThat(response.at("/properties/profileImageUrl/type")).containsExactlyInAnyOrder(
-			objectMapper.getNodeFactory().textNode("string"), objectMapper.getNodeFactory().textNode("null"));
+		assertThat(response.path("required")).contains(objectMapper.getNodeFactory().textNode("profileImageUrl"));
+		assertThat(response.at("/properties/profileImageUrl/type")).containsExactlyInAnyOrder(objectMapper.getNodeFactory().textNode("string"), objectMapper.getNodeFactory().textNode("null"));
+	}
+
+	@Test
+	void cleanupPreservesGeneratedOpenApiContract() throws Exception {
+		try (var input = getClass().getResourceAsStream("/cleanup/openapi-baseline.json")) {
+			assertThat(input).isNotNull();
+			assertThat(generatedDocument()).isEqualTo(objectMapper.readTree(input));
+		}
 	}
 
 	private JsonNode generatedDocument() throws Exception {
-		return objectMapper.readTree(mockMvc.perform(get("/v3/api-docs"))
-			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+		return objectMapper.readTree(mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
 	}
 
 	private Set<String> operations(JsonNode document) {
 		Set<String> operations = new HashSet<>();
-		document.path("paths").properties().forEach(pathEntry ->
-			pathEntry.getValue().properties().forEach(operationEntry -> {
-				if (HTTP_METHODS.contains(operationEntry.getKey())) {
-					operations.add(operationEntry.getKey().toUpperCase() + " " + pathEntry.getKey());
-				}
-			}));
+		document.path("paths").properties().forEach(pathEntry -> pathEntry.getValue().properties().forEach(operationEntry -> {
+			if (HTTP_METHODS.contains(operationEntry.getKey())) {
+				operations.add(operationEntry.getKey().toUpperCase() + " " + pathEntry.getKey());
+			}
+		}));
 		return operations;
 	}
 
 	private void assertProblemReference(JsonNode document, String path, String method, String status) {
-		assertThat(response(document, path, method, status).path("$ref").asText())
-			.startsWith("#/components/responses/");
+		assertThat(response(document, path, method, status).path("$ref").asText()).startsWith("#/components/responses/");
 	}
 
 	private JsonNode operation(JsonNode document, String path, String method) {
@@ -1822,8 +945,7 @@ class GeneratedOpenApiTests {
 	}
 
 	private Set<String> responseStatuses(JsonNode document, CourseOperationContract contract) {
-		return operation(document, contract.path(), contract.method()).path("responses").properties().stream()
-			.map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+		return operation(document, contract.path(), contract.method()).path("responses").properties().stream().map(java.util.Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
 	}
 
 	private void assertExpectedCatalogContract(JsonNode document, String source) {
@@ -1831,25 +953,17 @@ class GeneratedOpenApiTests {
 			JsonNode parameter = parameter(document, contract.path(), contract.name());
 			String label = source + " GET " + contract.path() + " parameter " + contract.name();
 			assertThat(parameter.path("in").asText()).as(label + " location").isEqualTo(contract.location());
-			assertThat(parameter.path("required").asBoolean(false)).as(label + " required")
-				.isEqualTo(contract.required());
-			assertSchemaMetadata(document, parameter.path("schema"), contract.types(), contract.format(),
-				contract.defaultValue(), contract.minimum(), contract.maximum(), contract.enumValues(), null, label);
+			assertThat(parameter.path("required").asBoolean(false)).as(label + " required").isEqualTo(contract.required());
+			assertSchemaMetadata(document, parameter.path("schema"), contract.types(), contract.format(), contract.defaultValue(), contract.minimum(), contract.maximum(), contract.enumValues(), null, label);
 		}
-
 		for (CatalogSchemaContract contract : COURSE_CATALOG_SCHEMA_CONTRACTS) {
 			JsonNode schema = document.at("/components/schemas/" + contract.name());
 			String label = source + " schema " + contract.name();
-			Set<String> expectedProperties = contract.properties().stream()
-				.map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
-			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-				.as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
-			assertThat(schema.path("required").values()).as(label + " required").toIterable()
-				.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
+			Set<String> expectedProperties = contract.properties().stream().map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
+			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("required").values()).as(label + " required").toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
 			for (CatalogPropertyContract property : contract.properties()) {
-				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(),
-					property.format(), null, property.minimum(), property.maximum(), property.enumValues(),
-					property.itemSchema(), label + " property " + property.name());
+				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(), property.format(), null, property.minimum(), property.maximum(), property.enumValues(), property.itemSchema(), label + " property " + property.name());
 			}
 		}
 	}
@@ -1858,127 +972,80 @@ class GeneratedOpenApiTests {
 		for (CourseOperationContract contract : COURSE_ORDER_OPERATION_CONTRACTS) {
 			JsonNode operation = operation(document, contract.path(), contract.method());
 			String label = source + " " + contract.method().toUpperCase() + " " + contract.path();
-			assertThat(effectiveSecurity(document, operation)).as(label + " security")
-				.isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
-			Set<String> expectedParameters = COURSE_ORDER_PARAMETER_CONTRACTS.stream()
-				.filter(parameter -> parameter.path().equals(contract.path())
-					&& parameter.method().equals(contract.method()))
-				.map(parameter -> parameter.location() + ":" + parameter.name())
-				.collect(java.util.stream.Collectors.toSet());
-			assertThat(normalizedParameters(document, operation.path("parameters")).values())
-				.as(label + " parameters").toIterable()
-				.extracting(parameter -> parameter.path("in").asText() + ":" + parameter.path("name").asText())
-				.containsExactlyInAnyOrderElementsOf(expectedParameters);
-
+			assertThat(effectiveSecurity(document, operation)).as(label + " security").isEqualTo(objectMapper.valueToTree(List.of(Map.of("bearerAuth", List.of()))));
+			Set<String> expectedParameters = COURSE_ORDER_PARAMETER_CONTRACTS.stream().filter(parameter -> parameter.path().equals(contract.path()) && parameter.method().equals(contract.method())).map(parameter -> parameter.location() + ":" + parameter.name()).collect(java.util.stream.Collectors.toSet());
+			assertThat(normalizedParameters(document, operation.path("parameters")).values()).as(label + " parameters").toIterable().extracting(parameter -> parameter.path("in").asText() + ":" + parameter.path("name").asText()).containsExactlyInAnyOrderElementsOf(expectedParameters);
 			if (operation.has("requestBody")) {
 				JsonNode requestBody = resolve(document, operation.path("requestBody"));
 				assertThat(requestBody.path("required").asBoolean(false)).as(label + " request required").isTrue();
-				assertThat(requestBody.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList())
-					.as(label + " request media types").containsExactly("application/json");
-				assertThat(normalizedSchema(document, requestBody.at("/content/application~1json/schema")))
-					.as(label + " request schema")
-					.isEqualTo(normalizedSchema(document,
-						document.at("/components/schemas/CourseOrderCreateRequest")));
-			}
-			else {
+				assertThat(requestBody.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " request media types").containsExactly("application/json");
+				assertThat(normalizedSchema(document, requestBody.at("/content/application~1json/schema"))).as(label + " request schema").isEqualTo(normalizedSchema(document, document.at("/components/schemas/CourseOrderCreateRequest")));
+			} else {
 				assertThat(operation.has("requestBody")).as(label + " request body").isFalse();
 			}
-
 			for (String status : contract.statuses()) {
 				JsonNode response = resolve(document, response(document, contract.path(), contract.method(), status));
 				String mediaType = status.startsWith("2") ? "application/json" : "application/problem+json";
-				String schema = status.startsWith("2") ? "CourseOrderResponse"
-					: "401".equals(status) ? "UnauthorizedProblem" : "ApiProblem";
-				assertThat(response.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList())
-					.as(label + " " + status + " media types").containsExactly(mediaType);
-				assertThat(normalizedSchema(document, response.path("content").path(mediaType).path("schema")))
-					.as(label + " " + status + " schema")
-					.isEqualTo(normalizedSchema(document, document.at("/components/schemas/" + schema)));
+				String schema = status.startsWith("2") ? "CourseOrderResponse" : "401".equals(status) ? "UnauthorizedProblem" : "ApiProblem";
+				assertThat(response.path("content").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " " + status + " media types").containsExactly(mediaType);
+				assertThat(normalizedSchema(document, response.path("content").path(mediaType).path("schema"))).as(label + " " + status + " schema").isEqualTo(normalizedSchema(document, document.at("/components/schemas/" + schema)));
 			}
 		}
-
 		for (CourseOrderParameterContract contract : COURSE_ORDER_PARAMETER_CONTRACTS) {
 			JsonNode parameter = parameter(document, contract.path(), contract.method(), contract.name());
-			String label = source + " " + contract.method().toUpperCase() + " " + contract.path()
-				+ " parameter " + contract.name();
+			String label = source + " " + contract.method().toUpperCase() + " " + contract.path() + " parameter " + contract.name();
 			assertThat(parameter.path("in").asText()).as(label + " location").isEqualTo(contract.location());
-			assertThat(parameter.path("required").asBoolean(false)).as(label + " required")
-				.isEqualTo(contract.required());
+			assertThat(parameter.path("required").asBoolean(false)).as(label + " required").isEqualTo(contract.required());
 			JsonNode schema = resolve(document, parameter.path("schema"));
-			Set<String> actualTypes = schema.path("type").isArray()
-				? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false)
-					.map(JsonNode::asText).collect(java.util.stream.Collectors.toSet())
-				: Set.of(schema.path("type").asText());
+			Set<String> actualTypes = schema.path("type").isArray() ? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false).map(JsonNode::asText).collect(java.util.stream.Collectors.toSet()) : Set.of(schema.path("type").asText());
 			assertThat(actualTypes).as(label + " type").containsExactlyInAnyOrderElementsOf(contract.types());
 			assertThat(textOrNull(schema, "format")).as(label + " format").isEqualTo(contract.format());
 			assertThat(textOrNull(schema, "minLength")).as(label + " minLength").isEqualTo(contract.minLength());
 			assertThat(textOrNull(schema, "maxLength")).as(label + " maxLength").isEqualTo(contract.maxLength());
 			assertThat(textOrNull(schema, "pattern")).as(label + " pattern").isEqualTo(contract.pattern());
 		}
-
 		for (CatalogSchemaContract contract : COURSE_ORDER_SCHEMA_CONTRACTS) {
 			JsonNode schema = document.at("/components/schemas/" + contract.name());
 			String label = source + " schema " + contract.name();
-			Set<String> expectedProperties = contract.properties().stream()
-				.map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
-			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-				.as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
-			assertThat(schema.path("required").values()).as(label + " required").toIterable()
-				.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
-			assertThat(schema.path("additionalProperties").asBoolean(true)).as(label + " additional properties")
-				.isFalse();
+			Set<String> expectedProperties = contract.properties().stream().map(CatalogPropertyContract::name).collect(java.util.stream.Collectors.toSet());
+			assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " properties").containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("required").values()).as(label + " required").toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedProperties);
+			assertThat(schema.path("additionalProperties").asBoolean(true)).as(label + " additional properties").isFalse();
 			for (CatalogPropertyContract property : contract.properties()) {
-				if ("payment".equals(property.name())) continue;
-				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(),
-					property.format(), null, property.minimum(), property.maximum(), property.enumValues(),
-					property.itemSchema(), label + " property " + property.name());
+				if ("payment".equals(property.name()))
+					continue;
+				assertSchemaMetadata(document, schema.path("properties").path(property.name()), property.types(), property.format(), null, property.minimum(), property.maximum(), property.enumValues(), property.itemSchema(), label + " property " + property.name());
 			}
 		}
-		assertThat(document.at("/components/schemas/CourseOrderResponse/properties/orderReference/pattern").asText())
-			.as(source + " CourseOrderResponse orderReference pattern").isEqualTo("^COR-[0-9A-F]{32}$");
-
+		assertThat(document.at("/components/schemas/CourseOrderResponse/properties/orderReference/pattern").asText()).as(source + " CourseOrderResponse orderReference pattern").isEqualTo("^COR-[0-9A-F]{32}$");
 		assertProblemSchema(document, "ApiProblem", Set.of(), source);
 		assertProblemSchema(document, "UnauthorizedProblem", UNAUTHORIZED_PROBLEM_CODES, source);
 	}
 
-	private void assertProblemSchema(JsonNode document, String name, Set<String> codes, String source)
-			throws Exception {
+	private void assertProblemSchema(JsonNode document, String name, Set<String> codes, String source) throws Exception {
 		JsonNode schema = document.at("/components/schemas/" + name);
 		String label = source + " schema " + name;
-		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.as(label + " properties").containsExactlyInAnyOrderElementsOf(API_PROBLEM_PROPERTIES);
-		assertThat(schema.path("required").values()).as(label + " required").toIterable()
-			.extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(API_PROBLEM_REQUIRED);
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " properties").containsExactlyInAnyOrderElementsOf(API_PROBLEM_PROPERTIES);
+		assertThat(schema.path("required").values()).as(label + " required").toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(API_PROBLEM_REQUIRED);
 		assertThat(schema.has("additionalProperties")).as(label + " additionalProperties").isFalse();
-		assertSchemaMetadata(document, schema.at("/properties/title"), Set.of("string"), null, null, null, null,
-			Set.of(), null, label + " title");
-		assertSchemaMetadata(document, schema.at("/properties/status"), Set.of("integer"), "int32", null, null,
-			null, Set.of(), null, label + " status");
-		assertSchemaMetadata(document, schema.at("/properties/detail"), Set.of("string"), null, null, null, null,
-			Set.of(), null, label + " detail");
-		assertSchemaMetadata(document, schema.at("/properties/instance"), Set.of("string"), "uri-reference", null,
-			null, null, Set.of(), null, label + " instance");
-		assertSchemaMetadata(document, schema.at("/properties/code"), Set.of("string"), null, null, null, null,
-			codes, null, label + " code");
-		assertThat(normalizedSchema(document, schema.at("/properties/errors"))).as(label + " errors")
-			.isEqualTo(objectMapper.readTree("""
-				{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}}
-				"""));
+		assertSchemaMetadata(document, schema.at("/properties/title"), Set.of("string"), null, null, null, null, Set.of(), null, label + " title");
+		assertSchemaMetadata(document, schema.at("/properties/status"), Set.of("integer"), "int32", null, null, null, Set.of(), null, label + " status");
+		assertSchemaMetadata(document, schema.at("/properties/detail"), Set.of("string"), null, null, null, null, Set.of(), null, label + " detail");
+		assertSchemaMetadata(document, schema.at("/properties/instance"), Set.of("string"), "uri-reference", null, null, null, Set.of(), null, label + " instance");
+		assertSchemaMetadata(document, schema.at("/properties/code"), Set.of("string"), null, null, null, null, codes, null, label + " code");
+		assertThat(normalizedSchema(document, schema.at("/properties/errors"))).as(label + " errors").isEqualTo(objectMapper.readTree("""
+			{"type":"object","additionalProperties":{"type":"array","items":{"type":"string"}}}
+			"""));
 		for (String field : List.of("affectedSessionIds", "requiredBenefitCodes", "missingBenefitCodes")) {
 			String format = "affectedSessionIds".equals(field) ? "uuid" : null;
-			assertThat(schema.path("properties").path(field).path("type").asText())
-				.as(label + " " + field + " type").isEqualTo("array");
-			assertSchemaMetadata(document, schema.path("properties").path(field).path("items"), Set.of("string"),
-				format, null, null, null, Set.of(), null, label + " " + field + " items");
+			assertThat(schema.path("properties").path(field).path("type").asText()).as(label + " " + field + " type").isEqualTo("array");
+			assertSchemaMetadata(document, schema.path("properties").path(field).path("items"), Set.of("string"), format, null, null, null, Set.of(), null, label + " " + field + " items");
 		}
-		assertSchemaMetadata(document, schema.at("/properties/traceId"), Set.of("string"), null, null, null, null,
-			Set.of(), null, label + " traceId");
+		assertSchemaMetadata(document, schema.at("/properties/traceId"), Set.of("string"), null, null, null, null, Set.of(), null, label + " traceId");
 		JsonNode affected = schema.at("/properties/affectedSessions/items");
 		assertThat(schema.at("/properties/affectedSessions/type").asText()).isEqualTo("array");
 		assertThat(affected.path("type").asText()).isEqualTo("object");
-		assertThat(affected.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.as(label + " affectedSessions properties")
-			.containsExactlyInAnyOrder("sessionId", "classId", "className", "startTime", "endTime");
+		assertThat(affected.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).as(label + " affectedSessions properties").containsExactlyInAnyOrder("sessionId", "classId", "className", "startTime", "endTime");
 		assertThat(affected.at("/properties/sessionId/format").asText()).isEqualTo("uuid");
 		assertThat(affected.at("/properties/classId/format").asText()).isEqualTo("uuid");
 		assertThat(affected.at("/properties/startTime/format").asText()).isEqualTo("date-time");
@@ -1986,38 +1053,26 @@ class GeneratedOpenApiTests {
 	}
 
 	private JsonNode parameter(JsonNode document, String path, String name) {
-		return java.util.stream.StreamSupport.stream(operation(document, path, "get").path("parameters").spliterator(),
-			false).map(parameter -> resolve(document, parameter))
-			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
+		return java.util.stream.StreamSupport.stream(operation(document, path, "get").path("parameters").spliterator(), false).map(parameter -> resolve(document, parameter)).filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
 	}
 
 	private JsonNode parameter(JsonNode document, String path, String method, String name) {
-		return java.util.stream.StreamSupport.stream(operation(document, path, method).path("parameters").spliterator(),
-			false).map(parameter -> resolve(document, parameter))
-			.filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
+		return java.util.stream.StreamSupport.stream(operation(document, path, method).path("parameters").spliterator(), false).map(parameter -> resolve(document, parameter)).filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
 	}
 
-	private void assertSchemaMetadata(JsonNode document, JsonNode rawSchema, Set<String> expectedTypes,
-			String expectedFormat, String expectedDefault, String expectedMinimum, String expectedMaximum,
-			Set<String> expectedEnum, String expectedItemSchema, String label) {
+	private void assertSchemaMetadata(JsonNode document, JsonNode rawSchema, Set<String> expectedTypes, String expectedFormat, String expectedDefault, String expectedMinimum, String expectedMaximum, Set<String> expectedEnum, String expectedItemSchema, String label) {
 		JsonNode schema = resolve(document, rawSchema);
-		Set<String> actualTypes = schema.path("type").isArray()
-			? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false)
-				.map(JsonNode::asText).collect(java.util.stream.Collectors.toSet())
-			: Set.of(schema.path("type").asText());
+		Set<String> actualTypes = schema.path("type").isArray() ? java.util.stream.StreamSupport.stream(schema.path("type").spliterator(), false).map(JsonNode::asText).collect(java.util.stream.Collectors.toSet()) : Set.of(schema.path("type").asText());
 		assertThat(actualTypes).as(label + " type").containsExactlyInAnyOrderElementsOf(expectedTypes);
 		assertThat(textOrNull(schema, "format")).as(label + " format").isEqualTo(expectedFormat);
 		assertThat(textOrNull(schema, "default")).as(label + " default").isEqualTo(expectedDefault);
 		assertThat(textOrNull(schema, "minimum")).as(label + " minimum").isEqualTo(expectedMinimum);
 		assertThat(textOrNull(schema, "maximum")).as(label + " maximum").isEqualTo(expectedMaximum);
-		assertThat(schema.path("enum").values()).as(label + " enum").toIterable().extracting(JsonNode::asText)
-			.containsExactlyInAnyOrderElementsOf(expectedEnum);
+		assertThat(schema.path("enum").values()).as(label + " enum").toIterable().extracting(JsonNode::asText).containsExactlyInAnyOrderElementsOf(expectedEnum);
 		if (expectedItemSchema == null) {
 			assertThat(schema.has("items")).as(label + " items").isFalse();
-		}
-		else {
-			assertThat(schema.at("/items/$ref").asText()).as(label + " items")
-				.isEqualTo("#/components/schemas/" + expectedItemSchema);
+		} else {
+			assertThat(schema.at("/items/$ref").asText()).as(label + " items").isEqualTo("#/components/schemas/" + expectedItemSchema);
 		}
 	}
 
@@ -2033,9 +1088,7 @@ class GeneratedOpenApiTests {
 			operation.set("security", source.path("security").deepCopy());
 			operation.set("parameters", normalizedParameters(document, source.path("parameters")));
 			ObjectNode responses = objectMapper.createObjectNode();
-			new TreeSet<>(responseStatuses(document, contract)).forEach(status ->
-				responses.set(status, normalizedResponse(document,
-					response(document, contract.path(), contract.method(), status))));
+			new TreeSet<>(responseStatuses(document, contract)).forEach(status -> responses.set(status, normalizedResponse(document, response(document, contract.path(), contract.method(), status))));
 			operation.set("responses", responses);
 			normalized.set(contract.method().toUpperCase() + " " + contract.path(), operation);
 		}
@@ -2044,7 +1097,8 @@ class GeneratedOpenApiTests {
 
 	private void normalizeNullableCourseOrderPayment(ObjectNode response) {
 		JsonNode schema = response.at("/content/application~1json");
-		if (!schema.isObject() || !schema.path("properties").has("payment")) return;
+		if (!schema.isObject() || !schema.path("properties").has("payment"))
+			return;
 		ObjectNode objectSchema = (ObjectNode) schema;
 		JsonNode payment = objectSchema.path("properties").path("payment");
 		if (payment.has("oneOf")) {
@@ -2069,16 +1123,13 @@ class GeneratedOpenApiTests {
 				ObjectNode normalizedRequest = objectMapper.createObjectNode();
 				normalizedRequest.put("required", requestBody.path("required").asBoolean(false));
 				ObjectNode content = objectMapper.createObjectNode();
-				requestBody.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
-					.forEach(entry -> content.set(entry.getKey(),
-						normalizedSchema(document, entry.getValue().path("schema"))));
+				requestBody.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> content.set(entry.getKey(), normalizedSchema(document, entry.getValue().path("schema"))));
 				normalizedRequest.set("content", content);
 				operation.set("requestBody", normalizedRequest);
 			}
 			ObjectNode responses = objectMapper.createObjectNode();
 			new TreeSet<>(responseStatuses(document, contract)).forEach(status -> {
-				ObjectNode response = normalizedResponse(document,
-					response(document, contract.path(), contract.method(), status));
+				ObjectNode response = normalizedResponse(document, response(document, contract.path(), contract.method(), status));
 				normalizeNullableCourseOrderPayment(response);
 				responses.set(status, response);
 			});
@@ -2096,8 +1147,7 @@ class GeneratedOpenApiTests {
 			ObjectNode value = objectMapper.createObjectNode();
 			requirement.properties().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> {
 				ArrayNode scopes = objectMapper.createArrayNode();
-				java.util.stream.StreamSupport.stream(entry.getValue().spliterator(), false)
-					.sorted(Comparator.comparing(JsonNode::asText)).forEach(scopes::add);
+				java.util.stream.StreamSupport.stream(entry.getValue().spliterator(), false).sorted(Comparator.comparing(JsonNode::asText)).forEach(scopes::add);
 				value.set(entry.getKey(), scopes);
 			});
 			requirements.add(value);
@@ -2118,8 +1168,7 @@ class GeneratedOpenApiTests {
 			value.set("schema", normalizedSchema(document, source.path("schema")));
 			values.add(value);
 		});
-		values.stream().sorted(Comparator.comparing(value ->
-			value.path("in").asText() + ":" + value.path("name").asText())).forEach(normalized::add);
+		values.stream().sorted(Comparator.comparing(value -> value.path("in").asText() + ":" + value.path("name").asText())).forEach(normalized::add);
 		return normalized;
 	}
 
@@ -2127,9 +1176,7 @@ class GeneratedOpenApiTests {
 		JsonNode source = resolve(document, response);
 		ObjectNode normalized = objectMapper.createObjectNode();
 		ObjectNode content = objectMapper.createObjectNode();
-		source.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
-			.forEach(entry -> content.set(entry.getKey(),
-				normalizedSchema(document, entry.getValue().path("schema"))));
+		source.path("content").properties().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> content.set(entry.getKey(), normalizedSchema(document, entry.getValue().path("schema"))));
 		normalized.set("content", content);
 		return normalized;
 	}
@@ -2137,22 +1184,19 @@ class GeneratedOpenApiTests {
 	private ObjectNode normalizedSchema(JsonNode document, JsonNode schema) {
 		JsonNode source = resolve(document, schema);
 		ObjectNode normalized = objectMapper.createObjectNode();
-		copy(source, normalized, "type", "format", "default", "minimum", "maximum", "exclusiveMinimum",
-			"exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties",
-			"maxProperties", "pattern", "multipleOf", "nullable");
+		copy(source, normalized, "type", "format", "default", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties", "pattern", "multipleOf", "nullable");
 		copySortedArray(source, normalized, "required");
 		copySortedArray(source, normalized, "enum");
 		if (source.has("properties")) {
 			ObjectNode properties = objectMapper.createObjectNode();
-			source.path("properties").properties().stream().sorted(java.util.Map.Entry.comparingByKey())
-				.forEach(entry -> properties.set(entry.getKey(), normalizedSchema(document, entry.getValue())));
+			source.path("properties").properties().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> properties.set(entry.getKey(), normalizedSchema(document, entry.getValue())));
 			normalized.set("properties", properties);
 		}
-		if (source.has("items")) normalized.set("items", normalizedSchema(document, source.path("items")));
+		if (source.has("items"))
+			normalized.set("items", normalizedSchema(document, source.path("items")));
 		if (source.has("additionalProperties")) {
 			JsonNode additional = source.path("additionalProperties");
-			normalized.set("additionalProperties", additional.isObject()
-				? normalizedSchema(document, additional) : additional.deepCopy());
+			normalized.set("additionalProperties", additional.isObject() ? normalizedSchema(document, additional) : additional.deepCopy());
 		}
 		for (String composition : List.of("allOf", "oneOf", "anyOf")) {
 			if (source.has(composition)) {
@@ -2179,53 +1223,41 @@ class GeneratedOpenApiTests {
 
 	private void copy(JsonNode source, ObjectNode target, String... fields) {
 		for (String field : fields) {
-			if (source.has(field)) target.set(field, source.path(field).deepCopy());
+			if (source.has(field))
+				target.set(field, source.path(field).deepCopy());
 		}
 	}
 
 	private void copySortedArray(JsonNode source, ObjectNode target, String field) {
-		if (!source.has(field)) return;
+		if (!source.has(field))
+			return;
 		ArrayNode values = objectMapper.createArrayNode();
-		java.util.stream.StreamSupport.stream(source.path(field).spliterator(), false)
-			.sorted(Comparator.comparing(JsonNode::toString)).forEach(values::add);
+		java.util.stream.StreamSupport.stream(source.path(field).spliterator(), false).sorted(Comparator.comparing(JsonNode::toString)).forEach(values::add);
 		target.set(field, values);
 	}
 
-	private void assertProblemResponse(JsonNode document, CourseOperationContract contract, String status,
-			String label, String expectedSchema) {
+	private void assertProblemResponse(JsonNode document, CourseOperationContract contract, String status, String label, String expectedSchema) {
 		String responseRef = response(document, contract.path(), contract.method(), status).path("$ref").asText();
 		assertThat(responseRef).as(label + " " + status).startsWith("#/components/responses/");
 		String component = responseRef.substring(responseRef.lastIndexOf('/') + 1);
-		assertThat(document.at("/components/responses/" + component
-			+ "/content/application~1problem+json/schema/$ref").asText())
-			.as(label + " " + status).isEqualTo("#/components/schemas/" + expectedSchema);
+		assertThat(document.at("/components/responses/" + component + "/content/application~1problem+json/schema/$ref").asText()).as(label + " " + status).isEqualTo("#/components/schemas/" + expectedSchema);
 	}
 
 	private void assertConcreteSchema(JsonNode response, String label) {
 		JsonNode content = response.path("content");
-		boolean hasSchema = content.isObject() && content.properties().stream()
-			.map(java.util.Map.Entry::getValue)
-			.map(mediaType -> mediaType.path("schema"))
-			.anyMatch(schema -> !schema.isMissingNode() && !schema.isEmpty());
+		boolean hasSchema = content.isObject() && content.properties().stream().map(java.util.Map.Entry::getValue).map(mediaType -> mediaType.path("schema")).anyMatch(schema -> !schema.isMissingNode() && !schema.isEmpty());
 		assertThat(hasSchema).as(label).isTrue();
 	}
 
 	private void assertRefundEligibleSourceSchema(JsonNode schema) {
-		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList())
-			.containsExactlyInAnyOrder("paymentId", "membershipId", "receiptId", "receiptNumber", "orderNumber",
-				"offerName", "memberCode", "memberFullName", "paymentReference", "type", "paidAmount",
-				"suggestedAmount", "currency", "calculationDate");
-		assertThat(schema.path("required").toString()).contains("paymentId", "membershipId", "receiptId",
-			"receiptNumber", "orderNumber", "offerName", "memberCode", "memberFullName", "type", "paidAmount",
-			"paymentReference", "suggestedAmount", "currency", "calculationDate");
+		assertThat(schema.path("properties").properties().stream().map(java.util.Map.Entry::getKey).toList()).containsExactlyInAnyOrder("paymentId", "membershipId", "receiptId", "receiptNumber", "orderNumber", "offerName", "memberCode", "memberFullName", "paymentReference", "type", "paidAmount", "suggestedAmount", "currency", "calculationDate");
+		assertThat(schema.path("required").toString()).contains("paymentId", "membershipId", "receiptId", "receiptNumber", "orderNumber", "offerName", "memberCode", "memberFullName", "type", "paidAmount", "paymentReference", "suggestedAmount", "currency", "calculationDate");
 		assertThat(schema.at("/properties/calculationDate/format").asText()).isEqualTo("date");
-		assertThat(schema.at("/properties/type/enum").toString())
-			.isEqualTo("[\"TERMINATED_MEMBERSHIP\",\"RESERVED_CANCELLATION\"]");
+		assertThat(schema.at("/properties/type/enum").toString()).isEqualTo("[\"TERMINATED_MEMBERSHIP\",\"RESERVED_CANCELLATION\"]");
 	}
 
 	private static ClassPathScanningCandidateComponentProvider controllerScanner() {
-		ClassPathScanningCandidateComponentProvider scanner =
-			new ClassPathScanningCandidateComponentProvider(false);
+		ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);
 		scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
 		return scanner;
 	}
@@ -2235,41 +1267,30 @@ class GeneratedOpenApiTests {
 
 		@Bean
 		static BeanFactoryPostProcessor controllerDependencyMocks() {
-			return beanFactory -> controllerScanner().findCandidateComponents("com.scms.backend").stream()
-				.map(candidate -> load(candidate.getBeanClassName()))
-				.filter(controller -> !controller.getName().contains("$"))
-				.map(controller -> Arrays.stream(controller.getDeclaredConstructors())
-					.max(Comparator.comparingInt(constructor -> constructor.getParameterCount()))
-					.orElseThrow())
-				.flatMap(constructor -> Arrays.stream(constructor.getParameters()))
-				.filter(parameter -> !parameter.isAnnotationPresent(org.springframework.beans.factory.annotation.Value.class))
-				.map(java.lang.reflect.Parameter::getType)
-				.distinct()
-				.filter(dependency -> beanFactory.getBeanNamesForType(dependency, false, false).length == 0)
-				.forEach(dependency -> beanFactory.registerSingleton(dependency.getName(), mock(dependency)));
+			return beanFactory -> controllerScanner().findCandidateComponents("com.scms.backend").stream().map(candidate -> load(candidate.getBeanClassName())).filter(controller -> !controller.getName().contains("$")).map(controller -> Arrays.stream(controller.getDeclaredConstructors()).max(Comparator.comparingInt(constructor -> constructor.getParameterCount())).orElseThrow()).flatMap(constructor -> Arrays.stream(constructor.getParameters())).filter(parameter -> !parameter.isAnnotationPresent(org.springframework.beans.factory.annotation.Value.class)).map(java.lang.reflect.Parameter::getType).distinct().filter(dependency -> beanFactory.getBeanNamesForType(dependency, false, false).length == 0).forEach(dependency -> beanFactory.registerSingleton(dependency.getName(), mock(dependency)));
 		}
 
 		private static Class<?> load(String className) {
 			try {
 				return Class.forName(className);
-			}
-			catch (ClassNotFoundException exception) {
+			} catch (ClassNotFoundException exception) {
 				throw new IllegalStateException("Cannot load controller " + className, exception);
 			}
 		}
 	}
 
-	private record CourseOperationContract(String path, String method, Set<String> statuses) { }
+	private record CourseOperationContract(String path, String method, Set<String> statuses) {
+	}
 
-	private record CatalogParameterContract(String path, String name, String location, boolean required,
-		Set<String> types, String format, String defaultValue, String minimum, String maximum,
-		Set<String> enumValues) { }
+	private record CatalogParameterContract(String path, String name, String location, boolean required, Set<String> types, String format, String defaultValue, String minimum, String maximum, Set<String> enumValues) {
+	}
 
-	private record CatalogSchemaContract(String name, List<CatalogPropertyContract> properties) { }
+	private record CatalogSchemaContract(String name, List<CatalogPropertyContract> properties) {
+	}
 
-	private record CatalogPropertyContract(String name, Set<String> types, String format, String minimum,
-		String maximum, Set<String> enumValues, String itemSchema) { }
+	private record CatalogPropertyContract(String name, Set<String> types, String format, String minimum, String maximum, Set<String> enumValues, String itemSchema) {
+	}
 
-	private record CourseOrderParameterContract(String path, String method, String name, String location,
-		boolean required, Set<String> types, String format, String minLength, String maxLength, String pattern) { }
+	private record CourseOrderParameterContract(String path, String method, String name, String location, boolean required, Set<String> types, String format, String minLength, String maxLength, String pattern) {
+	}
 }

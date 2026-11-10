@@ -1,10 +1,5 @@
 package com.scms.backend.manager;
 
-import java.time.Clock;
-import java.sql.Timestamp;
-import java.util.Map;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -12,6 +7,10 @@ import com.scms.backend.account.AccountStatus;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,8 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class StaffStatusService {
 
 	private final AccountRepository accounts;
+
 	private final AuditEventRepository audits;
+
 	private final JdbcTemplate jdbc;
+
 	private final Clock clock;
 
 	StaffStatusService(AccountRepository accounts, AuditEventRepository audits, JdbcTemplate jdbc, Clock clock) {
@@ -29,6 +31,7 @@ public class StaffStatusService {
 		this.audits = audits;
 		this.jdbc = jdbc;
 		this.clock = clock;
+		this.staffStatusRepository = new StaffStatusRepository(this.jdbc);
 	}
 
 	@Transactional
@@ -38,10 +41,7 @@ public class StaffStatusService {
 		}
 		validate(request);
 		var activeManagers = accounts.findActiveManagersForUpdate();
-		Account target = accounts.findByIdForUpdate(accountId)
-			.or(() -> accounts.findById(accountId))
-			.filter(account -> account.getRole() != AccountRole.MEMBER)
-			.orElseThrow(StaffAccountNotFoundException::new);
+		Account target = accounts.findByIdForUpdate(accountId).or(() -> accounts.findById(accountId)).filter(account -> account.getRole() != AccountRole.MEMBER).orElseThrow(StaffAccountNotFoundException::new);
 		if (managerId.equals(accountId)) {
 			throw new StaffStatusConflictException("A Manager cannot deactivate their own account");
 		}
@@ -54,33 +54,17 @@ public class StaffStatusService {
 		if (target.getRole() == AccountRole.COACH) {
 			ensureCoachHasNoOutstandingWork(accountId);
 		}
-
 		AccountStatus before = target.getStatus();
 		target.deactivateStaff();
 		accounts.flush();
-		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "STAFF_DEACTIVATED", "ACCOUNT", accountId,
-			request.reason().trim(), Map.of("status", before.name()), Map.of("status", AccountStatus.INACTIVE.name())));
-		return new StaffAccountResponse(target.getId(), target.getRole(), target.getStatus(), target.getFullName(),
-			target.getPhone(), target.getEmail(), target.getBirthDate());
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "STAFF_DEACTIVATED", "ACCOUNT", accountId, request.reason().trim(), Map.of("status", before.name()), Map.of("status", AccountStatus.INACTIVE.name())));
+		return new StaffAccountResponse(target.getId(), target.getRole(), target.getStatus(), target.getFullName(), target.getPhone(), target.getEmail(), target.getBirthDate());
 	}
 
 	private void ensureCoachHasNoOutstandingWork(UUID coachId) {
-		jdbc.update("""
-			update coach_assignments ca set status='ENDED', end_reason='PLUS membership expired',
-				ends_at=greatest(ca.starts_at, coalesce((select max(m.ends_at) from memberships m
-				where m.member_account_id=ca.member_account_id and m.plan_code_snapshot='PLUS'), current_timestamp)),
-				updated_at=current_timestamp, version=ca.version+1
-			where ca.coach_account_id=? and ca.status='ACTIVE' and not exists (
-				select 1 from memberships m where m.member_account_id=ca.member_account_id
-				and m.status='ACTIVE' and m.plan_code_snapshot='PLUS' and m.starts_at <= current_timestamp and m.ends_at > current_timestamp)
-			""", coachId);
-		Boolean hasFutureSessions = jdbc.queryForObject("""
-			select exists(select 1 from class_sessions where teaching_coach_account_id = ?
-				and end_time > ? and status in ('SCHEDULED', 'IN_PROGRESS'))
-			""", Boolean.class, coachId, Timestamp.from(clock.instant()));
-		Boolean hasActiveAssignments = jdbc.queryForObject("""
-			select exists(select 1 from coach_assignments where coach_account_id = ? and status = 'ACTIVE')
-			""", Boolean.class, coachId);
+		staffStatusRepository.endAssignmentsWithoutActivePlus(coachId);
+		Boolean hasFutureSessions = staffStatusRepository.hasFutureSessions(coachId, Timestamp.from(clock.instant()));
+		Boolean hasActiveAssignments = staffStatusRepository.hasActiveAssignments(coachId);
 		if (Boolean.TRUE.equals(hasFutureSessions) || Boolean.TRUE.equals(hasActiveAssignments)) {
 			throw new StaffStatusConflictException("Coach still has future sessions or active personal assignments");
 		}
@@ -94,4 +78,6 @@ public class StaffStatusService {
 			throw new StaffAccountValidationException("reason", "must be non-blank and at most 1000 characters");
 		}
 	}
+
+	private final StaffStatusRepository staffStatusRepository;
 }

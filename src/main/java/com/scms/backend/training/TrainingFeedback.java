@@ -1,14 +1,13 @@
 package com.scms.backend.training;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 
 @Entity
 @Table(name = "feedback")
@@ -49,9 +48,7 @@ public class TrainingFeedback {
 	protected TrainingFeedback() {
 	}
 
-	public TrainingFeedback(UUID id, UUID memberAccountId, UUID coachAssignmentId,
-			UUID trainingPlanVersionId, UUID trainingResultId, String content,
-			UUID createdByAccountId, Instant createdAt) {
+	public TrainingFeedback(UUID id, UUID memberAccountId, UUID coachAssignmentId, UUID trainingPlanVersionId, UUID trainingResultId, String content, UUID createdByAccountId, Instant createdAt) {
 		this.id = Objects.requireNonNull(id);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
 		this.coachAssignmentId = Objects.requireNonNull(coachAssignmentId);
@@ -62,8 +59,7 @@ public class TrainingFeedback {
 		this.updatedAt = createdAt;
 	}
 
-	public static TrainingFeedback forClassSessionResult(UUID id, UUID memberAccountId,
-			UUID trainingResultId, String content, UUID createdByAccountId, Instant createdAt) {
+	public static TrainingFeedback forClassSessionResult(UUID id, UUID memberAccountId, UUID trainingResultId, String content, UUID createdByAccountId, Instant createdAt) {
 		TrainingFeedback feedback = new TrainingFeedback();
 		feedback.id = Objects.requireNonNull(id);
 		feedback.memberAccountId = Objects.requireNonNull(memberAccountId);
@@ -98,18 +94,48 @@ public class TrainingFeedback {
 
 	private String requireContent(String value) {
 		String normalized = Objects.requireNonNull(value).trim();
-		if (normalized.isEmpty()) throw new IllegalArgumentException("Feedback content must not be blank.");
+		if (normalized.isEmpty())
+			throw new IllegalArgumentException("Feedback content must not be blank.");
 		return normalized;
 	}
 
-	public UUID getId() { return id; }
-	public UUID getMemberAccountId() { return memberAccountId; }
-	public UUID getCoachAssignmentId() { return coachAssignmentId; }
-	public UUID getTrainingPlanVersionId() { return trainingPlanVersionId; }
-	public UUID getTrainingResultId() { return trainingResultId; }
-	public String getContent() { return content; }
-	public UUID getCreatedByAccountId() { return createdByAccountId; }
-	public Instant getCreatedAt() { return createdAt; }
-	public Instant getUpdatedAt() { return updatedAt; }
-	public Long getVersion() { return version; }
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	public UUID getCoachAssignmentId() {
+		return coachAssignmentId;
+	}
+
+	public UUID getTrainingPlanVersionId() {
+		return trainingPlanVersionId;
+	}
+
+	public UUID getTrainingResultId() {
+		return trainingResultId;
+	}
+
+	public String getContent() {
+		return content;
+	}
+
+	public UUID getCreatedByAccountId() {
+		return createdByAccountId;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public Instant getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
 }

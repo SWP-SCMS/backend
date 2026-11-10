@@ -1,16 +1,16 @@
 package com.scms.backend.membership;
 
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-
+import com.scms.backend.membership.freeze.MembershipFreezeExecutionService;
+import com.scms.backend.membership.termination.MembershipTerminationExecutionService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 
@@ -24,9 +24,7 @@ class MembershipLifecycleSchedulerTests {
 		MembershipRepository memberships = mock(MembershipRepository.class);
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of(first, second));
-
 		new MembershipLifecycleScheduler(memberships, lifecycle, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
-
 		InOrder order = inOrder(lifecycle);
 		order.verify(lifecycle).reconcile(first, now);
 		order.verify(lifecycle).reconcile(second, now);
@@ -42,9 +40,7 @@ class MembershipLifecycleSchedulerTests {
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of(first, second));
 		doThrow(new IllegalStateException("broken member")).when(lifecycle).reconcile(first, now);
-
 		new MembershipLifecycleScheduler(memberships, lifecycle, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
-
 		org.mockito.Mockito.verify(lifecycle).reconcile(second, now);
 		org.mockito.Mockito.verify(lifecycle).reconcileExpiredAssignments(now);
 	}
@@ -52,16 +48,13 @@ class MembershipLifecycleSchedulerTests {
 	@Test
 	void continuesWithTheNextDueMemberPageAfterTheFirstPageIsFull() {
 		Instant now = Instant.parse("2026-10-21T03:00:00Z");
-		List<UUID> firstPage = java.util.stream.IntStream.range(0, 100)
-			.mapToObj(ignored -> UUID.randomUUID()).toList();
+		List<UUID> firstPage = java.util.stream.IntStream.range(0, 100).mapToObj(ignored -> UUID.randomUUID()).toList();
 		UUID nextPageMember = UUID.randomUUID();
 		MembershipRepository memberships = mock(MembershipRepository.class);
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(firstPage);
 		when(memberships.findDueMemberAccountIds(now, firstPage.get(99))).thenReturn(List.of(nextPageMember));
-
 		new MembershipLifecycleScheduler(memberships, lifecycle, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
-
 		org.mockito.Mockito.verify(lifecycle).reconcile(nextPageMember, now);
 	}
 
@@ -72,9 +65,7 @@ class MembershipLifecycleSchedulerTests {
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		MembershipTerminationExecutionService termination = mock(MembershipTerminationExecutionService.class);
 		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of());
-
 		new MembershipLifecycleScheduler(memberships, lifecycle, termination, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
-
 		InOrder order = inOrder(termination, lifecycle);
 		order.verify(termination).reconcileDue(now);
 		order.verify(lifecycle).reconcileExpiredAssignments(now);
@@ -87,9 +78,7 @@ class MembershipLifecycleSchedulerTests {
 		MembershipLifecycleService lifecycle = mock(MembershipLifecycleService.class);
 		MembershipFreezeExecutionService freeze = mock(MembershipFreezeExecutionService.class);
 		when(memberships.findDueMemberAccountIds(now, null)).thenReturn(List.of());
-
 		new MembershipLifecycleScheduler(memberships, lifecycle, null, freeze, Clock.fixed(now, ZoneOffset.UTC)).reconcile();
-
 		org.mockito.Mockito.verify(freeze).reconcileDue(now);
 	}
 }

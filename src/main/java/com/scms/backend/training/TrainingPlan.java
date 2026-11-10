@@ -1,9 +1,5 @@
 package com.scms.backend.training;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,6 +7,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 
 @Entity
 @Table(name = "training_plans")
@@ -49,8 +48,7 @@ public class TrainingPlan {
 	protected TrainingPlan() {
 	}
 
-	public TrainingPlan(UUID id, UUID memberAccountId, UUID coachAssignmentId, String title,
-			UUID createdByAccountId, Instant createdAt) {
+	public TrainingPlan(UUID id, UUID memberAccountId, UUID coachAssignmentId, String title, UUID createdByAccountId, Instant createdAt) {
 		this.id = Objects.requireNonNull(id);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
 		this.coachAssignmentId = Objects.requireNonNull(coachAssignmentId);
@@ -71,13 +69,39 @@ public class TrainingPlan {
 		this.updatedAt = Objects.requireNonNull(updatedAt);
 	}
 
-	public UUID getId() { return id; }
-	public UUID getMemberAccountId() { return memberAccountId; }
-	public UUID getCoachAssignmentId() { return coachAssignmentId; }
-	public String getTitle() { return title; }
-	public TrainingPlanStatus getStatus() { return status; }
-	public UUID getCreatedByAccountId() { return createdByAccountId; }
-	public Instant getCreatedAt() { return createdAt; }
-	public Instant getUpdatedAt() { return updatedAt; }
-	public Long getVersion() { return version; }
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getMemberAccountId() {
+		return memberAccountId;
+	}
+
+	public UUID getCoachAssignmentId() {
+		return coachAssignmentId;
+	}
+
+	public String getTitle() {
+		return title;
+	}
+
+	public TrainingPlanStatus getStatus() {
+		return status;
+	}
+
+	public UUID getCreatedByAccountId() {
+		return createdByAccountId;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public Instant getUpdatedAt() {
+		return updatedAt;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
 }

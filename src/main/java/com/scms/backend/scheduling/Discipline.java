@@ -1,14 +1,7 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
-import jakarta.persistence.Column;
 import jakarta.persistence.CollectionTable;
+import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -17,6 +10,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Entity
 @Table(name = "disciplines")
@@ -37,8 +36,7 @@ public class Discipline {
 	private DisciplineStatus status;
 
 	@ElementCollection
-	@CollectionTable(name = "discipline_required_benefits",
-		joinColumns = @JoinColumn(name = "discipline_id"))
+	@CollectionTable(name = "discipline_required_benefits", joinColumns = @JoinColumn(name = "discipline_id"))
 	@Column(name = "benefit_code", nullable = false, length = 50)
 	private Set<String> requiredBenefitCodes = new HashSet<>();
 
@@ -55,14 +53,14 @@ public class Discipline {
 	protected Discipline() {
 	}
 
-	Discipline(UUID id, String name, String description, DisciplineStatus status) {
+	public Discipline(UUID id, String name, String description, DisciplineStatus status) {
 		this.id = id;
 		this.name = name;
 		this.description = description;
 		this.status = status;
 	}
 
-	void update(String name, String description, DisciplineStatus status) {
+	public void update(String name, String description, DisciplineStatus status) {
 		this.name = name;
 		this.description = description;
 		this.status = status;
@@ -77,7 +75,7 @@ public class Discipline {
 		return name;
 	}
 
-	String getDescription() {
+	public String getDescription() {
 		return description;
 	}
 
@@ -85,16 +83,15 @@ public class Discipline {
 		return status;
 	}
 
-	List<String> getRequiredBenefitCodes() {
+	public List<String> getRequiredBenefitCodes() {
 		return requiredBenefitCodes.stream().sorted().toList();
 	}
 
-	List<String> getEffectiveRequiredBenefitCodes() {
-		return java.util.stream.Stream.concat(java.util.stream.Stream.of("CLASS_BOOKING"),
-			requiredBenefitCodes.stream()).distinct().sorted().toList();
+	public List<String> getEffectiveRequiredBenefitCodes() {
+		return java.util.stream.Stream.concat(java.util.stream.Stream.of("CLASS_BOOKING"), requiredBenefitCodes.stream()).distinct().sorted().toList();
 	}
 
-	void replaceRequiredBenefitCodes(Collection<String> benefitCodes) {
+	public void replaceRequiredBenefitCodes(Collection<String> benefitCodes) {
 		requiredBenefitCodes.clear();
 		requiredBenefitCodes.addAll(benefitCodes);
 	}

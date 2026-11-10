@@ -1,9 +1,7 @@
 package com.scms.backend.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
-
 import com.scms.backend.account.AccountRepository;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,11 +24,8 @@ class AccountIdentifierAvailabilityTests {
 
 	@Test
 	void databaseConstraintNamesMapToStableConflictCodes() {
-		DataIntegrityViolationException emailFailure = new DataIntegrityViolationException("outer",
-			new IllegalStateException("uq_accounts_current_email"));
-		DataIntegrityViolationException phoneFailure = new DataIntegrityViolationException("outer",
-			new IllegalStateException("uq_accounts_current_phone"));
-
+		DataIntegrityViolationException emailFailure = new DataIntegrityViolationException("outer", new IllegalStateException("uq_accounts_current_email"));
+		DataIntegrityViolationException phoneFailure = new DataIntegrityViolationException("outer", new IllegalStateException("uq_accounts_current_phone"));
 		assertThat(identifierAvailability.fromDatabase(emailFailure).getCode()).isEqualTo("EMAIL_ALREADY_EXISTS");
 		assertThat(identifierAvailability.fromDatabase(phoneFailure).getCode()).isEqualTo("PHONE_ALREADY_EXISTS");
 	}

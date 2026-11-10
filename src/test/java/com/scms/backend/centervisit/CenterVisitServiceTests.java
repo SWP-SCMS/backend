@@ -4,11 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
+import com.scms.backend.account.Account;
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfile;
+import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.identity.receptionmember.ReceptionActiveMembershipResponse;
+import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
+import com.scms.backend.identity.receptionmember.ReceptionMemberSearchResponse;
+import com.scms.backend.membership.MembershipStatus;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -17,19 +28,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-
-import com.scms.backend.account.Account;
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.AccountRole;
-import com.scms.backend.account.AccountStatus;
-import com.scms.backend.account.MemberProfile;
-import com.scms.backend.account.MemberProfileRepository;
-import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.audit.AuditEvent;
-import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
-import com.scms.backend.identity.receptionmember.ReceptionMemberSearchResponse;
-import com.scms.backend.identity.receptionmember.ReceptionActiveMembershipResponse;
-import com.scms.backend.membership.MembershipStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,29 +40,39 @@ import org.springframework.data.domain.PageRequest;
 @ExtendWith(MockitoExtension.class)
 class CenterVisitServiceTests {
 
-	@Mock ReceptionMemberProfileService members;
-	@Mock CenterVisitRepository visits;
-	@Mock AccountRepository accounts;
-	@Mock MemberProfileRepository profiles;
-	@Mock AuditEventRepository audits;
+	@Mock
+	ReceptionMemberProfileService members;
+
+	@Mock
+	CenterVisitRepository visits;
+
+	@Mock
+	AccountRepository accounts;
+
+	@Mock
+	MemberProfileRepository profiles;
+
+	@Mock
+	AuditEventRepository audits;
+
 	CenterVisitService service;
 
 	private final Instant now = Instant.parse("2026-10-06T05:00:00Z");
+
 	private UUID receptionistId;
+
 	private UUID memberId;
 
 	@BeforeEach
 	void setUp() {
-		service = new CenterVisitService(members, visits, accounts, profiles, audits,
-			Clock.fixed(now, ZoneOffset.UTC));
+		service = new CenterVisitService(members, visits, accounts, profiles, audits, Clock.fixed(now, ZoneOffset.UTC));
 		receptionistId = UUID.randomUUID();
 		memberId = UUID.randomUUID();
 	}
 
 	@Test
 	void identityVerificationIsRequired() {
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, null), null), "IDENTITY_VERIFICATION_REQUIRED");
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, null), null), "IDENTITY_VERIFICATION_REQUIRED");
 		verify(visits, never()).findCurrentMembership(any(), any());
 	}
 
@@ -72,16 +80,9 @@ class CenterVisitServiceTests {
 	void createsVisitUsingRevalidatedMembershipAndPreservesResponse() {
 		UUID membershipId = UUID.randomUUID();
 		stubEligibleMember(membershipId);
-		when(members.search(receptionistId, "MB-100001", null)).thenReturn(new ReceptionMemberSearchResponse(
-			memberId, "MB-100001", "Member", "0901000001", "member@example.test", LocalDate.of(1990, 1, 1),
-			"photo", AccountStatus.ACTIVE, new ReceptionActiveMembershipResponse(UUID.randomUUID(), "Old offer",
-				"Old plan", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 1), MembershipStatus.ACTIVE,
-				List.of("CENTER_ACCESS"), true)));
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(new ReceptionMemberSearchResponse(memberId, "MB-100001", "Member", "0901000001", "member@example.test", LocalDate.of(1990, 1, 1), "photo", AccountStatus.ACTIVE, new ReceptionActiveMembershipResponse(UUID.randomUUID(), "Old offer", "Old plan", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 1), MembershipStatus.ACTIVE, List.of("CENTER_ACCESS"), true)));
 		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-		CenterVisitResponse response = service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), " request-1 ");
-
+		CenterVisitResponse response = service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), " request-1 ");
 		assertThat(response.memberId()).isEqualTo(memberId);
 		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.membershipId()).isEqualTo(membershipId);
@@ -94,21 +95,15 @@ class CenterVisitServiceTests {
 		ArgumentCaptor<AuditEvent> audit = ArgumentCaptor.forClass(AuditEvent.class);
 		verify(audits).save(audit.capture());
 		assertThat(audit.getValue().getAction()).isEqualTo("CENTER_VISIT_CREATED");
-		assertThat(audit.getValue().getAfterData()).containsEntry("identityVerified", true)
-			.containsEntry("memberId", memberId.toString())
-			.containsEntry("membershipId", membershipId.toString());
+		assertThat(audit.getValue().getAfterData()).containsEntry("identityVerified", true).containsEntry("memberId", memberId.toString()).containsEntry("membershipId", membershipId.toString());
 	}
 
 	@Test
 	void sameIdempotencyKeyAndMemberReplaysWithoutSaving() {
 		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
-		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
-			.thenReturn(Optional.of(existing));
-
-		CenterVisitResponse response = service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), "request-1");
-
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1")).thenReturn(Optional.of(existing));
+		CenterVisitResponse response = service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-1");
 		assertThat(response.id()).isEqualTo(existing.getId());
 		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
@@ -121,12 +116,8 @@ class CenterVisitServiceTests {
 		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount(AccountStatus.SUSPENDED)));
-		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
-			.thenReturn(Optional.empty(), Optional.of(existing));
-
-		CenterVisitResponse response = assertDoesNotThrow(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), "request-1"));
-
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1")).thenReturn(Optional.empty(), Optional.of(existing));
+		CenterVisitResponse response = assertDoesNotThrow(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-1"));
 		assertThat(response.id()).isEqualTo(existing.getId());
 		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
 		assertThat(response.created()).isFalse();
@@ -135,26 +126,20 @@ class CenterVisitServiceTests {
 		order.verify(accounts).findByIdForUpdate(memberId);
 		order.verify(visits).findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1");
 		verify(visits, never()).findCurrentMembership(any(), any());
-		verify(visits, never())
-			.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
+		verify(visits, never()).findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
 		verify(visits, never()).saveAndFlush(any());
 		verify(audits, never()).save(any());
 	}
 
 	@Test
 	void keyedRequestThatMissesBeforeLockRejectsWinnerForDifferentMember() {
-		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-			receptionistId, now.minusSeconds(30), "request-1");
+		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), receptionistId, now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
-		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
-			.thenReturn(Optional.empty(), Optional.of(existing));
-
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), "request-1"), "IDEMPOTENCY_KEY_REUSED");
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1")).thenReturn(Optional.empty(), Optional.of(existing));
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-1"), "IDEMPOTENCY_KEY_REUSED");
 		verify(visits, never()).findCurrentMembership(any(), any());
-		verify(visits, never())
-			.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
+		verify(visits, never()).findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(any());
 		verify(visits, never()).saveAndFlush(any());
 		verify(audits, never()).save(any());
 	}
@@ -162,14 +147,9 @@ class CenterVisitServiceTests {
 	@Test
 	void keyedReplaySurvivesMemberSuspensionAndRemovedImage() {
 		CenterVisit existing = visit(now.minusSeconds(30), "request-1");
-		when(members.search(receptionistId, "MB-100001", null))
-			.thenReturn(member(AccountStatus.SUSPENDED, "  "));
-		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
-			.thenReturn(Optional.of(existing));
-
-		CenterVisitResponse response = service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), "request-1");
-
+		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.SUSPENDED, "  "));
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1")).thenReturn(Optional.of(existing));
+		CenterVisitResponse response = service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-1");
 		assertThat(response.id()).isEqualTo(existing.getId());
 		assertThat(response.checkedInAt()).isEqualTo(now.minusSeconds(30));
 		assertThat(response.created()).isFalse();
@@ -179,14 +159,10 @@ class CenterVisitServiceTests {
 
 	@Test
 	void sameIdempotencyKeyForAnotherMemberIsRejected() {
-		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-			receptionistId, now.minusSeconds(30), "request-1");
+		CenterVisit existing = new CenterVisit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), receptionistId, now.minusSeconds(30), "request-1");
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
-		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1"))
-			.thenReturn(Optional.of(existing));
-
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), "request-1"), "IDEMPOTENCY_KEY_REUSED");
+		when(visits.findByCheckedInByAccountIdAndIdempotencyKey(receptionistId, "request-1")).thenReturn(Optional.of(existing));
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-1"), "IDEMPOTENCY_KEY_REUSED");
 		verify(visits, never()).saveAndFlush(any());
 	}
 
@@ -195,12 +171,9 @@ class CenterVisitServiceTests {
 		UUID membershipId = UUID.randomUUID();
 		CenterVisit open = visit(now.minusSeconds(300), null);
 		stubEligibleMember(membershipId);
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.of(open));
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.of(open));
 		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
 		service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-2");
-
 		assertThat(open.getCheckedOutAt()).isEqualTo(now);
 		assertThat(open.getCheckedOutByAccountId()).isEqualTo(receptionistId);
 		assertThat(open.getCheckoutSource()).isEqualTo(CheckoutSource.AUTO_REENTRY);
@@ -215,13 +188,9 @@ class CenterVisitServiceTests {
 		closed.checkout(memberId, CheckoutSource.MEMBER, now.minusSeconds(60));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.empty());
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(memberId))
-			.thenReturn(Optional.of(closed));
-
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.empty());
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNotNullOrderByCheckedOutAtDescIdDesc(memberId)).thenReturn(Optional.of(closed));
 		CenterVisitResponse response = service.checkoutMember(memberId);
-
 		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedOutAt()).isEqualTo(now.minusSeconds(60));
 		verify(visits, never()).save(any());
@@ -233,11 +202,8 @@ class CenterVisitServiceTests {
 		CenterVisit open = visit(now.minusSeconds(300), null);
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.of(open));
-
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.of(open));
 		CenterVisitResponse response = service.checkoutMember(memberId);
-
 		assertThat(response.memberName()).isEqualTo("Member");
 		assertThat(response.checkedOutAt()).isEqualTo(now);
 		assertThat(response.checkoutSource()).isEqualTo(CheckoutSource.MEMBER);
@@ -246,37 +212,28 @@ class CenterVisitServiceTests {
 		assertThat(audit.getValue().getAction()).isEqualTo("CENTER_VISIT_CHECKED_OUT");
 		assertThat(audit.getValue().getActorAccountId()).isEqualTo(memberId);
 		assertThat(audit.getValue().getBeforeData()).containsEntry("checkedOut", false);
-		assertThat(audit.getValue().getAfterData()).containsEntry("checkoutSource", "MEMBER")
-			.containsEntry("checkedOutBy", memberId.toString());
+		assertThat(audit.getValue().getAfterData()).containsEntry("checkoutSource", "MEMBER").containsEntry("checkedOutBy", memberId.toString());
 	}
 
 	@Test
 	void currentMemberUsesCurrentAccountName() {
 		CenterVisit open = visit(now.minusSeconds(300), null);
-		when(accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE))
-			.thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(memberId, AccountRole.MEMBER, AccountStatus.ACTIVE)).thenReturn(true);
 		when(accounts.findById(memberId)).thenReturn(Optional.of(memberAccount("Renamed Member")));
 		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.of(open));
-
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.of(open));
 		CenterVisitResponse response = service.currentMember(memberId);
-
 		assertThat(response.memberName()).isEqualTo("Renamed Member");
 	}
 
 	@Test
 	void receptionistCheckoutUsesCurrentAccountName() {
 		CenterVisit open = visit(now.minusSeconds(300), null);
-		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
-			.thenReturn(true);
+		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)).thenReturn(true);
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount("Checkout Member")));
 		when(profiles.findById(memberId)).thenReturn(Optional.of(profile()));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.of(open));
-
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.of(open));
 		CenterVisitResponse response = service.checkoutReceptionist(receptionistId, memberId);
-
 		assertThat(response.memberName()).isEqualTo("Checkout Member");
 		assertThat(response.checkoutSource()).isEqualTo(CheckoutSource.RECEPTIONIST);
 	}
@@ -285,24 +242,17 @@ class CenterVisitServiceTests {
 	void openVisitsBatchUniqueMemberAccountsAndProfiles() {
 		UUID secondMemberId = UUID.randomUUID();
 		CenterVisit first = visit(now.minusSeconds(300), null);
-		CenterVisit second = new CenterVisit(UUID.randomUUID(), secondMemberId, UUID.randomUUID(),
-			receptionistId, now.minusSeconds(200), null);
+		CenterVisit second = new CenterVisit(UUID.randomUUID(), secondMemberId, UUID.randomUUID(), receptionistId, now.minusSeconds(200), null);
 		var pageable = PageRequest.of(0, 20);
 		Set<UUID> memberIds = Set.of(memberId, secondMemberId);
 		Account firstAccount = memberAccount("First Member");
 		Account secondAccount = memberAccount(secondMemberId, "Second Member");
-		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE))
-			.thenReturn(true);
-		when(visits.findByCheckedOutAtIsNull(pageable))
-			.thenReturn(new PageImpl<>(List.of(first, second), pageable, 2));
+		when(accounts.existsByIdAndRoleAndStatus(receptionistId, AccountRole.RECEPTIONIST, AccountStatus.ACTIVE)).thenReturn(true);
+		when(visits.findByCheckedOutAtIsNull(pageable)).thenReturn(new PageImpl<>(List.of(first, second), pageable, 2));
 		when(accounts.findAllById(memberIds)).thenReturn(List.of(firstAccount, secondAccount));
-		when(profiles.findAllById(memberIds))
-			.thenReturn(List.of(new MemberProfile(firstAccount), new MemberProfile(secondAccount)));
-
+		when(profiles.findAllById(memberIds)).thenReturn(List.of(new MemberProfile(firstAccount), new MemberProfile(secondAccount)));
 		CenterVisitPageResponse response = service.openVisits(receptionistId, pageable);
-
-		assertThat(response.content()).extracting(CenterVisitResponse::memberName)
-			.containsExactly("First Member", "Second Member");
+		assertThat(response.content()).extracting(CenterVisitResponse::memberName).containsExactly("First Member", "Second Member");
 		verify(accounts).findAllById(memberIds);
 		verify(profiles).findAllById(memberIds);
 		verify(accounts, never()).findById(any());
@@ -311,20 +261,15 @@ class CenterVisitServiceTests {
 
 	@Test
 	void suspendedMemberCannotCheckIn() {
-		when(members.search(receptionistId, null, "0901000001"))
-			.thenReturn(member(AccountStatus.SUSPENDED, "photo"));
-
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest(null, "0901000001", true), null), "CENTER_VISIT_MEMBER_NOT_ACTIVE");
+		when(members.search(receptionistId, null, "0901000001")).thenReturn(member(AccountStatus.SUSPENDED, "photo"));
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest(null, "0901000001", true), null), "CENTER_VISIT_MEMBER_NOT_ACTIVE");
 		verify(visits, never()).findCurrentMembership(any(), any());
 	}
 
 	@Test
 	void profileImageIsRequired() {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "  "));
-
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), null), "CENTER_VISIT_PROFILE_IMAGE_REQUIRED");
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), null), "CENTER_VISIT_PROFILE_IMAGE_REQUIRED");
 		verify(visits, never()).findCurrentMembership(any(), any());
 	}
 
@@ -333,11 +278,7 @@ class CenterVisitServiceTests {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findCurrentMembership(memberId, now)).thenReturn(Optional.empty());
-
-		assertThatThrownBy(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true), null))
-			.isInstanceOf(CenterVisitException.class)
-			.hasMessage("An active membership with the CENTER_ACCESS benefit is required for center check-in.");
+		assertThatThrownBy(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), null)).isInstanceOf(CenterVisitException.class).hasMessage("An active membership with the CENTER_ACCESS benefit is required for center check-in.");
 		verify(visits, never()).saveAndFlush(any());
 	}
 
@@ -347,15 +288,10 @@ class CenterVisitServiceTests {
 		UUID enrollmentId = UUID.randomUUID();
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
-		when(visits.findEligibleCourseEnrollmentId(memberId, courseSessionId, now))
-			.thenReturn(Optional.of(enrollmentId));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.empty());
+		when(visits.findEligibleCourseEnrollmentId(memberId, courseSessionId, now)).thenReturn(Optional.of(enrollmentId));
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.empty());
 		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-		CenterVisitResponse response = service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true, courseSessionId), "course-entry");
-
+		CenterVisitResponse response = service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true, courseSessionId), "course-entry");
 		assertThat(response.membershipId()).isNull();
 		assertThat(response.source()).isEqualTo(CenterVisitSource.COURSE);
 		assertThat(response.courseEnrollmentId()).isEqualTo(enrollmentId);
@@ -370,11 +306,7 @@ class CenterVisitServiceTests {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findEligibleCourseEnrollmentId(memberId, courseSessionId, now)).thenReturn(Optional.empty());
-
-		assertCode(() -> service.checkIn(receptionistId,
-			new CenterVisitRequest("MB-100001", null, true, courseSessionId), null),
-			"COURSE_CHECK_IN_NOT_ELIGIBLE");
-
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true, courseSessionId), null), "COURSE_CHECK_IN_NOT_ELIGIBLE");
 		verify(visits, never()).findCurrentMembership(any(), any());
 		verify(visits, never()).saveAndFlush(any());
 	}
@@ -384,7 +316,6 @@ class CenterVisitServiceTests {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.hasActiveMembershipFreeze(memberId)).thenReturn(true);
-
 		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), null), "MEMBERSHIP_FROZEN");
 		verify(visits, never()).findCurrentMembership(any(), any());
 	}
@@ -393,8 +324,7 @@ class CenterVisitServiceTests {
 		when(members.search(receptionistId, "MB-100001", null)).thenReturn(member(AccountStatus.ACTIVE, "photo"));
 		when(accounts.findByIdForUpdate(memberId)).thenReturn(Optional.of(memberAccount()));
 		when(visits.findCurrentMembership(memberId, now)).thenReturn(Optional.of(membershipId));
-		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId))
-			.thenReturn(Optional.empty());
+		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.empty());
 	}
 
 	private void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable action, String code) {
@@ -402,8 +332,7 @@ class CenterVisitServiceTests {
 	}
 
 	private ReceptionMemberSearchResponse member(AccountStatus status, String image) {
-		return new ReceptionMemberSearchResponse(memberId, "MB-100001", "Member", "0901000001",
-			"member@example.test", LocalDate.of(1990, 1, 1), image, status, null);
+		return new ReceptionMemberSearchResponse(memberId, "MB-100001", "Member", "0901000001", "member@example.test", LocalDate.of(1990, 1, 1), image, status, null);
 	}
 
 	private Account memberAccount() {
@@ -423,8 +352,7 @@ class CenterVisitServiceTests {
 	}
 
 	private Account memberAccount(UUID accountId, AccountStatus status, String fullName) {
-		return new Account(accountId, AccountRole.MEMBER, status, fullName, "0901000001",
-			"member@example.test", LocalDate.of(1990, 1, 1), "password");
+		return new Account(accountId, AccountRole.MEMBER, status, fullName, "0901000001", "member@example.test", LocalDate.of(1990, 1, 1), "password");
 	}
 
 	private MemberProfile profile() {

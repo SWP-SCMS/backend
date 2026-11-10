@@ -1,0 +1,1972 @@
+[
+  {
+    "path": "/**",
+    "methods": [
+      "OPTIONS"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 128
+  },
+  {
+    "path": "/auth/login",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 129
+  },
+  {
+    "path": "/auth/refresh",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 129
+  },
+  {
+    "path": "/auth/logout",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 129
+  },
+  {
+    "path": "/auth/register",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 129
+  },
+  {
+    "path": "/auth/password-reset/request",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 130
+  },
+  {
+    "path": "/auth/password-reset/verify",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 130
+  },
+  {
+    "path": "/auth/password-reset/confirm",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 130
+  },
+  {
+    "path": "/auth/email-verification/verify",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 131
+  },
+  {
+    "path": "/auth/email-verification/resend",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 131
+  },
+  {
+    "path": "/auth/email-verification/change-email",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 131
+  },
+  {
+    "path": "/docs",
+    "methods": [],
+    "access": "permitAll",
+    "roles": [],
+    "line": 132
+  },
+  {
+    "path": "/docs/**",
+    "methods": [],
+    "access": "permitAll",
+    "roles": [],
+    "line": 132
+  },
+  {
+    "path": "/swagger-ui/**",
+    "methods": [],
+    "access": "permitAll",
+    "roles": [],
+    "line": 132
+  },
+  {
+    "path": "/v3/api-docs/**",
+    "methods": [],
+    "access": "permitAll",
+    "roles": [],
+    "line": 132
+  },
+  {
+    "path": "/membership-offers",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 133
+  },
+  {
+    "path": "/membership-offers/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 133
+  },
+  {
+    "path": "/course-images/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 134
+  },
+  {
+    "path": "/courses",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 135
+  },
+  {
+    "path": "/courses/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 135
+  },
+  {
+    "path": "/course-runs",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 135
+  },
+  {
+    "path": "/course-runs/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 135
+  },
+  {
+    "path": "/members/me/membership-termination-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 140
+  },
+  {
+    "path": "/members/me/membership-termination-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 141
+  },
+  {
+    "path": "/members/me/membership-termination-requests/*",
+    "methods": [
+      "DELETE"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 142
+  },
+  {
+    "path": "/reception/members/*/membership-termination-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 143
+  },
+  {
+    "path": "/reception/members/*/membership-termination-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 144
+  },
+  {
+    "path": "/manager/membership-termination-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 145
+  },
+  {
+    "path": "/manager/membership-termination-requests/*/approve",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 146
+  },
+  {
+    "path": "/manager/membership-termination-requests/*/reject",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 146
+  },
+  {
+    "path": "/manager/members/*/membership-termination-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 147
+  },
+  {
+    "path": "/reception/refund-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 148
+  },
+  {
+    "path": "/reception/members/*/refund-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 149
+  },
+  {
+    "path": "/reception/refund-requests/*/cash-disbursement",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 149
+  },
+  {
+    "path": "/manager/refund-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 150
+  },
+  {
+    "path": "/manager/refund-requests/*/first-approval",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 151
+  },
+  {
+    "path": "/manager/refund-requests/*/final-approval",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 151
+  },
+  {
+    "path": "/manager/refund-requests/*/reject",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 151
+  },
+  {
+    "path": "/members/me/membership-freeze-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 152
+  },
+  {
+    "path": "/members/me/membership-freeze-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 153
+  },
+  {
+    "path": "/members/me/membership-freeze-requests/*",
+    "methods": [
+      "DELETE"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 154
+  },
+  {
+    "path": "/reception/members/*/membership-freeze-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 155
+  },
+  {
+    "path": "/reception/members/*/membership-freeze-requests",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 156
+  },
+  {
+    "path": "/reception/membership-freeze-requests/*/cash-payment",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 157
+  },
+  {
+    "path": "/manager/membership-freeze-requests",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 158
+  },
+  {
+    "path": "/manager/membership-freeze-requests/*/approve",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 159
+  },
+  {
+    "path": "/manager/membership-freeze-requests/*/reject",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 159
+  },
+  {
+    "path": "/members/me/membership-orders",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 164
+  },
+  {
+    "path": "/members/me/membership-orders/pending",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 165
+  },
+  {
+    "path": "/members/me/course-orders",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 166
+  },
+  {
+    "path": "/members/me/course-orders/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 167
+  },
+  {
+    "path": "/reception/members/*/membership-orders",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 168
+  },
+  {
+    "path": "/reception/members/*/membership-orders/pending",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 169
+  },
+  {
+    "path": "/reception/members/*/course-orders",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 170
+  },
+  {
+    "path": "/reception/members/*/course-orders/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 171
+  },
+  {
+    "path": "/reception/members/*/course-enrollments",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 172
+  },
+  {
+    "path": "/reception/members/*/course-enrollments/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 172
+  },
+  {
+    "path": "/reception/members/*/cash-payments",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 173
+  },
+  {
+    "path": "/reception/members",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 174
+  },
+  {
+    "path": "/reception/members/*/receipts",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "RECEPTIONIST",
+      "MANAGER"
+    ],
+    "line": 175
+  },
+  {
+    "path": "/reception/class-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 176
+  },
+  {
+    "path": "/reception/courses",
+    "methods": [
+      "POST"
+    ],
+    "access": "denyAll",
+    "roles": [],
+    "line": 177
+  },
+  {
+    "path": "/reception/email-verification/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 178
+  },
+  {
+    "path": "/reception/members/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 179
+  },
+  {
+    "path": "/reception/center-visits/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 180
+  },
+  {
+    "path": "/members/me/center-visits/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 181
+  },
+  {
+    "path": "/manager/staff-accounts/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 186
+  },
+  {
+    "path": "/manager/email-verification/manual-activation-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 187
+  },
+  {
+    "path": "/manager/disciplines",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 188
+  },
+  {
+    "path": "/manager/disciplines/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 188
+  },
+  {
+    "path": "/manager/classes",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 189
+  },
+  {
+    "path": "/manager/classes/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 189
+  },
+  {
+    "path": "/manager/rooms",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 190
+  },
+  {
+    "path": "/manager/rooms/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 190
+  },
+  {
+    "path": "/manager/courses",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 191
+  },
+  {
+    "path": "/manager/courses/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 191
+  },
+  {
+    "path": "/manager/course-runs",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 191
+  },
+  {
+    "path": "/manager/course-runs/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 191
+  },
+  {
+    "path": "/manager/course-approval-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 192
+  },
+  {
+    "path": "/manager/course-approval-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 192
+  },
+  {
+    "path": "/manager/course-transfer-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 193
+  },
+  {
+    "path": "/manager/course-transfer-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 193
+  },
+  {
+    "path": "/manager/course-withdrawal-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 194
+  },
+  {
+    "path": "/manager/course-withdrawal-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 194
+  },
+  {
+    "path": "/manager/members/*/course-enrollments/*/withdrawal-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 194
+  },
+  {
+    "path": "/manager/course-refund-obligations",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 195
+  },
+  {
+    "path": "/manager/course-refund-obligations/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 195
+  },
+  {
+    "path": "/reception/course-refund-obligations/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 196
+  },
+  {
+    "path": "/reception/course-refunds",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 196
+  },
+  {
+    "path": "/reception/course-refunds/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 196
+  },
+  {
+    "path": "/manager/recurring-schedules/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 197
+  },
+  {
+    "path": "/manager/class-sessions",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 198
+  },
+  {
+    "path": "/manager/class-sessions/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 198
+  },
+  {
+    "path": "/manager/coach-leave-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 199
+  },
+  {
+    "path": "/manager/coach-leave-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 199
+  },
+  {
+    "path": "/coach/leave-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 200
+  },
+  {
+    "path": "/coach/leave-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 200
+  },
+  {
+    "path": "/coach/me/leave-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 200
+  },
+  {
+    "path": "/members/class-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 201
+  },
+  {
+    "path": "/members/pt-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 202
+  },
+  {
+    "path": "/reception/pt-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 203
+  },
+  {
+    "path": "/manager/pt-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 204
+  },
+  {
+    "path": "/coach/pt-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 205
+  },
+  {
+    "path": "/coach/pt-sessions/*/members/*/training-summary",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 206
+  },
+  {
+    "path": "/coach/course-sessions/*/members/*/training-summary",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 206
+  },
+  {
+    "path": "/coach/pt-sessions/*/members/*/training-summary",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 207
+  },
+  {
+    "path": "/coach/course-sessions/*/members/*/training-summary",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 207
+  },
+  {
+    "path": "/coach/class-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 208
+  },
+  {
+    "path": "/coach/class-sessions/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 208
+  },
+  {
+    "path": "/coach/class-sessions/*/attendance",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 213
+  },
+  {
+    "path": "/coach/class-sessions/*/attendance/*",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 213
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/training-summary",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 214
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/training-results",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 215
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/training-results",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 216
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/training-results/*",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 217
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/feedback",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 218
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/feedback",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 219
+  },
+  {
+    "path": "/coach/class-sessions/*/members/*/feedback/*",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 220
+  },
+  {
+    "path": "/coach/members",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 221
+  },
+  {
+    "path": "/coach/members/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 221
+  },
+  {
+    "path": "/coach/members/*/training-plans",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 222
+  },
+  {
+    "path": "/coach/members/*/training-plans",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 223
+  },
+  {
+    "path": "/coach/members/*/training-plans/*",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 224
+  },
+  {
+    "path": "/coach/members/*/training-results",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 225
+  },
+  {
+    "path": "/coach/members/*/training-results",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 226
+  },
+  {
+    "path": "/coach/members/*/training-results/*",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 227
+  },
+  {
+    "path": "/coach/members/*/feedback",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 228
+  },
+  {
+    "path": "/coach/members/*/feedback",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 229
+  },
+  {
+    "path": "/coach/members/*/feedback/*",
+    "methods": [
+      "PUT"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 230
+  },
+  {
+    "path": "/members/class-sessions/*/bookings",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 231
+  },
+  {
+    "path": "/members/class-sessions/*/waitlist",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 232
+  },
+  {
+    "path": "/members/me/waitlists",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 233
+  },
+  {
+    "path": "/reception/class-sessions/*/waitlist",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 234
+  },
+  {
+    "path": "/members/me/bookings/*/cancel",
+    "methods": [
+      "PATCH"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 235
+  },
+  {
+    "path": "/members/me/bookings",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 236
+  },
+  {
+    "path": "/reception/members/*/bookings",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 237
+  },
+  {
+    "path": "/reception/members/*/memberships",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 238
+  },
+  {
+    "path": "/manager/membership-offers/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 243
+  },
+  {
+    "path": "/manager/membership-benefits",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 244
+  },
+  {
+    "path": "/manager/membership-plans/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 244
+  },
+  {
+    "path": "/reception/membership-orders/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 245
+  },
+  {
+    "path": "/members/me/membership-orders/*/payments/sepay",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 246
+  },
+  {
+    "path": "/members/me/membership-orders/*/bank-transfer",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 246
+  },
+  {
+    "path": "/reception/members/*/membership-orders/*/payments/sepay",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 247
+  },
+  {
+    "path": "/members/me/course-orders/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 248
+  },
+  {
+    "path": "/members/me/course-transfer-offers",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 249
+  },
+  {
+    "path": "/members/me/course-transfer-offers/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 249
+  },
+  {
+    "path": "/members/me/course-enrollments",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 250
+  },
+  {
+    "path": "/members/me/course-withdrawal-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 251
+  },
+  {
+    "path": "/members/me/course-withdrawal-requests/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 251
+  },
+  {
+    "path": "/members/me/course-enrollments/*/withdrawal-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 251
+  },
+  {
+    "path": "/members/me/course-refund-obligations",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 252
+  },
+  {
+    "path": "/members/me/course-refund-obligations/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 252
+  },
+  {
+    "path": "/reception/members/*/course-enrollments/*/withdrawal-requests",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 253
+  },
+  {
+    "path": "/course-runs/*/waitlist",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 254
+  },
+  {
+    "path": "/course-waitlists/*/accept",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 254
+  },
+  {
+    "path": "/members/me/course-waitlists",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 254
+  },
+  {
+    "path": "/coach/course-sessions",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 255
+  },
+  {
+    "path": "/coach/course-sessions/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 255
+  },
+  {
+    "path": "/coach/course-sessions/*/roster",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 256
+  },
+  {
+    "path": "/coach/course-sessions/*/roster/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "COACH"
+    ],
+    "line": 256
+  },
+  {
+    "path": "/reception/members/*/course-orders/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "RECEPTIONIST"
+    ],
+    "line": 257
+  },
+  {
+    "path": "/members/me/receipts",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 258
+  },
+  {
+    "path": "/members/me/memberships",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 258
+  },
+  {
+    "path": "/members/me/training-results",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 259
+  },
+  {
+    "path": "/members/me/feedback",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 260
+  },
+  {
+    "path": "/members/me/training-plans",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 261
+  },
+  {
+    "path": "/members/me/coach-assignment",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 262
+  },
+  {
+    "path": "/members/me/profile/image",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 263
+  },
+  {
+    "path": "/payments/sepay/webhook",
+    "methods": [
+      "POST"
+    ],
+    "access": "permitAll",
+    "roles": [],
+    "line": 268
+  },
+  {
+    "path": "/notifications/**",
+    "methods": [],
+    "access": "authenticated",
+    "roles": [],
+    "line": 269
+  },
+  {
+    "path": "/accounts/me/email-change",
+    "methods": [],
+    "access": "authenticated",
+    "roles": [],
+    "line": 270
+  },
+  {
+    "path": "/accounts/me/email-change/**",
+    "methods": [],
+    "access": "authenticated",
+    "roles": [],
+    "line": 270
+  },
+  {
+    "path": "/payments/*/result",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "MEMBER",
+      "RECEPTIONIST",
+      "MANAGER"
+    ],
+    "line": 271
+  },
+  {
+    "path": "/course-payments/*/result",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "MEMBER",
+      "RECEPTIONIST",
+      "MANAGER"
+    ],
+    "line": 271
+  },
+  {
+    "path": "/receipts/*",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "MEMBER",
+      "RECEPTIONIST",
+      "MANAGER"
+    ],
+    "line": 271
+  },
+  {
+    "path": "/membership-orders/*/cancel",
+    "methods": [
+      "PATCH"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "RECEPTIONIST",
+      "MANAGER"
+    ],
+    "line": 272
+  },
+  {
+    "path": "/course-payments/**",
+    "methods": [],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST"
+    ],
+    "line": 273
+  },
+  {
+    "path": "/payments/**",
+    "methods": [],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST"
+    ],
+    "line": 274
+  },
+  {
+    "path": "/manager/reports/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 275
+  },
+  {
+    "path": "/manager/dashboard",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 276
+  },
+  {
+    "path": "/manager/audit-events",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 277
+  },
+  {
+    "path": "/manager/audit-events/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 277
+  },
+  {
+    "path": "/manager/coach-assignments/candidates",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 278
+  },
+  {
+    "path": "/manager/coaches/assignment-workloads",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 278
+  },
+  {
+    "path": "/manager/members/**",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 279
+  },
+  {
+    "path": "/staff/me/profile/image",
+    "methods": [
+      "DELETE"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST",
+      "COACH"
+    ],
+    "line": 280
+  },
+  {
+    "path": "/staff/me/profile/image",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST",
+      "COACH"
+    ],
+    "line": 281
+  },
+  {
+    "path": "/staff/me/profile",
+    "methods": [],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST",
+      "COACH"
+    ],
+    "line": 282
+  },
+  {
+    "path": "/staff/me/email-change",
+    "methods": [],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST",
+      "COACH"
+    ],
+    "line": 283
+  },
+  {
+    "path": "/staff/me/email-change/**",
+    "methods": [],
+    "access": "hasAnyRole",
+    "roles": [
+      "MANAGER",
+      "RECEPTIONIST",
+      "COACH"
+    ],
+    "line": 283
+  },
+  {
+    "path": "/members/me/profile",
+    "methods": [],
+    "access": "hasRole",
+    "roles": [
+      "MEMBER"
+    ],
+    "line": 284
+  },
+  {
+    "path": "/manager/coach-leave-requests/*/impact",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 285
+  },
+  {
+    "path": "/manager/coach-leave-requests/*/affected-sessions/*/*/available-coaches",
+    "methods": [
+      "GET"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 285
+  },
+  {
+    "path": "/manager/coach-leave-requests/*/batch",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 286
+  },
+  {
+    "path": "/manager/coach-leave-requests/*/batch/available-coaches",
+    "methods": [
+      "POST"
+    ],
+    "access": "hasRole",
+    "roles": [
+      "MANAGER"
+    ],
+    "line": 286
+  }
+]

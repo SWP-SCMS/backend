@@ -1,18 +1,18 @@
 package com.scms.backend.identity.memberprofile;
 
+import com.scms.backend.common.validation.PersonNameRules;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.regex.Pattern;
-
-import com.scms.backend.common.validation.PersonNameRules;
 import org.springframework.stereotype.Component;
 
 @Component
 public class MemberProfileDetailsValidator {
 
 	private static final Pattern PHONE_PATTERN = Pattern.compile("0[0-9]{9}");
-	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+
+	private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]++@[^\\s@][^\\s@.]*+\\.[^\\s@]++$");
 
 	private final Clock clock;
 
@@ -91,7 +91,8 @@ public class MemberProfileDetailsValidator {
 	}
 
 	public String normalizeOptionalPersonName(String value, String field, Integer maxLength) {
-		if (value == null) return null;
+		if (value == null)
+			return null;
 		return normalizePersonName(value, field, maxLength == null ? Integer.MAX_VALUE : maxLength);
 	}
 

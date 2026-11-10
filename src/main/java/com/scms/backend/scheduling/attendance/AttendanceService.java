@@ -1,0 +1,91 @@
+package com.scms.backend.scheduling.attendance;
+
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.centervisit.CenterVisitRepository;
+import com.scms.backend.scheduling.Attendance;
+import com.scms.backend.scheduling.AttendanceException;
+import com.scms.backend.scheduling.AttendanceStatus;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.booking.BookingRepository;
+import com.scms.backend.scheduling.session.ClassSessionRepository;
+import com.scms.backend.scheduling.session.SessionLifecycleService;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class AttendanceService {
+
+	final ClassSessionRepository sessions;
+
+	final BookingRepository bookings;
+
+	final AttendanceRepository attendance;
+
+	final AuditEventRepository audits;
+
+	final AccountRepository accounts;
+
+	final CenterVisitRepository visits;
+
+	final SessionLifecycleService lifecycle;
+
+	final Clock clock;
+
+	AttendanceService(ClassSessionRepository s, BookingRepository b, AttendanceRepository a, AuditEventRepository au, AccountRepository ac, CenterVisitRepository v, SessionLifecycleService l, Clock c) {
+		sessions = s;
+		bookings = b;
+		attendance = a;
+		audits = au;
+		accounts = ac;
+		visits = v;
+		lifecycle = l;
+		clock = c;
+	}
+
+	@Transactional(readOnly = true)
+	List<AttendanceResponse> list(UUID coach, UUID sid) {
+		ClassSession s = owned(coach, sid);
+		Instant now = clock.instant();
+		if (now.isBefore(s.getStartTime()))
+			throw AttendanceException.closed();
+		return bookings.findBookedAttendanceMembers(sid).stream().map(m -> attendance.findByBookingId(m.getBookingId()).map(a -> AttendanceResponse.from(a, m)).orElseGet(() -> new AttendanceResponse(null, m.getBookingId(), m.getMemberId(), m.getMemberCode(), m.getFullName(), AttendanceStatus.ABSENT, s.getStartTime(), null))).toList();
+	}
+
+	@Transactional
+	public AttendanceResponse update(UUID coach, UUID sid, UUID aid, AttendanceUpdateRequest req) {
+		Instant now = clock.instant();
+		ClassSession s = owned(coach, sid);
+		if (req == null || req.status() == null)
+			throw AttendanceException.invalid();
+		if (now.isBefore(s.getStartTime()) || !now.isBefore(s.getEndTime().plusSeconds(1800)))
+			throw AttendanceException.closed();
+		lifecycle.catchUp(now);
+		Attendance a = attendance.findById(aid).orElseThrow(AttendanceException::missing);
+		var members = bookings.findBookedAttendanceMembers(sid);
+		var m = members.stream().filter(x -> aid.equals(x.getAttendanceId())).findFirst().orElseThrow(AttendanceException::missing);
+		UUID visit = null;
+		if (req.status() == AttendanceStatus.PRESENT)
+			visit = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).orElseThrow(AttendanceException::visit);
+		AttendanceStatus before = a.getStatus();
+		a.mark(req.status(), visit, coach, now);
+		attendance.save(a);
+		audits.save(new AuditEvent(UUID.randomUUID(), coach, "ATTENDANCE_CHANGED", "Attendance", aid, "Coach changed attendance", Map.of("status", before.name()), Map.of("status", req.status().name())));
+		return AttendanceResponse.from(a, m);
+	}
+
+	private ClassSession owned(UUID coach, UUID sid) {
+		if (!accounts.existsByIdAndRoleAndStatus(coach, AccountRole.COACH, AccountStatus.ACTIVE))
+			throw new InvalidAuthenticatedAccountException();
+		return sessions.findByIdAndTeachingCoach_Id(sid, coach).orElseThrow(AttendanceException::missing);
+	}
+}

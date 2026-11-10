@@ -1,16 +1,15 @@
 package com.scms.backend.training;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -41,8 +40,7 @@ public class TrainingPlanVersion {
 	protected TrainingPlanVersion() {
 	}
 
-	public TrainingPlanVersion(UUID id, UUID trainingPlanId, int versionNumber, Map<String, Object> content,
-			UUID createdByAccountId, Instant createdAt) {
+	public TrainingPlanVersion(UUID id, UUID trainingPlanId, int versionNumber, Map<String, Object> content, UUID createdByAccountId, Instant createdAt) {
 		this.id = Objects.requireNonNull(id);
 		this.trainingPlanId = Objects.requireNonNull(trainingPlanId);
 		this.versionNumber = versionNumber;
@@ -51,12 +49,27 @@ public class TrainingPlanVersion {
 		this.createdAt = Objects.requireNonNull(createdAt);
 	}
 
-	public UUID getId() { return id; }
-	public UUID getTrainingPlanId() { return trainingPlanId; }
-	public Integer getVersionNumber() { return versionNumber; }
+	public UUID getId() {
+		return id;
+	}
+
+	public UUID getTrainingPlanId() {
+		return trainingPlanId;
+	}
+
+	public Integer getVersionNumber() {
+		return versionNumber;
+	}
+
 	public Map<String, Object> getContent() {
 		return Collections.unmodifiableMap(new LinkedHashMap<>(content));
 	}
-	public UUID getCreatedByAccountId() { return createdByAccountId; }
-	public Instant getCreatedAt() { return createdAt; }
+
+	public UUID getCreatedByAccountId() {
+		return createdByAccountId;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
 }

@@ -1,29 +1,43 @@
 package com.scms.backend.identity.memberprofile;
 
-import java.time.LocalDate;
-
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDate;
 
 public final class MemberProfilePatchRequest {
 
 	private boolean fullNamePresent;
+
 	private String fullName;
+
 	private boolean phonePresent;
+
 	private String phone;
+
 	private boolean emailPresent;
+
 	@Schema(hidden = true)
 	private String email;
+
 	private boolean birthDatePresent;
+
 	private LocalDate birthDate;
+
 	private boolean profileImageUrlPresent;
+
 	private String profileImageUrl;
+
 	private boolean fitnessGoalPresent;
+
 	private String fitnessGoal;
+
 	private boolean emergencyContactNamePresent;
+
 	private String emergencyContactName;
+
 	private boolean emergencyContactPhonePresent;
+
 	private String emergencyContactPhone;
 
 	@JsonSetter("fullName")
@@ -75,6 +89,7 @@ public final class MemberProfilePatchRequest {
 	}
 
 	private boolean genderPresent;
+
 	private String gender;
 
 	@JsonSetter("gender")
@@ -92,6 +107,7 @@ public final class MemberProfilePatchRequest {
 	}
 
 	private boolean addressPresent;
+
 	private String address;
 
 	@JsonSetter("address")
@@ -109,6 +125,7 @@ public final class MemberProfilePatchRequest {
 	}
 
 	private boolean physicalConditionNotesPresent;
+
 	private String physicalConditionNotes;
 
 	@JsonSetter("physicalConditionNotes")
@@ -126,6 +143,7 @@ public final class MemberProfilePatchRequest {
 	}
 
 	private boolean emergencyContactRelationshipPresent;
+
 	private String emergencyContactRelationship;
 
 	@JsonSetter("emergencyContactRelationship")
@@ -143,6 +161,7 @@ public final class MemberProfilePatchRequest {
 	}
 
 	private boolean emergencyContactTimeNotesPresent;
+
 	private String emergencyContactTimeNotes;
 
 	@JsonSetter("emergencyContactTimeNotes")

@@ -2,7 +2,6 @@ package com.scms.backend;
 
 import java.time.ZoneOffset;
 import java.util.TimeZone;
-
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration;
@@ -19,5 +18,4 @@ public class ScmsBackendApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(ScmsBackendApplication.class, args);
 	}
-
 }

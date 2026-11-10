@@ -6,18 +6,15 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.MemberProfileRepository;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.emailverification.verification.EmailVerificationService;
+import com.scms.backend.notification.NotificationWriter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-
-import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.MemberProfileRepository;
-import com.scms.backend.audit.AuditEventRepository;
-import com.scms.backend.notification.NotificationWriter;
-import com.scms.backend.emailverification.EmailVerificationService;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,26 +52,17 @@ class RegistrationServiceTests {
 	@BeforeEach
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-09-29T00:00:00Z"), ZoneOffset.UTC);
-		registrationService = new RegistrationService(accountRepository, memberProfileRepository,
-			auditEventRepository, notificationWriter, passwordEncoder, clock, identifierAvailability,
-			emailVerificationService);
+		registrationService = new RegistrationService(accountRepository, memberProfileRepository, auditEventRepository, notificationWriter, passwordEncoder, clock, identifierAvailability, emailVerificationService);
 	}
 
 	@Test
 	void databaseEmailConstraintRaceIsTranslatedToConflictAndStopsRemainingWrites() {
-		RegistrationRequest request = new RegistrationRequest("Race Member", "0901234567", "race@example.com",
-			"Password123", LocalDate.of(2000, 1, 15), null, null);
+		RegistrationRequest request = new RegistrationRequest("Race Member", "0901234567", "race@example.com", "Password123", LocalDate.of(2000, 1, 15), null, null);
 		when(passwordEncoder.encode(request.password())).thenReturn("bcrypt-hash");
-		DataIntegrityViolationException databaseFailure = new DataIntegrityViolationException(
-			"duplicate key value violates unique constraint uq_accounts_current_email");
+		DataIntegrityViolationException databaseFailure = new DataIntegrityViolationException("duplicate key value violates unique constraint uq_accounts_current_email");
 		when(accountRepository.saveAndFlush(any())).thenThrow(databaseFailure);
 		when(identifierAvailability.fromDatabase(databaseFailure)).thenReturn(DuplicateAccountException.email());
-
-		assertThatThrownBy(() -> registrationService.register(request))
-			.isInstanceOfSatisfying(DuplicateAccountException.class,
-				exception -> org.assertj.core.api.Assertions.assertThat(exception.getCode())
-					.isEqualTo("EMAIL_ALREADY_EXISTS"));
-
+		assertThatThrownBy(() -> registrationService.register(request)).isInstanceOfSatisfying(DuplicateAccountException.class, exception -> org.assertj.core.api.Assertions.assertThat(exception.getCode()).isEqualTo("EMAIL_ALREADY_EXISTS"));
 		verify(memberProfileRepository, never()).saveAndFlush(any());
 		verify(auditEventRepository, never()).save(any());
 		verify(notificationWriter, never()).write(any(), any(), any(), any(), any(), any());
@@ -82,20 +70,14 @@ class RegistrationServiceTests {
 
 	@Test
 	void rejectsInvalidMemberNameBeforeStartingRegistrationWork() {
-		RegistrationRequest request = new RegistrationRequest("Member 123!", "0901234567", "member@example.com",
-			"Password123", LocalDate.of(2000, 1, 15), null, null);
-
-		assertThatThrownBy(() -> registrationService.register(request))
-			.isInstanceOfSatisfying(RegistrationValidationException.class,
-				exception -> assertThat(exception.getField()).isEqualTo("fullName"));
+		RegistrationRequest request = new RegistrationRequest("Member 123!", "0901234567", "member@example.com", "Password123", LocalDate.of(2000, 1, 15), null, null);
+		assertThatThrownBy(() -> registrationService.register(request)).isInstanceOfSatisfying(RegistrationValidationException.class, exception -> assertThat(exception.getField()).isEqualTo("fullName"));
 		verify(passwordEncoder, never()).encode(any());
 	}
 
 	@Test
 	void registrationRequestStringRepresentationRedactsPassword() {
-		RegistrationRequest request = new RegistrationRequest("Member", "0901234567", "member@example.com",
-			"secret-password", LocalDate.of(2000, 1, 15), null, null);
-
+		RegistrationRequest request = new RegistrationRequest("Member", "0901234567", "member@example.com", "secret-password", LocalDate.of(2000, 1, 15), null, null);
 		assertThat(request.toString()).contains("password=[REDACTED]").doesNotContain("secret-password");
 	}
 }

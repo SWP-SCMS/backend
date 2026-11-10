@@ -1,11 +1,10 @@
 package com.scms.backend.identity.receptionmember;
 
-import java.util.UUID;
-
 import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
+import com.scms.backend.manager.ResetPasswordService;
 import jakarta.validation.Valid;
-
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -17,20 +16,20 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.ResponseStatus;
-import com.scms.backend.manager.ResetPasswordService;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/reception/members")
 public class ReceptionMemberController {
 
 	private final ReceptionMemberService service;
+
 	private final ReceptionMemberProfileService profileService;
+
 	private final ResetPasswordService resetPasswordService;
 
-	ReceptionMemberController(ReceptionMemberService service, ReceptionMemberProfileService profileService,
-			ResetPasswordService resetPasswordService) {
+	ReceptionMemberController(ReceptionMemberService service, ReceptionMemberProfileService profileService, ResetPasswordService resetPasswordService) {
 		this.service = service;
 		this.profileService = profileService;
 		this.resetPasswordService = resetPasswordService;
@@ -45,29 +44,22 @@ public class ReceptionMemberController {
 
 	@PostMapping
 	@ResponseStatus(HttpStatus.CREATED)
-	ResponseEntity<ReceptionMemberCreateResponse> createMember(@AuthenticationPrincipal Jwt jwt,
-			@Valid @RequestBody ReceptionMemberCreateRequest request) {
-		return ResponseEntity.status(HttpStatus.CREATED)
-			.body(service.createMember(UUID.fromString(jwt.getSubject()), request));
+	ResponseEntity<ReceptionMemberCreateResponse> createMember(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody ReceptionMemberCreateRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED).body(service.createMember(UUID.fromString(jwt.getSubject()), request));
 	}
 
 	@GetMapping("/search")
-	ResponseEntity<ReceptionMemberSearchResponse> searchMembers(@AuthenticationPrincipal Jwt jwt,
-			@RequestParam(required = false) String memberId,
-			@RequestParam(required = false) String phone) {
+	ResponseEntity<ReceptionMemberSearchResponse> searchMembers(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) String memberId, @RequestParam(required = false) String phone) {
 		return ResponseEntity.ok(profileService.search(accountId(jwt), memberId, phone));
 	}
 
 	@GetMapping("/{memberId}/profile")
-	ResponseEntity<MemberProfileResponse> getMemberProfile(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable String memberId) {
+	ResponseEntity<MemberProfileResponse> getMemberProfile(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberId) {
 		return ResponseEntity.ok(profileService.getProfile(accountId(jwt), memberId));
 	}
 
 	@PatchMapping("/{memberId}/profile")
-	ResponseEntity<MemberProfileResponse> updateMemberProfile(@AuthenticationPrincipal Jwt jwt,
-			@PathVariable String memberId,
-			@RequestBody MemberProfilePatchRequest request) {
+	ResponseEntity<MemberProfileResponse> updateMemberProfile(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberId, @RequestBody MemberProfilePatchRequest request) {
 		if (request == null) {
 			throw new ReceptionMemberValidationException("request", "must be a JSON object");
 		}

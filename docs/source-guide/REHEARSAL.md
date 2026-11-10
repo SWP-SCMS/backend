@@ -1,0 +1,16 @@
+# Diễn tập tra code
+
+10/10 câu tra cứu tự động đã tìm được controller và service tồn tại trong source, mỗi câu dưới 60 giây. Đây là kiểm tra tính dùng được của chỉ mục; chưa đo tốc độ tra cứu của người thuyết trình. Hãy che cột đáp án và tự bấm giờ trước buổi bảo vệ.
+
+| Câu hỏi | Controller | Service |
+|---|---|---|
+| Đăng nhập bắt đầu từ đâu? | [AuthenticationController#login](../../src/main/java/com/scms/backend/auth/AuthenticationController.java#L31) | [AuthenticationService#login](../../src/main/java/com/scms/backend/auth/AuthenticationService.java#L34) |
+| Lễ tân tạo hội viên ở đâu? | [ReceptionMemberController#createMember](../../src/main/java/com/scms/backend/identity/receptionmember/ReceptionMemberController.java#L45) | [ReceptionMemberService#createMember](../../src/main/java/com/scms/backend/identity/receptionmember/ReceptionMemberService.java#L55) |
+| Thu tiền mặt membership ở đâu? | [PaymentController#cash](../../src/main/java/com/scms/backend/membership/payment/PaymentController.java#L39) | [PaymentService#cash](../../src/main/java/com/scms/backend/membership/payment/PaymentService.java#L66) |
+| Thu phí bảo lưu ở đâu? | [MembershipFreezeController#cash](../../src/main/java/com/scms/backend/membership/freeze/MembershipFreezeController.java#L73) | [MembershipFreezeService#collectCash](../../src/main/java/com/scms/backend/membership/freeze/MembershipFreezeService.java#L155) |
+| Tiếp nhận chấm dứt gói ở đâu? | [MembershipTerminationController#receptionCreate](../../src/main/java/com/scms/backend/membership/termination/MembershipTerminationController.java#L48) | [MembershipTerminationService#createForReceptionist](../../src/main/java/com/scms/backend/membership/termination/MembershipTerminationService.java#L84) |
+| Đặt buổi cho hội viên ở đâu? | [BookingController#bookForMember](../../src/main/java/com/scms/backend/scheduling/booking/BookingController.java#L47) | [BookingService#bookForMember](../../src/main/java/com/scms/backend/scheduling/booking/BookingService.java#L84) |
+| Check-in trung tâm ở đâu? | [CenterVisitController#checkIn](../../src/main/java/com/scms/backend/centervisit/CenterVisitController.java#L27) | [CenterVisitService#checkIn](../../src/main/java/com/scms/backend/centervisit/CenterVisitService.java#L48) |
+| Xin rút khóa thay hội viên ở đâu? | [CourseWithdrawalController#receptionCreate](../../src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalController.java#L42) | [CourseWithdrawalService#createForReceptionist](../../src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalService.java#L67) |
+| Chấp nhận đề nghị chuyển khóa ở đâu? | [CourseReceptionActionsController#acceptTransfer](../../src/main/java/com/scms/backend/course/enrollment/CourseReceptionActionsController.java#L93) | [CourseTransferService#accept](../../src/main/java/com/scms/backend/course/transfer/CourseTransferService.java#L169) |
+| Lễ tân chi hoàn course ở đâu? | [CourseRefundObligationController#disburse](../../src/main/java/com/scms/backend/course/refund/CourseRefundObligationController.java#L70) | [CourseRefundObligationService#recordDisbursement](../../src/main/java/com/scms/backend/course/refund/CourseRefundObligationService.java#L162) |

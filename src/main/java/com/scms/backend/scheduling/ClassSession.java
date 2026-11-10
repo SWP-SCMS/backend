@@ -1,8 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,6 +11,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "class_sessions")
@@ -74,8 +73,7 @@ public class ClassSession {
 	protected ClassSession() {
 	}
 
-	ClassSession(UUID id, SportClass sportClass, RecurringSchedule recurringSchedule, Account teachingCoach,
-			Room room, Instant startTime, Instant endTime, int capacity, UUID createdBy) {
+	public ClassSession(UUID id, SportClass sportClass, RecurringSchedule recurringSchedule, Account teachingCoach, Room room, Instant startTime, Instant endTime, int capacity, UUID createdBy) {
 		this.id = id;
 		this.sportClass = sportClass;
 		this.recurringSchedule = recurringSchedule;
@@ -88,31 +86,69 @@ public class ClassSession {
 		this.createdBy = createdBy;
 	}
 
-	UUID getId() { return id; }
-	SportClass getSportClass() { return sportClass; }
-	RecurringSchedule getRecurringSchedule() { return recurringSchedule; }
-	Account getTeachingCoach() { return teachingCoach; }
-	Room getRoom() { return room; }
-	public Instant getStartTime() { return startTime; }
-	public Instant getEndTime() { return endTime; }
-	int getCapacity() { return capacity; }
-	public ClassSessionStatus getStatus() { return status; }
-	Instant getCancelledAt() { return cancelledAt; }
-	String getCancellationReason() { return cancellationReason; }
-	UUID getCreatedBy() { return createdBy; }
-	Long getVersion() { return version; }
+	public UUID getId() {
+		return id;
+	}
 
-	void updateAssignment(Account coach, Room room) {
+	public SportClass getSportClass() {
+		return sportClass;
+	}
+
+	public RecurringSchedule getRecurringSchedule() {
+		return recurringSchedule;
+	}
+
+	public Account getTeachingCoach() {
+		return teachingCoach;
+	}
+
+	public Room getRoom() {
+		return room;
+	}
+
+	public Instant getStartTime() {
+		return startTime;
+	}
+
+	public Instant getEndTime() {
+		return endTime;
+	}
+
+	public int getCapacity() {
+		return capacity;
+	}
+
+	public ClassSessionStatus getStatus() {
+		return status;
+	}
+
+	public Instant getCancelledAt() {
+		return cancelledAt;
+	}
+
+	public String getCancellationReason() {
+		return cancellationReason;
+	}
+
+	public UUID getCreatedBy() {
+		return createdBy;
+	}
+
+	public Long getVersion() {
+		return version;
+	}
+
+	public void updateAssignment(Account coach, Room room) {
 		this.teachingCoach = coach;
 		this.room = room;
 	}
 
-	void updateSchedule(Instant startTime, Instant endTime) {
+	public void updateSchedule(Instant startTime, Instant endTime) {
 		this.startTime = startTime;
 		this.endTime = endTime;
 	}
 
-	void cancel(Instant cancelledAt, String reason) {
+	public void cancel(Instant cancelledAt, String reason) {
 		this.status = ClassSessionStatus.CANCELLED;
 		this.cancelledAt = cancelledAt;
 		this.cancellationReason = reason;

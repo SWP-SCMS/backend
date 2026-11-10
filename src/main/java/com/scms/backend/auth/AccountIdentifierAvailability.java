@@ -1,11 +1,9 @@
 package com.scms.backend.auth;
 
-import java.util.Locale;
-import java.util.UUID;
-
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountStatus;
-
+import java.util.Locale;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
@@ -27,15 +25,11 @@ public class AccountIdentifierAvailability {
 		}
 	}
 
-	public void ensureAvailableForUpdate(UUID accountId, String currentEmail, String currentPhone, String email,
-			String phone) {
-		if (!email.equals(currentEmail)
-				&& accountRepository.existsByEmailIgnoreCaseAndStatusNotAndIdNot(email, AccountStatus.INACTIVE,
-					accountId)) {
+	public void ensureAvailableForUpdate(UUID accountId, String currentEmail, String currentPhone, String email, String phone) {
+		if (!email.equals(currentEmail) && accountRepository.existsByEmailIgnoreCaseAndStatusNotAndIdNot(email, AccountStatus.INACTIVE, accountId)) {
 			throw DuplicateAccountException.email();
 		}
-		if (!phone.equals(currentPhone)
-				&& accountRepository.existsByPhoneAndStatusNotAndIdNot(phone, AccountStatus.INACTIVE, accountId)) {
+		if (!phone.equals(currentPhone) && accountRepository.existsByPhoneAndStatusNotAndIdNot(phone, AccountStatus.INACTIVE, accountId)) {
 			throw DuplicateAccountException.phone();
 		}
 	}

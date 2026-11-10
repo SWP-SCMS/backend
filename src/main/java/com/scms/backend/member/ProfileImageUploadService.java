@@ -1,13 +1,11 @@
 package com.scms.backend.member;
 
-import java.util.UUID;
-
 import com.scms.backend.identity.memberprofile.MemberProfileResponse;
 import com.scms.backend.identity.memberprofile.MemberProfileService;
 import com.scms.backend.identity.receptionmember.ReceptionMemberProfileService;
 import com.scms.backend.identity.staffprofile.StaffProfileResponse;
 import com.scms.backend.identity.staffprofile.StaffProfileService;
-
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,12 +20,14 @@ public class ProfileImageUploadService {
 	private static final Logger logger = LoggerFactory.getLogger(ProfileImageUploadService.class);
 
 	private final ProfileImageStorage storage;
+
 	private final MemberProfileService memberProfileService;
+
 	private final ReceptionMemberProfileService receptionMemberProfileService;
+
 	private final StaffProfileService staffProfileService;
 
-	ProfileImageUploadService(ProfileImageStorage storage, MemberProfileService memberProfileService,
-			ReceptionMemberProfileService receptionMemberProfileService, StaffProfileService staffProfileService) {
+	ProfileImageUploadService(ProfileImageStorage storage, MemberProfileService memberProfileService, ReceptionMemberProfileService receptionMemberProfileService, StaffProfileService staffProfileService) {
 		this.storage = storage;
 		this.memberProfileService = memberProfileService;
 		this.receptionMemberProfileService = receptionMemberProfileService;
@@ -42,25 +42,21 @@ public class ProfileImageUploadService {
 			MemberProfileResponse response = memberProfileService.getProfile(accountId);
 			cleanupAfterCommit(stored.url(), oldUrl);
 			return response;
-		}
-		catch (RuntimeException exception) {
+		} catch (RuntimeException exception) {
 			deleteQuietly(stored.url());
 			throw exception;
 		}
 	}
 
 	@Transactional
-	MemberProfileResponse uploadForReceptionist(UUID receptionistAccountId, String memberId,
-			MultipartFile file) {
+	MemberProfileResponse uploadForReceptionist(UUID receptionistAccountId, String memberId, MultipartFile file) {
 		ProfileImageStorage.StoredImage stored = storage.store(file);
 		try {
-			String oldUrl = receptionMemberProfileService.replaceProfileImage(receptionistAccountId, memberId,
-				stored.url());
+			String oldUrl = receptionMemberProfileService.replaceProfileImage(receptionistAccountId, memberId, stored.url());
 			MemberProfileResponse response = receptionMemberProfileService.getProfile(receptionistAccountId, memberId);
 			cleanupAfterCommit(stored.url(), oldUrl);
 			return response;
-		}
-		catch (RuntimeException exception) {
+		} catch (RuntimeException exception) {
 			deleteQuietly(stored.url());
 			throw exception;
 		}
@@ -74,46 +70,44 @@ public class ProfileImageUploadService {
 			StaffProfileResponse response = staffProfileService.getProfile(accountId);
 			cleanupAfterCommit(stored.url(), oldUrl);
 			return response;
-		}
-		catch (RuntimeException exception) {
+		} catch (RuntimeException exception) {
 			deleteQuietly(stored.url());
 			throw exception;
 		}
 	}
 
-    @Transactional
-    StaffProfileResponse removeForStaff(UUID accountId) {
-        String oldUrl = staffProfileService.replaceProfileImage(accountId, null);
-        StaffProfileResponse response = staffProfileService.getProfile(accountId);
-        cleanupAfterCommit(null, oldUrl);
-        return response;
-    }
+	@Transactional
+	StaffProfileResponse removeForStaff(UUID accountId) {
+		String oldUrl = staffProfileService.replaceProfileImage(accountId, null);
+		StaffProfileResponse response = staffProfileService.getProfile(accountId);
+		cleanupAfterCommit(null, oldUrl);
+		return response;
+	}
 
 	private void cleanupAfterCommit(String newUrl, String oldUrl) {
 		if (TransactionSynchronizationManager.isSynchronizationActive()) {
 			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+
 				@Override
 				public void afterCompletion(int status) {
 					if (status == STATUS_COMMITTED) {
 						deleteQuietly(oldUrl);
-					}
-					else {
+					} else {
 						deleteQuietly(newUrl);
 					}
 				}
 			});
-		}
-		else {
+		} else {
 			deleteQuietly(oldUrl);
 		}
 	}
 
 	private void deleteQuietly(String url) {
-        if (url == null) return;
+		if (url == null)
+			return;
 		try {
 			storage.delete(url);
-		}
-		catch (RuntimeException exception) {
+		} catch (RuntimeException exception) {
 			logger.warn("Could not clean up profile image {}", url, exception);
 		}
 	}

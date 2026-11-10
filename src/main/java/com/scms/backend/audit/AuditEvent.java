@@ -1,20 +1,18 @@
 package com.scms.backend.audit;
 
-import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-
 import com.scms.backend.account.AccountRole;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import org.hibernate.annotations.Generated;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.generator.EventType;
@@ -71,13 +69,11 @@ public class AuditEvent {
 		this(id, null, action, targetType, targetId, afterData);
 	}
 
-	public AuditEvent(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId,
-			Map<String, Object> afterData) {
+	public AuditEvent(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId, Map<String, Object> afterData) {
 		this(id, actorAccountId, action, targetType, targetId, null, null, afterData);
 	}
 
-	public AuditEvent(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId,
-			String reason, Map<String, Object> beforeData, Map<String, Object> afterData) {
+	public AuditEvent(UUID id, UUID actorAccountId, String action, String targetType, UUID targetId, String reason, Map<String, Object> beforeData, Map<String, Object> afterData) {
 		this.id = Objects.requireNonNull(id);
 		this.actorAccountId = actorAccountId;
 		this.action = Objects.requireNonNull(action);

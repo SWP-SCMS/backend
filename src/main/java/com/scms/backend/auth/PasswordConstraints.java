@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 public final class PasswordConstraints {
 
 	static final int MIN_LENGTH = 8;
+
 	static final int MAX_BCRYPT_BYTES = 72;
 
 	private PasswordConstraints() {
@@ -28,6 +29,7 @@ public final class PasswordConstraints {
 
 	@FunctionalInterface
 	interface RuntimeExceptionFactory {
+
 		RuntimeException create(String field, String message);
 	}
 }

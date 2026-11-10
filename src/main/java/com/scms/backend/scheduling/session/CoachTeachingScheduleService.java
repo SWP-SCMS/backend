@@ -1,0 +1,86 @@
+package com.scms.backend.scheduling.session;
+
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.ClassSessionStatus;
+import com.scms.backend.scheduling.RecurringScheduleException;
+import com.scms.backend.scheduling.booking.BookingRepository;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+class CoachTeachingScheduleService {
+
+	private final ClassSessionRepository sessions;
+
+	private final BookingRepository bookings;
+
+	private final AccountRepository accounts;
+
+	private final SessionLifecycleService lifecycle;
+
+	private final Clock clock;
+
+	CoachTeachingScheduleService(ClassSessionRepository sessions, BookingRepository bookings, AccountRepository accounts, SessionLifecycleService lifecycle, Clock clock) {
+		this.sessions = sessions;
+		this.bookings = bookings;
+		this.accounts = accounts;
+		this.lifecycle = lifecycle;
+		this.clock = clock;
+	}
+
+	@Transactional
+	CoachClassSessionPageResponse list(UUID coachId, Instant from, Instant to, ClassSessionStatus status, Pageable pageable) {
+		ensureActiveCoach(coachId);
+		validateRange(from, to);
+		advanceStatuses();
+		Specification<ClassSession> filters = (root, ignored, builder) -> builder.equal(root.get("teachingCoach").get("id"), coachId);
+		if (from != null)
+			filters = filters.and((root, ignored, builder) -> builder.greaterThan(root.get("endTime"), from));
+		if (to != null)
+			filters = filters.and((root, ignored, builder) -> builder.lessThan(root.get("startTime"), to));
+		if (status != null)
+			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("status"), status));
+		var page = sessions.findAll(filters, pageable);
+		var sessionIds = page.getContent().stream().map(ClassSession::getId).toList();
+		Map<UUID, ClassSession> sessionDetails = sessionIds.isEmpty() ? Map.of() : sessions.findByIdIn(sessionIds).stream().collect(Collectors.toMap(ClassSession::getId, session -> session));
+		Map<UUID, Long> bookedCounts = sessionIds.isEmpty() ? Map.of() : sessions.countBookedBySessionIds(sessionIds).stream().collect(Collectors.toMap(ClassSessionRepository.BookingCountView::getSessionId, ClassSessionRepository.BookingCountView::getBookedCount));
+		var content = sessionIds.stream().map(sessionId -> CoachClassSessionResponse.from(sessionDetails.get(sessionId), bookedCounts.getOrDefault(sessionId, 0L))).toList();
+		return new CoachClassSessionPageResponse(content, page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
+
+	@Transactional
+	CoachClassSessionDetailResponse get(UUID coachId, UUID sessionId) {
+		ensureActiveCoach(coachId);
+		advanceStatuses();
+		ClassSession session = sessions.findByIdAndTeachingCoach_Id(sessionId, coachId).orElseThrow(() -> RecurringScheduleException.notFound("session"));
+		var members = bookings.findBookedMembersBySessionId(sessionId).stream().map(CoachSessionMemberResponse::from).toList();
+		return CoachClassSessionDetailResponse.from(session, members);
+	}
+
+	private void ensureActiveCoach(UUID coachId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw new InvalidAuthenticatedAccountException();
+		}
+	}
+
+	private void validateRange(Instant from, Instant to) {
+		if (from != null && to != null && !to.isAfter(from)) {
+			throw RecurringScheduleException.validation("to", "must be later than from");
+		}
+	}
+
+	private void advanceStatuses() {
+		lifecycle.catchUp(clock.instant());
+	}
+}

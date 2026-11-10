@@ -1,0 +1,137 @@
+package com.scms.backend.membership.offer;
+
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.auth.InvalidAuthenticatedAccountException;
+import com.scms.backend.membership.MembershipBenefitStatus;
+import com.scms.backend.membership.MembershipOffer;
+import com.scms.backend.membership.MembershipOfferNotFoundException;
+import com.scms.backend.membership.MembershipOfferStatus;
+import com.scms.backend.membership.MembershipOfferValidationException;
+import com.scms.backend.membership.MembershipPlan;
+import com.scms.backend.membership.MembershipPlanStatus;
+import com.scms.backend.membership.plan.MembershipPlanRepository;
+import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class MembershipOfferAdminService {
+
+	private static final BigInteger MAX_AMOUNT = BigInteger.TEN.pow(19).subtract(BigInteger.ONE);
+
+	private static final Pattern PLAN_CODE = Pattern.compile("[A-Z][A-Z0-9_]{1,49}");
+
+	private final MembershipOfferRepository offers;
+
+	private final MembershipPlanRepository plans;
+
+	private final AccountRepository accounts;
+
+	private final AuditEventRepository audits;
+
+	MembershipOfferAdminService(MembershipOfferRepository offers, MembershipPlanRepository plans, AccountRepository accounts, AuditEventRepository audits) {
+		this.offers = offers;
+		this.plans = plans;
+		this.accounts = accounts;
+		this.audits = audits;
+	}
+
+	@Transactional
+	MembershipOfferAdminResponse create(UUID managerId, MembershipOfferAdminRequest request) {
+		ensureManager(managerId);
+		validate(request, true);
+		String planCode = normalizePlanCode(request.planCode());
+		MembershipPlan plan = plans.findByPlanCodeForUpdate(planCode).filter(value -> value.getStatus() == MembershipPlanStatus.ACTIVE).filter(value -> value.getBenefits().stream().anyMatch(benefit -> benefit.getStatus() == MembershipBenefitStatus.ACTIVE)).orElseThrow(() -> new MembershipOfferValidationException("Invalid membership offer"));
+		MembershipOffer offer = new MembershipOffer(UUID.randomUUID(), plan, request.name().trim(), request.description().trim(), request.priceAmount(), "VND", request.durationDays(), request.status() == null ? MembershipOfferStatus.ACTIVE : request.status(), managerId);
+		offers.save(offer);
+		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "MEMBERSHIP_OFFER_CREATED", "MEMBERSHIP_OFFER", offer.getId(), snapshot(offer)));
+		return MembershipOfferAdminResponse.from(offer);
+	}
+
+	@Transactional(readOnly = true)
+	java.util.List<MembershipOfferAdminDetailResponse> all(UUID managerId) {
+		ensureManager(managerId);
+		return offers.findAllWithPlanAndBenefits().stream().map(MembershipOfferAdminDetailResponse::from).toList();
+	}
+
+	@Transactional(readOnly = true)
+	MembershipOfferAdminDetailResponse get(UUID managerId, UUID offerId) {
+		ensureManager(managerId);
+		return offers.findByIdWithPlanAndBenefits(offerId).map(MembershipOfferAdminDetailResponse::from).orElseThrow(MembershipOfferNotFoundException::new);
+	}
+
+	@Transactional
+	MembershipOfferAdminResponse update(UUID managerId, UUID id, MembershipOfferPatchRequest request) {
+		ensureManager(managerId);
+		validatePatch(request);
+		MembershipOffer offer = offers.findById(id).orElseThrow(MembershipOfferNotFoundException::new);
+		Map<String, Object> before = snapshot(offer);
+		offer.patch(trim(request.name()), trim(request.description()), request.priceAmount(), request.durationDays());
+		if (request.status() != null)
+			offer.changeStatus(request.status());
+		Map<String, Object> after = snapshot(offer);
+		if (!before.equals(after)) {
+			audits.save(new AuditEvent(UUID.randomUUID(), managerId, "MEMBERSHIP_OFFER_UPDATED", "MEMBERSHIP_OFFER", id, null, before, after));
+		}
+		return MembershipOfferAdminResponse.from(offer);
+	}
+
+	private Map<String, Object> snapshot(MembershipOffer offer) {
+		Map<String, Object> data = new HashMap<>();
+		data.put("planCode", offer.getPlan().getPlanCode());
+		data.put("name", offer.getName());
+		data.put("description", offer.getDescription());
+		data.put("priceAmount", offer.getPriceAmount());
+		data.put("currencyCode", offer.getCurrencyCode());
+		data.put("durationDays", offer.getDurationDays());
+		data.put("status", offer.getStatus().name());
+		data.put("createdByAccountId", offer.getCreatedByAccountId().toString());
+		return data;
+	}
+
+	private void ensureManager(UUID id) {
+		if (!accounts.existsByIdAndRoleAndStatus(id, AccountRole.MANAGER, AccountStatus.ACTIVE))
+			throw new InvalidAuthenticatedAccountException();
+	}
+
+	private void validate(MembershipOfferAdminRequest r, boolean create) {
+		if (r == null || (create && (r.planCode() == null || !PLAN_CODE.matcher(r.planCode().trim().toUpperCase(Locale.ROOT)).matches())) || r.name() == null || r.name().trim().isEmpty() || r.description() == null || r.description().trim().isEmpty() || !validAmount(r.priceAmount()) || r.durationDays() == null || r.durationDays() <= 0)
+			throw new MembershipOfferValidationException("Invalid membership offer");
+	}
+
+	private void validatePatch(MembershipOfferPatchRequest r) {
+		if (r == null || (r.planCode() == null && r.name() == null && r.description() == null && r.priceAmount() == null && r.durationDays() == null && r.status() == null))
+			throw new MembershipOfferValidationException("At least one field is required");
+		if (r.planCode() != null)
+			throw new MembershipOfferValidationException("planCode cannot be changed");
+		if (r.name() != null && r.name().isBlank())
+			throw new MembershipOfferValidationException("name must not be blank");
+		if (r.description() != null && r.description().isBlank())
+			throw new MembershipOfferValidationException("description must not be blank");
+		if (r.priceAmount() != null && !validAmount(r.priceAmount()))
+			throw new MembershipOfferValidationException("priceAmount must be between 1 and 9999999999999999999");
+		if (r.durationDays() != null && r.durationDays() <= 0)
+			throw new MembershipOfferValidationException("durationDays must be positive");
+	}
+
+	private String trim(String value) {
+		return value == null ? null : value.trim();
+	}
+
+	private String normalizePlanCode(String value) {
+		return value.trim().toUpperCase(Locale.ROOT);
+	}
+
+	private boolean validAmount(BigInteger value) {
+		return value != null && value.signum() > 0 && value.compareTo(MAX_AMOUNT) <= 0;
+	}
+}

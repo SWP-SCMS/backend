@@ -4,7 +4,7 @@ public class ReportingValidationException extends RuntimeException {
 
 	private final String field;
 
-	ReportingValidationException(String field, String message) {
+	public ReportingValidationException(String field, String message) {
 		super(message);
 		this.field = field;
 	}

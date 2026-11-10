@@ -1,8 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -13,6 +10,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "sport_classes")
@@ -53,8 +52,7 @@ public class SportClass {
 	protected SportClass() {
 	}
 
-	SportClass(UUID id, Discipline discipline, String name, SportClassType classType,
-			String description, SportClassStatus status) {
+	public SportClass(UUID id, Discipline discipline, String name, SportClassType classType, String description, SportClassStatus status) {
 		this.id = id;
 		this.discipline = discipline;
 		this.name = name;
@@ -63,17 +61,34 @@ public class SportClass {
 		this.status = status;
 	}
 
-	void update(String name, SportClassType classType, String description, SportClassStatus status) {
+	public void update(String name, SportClassType classType, String description, SportClassStatus status) {
 		this.name = name;
 		this.classType = classType;
 		this.description = description;
 		this.status = status;
 	}
 
-	UUID getId() { return id; }
-	Discipline getDiscipline() { return discipline; }
-	String getName() { return name; }
-	SportClassType getClassType() { return classType; }
-	String getDescription() { return description; }
-	SportClassStatus getStatus() { return status; }
+	public UUID getId() {
+		return id;
+	}
+
+	public Discipline getDiscipline() {
+		return discipline;
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public SportClassType getClassType() {
+		return classType;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public SportClassStatus getStatus() {
+		return status;
+	}
 }

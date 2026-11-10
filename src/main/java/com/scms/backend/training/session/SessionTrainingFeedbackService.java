@@ -1,0 +1,121 @@
+package com.scms.backend.training.session;
+
+import com.scms.backend.account.AccountRepository;
+import com.scms.backend.account.AccountRole;
+import com.scms.backend.account.AccountStatus;
+import com.scms.backend.audit.AuditEvent;
+import com.scms.backend.audit.AuditEventRepository;
+import com.scms.backend.scheduling.ClassSession;
+import com.scms.backend.scheduling.session.ClassSessionRepository;
+import com.scms.backend.training.TrainingFeedback;
+import com.scms.backend.training.TrainingFeedbackException;
+import com.scms.backend.training.assignment.CoachAssignmentRepository;
+import com.scms.backend.training.feedback.TrainingFeedbackRepository;
+import com.scms.backend.training.result.TrainingResultRepository;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class SessionTrainingFeedbackService {
+
+	private final TrainingFeedbackRepository feedback;
+
+	private final TrainingResultRepository results;
+
+	private final CoachAssignmentRepository assignments;
+
+	private final ClassSessionRepository sessions;
+
+	private final AccountRepository accounts;
+
+	private final AuditEventRepository audits;
+
+	private final Clock clock;
+
+	public SessionTrainingFeedbackService(TrainingFeedbackRepository feedback, TrainingResultRepository results, CoachAssignmentRepository assignments, ClassSessionRepository sessions, AccountRepository accounts, AuditEventRepository audits, Clock clock) {
+		this.feedback = feedback;
+		this.results = results;
+		this.assignments = assignments;
+		this.sessions = sessions;
+		this.accounts = accounts;
+		this.audits = audits;
+		this.clock = clock;
+	}
+
+	@Transactional
+	public SessionTrainingFeedbackResponse create(UUID coachId, UUID sessionId, UUID memberId, SessionTrainingFeedbackRequest request) {
+		ClassSession session = requireOwnedGroupOrYogaSession(coachId, sessionId);
+		requireSessionResult(request.trainingResultId(), sessionId, memberId);
+		requireTrainingFeedbackBenefit(memberId, session.getStartTime());
+		TrainingFeedback existing = feedback.findSessionByTrainingResultIdAndMemberAccountIdForUpdate(request.trainingResultId(), memberId).orElse(null);
+		if (existing != null) {
+			return SessionTrainingFeedbackResponse.from(existing, sessionId);
+		}
+		Instant now = clock.instant();
+		TrainingFeedback created = feedback.saveAndFlush(TrainingFeedback.forClassSessionResult(UUID.randomUUID(), memberId, request.trainingResultId(), request.content(), coachId, now));
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_FEEDBACK_CREATED", "TRAINING_FEEDBACK", created.getId(), snapshot(created, sessionId)));
+		return SessionTrainingFeedbackResponse.from(created, sessionId);
+	}
+
+	@Transactional
+	public SessionTrainingFeedbackResponse update(UUID coachId, UUID sessionId, UUID memberId, UUID feedbackId, SessionTrainingFeedbackRequest request) {
+		ClassSession session = requireOwnedGroupOrYogaSession(coachId, sessionId);
+		requireSessionResult(request.trainingResultId(), sessionId, memberId);
+		requireTrainingFeedbackBenefit(memberId, session.getStartTime());
+		TrainingFeedback current = feedback.findSessionByIdAndMemberAccountIdForUpdate(feedbackId, sessionId, memberId).orElseThrow(TrainingFeedbackException::sessionFeedbackNotFound);
+		Map<String, Object> beforeData = snapshot(current, sessionId);
+		current.updateClassSessionResult(request.trainingResultId(), request.content(), clock.instant());
+		feedback.saveAndFlush(current);
+		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "TRAINING_FEEDBACK_UPDATED", "TRAINING_FEEDBACK", feedbackId, null, beforeData, snapshot(current, sessionId)));
+		return SessionTrainingFeedbackResponse.from(current, sessionId);
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<SessionTrainingFeedbackResponse> get(UUID coachId, UUID sessionId, UUID memberId) {
+		requireOwnedGroupOrYogaSessionForRead(coachId, sessionId);
+		return feedback.findSessionByClassSessionIdAndMemberAccountId(sessionId, memberId).map(value -> SessionTrainingFeedbackResponse.from(value, sessionId));
+	}
+
+	private ClassSession requireOwnedGroupOrYogaSession(UUID coachId, UUID sessionId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw TrainingFeedbackException.actorNotActiveCoach();
+		}
+		ClassSession session = sessions.findOwnedGroupOrYogaByIdForRead(sessionId, coachId).orElseThrow(TrainingFeedbackException::sessionNotFound);
+		if (session.getStatus() == com.scms.backend.scheduling.ClassSessionStatus.CANCELLED || session.getEndTime() == null || clock.instant().isBefore(session.getEndTime())) {
+			throw TrainingFeedbackException.sessionNotEnded();
+		}
+		return session;
+	}
+
+	private void requireOwnedGroupOrYogaSessionForRead(UUID coachId, UUID sessionId) {
+		if (!accounts.existsByIdAndRoleAndStatus(coachId, AccountRole.COACH, AccountStatus.ACTIVE)) {
+			throw TrainingFeedbackException.actorNotActiveCoach();
+		}
+		sessions.findOwnedGroupOrYogaById(sessionId, coachId).orElseThrow(TrainingFeedbackException::sessionNotFound);
+	}
+
+	private void requireSessionResult(UUID resultId, UUID sessionId, UUID memberId) {
+		results.findSessionByIdAndMemberAccountIdForUpdate(resultId, sessionId, memberId).orElseThrow(TrainingFeedbackException::sessionResultNotFound);
+	}
+
+	private void requireTrainingFeedbackBenefit(UUID memberId, Instant at) {
+		if (!assignments.hasActiveMembershipBenefit(memberId, "TRAINING_FEEDBACK", at)) {
+			throw TrainingFeedbackException.plusMembershipRequired();
+		}
+	}
+
+	private Map<String, Object> snapshot(TrainingFeedback value, UUID sessionId) {
+		Map<String, Object> data = new LinkedHashMap<>();
+		data.put("memberAccountId", value.getMemberAccountId().toString());
+		data.put("classSessionId", sessionId.toString());
+		data.put("trainingResultId", value.getTrainingResultId().toString());
+		data.put("content", value.getContent());
+		return data;
+	}
+}

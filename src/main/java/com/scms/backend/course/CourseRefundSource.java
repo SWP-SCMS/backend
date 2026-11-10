@@ -1,6 +1,7 @@
 package com.scms.backend.course;
 
-enum CourseRefundSource {
+public enum CourseRefundSource {
+
 	MEMBER_WITHDRAWAL,
 	COURSE_RUN_CANCELLED,
 	MATERIAL_CHANGE,

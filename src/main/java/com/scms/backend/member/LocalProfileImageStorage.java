@@ -9,11 +9,9 @@ import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.UUID;
-
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
-
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,14 +22,14 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConfigurer {
 
 	private static final long DEFAULT_MAX_BYTES = 5L * 1024 * 1024;
+
 	private static final String URL_PREFIX = "/profile-images/";
 
 	private final Path directory;
+
 	private final long maxBytes;
 
-	public LocalProfileImageStorage(
-			@Value("${scms.profile-images.directory:./data/profile-images}") String directory,
-			@Value("${scms.profile-images.max-bytes:" + DEFAULT_MAX_BYTES + "}") long maxBytes) {
+	public LocalProfileImageStorage(@Value("${scms.profile-images.directory:./data/profile-images}") String directory, @Value("${scms.profile-images.max-bytes:" + DEFAULT_MAX_BYTES + "}") long maxBytes) {
 		if (maxBytes <= 0) {
 			throw new IllegalArgumentException("Profile image max bytes must be positive");
 		}
@@ -53,30 +51,24 @@ public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConf
 			if (Files.size(temporary) > maxBytes) {
 				throw invalid("must be at most " + maxBytes + " bytes");
 			}
-
 			String extension = validateImage(temporary);
 			String filename = UUID.randomUUID() + "." + extension;
 			target = directory.resolve(filename).normalize();
 			try {
 				Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-			}
-			catch (AtomicMoveNotSupportedException exception) {
+			} catch (AtomicMoveNotSupportedException exception) {
 				Files.move(temporary, target);
 			}
 			return new StoredImage(URL_PREFIX + filename);
-		}
-		catch (MemberProfileValidationException exception) {
+		} catch (MemberProfileValidationException exception) {
 			throw exception;
-		}
-		catch (IOException exception) {
+		} catch (IOException exception) {
 			throw new IllegalStateException("Could not store profile image", exception);
-		}
-		finally {
+		} finally {
 			if (temporary != null) {
 				try {
 					Files.deleteIfExists(temporary);
-				}
-				catch (IOException ignored) {
+				} catch (IOException ignored) {
 					// The database update must not be masked by best-effort temp cleanup.
 				}
 			}
@@ -98,16 +90,14 @@ public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConf
 		}
 		try {
 			Files.deleteIfExists(file);
-		}
-		catch (IOException exception) {
+		} catch (IOException exception) {
 			throw new IllegalStateException("Could not delete profile image", exception);
 		}
 	}
 
 	@Override
 	public void addResourceHandlers(ResourceHandlerRegistry registry) {
-		registry.addResourceHandler(URL_PREFIX + "**")
-			.addResourceLocations(directory.toUri().toString());
+		registry.addResourceHandler(URL_PREFIX + "**").addResourceLocations(directory.toUri().toString());
 	}
 
 	private void validateRequest(MultipartFile file) {
@@ -132,13 +122,12 @@ public class LocalProfileImageStorage implements ProfileImageStorage, WebMvcConf
 			ImageReader reader = readers.next();
 			try {
 				format = reader.getFormatName().toLowerCase(Locale.ROOT);
-                reader.setInput(input);
-                long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
-                if (pixels <= 0 || pixels > 20_000_000) {
-                    throw invalid("must contain at most 20000000 pixels");
-                }
-			}
-			finally {
+				reader.setInput(input);
+				long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
+				if (pixels <= 0 || pixels > 20_000_000) {
+					throw invalid("must contain at most 20000000 pixels");
+				}
+			} finally {
 				reader.dispose();
 			}
 		}

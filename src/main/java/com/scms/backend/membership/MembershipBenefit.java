@@ -1,20 +1,20 @@
 package com.scms.backend.membership;
 
-import java.time.Instant;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
 import jakarta.persistence.FetchType;
+import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
 
 @Entity
 @Table(name = "membership_benefits")
 public class MembershipBenefit {
+
 	@Id
 	@Column(nullable = false, length = 50, updatable = false)
 	private String code;
@@ -39,19 +39,37 @@ public class MembershipBenefit {
 	@Column(name = "created_at", nullable = false, insertable = false, updatable = false)
 	private Instant createdAt;
 
-	protected MembershipBenefit() { }
+	protected MembershipBenefit() {
+	}
 
-	MembershipBenefit(String code, String displayName, String description, MembershipBenefitStatus status) {
+	public MembershipBenefit(String code, String displayName, String description, MembershipBenefitStatus status) {
 		this.code = code;
 		this.displayName = displayName;
 		this.description = description;
 		this.status = status;
 	}
 
-	public String getCode() { return code; }
-	public String getDisplayName() { return displayName; }
-	public String getDescription() { return description; }
-	public int getDisplayOrder() { return displayOrder; }
-	public MembershipBenefitGroup getGroup() { return group; }
-	public MembershipBenefitStatus getStatus() { return status; }
+	public String getCode() {
+		return code;
+	}
+
+	public String getDisplayName() {
+		return displayName;
+	}
+
+	public String getDescription() {
+		return description;
+	}
+
+	public int getDisplayOrder() {
+		return displayOrder;
+	}
+
+	public MembershipBenefitGroup getGroup() {
+		return group;
+	}
+
+	public MembershipBenefitStatus getStatus() {
+		return status;
+	}
 }

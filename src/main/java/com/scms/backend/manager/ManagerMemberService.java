@@ -1,9 +1,5 @@
 package com.scms.backend.manager;
 
-import java.time.LocalDate;
-import java.util.Locale;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountRole;
@@ -14,7 +10,9 @@ import com.scms.backend.auth.AccountIdentifierAvailability;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.identity.memberprofile.MemberProfileDetailsValidator;
 import com.scms.backend.identity.memberprofile.MemberProfilePatchRequest;
-
+import java.time.LocalDate;
+import java.util.Locale;
+import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,12 +24,14 @@ import org.springframework.transaction.annotation.Transactional;
 class ManagerMemberService {
 
 	private final AccountRepository accountRepository;
+
 	private final MemberProfileRepository memberProfileRepository;
+
 	private final AccountIdentifierAvailability identifierAvailability;
+
 	private final MemberProfileDetailsValidator validator;
 
-	ManagerMemberService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository,
-			AccountIdentifierAvailability identifierAvailability, MemberProfileDetailsValidator validator) {
+	ManagerMemberService(AccountRepository accountRepository, MemberProfileRepository memberProfileRepository, AccountIdentifierAvailability identifierAvailability, MemberProfileDetailsValidator validator) {
 		this.accountRepository = accountRepository;
 		this.memberProfileRepository = memberProfileRepository;
 		this.identifierAvailability = identifierAvailability;
@@ -40,49 +40,37 @@ class ManagerMemberService {
 
 	@Transactional(readOnly = true)
 	MemberAccountPageResponse search(UUID managerId, String query, AccountStatus status, Pageable pageable) {
-        return search(managerId, query, status, null, pageable);
-    }
+		return search(managerId, query, status, null, pageable);
+	}
 
-    @Transactional(readOnly = true)
-    MemberAccountPageResponse search(UUID managerId, String query, AccountStatus status, String planCode, Pageable pageable) {
+	@Transactional(readOnly = true)
+	MemberAccountPageResponse search(UUID managerId, String query, AccountStatus status, String planCode, Pageable pageable) {
 		ensureActiveManager(managerId);
-        var now = java.time.Instant.now();
-        if (planCode != null && planCode.length() > 50) throw new StaffAccountValidationException("planCode", "must be at most 50 characters");
+		var now = java.time.Instant.now();
+		if (planCode != null && planCode.length() > 50)
+			throw new StaffAccountValidationException("planCode", "must be at most 50 characters");
 		String normalizedQuery = normalizeQuery(query);
-		Specification<MemberProfile> filters = (root, ignored, builder) ->
-			builder.equal(root.get("account").get("role"), AccountRole.MEMBER);
+		Specification<MemberProfile> filters = (root, ignored, builder) -> builder.equal(root.get("account").get("role"), AccountRole.MEMBER);
 		if (status != null) {
-			filters = filters.and((root, ignored, builder) ->
-				builder.equal(root.get("account").get("status"), status));
+			filters = filters.and((root, ignored, builder) -> builder.equal(root.get("account").get("status"), status));
 		}
 		if (normalizedQuery != null) {
 			String pattern = "%" + normalizedQuery.toLowerCase(Locale.ROOT) + "%";
-			filters = filters.and((root, ignored, builder) -> builder.or(
-				builder.like(builder.lower(root.get("memberCode")), pattern),
-				builder.like(builder.lower(root.get("account").get("fullName")), pattern),
-				builder.like(builder.lower(root.get("account").get("email")), pattern),
-				builder.like(root.get("account").get("phone"), pattern)));
+			filters = filters.and((root, ignored, builder) -> builder.or(builder.like(builder.lower(root.get("memberCode")), pattern), builder.like(builder.lower(root.get("account").get("fullName")), pattern), builder.like(builder.lower(root.get("account").get("email")), pattern), builder.like(root.get("account").get("phone"), pattern)));
 		}
-        if (planCode != null && !planCode.isBlank()) {
-            filters = filters.and((root, criteria, builder) -> {
-                var sub = criteria.subquery(UUID.class);
-                var membership = sub.from(com.scms.backend.membership.Membership.class);
-                sub.select(membership.get("memberAccountId")).where(
-                    builder.equal(membership.get("memberAccountId"), root.get("accountId")),
-                    builder.equal(membership.get("status"), com.scms.backend.membership.MembershipStatus.ACTIVE),
-                    builder.lessThanOrEqualTo(membership.get("startsAt"), now),
-                    builder.greaterThan(membership.get("endsAt"), now),
-                    builder.equal(membership.get("planCodeSnapshot"), planCode.trim()));
-                return builder.exists(sub);
-            });
-        }
+		if (planCode != null && !planCode.isBlank()) {
+			filters = filters.and((root, criteria, builder) -> {
+				var sub = criteria.subquery(UUID.class);
+				var membership = sub.from(com.scms.backend.membership.Membership.class);
+				sub.select(membership.get("memberAccountId")).where(builder.equal(membership.get("memberAccountId"), root.get("accountId")), builder.equal(membership.get("status"), com.scms.backend.membership.MembershipStatus.ACTIVE), builder.lessThanOrEqualTo(membership.get("startsAt"), now), builder.greaterThan(membership.get("endsAt"), now), builder.equal(membership.get("planCodeSnapshot"), planCode.trim()));
+				return builder.exists(sub);
+			});
+		}
 		Page<MemberProfile> members = memberProfileRepository.findAll(filters, pageable);
-        java.util.Map<UUID, String> plans = new java.util.HashMap<>();
-        if (!members.isEmpty()) memberProfileRepository.findActivePlans(
-            members.getContent().stream().map(p -> p.getAccount().getId()).toList(), now)
-            .forEach(p -> plans.put(p.getMemberAccountId(), p.getPlanCode()));
-		return new MemberAccountPageResponse(members.getContent().stream().map(p -> toResponse(p).withActivePlan(plans.get(p.getAccount().getId()))).toList(),
-			members.getNumber(), members.getSize(), members.getTotalElements(), members.getTotalPages());
+		java.util.Map<UUID, String> plans = new java.util.HashMap<>();
+		if (!members.isEmpty())
+			memberProfileRepository.findActivePlans(members.getContent().stream().map(p -> p.getAccount().getId()).toList(), now).forEach(p -> plans.put(p.getMemberAccountId(), p.getPlanCode()));
+		return new MemberAccountPageResponse(members.getContent().stream().map(p -> toResponse(p).withActivePlan(plans.get(p.getAccount().getId()))).toList(), members.getNumber(), members.getSize(), members.getTotalElements(), members.getTotalPages());
 	}
 
 	@Transactional(readOnly = true)
@@ -99,34 +87,22 @@ class ManagerMemberService {
 		}
 		MemberProfile profile = findMember(accountId);
 		Account account = profile.getAccount();
-		String fullName = request.hasFullName()
-			? validator.normalizePersonName(request.fullName(), "fullName", 200) : account.getFullName();
-		String phone = request.hasPhone()
-			? validator.normalizePhone(request.phone(), "phone") : account.getPhone();
+		String fullName = request.hasFullName() ? validator.normalizePersonName(request.fullName(), "fullName", 200) : account.getFullName();
+		String phone = request.hasPhone() ? validator.normalizePhone(request.phone(), "phone") : account.getPhone();
 		String email = request.hasEmail() ? validator.normalizeEmail(request.email()) : account.getEmail();
-		LocalDate birthDate = request.hasBirthDate()
-			? validator.validateBirthDate(request.birthDate()) : account.getBirthDate();
-		String profileImageUrl = request.hasProfileImageUrl()
-			? validator.normalizeOptional(request.profileImageUrl(), "profileImageUrl", null)
-			: profile.getProfileImageUrl();
-		String fitnessGoal = request.hasFitnessGoal()
-			? validator.normalizeOptional(request.fitnessGoal(), "fitnessGoal", null) : profile.getFitnessGoal();
-		String emergencyContactName = request.hasEmergencyContactName()
-			? validator.normalizeOptionalPersonName(request.emergencyContactName(), "emergencyContactName", 200)
-			: profile.getEmergencyContactName();
-		String emergencyContactPhone = request.hasEmergencyContactPhone()
-			? validator.normalizeOptionalPhone(request.emergencyContactPhone()) : profile.getEmergencyContactPhone();
-
+		LocalDate birthDate = request.hasBirthDate() ? validator.validateBirthDate(request.birthDate()) : account.getBirthDate();
+		String profileImageUrl = request.hasProfileImageUrl() ? validator.normalizeOptional(request.profileImageUrl(), "profileImageUrl", null) : profile.getProfileImageUrl();
+		String fitnessGoal = request.hasFitnessGoal() ? validator.normalizeOptional(request.fitnessGoal(), "fitnessGoal", null) : profile.getFitnessGoal();
+		String emergencyContactName = request.hasEmergencyContactName() ? validator.normalizeOptionalPersonName(request.emergencyContactName(), "emergencyContactName", 200) : profile.getEmergencyContactName();
+		String emergencyContactPhone = request.hasEmergencyContactPhone() ? validator.normalizeOptionalPhone(request.emergencyContactPhone()) : profile.getEmergencyContactPhone();
 		validator.validateEmergencyContact(emergencyContactName, emergencyContactPhone);
-		identifierAvailability.ensureAvailableForUpdate(account.getId(), account.getEmail(), account.getPhone(),
-			email, phone);
+		identifierAvailability.ensureAvailableForUpdate(account.getId(), account.getEmail(), account.getPhone(), email, phone);
 		account.updateMemberProfileDetails(fullName, phone, email, birthDate);
 		profile.updateDetails(profileImageUrl, fitnessGoal, emergencyContactName, emergencyContactPhone);
 		try {
 			accountRepository.flush();
 			memberProfileRepository.flush();
-		}
-		catch (DataIntegrityViolationException exception) {
+		} catch (DataIntegrityViolationException exception) {
 			throw identifierAvailability.fromDatabase(exception);
 		}
 		return toResponse(profile);
@@ -139,9 +115,7 @@ class ManagerMemberService {
 	}
 
 	private MemberProfile findMember(UUID accountId) {
-		return memberProfileRepository.findById(accountId)
-			.filter(profile -> profile.getAccount().getRole() == AccountRole.MEMBER)
-			.orElseThrow(MemberAccountNotFoundException::new);
+		return memberProfileRepository.findById(accountId).filter(profile -> profile.getAccount().getRole() == AccountRole.MEMBER).orElseThrow(MemberAccountNotFoundException::new);
 	}
 
 	private String normalizeQuery(String query) {
@@ -157,9 +131,6 @@ class ManagerMemberService {
 
 	private MemberAccountResponse toResponse(MemberProfile profile) {
 		Account account = profile.getAccount();
-		return new MemberAccountResponse(account.getId(), profile.getMemberCode(), account.getFullName(),
-			account.getPhone(), account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus(),
-			profile.getProfileImageUrl(), profile.getFitnessGoal(), profile.getEmergencyContactName(),
-			profile.getEmergencyContactPhone());
+		return new MemberAccountResponse(account.getId(), profile.getMemberCode(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate(), account.getRole(), account.getStatus(), profile.getProfileImageUrl(), profile.getFitnessGoal(), profile.getEmergencyContactName(), profile.getEmergencyContactPhone());
 	}
 }

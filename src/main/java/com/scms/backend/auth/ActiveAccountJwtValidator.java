@@ -1,10 +1,8 @@
 package com.scms.backend.auth;
 
-import java.util.UUID;
-
 import com.scms.backend.account.AccountRepository;
 import com.scms.backend.account.AccountStatus;
-
+import java.util.UUID;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -28,11 +26,9 @@ public class ActiveAccountJwtValidator implements OAuth2TokenValidator<Jwt> {
 		UUID accountId;
 		try {
 			accountId = UUID.fromString(jwt.getSubject());
-		}
-		catch (IllegalArgumentException | NullPointerException exception) {
+		} catch (IllegalArgumentException | NullPointerException exception) {
 			return OAuth2TokenValidatorResult.failure(INVALID_TOKEN);
 		}
-
 		Number version = jwt.getClaim("authVersion");
 		long authVersion = version == null ? 0L : version.longValue();
 		if (!accountRepository.existsByIdAndStatusAndAuthVersion(accountId, AccountStatus.ACTIVE, authVersion)) {

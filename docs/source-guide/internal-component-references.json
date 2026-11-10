@@ -1,0 +1,484 @@
+[
+  {
+    "symbol": "com.scms.backend.common.error.AccountProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/AccountProblemResponses.java",
+    "line": 14,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.AuthenticationProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/AuthenticationProblemResponses.java",
+    "line": 17,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.CourseProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/CourseProblemResponses.java",
+    "line": 14,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.MembershipProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/MembershipProblemResponses.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.OperationsProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/OperationsProblemResponses.java",
+    "line": 10,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.SchedulingProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/SchedulingProblemResponses.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.common.error.TrainingProblemResponses",
+    "path": "src/main/java/com/scms/backend/common/error/TrainingProblemResponses.java",
+    "line": 11,
+    "references": [
+      "src/main/java/com/scms/backend/common/error/GlobalExceptionHandler.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.enrollment.CourseEnrollmentRepository",
+    "path": "src/main/java/com/scms/backend/course/enrollment/CourseEnrollmentRepository.java",
+    "line": 11,
+    "references": [
+      "src/main/java/com/scms/backend/course/enrollment/CourseEnrollmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.enrollment.ReceptionCourseEnrollmentRepository",
+    "path": "src/main/java/com/scms/backend/course/enrollment/ReceptionCourseEnrollmentRepository.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/course/enrollment/ReceptionCourseEnrollmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.management.CourseAdministration",
+    "path": "src/main/java/com/scms/backend/course/management/CourseAdministration.java",
+    "line": 31,
+    "references": [
+      "src/main/java/com/scms/backend/course/management/CourseManagementService.java",
+      "src/main/java/com/scms/backend/course/management/CourseRunAdministration.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.management.CourseManagementRepository",
+    "path": "src/main/java/com/scms/backend/course/management/CourseManagementRepository.java",
+    "line": 8,
+    "references": [
+      "src/main/java/com/scms/backend/course/management/CourseManagementService.java",
+      "src/main/java/com/scms/backend/course/management/CourseRunAdministration.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.management.CourseManagementSnapshots",
+    "path": "src/main/java/com/scms/backend/course/management/CourseManagementSnapshots.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/course/management/CourseAdministration.java",
+      "src/main/java/com/scms/backend/course/management/CourseManagementService.java",
+      "src/main/java/com/scms/backend/course/management/CourseRunAdministration.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.management.CourseRunAdministration",
+    "path": "src/main/java/com/scms/backend/course/management/CourseRunAdministration.java",
+    "line": 39,
+    "references": [
+      "src/main/java/com/scms/backend/course/management/CourseManagementService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.order.CourseOrderRepository",
+    "path": "src/main/java/com/scms/backend/course/order/CourseOrderRepository.java",
+    "line": 12,
+    "references": [
+      "src/main/java/com/scms/backend/course/order/CourseOrderService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.order.CourseReservationExpiryRepository",
+    "path": "src/main/java/com/scms/backend/course/order/CourseReservationExpiryRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/course/order/CourseReservationExpiryService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.refund.CourseRefundObligationRepository",
+    "path": "src/main/java/com/scms/backend/course/refund/CourseRefundObligationRepository.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/course/refund/CourseRefundObligationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.refund.CourseRefundValidation",
+    "path": "src/main/java/com/scms/backend/course/refund/CourseRefundValidation.java",
+    "line": 11,
+    "references": [
+      "src/main/java/com/scms/backend/course/refund/CourseRefundObligationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.refund.CourseUnitRefundsRepository",
+    "path": "src/main/java/com/scms/backend/course/refund/CourseUnitRefundsRepository.java",
+    "line": 10,
+    "references": [
+      "src/main/java/com/scms/backend/course/refund/CourseUnitRefunds.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.run.CourseRunClosureRepository",
+    "path": "src/main/java/com/scms/backend/course/run/CourseRunClosureRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/course/run/CourseRunClosureService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.run.CourseRunRescheduleRepository",
+    "path": "src/main/java/com/scms/backend/course/run/CourseRunRescheduleRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/course/run/CourseRunRescheduleService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.schedulechange.CourseScheduleChangeNotifications",
+    "path": "src/main/java/com/scms/backend/course/schedulechange/CourseScheduleChangeNotifications.java",
+    "line": 21,
+    "references": [
+      "src/main/java/com/scms/backend/course/schedulechange/CourseScheduleChangeService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.schedulechange.CourseScheduleChangeRepository",
+    "path": "src/main/java/com/scms/backend/course/schedulechange/CourseScheduleChangeRepository.java",
+    "line": 17,
+    "references": [
+      "src/main/java/com/scms/backend/course/schedulechange/CourseScheduleChangeNotifications.java",
+      "src/main/java/com/scms/backend/course/schedulechange/CourseScheduleChangeService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.session.CourseCoachSessionRepository",
+    "path": "src/main/java/com/scms/backend/course/session/CourseCoachSessionRepository.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/course/session/CourseCoachSessionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.session.CourseResourceAvailabilityRepository",
+    "path": "src/main/java/com/scms/backend/course/session/CourseResourceAvailabilityRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/course/session/CourseResourceAvailabilityController.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.session.CourseSessionDisruptionRepository",
+    "path": "src/main/java/com/scms/backend/course/session/CourseSessionDisruptionRepository.java",
+    "line": 8,
+    "references": [
+      "src/main/java/com/scms/backend/course/session/CourseSessionDisruptionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.transfer.CourseTransferCompletion",
+    "path": "src/main/java/com/scms/backend/course/transfer/CourseTransferCompletion.java",
+    "line": 17,
+    "references": [
+      "src/main/java/com/scms/backend/course/transfer/CourseTransferService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.transfer.CourseTransferRepository",
+    "path": "src/main/java/com/scms/backend/course/transfer/CourseTransferRepository.java",
+    "line": 19,
+    "references": [
+      "src/main/java/com/scms/backend/course/transfer/CourseTransferCompletion.java",
+      "src/main/java/com/scms/backend/course/transfer/CourseTransferService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.waitlist.CourseWaitlistRepository",
+    "path": "src/main/java/com/scms/backend/course/waitlist/CourseWaitlistRepository.java",
+    "line": 13,
+    "references": [
+      "src/main/java/com/scms/backend/course/waitlist/CourseWaitlistService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.withdrawal.CourseWithdrawalRepository",
+    "path": "src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalRepository.java",
+    "line": 17,
+    "references": [
+      "src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalService.java",
+      "src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalSnapshot.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.course.withdrawal.CourseWithdrawalSnapshot",
+    "path": "src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalSnapshot.java",
+    "line": 13,
+    "references": [
+      "src/main/java/com/scms/backend/course/withdrawal/CourseWithdrawalService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.emailverification.emailchange.AccountEmailChangeRepository",
+    "path": "src/main/java/com/scms/backend/emailverification/emailchange/AccountEmailChangeRepository.java",
+    "line": 15,
+    "references": [
+      "src/main/java/com/scms/backend/emailverification/emailchange/AccountEmailChangeService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.emailverification.manualactivation.ManualActivationRepository",
+    "path": "src/main/java/com/scms/backend/emailverification/manualactivation/ManualActivationRepository.java",
+    "line": 21,
+    "references": [
+      "src/main/java/com/scms/backend/emailverification/manualactivation/ManualActivationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.emailverification.passwordreset.PasswordResetRepository",
+    "path": "src/main/java/com/scms/backend/emailverification/passwordreset/PasswordResetRepository.java",
+    "line": 13,
+    "references": [
+      "src/main/java/com/scms/backend/emailverification/passwordreset/PasswordResetService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.emailverification.verification.EmailVerificationRepository",
+    "path": "src/main/java/com/scms/backend/emailverification/verification/EmailVerificationRepository.java",
+    "line": 15,
+    "references": [
+      "src/main/java/com/scms/backend/emailverification/verification/EmailVerificationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.emailverification.verification.PendingRegistrationCleanupRepository",
+    "path": "src/main/java/com/scms/backend/emailverification/verification/PendingRegistrationCleanupRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/emailverification/verification/PendingRegistrationCleanup.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.identity.receptionmember.ReceptionMemberProfileRepository",
+    "path": "src/main/java/com/scms/backend/identity/receptionmember/ReceptionMemberProfileRepository.java",
+    "line": 14,
+    "references": [
+      "src/main/java/com/scms/backend/identity/receptionmember/ReceptionMemberProfileService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.manager.MemberStatusRepository",
+    "path": "src/main/java/com/scms/backend/manager/MemberStatusRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/manager/MemberStatusService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.manager.StaffStatusRepository",
+    "path": "src/main/java/com/scms/backend/manager/StaffStatusRepository.java",
+    "line": 7,
+    "references": [
+      "src/main/java/com/scms/backend/manager/StaffStatusService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.freeze.MembershipFreezeExecutionRepository",
+    "path": "src/main/java/com/scms/backend/membership/freeze/MembershipFreezeExecutionRepository.java",
+    "line": 8,
+    "references": [
+      "src/main/java/com/scms/backend/membership/freeze/MembershipFreezeExecutionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.freeze.MembershipFreezeRepository",
+    "path": "src/main/java/com/scms/backend/membership/freeze/MembershipFreezeRepository.java",
+    "line": 11,
+    "references": [
+      "src/main/java/com/scms/backend/membership/freeze/MembershipFreezeService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.CoursePaymentFulfillment",
+    "path": "src/main/java/com/scms/backend/membership/payment/CoursePaymentFulfillment.java",
+    "line": 18,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/PaymentFulfillmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.CourseReconciliationRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/CourseReconciliationRepository.java",
+    "line": 15,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/CourseReconciliationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.MembershipPaymentFulfillment",
+    "path": "src/main/java/com/scms/backend/membership/payment/MembershipPaymentFulfillment.java",
+    "line": 16,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/CoursePaymentFulfillment.java",
+      "src/main/java/com/scms/backend/membership/payment/PaymentFulfillmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.PaymentEvidenceRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/PaymentEvidenceRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/PaymentEvidenceService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.PaymentFulfillmentRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/PaymentFulfillmentRepository.java",
+    "line": 13,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/CoursePaymentFulfillment.java",
+      "src/main/java/com/scms/backend/membership/payment/MembershipPaymentFulfillment.java",
+      "src/main/java/com/scms/backend/membership/payment/PaymentFulfillmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.PaymentProviderEventRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/PaymentProviderEventRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/PaymentFulfillmentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.PaymentRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/PaymentRepository.java",
+    "line": 26,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/PaymentService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.payment.SepayRepository",
+    "path": "src/main/java/com/scms/backend/membership/payment/SepayRepository.java",
+    "line": 9,
+    "references": [
+      "src/main/java/com/scms/backend/membership/payment/SepayService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.refund.MembershipRefundRepository",
+    "path": "src/main/java/com/scms/backend/membership/refund/MembershipRefundRepository.java",
+    "line": 11,
+    "references": [
+      "src/main/java/com/scms/backend/membership/refund/MembershipRefundService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.membership.reporting.ManagerReportingRepository",
+    "path": "src/main/java/com/scms/backend/membership/reporting/ManagerReportingRepository.java",
+    "line": 16,
+    "references": [
+      "src/main/java/com/scms/backend/membership/reporting/ManagerReportingService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.coachleave.CoachLeaveImpactRepository",
+    "path": "src/main/java/com/scms/backend/scheduling/coachleave/CoachLeaveImpactRepository.java",
+    "line": 16,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/coachleave/CoachLeaveImpactService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.room.RoomAvailabilityAnalysis",
+    "path": "src/main/java/com/scms/backend/scheduling/room/RoomAvailabilityAnalysis.java",
+    "line": 17,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/room/RoomSuspensionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.room.RoomImpactPolicy",
+    "path": "src/main/java/com/scms/backend/scheduling/room/RoomImpactPolicy.java",
+    "line": 22,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/room/RoomSuspensionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.room.RoomSuspensionJdbcRepository",
+    "path": "src/main/java/com/scms/backend/scheduling/room/RoomSuspensionJdbcRepository.java",
+    "line": 7,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/room/RoomSuspensionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.session.ClassSessionCancellationRepository",
+    "path": "src/main/java/com/scms/backend/scheduling/session/ClassSessionCancellationRepository.java",
+    "line": 8,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/session/ClassSessionCancellationService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.session.ClassSessionCatalog",
+    "path": "src/main/java/com/scms/backend/scheduling/session/ClassSessionCatalog.java",
+    "line": 16,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/session/ClassSessionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.scheduling.session.ClassSessionResources",
+    "path": "src/main/java/com/scms/backend/scheduling/session/ClassSessionResources.java",
+    "line": 28,
+    "references": [
+      "src/main/java/com/scms/backend/scheduling/session/ClassSessionService.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.training.assignment.CoachAssignmentReminderRepository",
+    "path": "src/main/java/com/scms/backend/training/assignment/CoachAssignmentReminderRepository.java",
+    "line": 6,
+    "references": [
+      "src/main/java/com/scms/backend/training/assignment/CoachAssignmentReminder.java"
+    ]
+  },
+  {
+    "symbol": "com.scms.backend.training.session.BookedSessionTrainingRepository",
+    "path": "src/main/java/com/scms/backend/training/session/BookedSessionTrainingRepository.java",
+    "line": 8,
+    "references": [
+      "src/main/java/com/scms/backend/training/session/BookedSessionTrainingService.java"
+    ]
+  }
+]

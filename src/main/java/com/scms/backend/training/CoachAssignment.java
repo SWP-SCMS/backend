@@ -1,9 +1,5 @@
 package com.scms.backend.training;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -11,6 +7,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.UUID;
 
 @Entity
 @Table(name = "coach_assignments")
@@ -55,8 +54,7 @@ public class CoachAssignment {
 	protected CoachAssignment() {
 	}
 
-	public CoachAssignment(UUID id, UUID memberAccountId, UUID coachAccountId, UUID assignedByAccountId,
-			CoachAssignmentStatus status, Instant startsAt, Instant createdAt) {
+	public CoachAssignment(UUID id, UUID memberAccountId, UUID coachAccountId, UUID assignedByAccountId, CoachAssignmentStatus status, Instant startsAt, Instant createdAt) {
 		this.id = Objects.requireNonNull(id);
 		this.memberAccountId = Objects.requireNonNull(memberAccountId);
 		this.coachAccountId = Objects.requireNonNull(coachAccountId);

@@ -2,9 +2,7 @@ package com.scms.backend.auth;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 
-public record ChangePasswordRequest(
-		String currentPassword,
-		String newPassword) {
+public record ChangePasswordRequest(String currentPassword, String newPassword) {
 
 	void validate() {
 		if (currentPassword == null || currentPassword.isBlank()) {

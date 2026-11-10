@@ -1,17 +1,16 @@
 package com.scms.backend.manager;
 
-import java.util.Map;
-import java.util.UUID;
-
 import com.scms.backend.account.Account;
 import com.scms.backend.account.AccountRepository;
-import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.account.AccountRole;
 import com.scms.backend.account.AccountStatus;
+import com.scms.backend.account.MemberProfileRepository;
 import com.scms.backend.audit.AuditEvent;
 import com.scms.backend.audit.AuditEventRepository;
 import com.scms.backend.auth.InvalidAuthenticatedAccountException;
 import com.scms.backend.auth.RefreshTokenService;
+import java.util.Map;
+import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,13 +19,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class ResetPasswordService {
 
 	private final AccountRepository accounts;
+
 	private final AuditEventRepository audits;
+
 	private final RefreshTokenService refreshTokens;
+
 	private final PasswordEncoder encoder;
+
 	private final MemberProfileRepository profiles;
 
-	ResetPasswordService(AccountRepository accounts, AuditEventRepository audits, RefreshTokenService refreshTokens,
-			PasswordEncoder encoder, MemberProfileRepository profiles) {
+	ResetPasswordService(AccountRepository accounts, AuditEventRepository audits, RefreshTokenService refreshTokens, PasswordEncoder encoder, MemberProfileRepository profiles) {
 		this.accounts = accounts;
 		this.audits = audits;
 		this.refreshTokens = refreshTokens;
@@ -47,14 +49,8 @@ public class ResetPasswordService {
 	@Transactional
 	public void receptionistResetMember(UUID actorId, String memberCode) {
 		ensureActive(actorId, AccountRole.RECEPTIONIST);
-		UUID targetId = profiles.findVisibleMemberByCode(memberCode, AccountRole.MEMBER,
-			java.util.List.of(AccountStatus.ACTIVE))
-			.map(profile -> profile.getAccountId())
-			.orElseThrow(MemberAccountNotFoundException::new);
-		Account target = accounts.findByIdForUpdate(targetId)
-			.filter(account -> account.getRole() == AccountRole.MEMBER
-				&& account.getStatus() == AccountStatus.ACTIVE)
-			.orElseThrow(MemberAccountNotFoundException::new);
+		UUID targetId = profiles.findVisibleMemberByCode(memberCode, AccountRole.MEMBER, java.util.List.of(AccountStatus.ACTIVE)).map(profile -> profile.getAccountId()).orElseThrow(MemberAccountNotFoundException::new);
+		Account target = accounts.findByIdForUpdate(targetId).filter(account -> account.getRole() == AccountRole.MEMBER && account.getStatus() == AccountStatus.ACTIVE).orElseThrow(MemberAccountNotFoundException::new);
 		reset(actorId, target);
 	}
 
@@ -62,14 +58,11 @@ public class ResetPasswordService {
 		target.changePassword(encoder.encode(target.getPhone()));
 		accounts.flush();
 		refreshTokens.revokeAll(target.getId());
-		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "PASSWORD_RESET", "ACCOUNT", target.getId(),
-			null, Map.of("role", (Object) target.getRole().name()), Map.of("passwordReset", (Object) true)));
+		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "PASSWORD_RESET", "ACCOUNT", target.getId(), null, Map.of("role", (Object) target.getRole().name()), Map.of("passwordReset", (Object) true)));
 	}
 
 	private Account target(UUID id) {
-		return accounts.findByIdForUpdate(id).or(() -> accounts.findById(id))
-			.filter(account -> account.getStatus() == AccountStatus.ACTIVE)
-			.orElseThrow(StaffAccountNotFoundException::new);
+		return accounts.findByIdForUpdate(id).or(() -> accounts.findById(id)).filter(account -> account.getStatus() == AccountStatus.ACTIVE).orElseThrow(StaffAccountNotFoundException::new);
 	}
 
 	private void ensureActive(UUID id, AccountRole role) {

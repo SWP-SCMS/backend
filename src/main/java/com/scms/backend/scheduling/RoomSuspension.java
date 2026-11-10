@@ -1,8 +1,5 @@
 package com.scms.backend.scheduling;
 
-import java.time.Instant;
-import java.util.UUID;
-
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -10,6 +7,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "room_suspensions")
@@ -41,7 +40,7 @@ public class RoomSuspension {
 	protected RoomSuspension() {
 	}
 
-	RoomSuspension(UUID id, Room room, Instant startTime, Instant endTime, String reason, UUID createdBy) {
+	public RoomSuspension(UUID id, Room room, Instant startTime, Instant endTime, String reason, UUID createdBy) {
 		this.id = id;
 		this.room = room;
 		this.startTime = startTime;
@@ -50,14 +49,31 @@ public class RoomSuspension {
 		this.createdBy = createdBy;
 	}
 
-	UUID getId() { return id; }
-	Room getRoom() { return room; }
-	Instant getStartTime() { return startTime; }
-	Instant getEndTime() { return endTime; }
-	String getReason() { return reason; }
-	UUID getCreatedBy() { return createdBy; }
+	public UUID getId() {
+		return id;
+	}
 
-	void extend(Instant endTime, String reason) {
+	public Room getRoom() {
+		return room;
+	}
+
+	public Instant getStartTime() {
+		return startTime;
+	}
+
+	public Instant getEndTime() {
+		return endTime;
+	}
+
+	public String getReason() {
+		return reason;
+	}
+
+	public UUID getCreatedBy() {
+		return createdBy;
+	}
+
+	public void extend(Instant endTime, String reason) {
 		this.endTime = endTime;
 		this.reason = reason;
 	}

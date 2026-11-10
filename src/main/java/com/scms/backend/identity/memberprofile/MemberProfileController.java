@@ -1,7 +1,6 @@
 package com.scms.backend.identity.memberprofile;
 
 import java.util.UUID;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -27,8 +26,7 @@ public class MemberProfileController {
 	}
 
 	@PatchMapping
-	ResponseEntity<MemberProfileResponse> updateProfile(@AuthenticationPrincipal Jwt jwt,
-			@RequestBody MemberProfilePatchRequest request) {
+	ResponseEntity<MemberProfileResponse> updateProfile(@AuthenticationPrincipal Jwt jwt, @RequestBody MemberProfilePatchRequest request) {
 		if (request == null) {
 			throw new MemberProfileValidationException("request", "must be a JSON object");
 		}
