@@ -39,7 +39,17 @@ final class CourseWithdrawalRepository {
 	}
 
 	String select() {
-		return "select w.*,a.id member_id,mp.member_code,a.full_name member_name,c.id course_id," + "c.code course_code,c.name course_name,r.run_code,r.status course_run_status,e.lifecycle_status " + "from course_withdrawal_requests w join course_enrollments e on e.id=w.course_enrollment_id " + "join accounts a on a.id=e.member_account_id join member_profiles mp on mp.account_id=a.id " + "join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id";
+		return """
+			select w.*,a.id member_id,mp.member_code,a.full_name member_name,c.id course_id,
+			c.code course_code,c.name course_name,r.run_code,r.status course_run_status,e.lifecycle_status,
+			refund.id refund_obligation_id,refund.status refund_status
+			from course_withdrawal_requests w join course_enrollments e on e.id=w.course_enrollment_id
+			join accounts a on a.id=e.member_account_id join member_profiles mp on mp.account_id=a.id
+			join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
+			left join course_refund_obligations refund on w.status='APPROVED'
+			and refund.course_enrollment_id=w.course_enrollment_id and refund.source_event_id is null
+			and refund.source_type=case when w.cause_code='VOLUNTARY' then 'MEMBER_WITHDRAWAL' else 'MATERIAL_CHANGE' end
+			""";
 	}
 
 	WithdrawalRequest map(ResultSet rs, int row) throws SQLException {
@@ -49,7 +59,7 @@ final class CourseWithdrawalRepository {
 		BigInteger refund = amount(rs.getBigDecimal("refund_amount_vnd"));
 		String source = capturedAt != null ? "REQUEST_TIME" : refund != null ? "LEGACY_APPROVAL" : "UNAVAILABLE";
 		String eligibilityReason = eligible ? rs.getString("withdrawal_reason_snapshot") : capturedAt == null ? "LEGACY_SNAPSHOT_MISSING" : "REQUEST_NOT_PENDING";
-		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class), rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"), rs.getString("decision_reason"), CourseWithdrawalCause.valueOf(rs.getString("cause_code")), eligible, eligibilityReason, rs.getTimestamp("requested_at").toInstant(), rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")), rs.getObject("total_units_snapshot", Integer.class), rs.getObject("remaining_units_snapshot", Integer.class), amount(rs.getBigDecimal("refund_basis_vnd")), refund, rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"), rs.getString("run_code"), rs.getString("course_run_status"), eligible ? refund : null, rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("change_event_id", UUID.class), capturedAt, source, rs.getObject("withdrawal_eligible_snapshot", Boolean.class), rs.getString("withdrawal_reason_snapshot"), instant(rs.getTimestamp("cancelled_at")), rs.getObject("cancelled_by_account_id", UUID.class), rs.getString("cancellation_reason"), pending, "WITHDRAWAL_PENDING".equals(rs.getString("lifecycle_status")));
+		return new WithdrawalRequest(rs.getObject("id", UUID.class), rs.getObject("course_enrollment_id", UUID.class), rs.getObject("course_run_id", UUID.class), rs.getObject("member_account_id", UUID.class), rs.getObject("requester_account_id", UUID.class), rs.getString("status"), rs.getString("request_reason"), rs.getString("decision_reason"), CourseWithdrawalCause.valueOf(rs.getString("cause_code")), eligible, eligibilityReason, rs.getTimestamp("requested_at").toInstant(), rs.getObject("decided_by_account_id", UUID.class), instant(rs.getTimestamp("decided_at")), rs.getObject("total_units_snapshot", Integer.class), rs.getObject("remaining_units_snapshot", Integer.class), amount(rs.getBigDecimal("refund_basis_vnd")), refund, rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"), rs.getString("run_code"), rs.getString("course_run_status"), eligible ? refund : null, rs.getObject("schedule_change_response_id", UUID.class), rs.getObject("change_event_id", UUID.class), capturedAt, source, rs.getObject("withdrawal_eligible_snapshot", Boolean.class), rs.getString("withdrawal_reason_snapshot"), instant(rs.getTimestamp("cancelled_at")), rs.getObject("cancelled_by_account_id", UUID.class), rs.getString("cancellation_reason"), pending, "WITHDRAWAL_PENDING".equals(rs.getString("lifecycle_status")), rs.getObject("refund_obligation_id", UUID.class), rs.getString("refund_status"));
 	}
 
 	static BigInteger amount(Map<String, Object> row, String key) {

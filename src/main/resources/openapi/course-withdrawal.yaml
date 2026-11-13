@@ -148,6 +148,14 @@ components:
         cancellationReason: {type: [string, 'null']}
         canCancel: {type: boolean}
         learningSuspended: {type: boolean}
+        refundObligationId:
+          type: [string, 'null']
+          format: uuid
+          description: Refund obligation linked to this approved withdrawal.
+        refundStatus:
+          type: [string, 'null']
+          enum: [PENDING_REVIEW, APPROVED, DISBURSEMENT_RECORDED, PENDING_VERIFICATION, COMPLETED, REJECTED, FAILED, RETURNED, null]
+          description: Current refund progress, independent of the withdrawal decision.
     Create:
       type: object
       additionalProperties: false

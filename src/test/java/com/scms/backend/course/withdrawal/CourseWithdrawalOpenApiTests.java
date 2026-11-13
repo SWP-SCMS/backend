@@ -8,6 +8,16 @@ import org.junit.jupiter.api.Test;
 class CourseWithdrawalOpenApiTests {
 
 	@Test
+	void contractSeparatesNullableRefundProgressFromWithdrawalDecision() throws Exception {
+		try (var input = getClass().getResourceAsStream("/openapi/course-withdrawal.yaml")) {
+			var properties = new ObjectMapper(new YAMLFactory()).readTree(input).at("/components/schemas/WithdrawalRequest/properties");
+			assertThat(properties.path("refundObligationId").path("format").asText()).isEqualTo("uuid");
+			assertThat(properties.path("refundStatus").path("enum").toString()).contains("DISBURSEMENT_RECORDED", "COMPLETED", "RETURNED", "null");
+			assertThat(properties.path("status").path("enum").toString()).doesNotContain("COMPLETED");
+		}
+	}
+
+	@Test
 	void contractExposesOwnedMemberReceptionAndManagerDecisionSurfaces() throws Exception {
 		try (var input = getClass().getResourceAsStream("/openapi/course-withdrawal.yaml")) {
 			assertThat(input).isNotNull();
