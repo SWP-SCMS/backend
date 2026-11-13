@@ -78,7 +78,7 @@ public class CourseEnrollmentService {
 	@Transactional(readOnly = true)
 	public List<RosterEntry> roster(UUID coachId, UUID sessionId) {
 		active(coachId, AccountRole.COACH);
-		List<RosterEntry> result = courseEnrollmentRepository.rosterFindCourseEnrollmentSessions(coachId, sessionId);
+		List<RosterEntry> result = courseEnrollmentRepository.rosterFindCourseEnrollmentSessions(coachId, sessionId, Timestamp.from(clock.instant()));
 		if (result.isEmpty() && courseEnrollmentRepository.rosterFindCourseSessions(sessionId, coachId) != 1)
 			throw CourseAttendanceException.notFound();
 		return result;
@@ -94,11 +94,13 @@ public class CourseEnrollmentService {
 		CourseAttendancePolicy.Decision attendance = CourseAttendancePolicy.evaluate(text(session, "status"), text(session, "run_status"), instant(session, "start_at"), instant(session, "end_at"), now, true);
 		if (!attendance.writable())
 			throw CourseAttendanceException.closed();
-		Map<String, Object> row = courseEnrollmentRepository.updateAttendanceFindCourseEnrollmentSessions(enrollmentSessionId, sessionId).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
+		Map<String, Object> row = courseEnrollmentRepository.updateAttendanceFindCourseEnrollmentSessions(enrollmentSessionId, sessionId, Timestamp.from(now)).stream().findFirst().orElseThrow(CourseAttendanceException::notFound);
+		if (!Boolean.TRUE.equals(row.get("checked_in")))
+			throw com.scms.backend.scheduling.AttendanceException.visit();
 		CourseAttendanceStatus before = CourseAttendanceStatus.valueOf(text(row, "attendance_status"));
 		courseEnrollmentRepository.updateAttendanceUpdateCourseEnrollmentSessions(request.status().name(), Timestamp.from(now), coachId, Timestamp.from(now), enrollmentSessionId);
 		audits.save(new AuditEvent(UUID.randomUUID(), coachId, "COURSE_ATTENDANCE_CHANGED", "CourseEnrollmentSession", enrollmentSessionId, "Coach changed Course attendance", Map.of("status", before.name()), Map.of("status", request.status().name(), "courseSessionId", sessionId.toString())));
-		return new RosterEntry(enrollmentSessionId, text(row, "member_code"), text(row, "full_name"), text(row, "profile_image_url"), request.status(), instant(row, "attendance_recorded_at") == null ? now : instant(row, "attendance_recorded_at"), uuid(row, "member_account_id"));
+		return new RosterEntry(enrollmentSessionId, text(row, "member_code"), text(row, "full_name"), text(row, "profile_image_url"), request.status(), instant(row, "attendance_recorded_at") == null ? now : instant(row, "attendance_recorded_at"), uuid(row, "member_account_id"), true);
 	}
 
 	private void active(UUID id, AccountRole role) {

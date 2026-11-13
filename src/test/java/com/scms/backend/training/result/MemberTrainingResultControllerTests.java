@@ -45,7 +45,7 @@ class MemberTrainingResultControllerTests {
 		UUID memberId = UUID.randomUUID();
 		UUID sessionId = UUID.randomUUID();
 		Instant activityAt = Instant.parse("2026-10-14T07:00:00Z");
-		var response = new MemberTrainingResultResponse(UUID.randomUUID(), memberId, null, null, sessionId, activityAt, Map.of("notes", "Yoga"), UUID.randomUUID(), "Coach A", "Vinyasa", activityAt, "Vinyasa", activityAt, activityAt, null);
+		var response = new MemberTrainingResultResponse(UUID.randomUUID(), memberId, null, null, sessionId, activityAt, Map.of("notes", "Yoga"), UUID.randomUUID(), "Coach A", "Vinyasa", activityAt, "Vinyasa", activityAt, activityAt, null, null, null);
 		when(service.viewOwnHistory(eq(memberId), any(Pageable.class))).thenReturn(new MemberTrainingResultPageResponse(List.of(response), 0, 20, 1, 1));
 		mockMvc.perform(get("/members/me/training-results").with(jwt().jwt(token -> token.subject(memberId.toString())).authorities(new SimpleGrantedAuthority("ROLE_MEMBER")))).andExpect(status().isOk()).andExpect(jsonPath("$.content[0].memberAccountId").value(memberId.toString())).andExpect(jsonPath("$.content[0].classSessionId").value(sessionId.toString())).andExpect(jsonPath("$.content[0].coachName").value("Coach A")).andExpect(jsonPath("$.content[0].sessionName").value("Vinyasa")).andExpect(jsonPath("$.content[0].className").value("Vinyasa")).andExpect(jsonPath("$.content[0].content.notes").value("Yoga")).andExpect(jsonPath("$.totalElements").value(1));
 	}

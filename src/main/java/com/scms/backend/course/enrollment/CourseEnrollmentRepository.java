@@ -28,17 +28,24 @@ final class CourseEnrollmentRepository {
 			""", memberId);
 	}
 
-	List<RosterEntry> rosterFindCourseEnrollmentSessions(UUID coachId, UUID sessionId) {
+	private static final String CHECKED_IN = """
+		exists (select 1 from center_visits v where v.member_account_id=e.member_account_id
+			and v.checked_in_at <= ? and v.checked_in_at < s.end_at
+			and (v.checked_out_at is null or v.checked_out_at > s.start_at)) as checked_in
+		""";
+
+	List<RosterEntry> rosterFindCourseEnrollmentSessions(UUID coachId, UUID sessionId, Timestamp now) {
 		return db.query("""
 			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
-				es.attendance_status,es.attendance_recorded_at
+				es.attendance_status,es.attendance_recorded_at,
+			""" + CHECKED_IN + """
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
 			where es.course_session_id=? and es.disposition='ENROLLED'
 			  and e.lifecycle_status='ACTIVE'
 			order by a.full_name,a.id
-			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class), rs.getString("member_code"), rs.getString("full_name"), rs.getString("profile_image_url"), CourseAttendanceStatus.valueOf(rs.getString("attendance_status")), rs.getTimestamp("attendance_recorded_at") == null ? null : rs.getTimestamp("attendance_recorded_at").toInstant(), rs.getObject("member_account_id", UUID.class)), coachId, sessionId);
+			""", (rs, row) -> new RosterEntry(rs.getObject("id", UUID.class), rs.getString("member_code"), rs.getString("full_name"), rs.getString("profile_image_url"), CourseAttendanceStatus.valueOf(rs.getString("attendance_status")), rs.getTimestamp("attendance_recorded_at") == null ? null : rs.getTimestamp("attendance_recorded_at").toInstant(), rs.getObject("member_account_id", UUID.class), rs.getBoolean("checked_in")), now, coachId, sessionId);
 	}
 
 	java.lang.Long rosterFindCourseSessions(UUID sessionId, UUID coachId) {
@@ -56,15 +63,17 @@ final class CourseEnrollmentRepository {
 			""", sessionId, sessionId2, coachId);
 	}
 
-	List<Map<java.lang.String, java.lang.Object>> updateAttendanceFindCourseEnrollmentSessions(UUID enrollmentSessionId, UUID sessionId) {
+	List<Map<java.lang.String, java.lang.Object>> updateAttendanceFindCourseEnrollmentSessions(UUID enrollmentSessionId, UUID sessionId, Timestamp now) {
 		return db.queryForList("""
 			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
-				es.attendance_status,es.attendance_recorded_at
+				es.attendance_status,es.attendance_recorded_at,
+			""" + CHECKED_IN + """
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
+			join course_sessions s on s.id=es.course_session_id
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
 			where es.id=? and es.course_session_id=? and es.disposition='ENROLLED'
 			  and e.lifecycle_status='ACTIVE' for update of e,es
-			""", enrollmentSessionId, sessionId);
+			""", now, enrollmentSessionId, sessionId);
 	}
 
 	int updateAttendanceUpdateCourseEnrollmentSessions(java.lang.String value1, Timestamp nowTimestamp, UUID coachId, Timestamp nowTimestamp2, UUID enrollmentSessionId) {

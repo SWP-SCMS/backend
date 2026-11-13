@@ -45,6 +45,18 @@ class CenterVisitController {
 		return ResponseEntity.ok(service.checkoutReceptionist(accountId(jwt), memberAccountId));
 	}
 
+	@GetMapping("/reception/members/{memberAccountId}/center-visits/course-admission")
+	ResponseEntity<CenterVisitRepository.CourseAdmission> courseAdmission(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberAccountId) {
+		return service.courseAdmission(accountId(jwt), memberAccountId)
+			.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+	}
+
+	@GetMapping("/reception/members/{memberAccountId}/center-visits/eligible-course")
+	ResponseEntity<UUID> eligibleCourse(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberAccountId) {
+		return service.admissionSession(accountId(jwt), memberAccountId)
+			.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+	}
+
 	@GetMapping("/reception/center-visits/open")
 	ResponseEntity<CenterVisitPageResponse> open(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		if (page < 0 || size < 1 || size > 100)

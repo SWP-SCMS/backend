@@ -2,7 +2,7 @@ package com.scms.backend.training.result;
 
 import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,9 +25,11 @@ public class MemberTrainingResultController {
 	}
 
 	@GetMapping
-	public ResponseEntity<MemberTrainingResultPageResponse> viewOwnHistory(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
+	public ResponseEntity<MemberTrainingResultPageResponse> viewOwnHistory(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) ResultType type, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		validatePagination(page, size);
-		return ResponseEntity.ok(service.viewOwnHistory(UUID.fromString(jwt.getSubject()), PageRequest.of(page, size, Sort.by(Sort.Order.desc("activityAt"), Sort.Order.desc("id")))));
+		var memberId = UUID.fromString(jwt.getSubject());
+		var pageable = PageRequest.of(page, size);
+		return ResponseEntity.ok(type == null ? service.viewOwnHistory(memberId, pageable) : service.viewOwnHistory(memberId, type, pageable));
 	}
 
 	private void validatePagination(int page, int size) {

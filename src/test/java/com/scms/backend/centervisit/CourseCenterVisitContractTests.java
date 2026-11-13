@@ -22,10 +22,10 @@ class CourseCenterVisitContractTests {
 	}
 
 	@Test
-	void membershipLifecycleAndGymAttendanceIgnoreCourseVisits() throws Exception {
+	void membershipLifecycleIsPlanSpecificWhileAttendanceUsesEitherSource() throws Exception {
 		assertThat(query("checkoutOpenForMembershipTermination")).contains("visit_source = 'MEMBERSHIP'");
 		assertThat(query("checkoutOpenForMembershipFreeze")).contains("visit_source = 'MEMBERSHIP'");
-		assertThat(query("findOverlappingVisitId")).contains("visit_source = 'MEMBERSHIP'");
+		assertThat(query("findOverlappingVisitId")).doesNotContain("visit_source");
 	}
 
 	private String query(String name) {

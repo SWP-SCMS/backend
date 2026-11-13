@@ -77,6 +77,26 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 	Page<MemberTrainingResultHistoryView> findHistoryByMemberAccountId(@Param("memberId") UUID memberId, org.springframework.data.domain.Pageable pageable);
 
 	@Query(value = """
+		select r as result, coach.fullName as coachName, coalesce(course.name, sportClass.name) as sessionName,
+		  coalesce(courseSession.startAt, session.startTime) as sessionStartTime, sportClass.classType as classType,
+		  courseRun.runCode as runCode, courseSession.unitNumber as unitNumber
+		from TrainingResult r
+		join Account coach on coach.id = r.createdByAccountId
+		left join ClassSession session on session.id = r.classSessionId
+		left join session.sportClass sportClass
+		left join CourseSession courseSession on courseSession.id = r.courseSessionId
+		left join courseSession.courseRun courseRun
+		left join courseRun.course course
+		where r.memberAccountId = :memberId and (
+		    (:type = 'COURSE' and r.courseSessionId is not null)
+		    or (:type = 'CLASS' and sportClass.classType <> PT_1_1)
+		    or (:type = 'PT' and (sportClass.classType = PT_1_1 or (r.classSessionId is null and r.courseSessionId is null)))
+		  )
+		order by coalesce(courseSession.startAt, session.startTime, r.activityAt) desc, r.id desc
+		""")
+	Page<MemberTrainingResultHistoryView> findHistoryByType(@Param("memberId") UUID memberId, @Param("type") String type, org.springframework.data.domain.Pageable pageable);
+
+	@Query(value = """
 		select * from training_results
 		where class_session_id = :sessionId
 		  and member_account_id = :memberId
@@ -118,5 +138,9 @@ public interface TrainingResultRepository extends JpaRepository<TrainingResult, 
 		Instant getSessionStartTime();
 
 		SportClassType getClassType();
+
+		String getRunCode();
+
+		Integer getUnitNumber();
 	}
 }

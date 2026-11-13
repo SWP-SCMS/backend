@@ -28,4 +28,10 @@ public class MemberTrainingResultService {
 		var page = results.findHistoryByMemberAccountId(memberId, pageable);
 		return new MemberTrainingResultPageResponse(page.getContent().stream().map(MemberTrainingResultResponse::from).toList(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
 	}
+
+	@Transactional(readOnly = true)
+	public MemberTrainingResultPageResponse viewOwnHistory(UUID memberId, ResultType type, Pageable pageable) {
+		var page = results.findHistoryByType(memberId, type.name(), pageable);
+		return new MemberTrainingResultPageResponse(page.map(MemberTrainingResultResponse::from).getContent(), page.getNumber(), page.getSize(), page.getTotalElements(), page.getTotalPages());
+	}
 }
