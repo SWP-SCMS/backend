@@ -18880,6 +18880,21 @@
           },
           "learningSuspended": {
             "type": "boolean"
+          },
+          "refundObligationId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "Refund obligation linked to this approved withdrawal."
+          },
+          "refundStatus": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Current refund progress, independent of the withdrawal decision."
           }
         }
       },

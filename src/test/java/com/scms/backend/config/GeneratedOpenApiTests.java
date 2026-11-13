@@ -911,6 +911,15 @@ class GeneratedOpenApiTests {
 	}
 
 	@Test
+	void withdrawalRefundProgressIsNullableAndSeparateFromTheDecision() throws Exception {
+		JsonNode properties = generatedDocument().at("/components/schemas/WithdrawalRequest/properties");
+		for (String field : java.util.List.of("refundObligationId", "refundStatus"))
+			assertThat(properties.path(field).path("type").toString()).contains("string", "null");
+		assertThat(properties.path("refundObligationId").path("format").asText()).isEqualTo("uuid");
+		assertThat(properties.path("status").path("enum").toString()).doesNotContain("COMPLETED");
+	}
+
+	@Test
 	void cleanupPreservesGeneratedOpenApiContract() throws Exception {
 		try (var input = getClass().getResourceAsStream("/cleanup/openapi-baseline.json")) {
 			assertThat(input).isNotNull();
