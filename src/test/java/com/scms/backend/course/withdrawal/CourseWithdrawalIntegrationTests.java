@@ -146,6 +146,122 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void withdrawalApisFollowRefundProgressWithoutChangingWithdrawalDecision() throws Exception {
+		var cancelled = withdrawals.createForMember(memberId, enrollmentId, "Earlier cancelled request");
+		withdrawals.cancelForMember(memberId, cancelled.id(), "Continue studying");
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Refund progress regression");
+		withdrawals.approve(managerId, request.id(), "Approve withdrawal");
+		UUID refundId = db.queryForObject("select id from course_refund_obligations where course_enrollment_id=? and source_type='MEMBER_WITHDRAWAL' and source_event_id is null", UUID.class, enrollmentId);
+		assertRefundProgress(request.id(), refundId, "PENDING_REVIEW");
+		var approved = refundAction(managerId, refundId, "approve", java.util.Map.of("expectedVersion", 0, "reason", "Approve refund"));
+		assertRefundProgress(request.id(), refundId, "APPROVED");
+		db.update("update course_runs set status='COMPLETED' where id=?", runId);
+		var recorded = refundAction(receptionistId, refundId, "disburse", java.util.Map.of("expectedVersion", approved.path("version").asLong(), "amountVnd", request.refundAmountVnd(), "method", "CASH", "reference", "QA-REFUND", "evidenceReference", "QA-EVIDENCE"));
+		assertRefundProgress(request.id(), refundId, "DISBURSEMENT_RECORDED");
+		refundAction(managerId, refundId, "verify", java.util.Map.of("expectedVersion", recorded.path("version").asLong(), "amountVnd", request.refundAmountVnd(), "disbursementReference", "QA-REFUND", "evidenceReference", "QA-EVIDENCE", "reason", "Evidence checked"));
+		assertRefundProgress(request.id(), refundId, "COMPLETED");
+		mockMvc.perform(get("/api/v1/members/me/course-withdrawal-requests/{id}", cancelled.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED"))
+			.andExpect(jsonPath("$.refundObligationId").value(org.hamcrest.Matchers.nullValue()))
+			.andExpect(jsonPath("$.refundStatus").value(org.hamcrest.Matchers.nullValue()));
+		mockMvc.perform(get("/api/v1/members/me/course-withdrawal-requests/{id}", request.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(otherMemberId))).andExpect(status().isNotFound());
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT" })
+	void refundProjectionSelectsOnlyWithdrawalSourceWithoutAnEvent(String cause) throws Exception {
+		var original = withdrawals.createForMember(memberId, enrollmentId, "Initial fixture");
+		withdrawals.cancelForMember(memberId, original.id(), "Replace fixture with schedule cause");
+		UUID requestId = UUID.randomUUID(), eventId = UUID.randomUUID();
+		db.update("""
+			insert into course_withdrawal_requests(id,course_enrollment_id,course_run_id,member_account_id,requester_account_id,
+			 status,request_reason,cause_code,snapshot_captured_at,total_units_snapshot,remaining_units_snapshot,
+			 refund_basis_vnd,refund_amount_vnd,withdrawal_eligible_snapshot,withdrawal_reason_snapshot,requested_at)
+			select ?,course_enrollment_id,course_run_id,member_account_id,requester_account_id,'PENDING',request_reason,?,
+			 snapshot_captured_at,total_units_snapshot,remaining_units_snapshot,refund_basis_vnd,refund_amount_vnd,
+			 withdrawal_eligible_snapshot,withdrawal_reason_snapshot,requested_at from course_withdrawal_requests where id=?
+			""", requestId, cause, original.id());
+		db.update("update course_enrollments set lifecycle_status='WITHDRAWAL_PENDING' where id=?", enrollmentId);
+		db.update("""
+			insert into course_schedule_change_events(id,course_run_id,cause_code,old_planned_start_at,old_planned_end_at,
+			 new_planned_start_at,new_planned_end_at,old_total_units,new_total_units)
+			select ?,id,'MEMBER_SCHEDULE_CONFLICT',planned_start_at,planned_end_at,planned_start_at,planned_end_at,10,10
+			from course_runs where id=?
+			""", eventId, runId);
+		String source = cause.equals("VOLUNTARY") ? "MEMBER_WITHDRAWAL" : "MATERIAL_CHANGE";
+		String otherSource = cause.equals("VOLUNTARY") ? "MATERIAL_CHANGE" : "MEMBER_WITHDRAWAL";
+		db.update("insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,amount_vnd) values(?,?,?,?,1)", UUID.randomUUID(), enrollmentId, runId, otherSource);
+		db.update("insert into course_refund_obligations(id,course_enrollment_id,course_run_id,source_type,source_event_id,amount_vnd) values(?,?,?,?,?,1)", UUID.randomUUID(), enrollmentId, runId, source, eventId);
+		withdrawals.approve(managerId, requestId, "Approve fixture withdrawal");
+		UUID refundId = db.queryForObject("select id from course_refund_obligations where course_enrollment_id=? and source_type=? and source_event_id is null", UUID.class, enrollmentId, source);
+		assertRefundProgress(requestId, refundId, "PENDING_REVIEW");
+		assertThat(withdrawals.detailForMember(memberId, original.id()).status()).isEqualTo("CANCELLED");
+	}
+
+	@Test
+	void approvedLegacyWithdrawalWithoutRefundReturnsExplicitNullProgress() throws Exception {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Legacy fixture without refund");
+		db.update("update course_withdrawal_requests set status='APPROVED',decided_by_account_id=?,decided_at=?,decision_reason='Legacy' where id=?", managerId, Timestamp.from(NOW), request.id());
+		String body = mockMvc.perform(get("/api/v1/members/me/course-withdrawal-requests/{id}", request.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(memberId))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+		assertThat(json.has("refundObligationId")).isTrue();
+		assertThat(json.path("refundObligationId").isNull()).isTrue();
+		assertThat(json.path("refundStatus").isNull()).isTrue();
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "REJECTED", "FAILED", "RETURNED", "PENDING_VERIFICATION" })
+	void withdrawalProjectionIncludesUnsuccessfulAndPendingRefundStates(String target) throws Exception {
+		var request = withdrawals.createForMember(memberId, enrollmentId, "Refund state " + target);
+		withdrawals.approve(managerId, request.id(), "Approve withdrawal");
+		UUID refundId = db.queryForObject("select id from course_refund_obligations where course_enrollment_id=?", UUID.class, enrollmentId);
+		if (target.equals("REJECTED")) {
+			refundAction(managerId, refundId, "reject", java.util.Map.of("expectedVersion", 0, "reason", "Reject refund"));
+		} else {
+			var approved = refundAction(managerId, refundId, "approve", java.util.Map.of("expectedVersion", 0, "reason", "Approve refund"));
+			if (target.equals("FAILED")) {
+				refundAction(managerId, refundId, "fail", java.util.Map.of("expectedVersion", approved.path("version").asLong(), "reason", "Cannot disburse"));
+			} else {
+				db.update("update course_runs set status='COMPLETED' where id=?", runId);
+				var recorded = refundAction(receptionistId, refundId, "disburse", java.util.Map.of("expectedVersion", approved.path("version").asLong(), "amountVnd", request.refundAmountVnd(), "method", "CASH", "reference", "QA-REFUND", "evidenceReference", "QA-EVIDENCE"));
+				if (target.equals("RETURNED")) refundAction(managerId, refundId, "return", java.util.Map.of("expectedVersion", recorded.path("version").asLong(), "reason", "Payment returned"));
+				else db.update("update course_refund_obligations set status='PENDING_VERIFICATION',version=version+1 where id=?", refundId);
+			}
+		}
+		assertRefundProgress(request.id(), refundId, target);
+	}
+
+	private com.fasterxml.jackson.databind.JsonNode refundAction(UUID actor, UUID refundId, String action, java.util.Map<String, Object> body) throws Exception {
+		var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+		String role = action.equals("disburse") ? "reception" : "manager";
+		String result = mockMvc.perform(post("/api/v1/" + role + "/course-refund-obligations/" + refundId + "/" + action).contextPath("/api/v1")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + token(actor)).header("Idempotency-Key", "refund-progress-" + refundId)
+			.contentType("application/json").content(mapper.writeValueAsString(body))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		return mapper.readTree(result);
+	}
+
+	private void assertRefundProgress(UUID requestId, UUID refundId, String refundStatus) throws Exception {
+		var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+		for (var entry : java.util.Map.of("/manager/course-withdrawal-requests", managerId, "/members/me/course-withdrawal-requests", memberId, "/reception/members/" + memberId + "/course-withdrawal-requests", receptionistId).entrySet()) {
+			for (boolean detail : new boolean[] { false, true }) {
+				String path = "/api/v1" + entry.getKey() + (detail ? "/" + requestId : "");
+				var response = mockMvc.perform(get(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(entry.getValue()))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+				var node = mapper.readTree(response);
+				if (!detail) {
+					var matches = new java.util.ArrayList<com.fasterxml.jackson.databind.JsonNode>();
+					node.forEach(row -> { if (requestId.toString().equals(row.path("id").asText())) matches.add(row); });
+					assertThat(matches).hasSize(1);
+					node = matches.getFirst();
+				}
+				assertThat(node.path("status").asText()).isEqualTo("APPROVED");
+				assertThat(node.path("refundObligationId").asText()).isEqualTo(refundId.toString());
+				assertThat(node.path("refundStatus").asText()).isEqualTo(refundStatus);
+				assertThat(node.has("evidenceReference") || node.has("disbursementReference")).isFalse();
+			}
+		}
+	}
+
+	@Test
 	void courseOnlyCheckInAndAttendancePersistThroughApiWithTimeAndAssignmentGuards() throws Exception {
 		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
 		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
@@ -255,6 +371,8 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(approved.remainingUnits()).isEqualTo(6);
 		assertThat(approved.refundBasisVnd()).isEqualTo(BigInteger.valueOf(600_000));
 		assertThat(approved.refundAmountVnd()).isZero();
+		assertThat(approved.refundObligationId()).isNotNull();
+		assertThat(approved.refundStatus()).isEqualTo("PENDING_REVIEW");
 		assertThat(db.queryForObject("select amount_vnd from course_refund_obligations where course_enrollment_id=? " + "and source_type='MEMBER_WITHDRAWAL'", java.math.BigDecimal.class, enrollmentId)).isEqualByComparingTo("0");
 	}
 
