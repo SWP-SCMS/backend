@@ -140,6 +140,18 @@ class CenterVisitService {
 	}
 
 	@Transactional(readOnly = true)
+	Optional<CenterVisitRepository.CourseAdmission> courseAdmission(UUID receptionistId, UUID memberId) {
+		ensureActiveReceptionist(receptionistId);
+		return visits.findCourseAdmission(memberId, clock.instant());
+	}
+
+	@Transactional(readOnly = true)
+	Optional<UUID> admissionSession(UUID receptionistId, UUID memberId) {
+		ensureActiveReceptionist(receptionistId);
+		return visits.findAdmissionSession(memberId, clock.instant());
+	}
+
+	@Transactional(readOnly = true)
 	CenterVisitPageResponse openVisits(UUID receptionistId, Pageable pageable) {
 		ensureActiveReceptionist(receptionistId);
 		var page = visits.findByCheckedOutAtIsNull(pageable);

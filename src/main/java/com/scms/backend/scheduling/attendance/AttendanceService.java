@@ -58,7 +58,10 @@ public class AttendanceService {
 		Instant now = clock.instant();
 		if (now.isBefore(s.getStartTime()))
 			throw AttendanceException.closed();
-		return bookings.findBookedAttendanceMembers(sid).stream().map(m -> attendance.findByBookingId(m.getBookingId()).map(a -> AttendanceResponse.from(a, m)).orElseGet(() -> new AttendanceResponse(null, m.getBookingId(), m.getMemberId(), m.getMemberCode(), m.getFullName(), AttendanceStatus.ABSENT, s.getStartTime(), null))).toList();
+		return bookings.findBookedAttendanceMembers(sid).stream().map(m -> {
+			boolean checkedIn = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).isPresent();
+			return attendance.findByBookingId(m.getBookingId()).map(a -> AttendanceResponse.from(a, m, checkedIn)).orElseGet(() -> new AttendanceResponse(null, m.getBookingId(), m.getMemberId(), m.getMemberCode(), m.getFullName(), AttendanceStatus.ABSENT, s.getStartTime(), null, checkedIn));
+		}).toList();
 	}
 
 	@Transactional
@@ -73,14 +76,12 @@ public class AttendanceService {
 		Attendance a = attendance.findById(aid).orElseThrow(AttendanceException::missing);
 		var members = bookings.findBookedAttendanceMembers(sid);
 		var m = members.stream().filter(x -> aid.equals(x.getAttendanceId())).findFirst().orElseThrow(AttendanceException::missing);
-		UUID visit = null;
-		if (req.status() == AttendanceStatus.PRESENT)
-			visit = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).orElseThrow(AttendanceException::visit);
+		UUID visit = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).orElseThrow(AttendanceException::visit);
 		AttendanceStatus before = a.getStatus();
-		a.mark(req.status(), visit, coach, now);
+		a.mark(req.status(), req.status() == AttendanceStatus.PRESENT ? visit : null, coach, now);
 		attendance.save(a);
 		audits.save(new AuditEvent(UUID.randomUUID(), coach, "ATTENDANCE_CHANGED", "Attendance", aid, "Coach changed attendance", Map.of("status", before.name()), Map.of("status", req.status().name())));
-		return AttendanceResponse.from(a, m);
+		return AttendanceResponse.from(a, m, true);
 	}
 
 	private ClassSession owned(UUID coach, UUID sid) {

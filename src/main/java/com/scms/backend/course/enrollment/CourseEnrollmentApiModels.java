@@ -28,7 +28,7 @@ public final class CourseEnrollmentApiModels {
 	}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
-	public record RosterEntry(UUID enrollmentSessionId, String memberCode, String fullName, String profileImageUrl, CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt, UUID memberAccountId) {
+	public record RosterEntry(UUID enrollmentSessionId, String memberCode, String fullName, String profileImageUrl, CourseAttendanceStatus attendanceStatus, Instant attendanceRecordedAt, UUID memberAccountId, boolean receptionistCheckedIn) {
 	}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)

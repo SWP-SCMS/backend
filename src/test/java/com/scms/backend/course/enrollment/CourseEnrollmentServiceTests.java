@@ -87,6 +87,17 @@ class CourseEnrollmentServiceTests {
 		verify(audits).save(any());
 	}
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.EnumSource(value = CourseAttendanceStatus.class, names = {"ABSENT", "PRESENT"})
+	void attendanceRequiresReceptionVisit(CourseAttendanceStatus status) {
+		var attendee = new java.util.HashMap<>(roster());
+		attendee.put("checked_in", false);
+		when(db.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(session(now, now.plusSeconds(3600))), List.of(attendee));
+		assertThatThrownBy(() -> service.updateAttendance(coach, session, row, new AttendanceUpdate(status)))
+			.isInstanceOf(com.scms.backend.scheduling.AttendanceException.class).extracting("code").isEqualTo("CENTER_VISIT_REQUIRED");
+		verify(db, never()).update(anyString(), any(Object[].class));
+	}
+
 	@Test
 	void exactEndPlusThirtyIsClosed() {
 		when(db.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(session(now.minusSeconds(5400), now.minusSeconds(1800))));
@@ -99,6 +110,6 @@ class CourseEnrollmentServiceTests {
 	}
 
 	private Map<String, Object> roster() {
-		return Map.of("id", row, "member_account_id", UUID.randomUUID(), "member_code", "MB-100001", "full_name", "Course Member", "attendance_status", "NOT_RECORDED");
+		return Map.of("id", row, "member_account_id", UUID.randomUUID(), "member_code", "MB-100001", "full_name", "Course Member", "checked_in", true, "attendance_status", "NOT_RECORDED");
 	}
 }
