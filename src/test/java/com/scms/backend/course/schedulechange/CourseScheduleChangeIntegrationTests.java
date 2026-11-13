@@ -506,6 +506,13 @@ class CourseScheduleChangeIntegrationTests {
 		when(clock.instant()).thenReturn(session.endAt().plusSeconds(1));
 		assertThat(coachSessions.detail(coachId, session.id()).attendanceWritable()).isTrue();
 		UUID enrollmentSession = db.queryForObject("select id from course_enrollment_sessions where course_run_id=?", UUID.class, runId);
+		UUID receptionistId = account(AccountRole.RECEPTIONIST, "Attendance Receptionist").getId();
+		db.update("""
+			insert into center_visits(id, member_account_id, checked_in_by_account_id, checked_in_at,
+				visit_source, course_enrollment_id, course_session_id)
+			select ?, ?, ?, ?, 'COURSE', course_enrollment_id, course_session_id
+			from course_enrollment_sessions where id=?
+			""", UUID.randomUUID(), memberId, receptionistId, java.sql.Timestamp.from(session.startAt()), enrollmentSession);
 		assertThat(members.updateAttendance(coachId, session.id(), enrollmentSession, new CourseEnrollmentApiModels.AttendanceUpdate(CourseAttendanceStatus.PRESENT)).attendanceStatus()).isEqualTo(CourseAttendanceStatus.PRESENT);
 	}
 

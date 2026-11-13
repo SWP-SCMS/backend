@@ -12425,6 +12425,95 @@
         }
       }
     },
+    "/reception/members/{memberAccountId}/center-visits/eligible-course": {
+      "get": {
+        "tags": [
+          "center-visit-controller"
+        ],
+        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
+        "operationId": "eligibleCourse",
+        "parameters": [
+          {
+            "name": "memberAccountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/reception/members/{memberAccountId}/center-visits/course-admission": {
+      "get": {
+        "tags": [
+          "center-visit-controller"
+        ],
+        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
+        "operationId": "courseAdmission",
+        "parameters": [
+          {
+            "name": "memberAccountId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseAdmission"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
     "/reception/members/search": {
       "get": {
         "tags": [
@@ -13321,6 +13410,19 @@
         "description": "Requires MEMBER role; resource ownership is limited to the authenticated member.",
         "operationId": "viewOwnHistory",
         "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "COURSE",
+                "CLASS",
+                "PT"
+              ]
+            }
+          },
           {
             "name": "page",
             "in": "query",
@@ -23478,6 +23580,9 @@
           "memberAccountId": {
             "type": "string",
             "format": "uuid"
+          },
+          "receptionistCheckedIn": {
+            "type": "boolean"
           }
         }
       },
@@ -23528,6 +23633,9 @@
           "centerVisitId": {
             "type": "string",
             "format": "uuid"
+          },
+          "receptionistCheckedIn": {
+            "type": "boolean"
           }
         }
       },
@@ -24229,6 +24337,28 @@
           }
         }
       },
+      "CourseAdmission": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "courseName": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "today": {
+            "type": "boolean"
+          }
+        }
+      },
       "ReceptionMemberSearchResponse": {
         "type": "object",
         "properties": {
@@ -24820,6 +24950,13 @@
           "courseSessionId": {
             "type": "string",
             "format": "uuid"
+          },
+          "runCode": {
+            "type": "string"
+          },
+          "unitNumber": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -26011,6 +26148,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "numberOfElements": {
+            "type": "integer",
+            "format": "int32"
+          },
           "size": {
             "type": "integer",
             "format": "int32"
@@ -26027,10 +26168,6 @@
           },
           "sort": {
             "$ref": "#/components/schemas/Sort"
-          },
-          "numberOfElements": {
-            "type": "integer",
-            "format": "int32"
           },
           "first": {
             "type": "boolean"
@@ -26059,9 +26196,6 @@
           "unpaged": {
             "type": "boolean"
           },
-          "paged": {
-            "type": "boolean"
-          },
           "pageNumber": {
             "type": "integer",
             "format": "int32"
@@ -26069,6 +26203,9 @@
           "pageSize": {
             "type": "integer",
             "format": "int32"
+          },
+          "paged": {
+            "type": "boolean"
           }
         }
       },
