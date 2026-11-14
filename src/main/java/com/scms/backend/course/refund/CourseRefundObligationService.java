@@ -105,9 +105,14 @@ public class CourseRefundObligationService {
 
 	@Transactional(readOnly = true)
 	ReceptionCourseRefundPage listForReceptionist(UUID receptionistId, int page, int size, Boolean eligible) {
+		return listForReceptionist(receptionistId, page, size, eligible, null);
+	}
+
+	@Transactional(readOnly = true)
+	ReceptionCourseRefundPage listForReceptionist(UUID receptionistId, int page, int size, Boolean eligible, String query) {
 		active(receptionistId, AccountRole.RECEPTIONIST, false);
 		page(page, size);
-		return receptionRefundPage(page, size, eligible);
+		return courseRefundObligationRepository.receptionRefundPage(page, size, eligible, CourseRefundValidation.search(query));
 	}
 
 	@Transactional(readOnly = true)
@@ -369,7 +374,4 @@ public class CourseRefundObligationService {
 
 	private final CourseRefundObligationRepository courseRefundObligationRepository;
 
-	private ReceptionCourseRefundPage receptionRefundPage(int page, int size, Boolean eligible) {
-		return courseRefundObligationRepository.receptionRefundPage(page, size, eligible);
-	}
 }

@@ -12407,6 +12407,16 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "description": "Case-insensitive partial member name, code or phone number.",
+            "required": false,
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
           }
         ],
         "responses": {

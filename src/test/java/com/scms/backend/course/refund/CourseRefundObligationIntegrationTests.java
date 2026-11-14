@@ -244,6 +244,21 @@ class CourseRefundObligationIntegrationTests {
 		UUID rejectedId = writer.create(enrollmentId, runId, CourseRefundSource.UNRESOLVED_SESSIONS, BigInteger.valueOf(40_000), managerId, "Unresolved sessions");
 		var immediate = refunds.approve(managerId, immediateId, 0L, "Approved immediate");
 		refunds.approve(managerId, deferredId, 0L, "Approved deferred");
+		String memberCode = db.queryForObject("select member_code from member_profiles where account_id=?", String.class, memberId);
+		String memberPhone = db.queryForObject("select phone from accounts where id=?", String.class, memberId);
+		for (String query : List.of("member REFUND", "  " + memberCode.toLowerCase(java.util.Locale.ROOT) + "  ", memberPhone)) {
+			mockMvc.perform(get("/api/v1/reception/course-refunds").param("query", query).param("size", "1").param("page", "1").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+				.andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(2))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalPages").value(2))
+				.andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.items.length()").value(1));
+		}
+		for (String query : List.of("no-such-member", "%", "' OR 1=1 --")) {
+			mockMvc.perform(get("/api/v1/reception/course-refunds").param("query", query).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+				.andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(0));
+		}
+		mockMvc.perform(get("/api/v1/reception/course-refunds").param("query", memberCode).param("eligible", "true").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId)))
+			.andExpect(status().isOk()).andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.totalElements").value(1));
+		mockMvc.perform(get("/api/v1/reception/course-refunds").param("query", "x".repeat(101)).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionistId))).andExpect(status().isBadRequest());
 		refunds.reject(managerId, rejectedId, 0L, "Rejected");
 		UUID first = List.of(immediateId, deferredId).stream().max(Comparator.comparing(UUID::toString)).orElseThrow();
 		UUID second = first.equals(immediateId) ? deferredId : immediateId;
