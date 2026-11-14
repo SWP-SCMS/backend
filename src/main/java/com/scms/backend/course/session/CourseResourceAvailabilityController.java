@@ -51,7 +51,7 @@ class CourseResourceAvailabilityController {
 	record Window(@NotNull Instant startAt, @NotNull Instant endAt) {
 	}
 
-	record Request(@NotEmpty @Size(max = 366) List<@NotNull @Valid Window> windows, @Positive int capacity, UUID excludeSessionId) {
+	record Request(@NotEmpty @Size(max = 366) List<@NotNull @Valid Window> windows, @Positive int capacity, UUID excludeSessionId, @Size(max = 366) List<@NotNull UUID> excludeSessionIds) {
 	}
 
 	record CoachOption(UUID accountId, String fullName) {
@@ -73,12 +73,15 @@ class CourseResourceAvailabilityController {
 			throw new com.scms.backend.auth.InvalidAuthenticatedAccountException();
 		if (request.windows().stream().anyMatch(w -> !w.startAt().isBefore(w.endAt())))
 			throw CourseException.validation("windows", "Giờ kết thúc phải sau giờ bắt đầu.");
-		if (request.excludeSessionId() != null && !sessions.existsById(request.excludeSessionId()))
+		Set<UUID> excluded = new java.util.LinkedHashSet<>();
+		if (request.excludeSessionId() != null) excluded.add(request.excludeSessionId());
+		if (request.excludeSessionIds() != null) excluded.addAll(request.excludeSessionIds());
+		if (!excluded.isEmpty() && sessions.findAllById(excluded).size() != excluded.size())
 			throw CourseException.invalidSession();
 		Instant start = request.windows().stream().map(Window::startAt).min(Comparator.naturalOrder()).orElseThrow();
 		Instant end = request.windows().stream().map(Window::endAt).max(Comparator.naturalOrder()).orElseThrow();
 		// Fetch occupied intervals once; only intervals overlapping actual requested windows block resources.
-		List<Occupied> occupied = courseResourceAvailabilityRepository.availableFindClassSessions(request.excludeSessionId(), Timestamp.from(end), Timestamp.from(start));
+		List<Occupied> occupied = courseResourceAvailabilityRepository.availableFindClassSessions(List.copyOf(excluded), Timestamp.from(end), Timestamp.from(start));
 		Set<UUID> busyCoaches = new HashSet<>();
 		Set<UUID> busyRooms = new HashSet<>();
 		for (Occupied item : occupied) {

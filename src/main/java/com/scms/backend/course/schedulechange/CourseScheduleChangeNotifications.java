@@ -42,7 +42,7 @@ final class CourseScheduleChangeNotifications {
 		boolean material = CourseScheduleChangePolicy.isMaterial(oldStart, oldEnd, newStart, newEnd);
 		Set<UUID> conflicts = conflictingEnrollmentSessions(session.getCourseRun().getId(), session.getId(), newStart, newEnd);
 		Instant deadline = material || !conflicts.isEmpty() ? CourseScheduleChangePolicy.deadline(sentAt, newStart) : null;
-		CourseWithdrawalCause cause = CourseWithdrawalCause.VOLUNTARY;
+		CourseWithdrawalCause cause = material && !session.isMakeup() ? CourseWithdrawalCause.CENTER_SESSION_RESCHEDULE : CourseWithdrawalCause.VOLUNTARY;
 		UUID eventId = UUID.randomUUID();
 		List<Map<String, Object>> members = courseScheduleChangeRepository.notifyRescheduleFindCourseEnrollmentSessions(session.getId());
 		if (deadline != null && !members.isEmpty() && !deadline.isAfter(sentAt))
@@ -80,12 +80,17 @@ final class CourseScheduleChangeNotifications {
 			throw CourseException.responseDeadline();
 		Set<UUID> conflicts = conflictingEnrollmentSessions(run.getId(), null, null, null);
 		courseScheduleChangeRepository.createRunScheduleResponsesUpdateCourseScheduleChangeResponses(run.getId());
+		Map<UUID, List<Map<String, Object>>> notices = new LinkedHashMap<>();
 		for (Map<String, Object> member : members) {
 			CourseWithdrawalCause memberCause = cause == CourseWithdrawalCause.VOLUNTARY && conflicts.contains(member.get("enrollment_session_id")) ? CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT : cause;
 			UUID responseId = UUID.randomUUID();
 			courseScheduleChangeRepository.createRunScheduleResponsesInsertCourseScheduleChangeResponses(responseId, member.get("enrollment_session_id"), member.get("start_at"), member.get("end_at"), member.get("start_at"), member.get("end_at"), Timestamp.from(sentAt), Timestamp.from(deadline), memberCause.name(), eventId);
-			notifications.write("COURSE_RUN_SCHEDULE_CHANGED:" + eventId + ":" + member.get("enrollment_session_id"), (UUID) member.get("member_account_id"), "COURSE_SCHEDULE_CHANGED", "COURSE_RUN", run.getId(), Map.of("recordId", responseId, "cause", memberCause.name(), "responseDeadline", deadline.toString()));
+			notices.computeIfAbsent((UUID) member.get("member_account_id"), ignored -> new ArrayList<>())
+				.add(Map.of("recordId", responseId, "cause", memberCause.name(), "responseDeadline", deadline.toString()));
 		}
+		for (var notice : notices.entrySet()) notifications.write("COURSE_RUN_SCHEDULE_CHANGED:" + eventId + ":" + notice.getKey(),
+			notice.getKey(), "COURSE_SCHEDULE_CHANGED", "COURSE_RUN", run.getId(),
+			Map.of("changeEventId", eventId, "changes", notice.getValue(), "responseDeadline", deadline.toString()));
 	}
 
 	List<AtomicResponse> prepareAtomicRunResponses(UUID runId, CourseWithdrawalCause cause, boolean runChanged, List<CourseRunRescheduleService.PlannedSession> plan, Instant now) {
@@ -96,8 +101,10 @@ final class CourseScheduleChangeNotifications {
 		Map<UUID, List<CourseRunRescheduleService.PlannedSession>> memberSessions = new LinkedHashMap<>();
 		for (var member : members) memberSessions.computeIfAbsent((UUID) member.get("member_account_id"), ignored -> new ArrayList<>()).add(byId.get(member.get("course_session_id")));
 		List<AtomicResponse> responses = new ArrayList<>();
+		// Synchronizing the Run window after moving sessions must not label unchanged sessions as changed.
+		boolean notifyWholeRun = runChanged && (cause == CourseWithdrawalCause.REDUCED_UNIT_COUNT || plan.stream().noneMatch(CourseRunRescheduleService.PlannedSession::changed));
 		for (var item : plan) {
-			if ((!runChanged && !item.changed()) || !item.startAt().isAfter(now))
+			if ((!notifyWholeRun && !item.changed()) || !item.startAt().isAfter(now))
 				continue;
 			Set<UUID> conflicts = item.removed() ? Set.of() : conflictingEnrollmentSessions(runId, item.session().getId(), item.startAt(), item.endAt(), true);
 			for (var member : membersBySession.getOrDefault(item.session().getId(), List.of())) {
@@ -107,8 +114,13 @@ final class CourseScheduleChangeNotifications {
 						if (other != item && !other.removed() && CourseRunRescheduleService.active(other.session()) && CourseRunRescheduleService.overlaps(item, other))
 							conflict = true;
 					}
-				CourseWithdrawalCause memberCause = cause == CourseWithdrawalCause.VOLUNTARY && conflict ? CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT : cause;
-				boolean responseRequired = runChanged || conflict || item.removed() || CourseScheduleChangePolicy.isMaterial(item.session().getStartAt(), item.session().getEndAt(), item.startAt(), item.endAt());
+				boolean material = CourseScheduleChangePolicy.isMaterial(item.session().getStartAt(), item.session().getEndAt(), item.startAt(), item.endAt());
+				CourseWithdrawalCause memberCause = cause;
+				if (cause == CourseWithdrawalCause.VOLUNTARY) {
+					if (conflict) memberCause = CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT;
+					else if (material && !item.session().isMakeup()) memberCause = CourseWithdrawalCause.CENTER_SESSION_RESCHEDULE;
+				}
+				boolean responseRequired = runChanged || conflict || item.removed() || material;
 				responses.add(new AtomicResponse((UUID) member.get("enrollment_session_id"), (UUID) member.get("member_account_id"), item.session().getId(), item.session().getStartAt(), item.session().getEndAt(), item.startAt(), item.endAt(), memberCause, responseRequired ? UUID.randomUUID() : null, null));
 			}
 		}
@@ -122,9 +134,10 @@ final class CourseScheduleChangeNotifications {
 	void writeAtomicRunResponses(UUID eventId, CourseRun run, List<AtomicResponse> responses, Instant now) {
 		Map<UUID, List<Map<String, Object>>> notices = new LinkedHashMap<>();
 		for (var r : responses) {
-			courseScheduleChangeRepository.writeAtomicRunResponsesUpdateCourseScheduleChangeResponses(r.enrollmentSessionId());
-			if (r.responseId() != null)
+			if (r.responseId() != null) {
+				courseScheduleChangeRepository.writeAtomicRunResponsesUpdateCourseScheduleChangeResponses(r.enrollmentSessionId());
 				courseScheduleChangeRepository.writeAtomicRunResponsesInsertCourseScheduleChangeResponses(r.responseId(), r.enrollmentSessionId(), timestamp(r.oldStart()), timestamp(r.oldEnd()), timestamp(r.newStart()), timestamp(r.newEnd()), timestamp(now), timestamp(r.deadline()), r.cause().name(), eventId);
+			}
 			Map<String, Object> change = new LinkedHashMap<>();
 			change.put("courseSessionId", r.sessionId());
 			change.put("recordId", r.responseId());

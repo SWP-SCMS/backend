@@ -118,7 +118,7 @@ paths:
       - course-reconciliation-controller
       description: Active Manager/Reception only. Course payments awaiting reconciliation;
         expired reservations are never revived.
-      operationId: queue_2
+      operationId: queue_1
       parameters:
       - name: status
         in: query

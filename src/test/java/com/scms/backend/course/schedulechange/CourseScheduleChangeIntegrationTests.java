@@ -462,7 +462,7 @@ class CourseScheduleChangeIntegrationTests {
 		var affected = members.scheduleChanges(memberId).stream().filter(change -> change.newStartAt().equals(movedStart)).findFirst().orElseThrow();
 		var unaffectedResponse = members.scheduleChanges(unaffected.getId()).stream().filter(change -> change.newStartAt().equals(movedStart)).findFirst().orElseThrow();
 		assertThat(affected.cause()).isEqualTo(CourseWithdrawalCause.MEMBER_SCHEDULE_CONFLICT);
-		assertThat(unaffectedResponse.cause()).isEqualTo(CourseWithdrawalCause.VOLUNTARY);
+		assertThat(unaffectedResponse.cause()).isEqualTo(CourseWithdrawalCause.CENTER_SESSION_RESCHEDULE);
 		assertThat(unaffectedResponse.cause()).isNotEqualTo(CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
 	}
 
@@ -632,9 +632,26 @@ class CourseScheduleChangeIntegrationTests {
 		var result = reschedules.reschedule(managerId, runId, "swap", request);
 		assertThat(result.sessions().stream().filter(s -> s.id().equals(session.id())).findFirst().orElseThrow().startAt()).isEqualTo(second.startAt());
 		assertThat(result.sessions().stream().filter(s -> s.id().equals(second.id())).findFirst().orElseThrow().startAt()).isEqualTo(session.startAt());
-		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList()).hasSize(2).allSatisfy(r -> assertThat(r.cause()).isEqualTo(CourseWithdrawalCause.VOLUNTARY));
+		assertThat(members.scheduleChanges(memberId).stream().filter(r -> result.changeEventId().equals(r.changeEventId())).toList()).hasSize(2).allSatisfy(r -> assertThat(r.cause()).isEqualTo(CourseWithdrawalCause.CENTER_SESSION_RESCHEDULE));
 		assertThat(db.queryForObject("select count(*) from notification_outbox where target_id=? and notification_type='COURSE_SCHEDULE_CHANGED'", Long.class, runId)).isOne();
 		assertThat(db.queryForObject("select count(*) from audit_events where target_id=? and action='COURSE_RUN_RESCHEDULED'", Long.class, runId)).isOne();
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "CONTINUE", "REQUEST_WITHDRAWAL" })
+	void eventResponseAppliesToBothChangedUnitsAndReplayThroughSiblingDoesNotDuplicate(String choice) {
+		var second = secondEnrolledSession();
+		var result = reschedules.reschedule(managerId, runId, "batch-response", atomicRequest(java.util.List.of(
+			atomicChange(session, second.startAt()), atomicChange(second, session.startAt()))));
+		var pending = members.scheduleChanges(memberId).stream().filter(row -> result.changeEventId().equals(row.changeEventId())).toList();
+		assertThat(pending).hasSize(2);
+		members.respondToScheduleChange(memberId, pending.getFirst().id(), new CourseScheduleChangeApiModels.ScheduleChangeResponse(choice));
+		members.respondToScheduleChange(memberId, pending.getLast().id(), new CourseScheduleChangeApiModels.ScheduleChangeResponse(choice));
+		assertThat(members.scheduleChanges(memberId).stream().filter(row -> result.changeEventId().equals(row.changeEventId())).toList())
+			.hasSize(2).allSatisfy(row -> { assertThat(row.response()).isEqualTo(choice); assertThat(row.status()).isEqualTo("RESPONDED"); });
+		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SCHEDULE_CHANGE_RESPONDED' and target_id in (?,?)", Long.class, pending.getFirst().id(), pending.getLast().id())).isOne();
+		assertThat(db.queryForObject("select count(*) from course_withdrawal_requests where change_event_id=?", Long.class, result.changeEventId()))
+			.isEqualTo(choice.equals("REQUEST_WITHDRAWAL") ? 1L : 0L);
 	}
 
 	@Test

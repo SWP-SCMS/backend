@@ -58,7 +58,7 @@ class CourseOrderMigrationV52Tests {
 		upgraded.migrate();
 		upgraded.validate();
 		assertThat(db.queryForObject("select count(*) from course_runs where id=?", Long.class, fixture.runId())).isOne();
-		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 		assertThat(db.queryForObject("select count(*) from course_orders", Long.class)).isZero();
 	}
 

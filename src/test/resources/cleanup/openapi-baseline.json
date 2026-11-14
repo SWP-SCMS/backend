@@ -1667,72 +1667,6 @@
         }
       }
     },
-    "/reception/members/{memberId}/course-transfer-offers/{offerId}/accept": {
-      "post": {
-        "tags": [
-          "course-reception-actions-controller"
-        ],
-        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
-        "operationId": "acceptTransfer",
-        "parameters": [
-          {
-            "name": "memberId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "offerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "maxLength": 100,
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransferOffer"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
     "/reception/members/{memberId}/course-schedule-changes/{responseId}/response": {
       "post": {
         "tags": [
@@ -3765,63 +3699,6 @@
               "*/*": {
                 "schema": {
                   "$ref": "#/components/schemas/WithdrawalRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
-    "/members/me/course-transfer-offers/{offerId}/accept": {
-      "post": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MEMBER role; resource ownership is limited to the authenticated member.",
-        "operationId": "accept",
-        "parameters": [
-          {
-            "name": "offerId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "maxLength": 100,
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransferOffer"
                 }
               }
             }
@@ -6128,120 +6005,6 @@
         }
       }
     },
-    "/manager/course-transfer-requests/{requestId}/reject": {
-      "post": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MANAGER role.",
-        "operationId": "reject_5",
-        "parameters": [
-          {
-            "name": "requestId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RejectTransfer"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransferRequest"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
-    "/manager/course-transfer-requests/{requestId}/approve": {
-      "post": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MANAGER role.",
-        "operationId": "approve_4",
-        "parameters": [
-          {
-            "name": "requestId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApproveTransfer"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "$ref": "#/components/schemas/TransferOffer"
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          }
-        }
-      }
-    },
     "/manager/course-runs": {
       "get": {
         "tags": [
@@ -7066,7 +6829,7 @@
           "course-refund-obligation-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "reject_6",
+        "operationId": "reject_5",
         "parameters": [
           {
             "name": "obligationId",
@@ -7179,7 +6942,7 @@
           "course-refund-obligation-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "approve_5",
+        "operationId": "approve_4",
         "parameters": [
           {
             "name": "obligationId",
@@ -7236,7 +6999,7 @@
           "course-approval-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "reject_7",
+        "operationId": "reject_6",
         "parameters": [
           {
             "name": "courseId",
@@ -7293,7 +7056,7 @@
           "course-approval-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "approve_6",
+        "operationId": "approve_5",
         "parameters": [
           {
             "name": "courseId",
@@ -7779,7 +7542,7 @@
           "course-waitlist-controller"
         ],
         "description": "Requires an authenticated account; access is role- and ownership-scoped.",
-        "operationId": "accept_1",
+        "operationId": "accept",
         "parameters": [
           {
             "name": "waitlistId",
@@ -11020,7 +10783,7 @@
           "coach-leave-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "reject_8",
+        "operationId": "reject_7",
         "parameters": [
           {
             "name": "requestId",
@@ -11076,7 +10839,7 @@
           "coach-leave-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "approve_7",
+        "operationId": "approve_6",
         "parameters": [
           {
             "name": "requestId",
@@ -11916,53 +11679,6 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/CourseWaitlistResponse"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
-    "/reception/members/{memberId}/course-transfer-offers": {
-      "get": {
-        "tags": [
-          "course-reception-actions-controller"
-        ],
-        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
-        "operationId": "offers",
-        "parameters": [
-          {
-            "name": "memberId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TransferOffer"
                   }
                 }
               }
@@ -13761,39 +13477,6 @@
         }
       }
     },
-    "/members/me/course-transfer-offers": {
-      "get": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MEMBER role; resource ownership is limited to the authenticated member.",
-        "operationId": "offers_1",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TransferOffer"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
     "/members/me/course-schedule-changes": {
       "get": {
         "tags": [
@@ -15523,86 +15206,6 @@
         }
       }
     },
-    "/manager/course-transfer-requests": {
-      "get": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MANAGER role.",
-        "operationId": "queue",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TransferRequest"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/manager/course-transfer-requests/{requestId}/targets": {
-      "get": {
-        "tags": [
-          "course-transfer-controller"
-        ],
-        "description": "Requires MANAGER role.",
-        "operationId": "targets",
-        "parameters": [
-          {
-            "name": "requestId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "*/*": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TransferTarget"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          }
-        }
-      }
-    },
     "/manager/course-runs/{runId}/cancellation-impact": {
       "get": {
         "tags": [
@@ -15758,7 +15361,7 @@
           "course-approval-controller"
         ],
         "description": "Requires MANAGER role.",
-        "operationId": "queue_1",
+        "operationId": "queue",
         "parameters": [
           {
             "name": "page",
@@ -16773,7 +16376,7 @@
           "course-reconciliation-controller"
         ],
         "description": "Active Manager/Reception only. Course payments awaiting reconciliation; expired reservations are never revived.",
-        "operationId": "queue_2",
+        "operationId": "queue_1",
         "parameters": [
           {
             "name": "status",
@@ -18756,7 +18359,8 @@
               "VOLUNTARY",
               "START_DELAY_OVER_7_DAYS",
               "MEMBER_SCHEDULE_CONFLICT",
-              "REDUCED_UNIT_COUNT"
+              "REDUCED_UNIT_COUNT",
+              "CENTER_SESSION_RESCHEDULE"
             ]
           },
           "withdrawalEligible": {
@@ -19070,101 +18674,6 @@
           "status"
         ]
       },
-      "TransferOffer": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceEnrollmentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceRunId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "targetRunId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "memberAccountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "creditVnd": {
-            "type": "integer"
-          },
-          "targetTuitionVnd": {
-            "type": "integer"
-          },
-          "differenceVnd": {
-            "type": "integer"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string"
-          },
-          "differenceOrderId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "acceptedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "memberId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "memberCode": {
-            "type": "string"
-          },
-          "memberName": {
-            "type": "string"
-          },
-          "sourceCourseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceCourseCode": {
-            "type": "string"
-          },
-          "sourceCourseName": {
-            "type": "string"
-          },
-          "sourceRunCode": {
-            "type": "string"
-          },
-          "sourceCourseRunStatus": {
-            "type": "string"
-          },
-          "targetCourseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "targetCourseCode": {
-            "type": "string"
-          },
-          "targetCourseName": {
-            "type": "string"
-          },
-          "targetRunCode": {
-            "type": "string"
-          },
-          "targetCourseRunStatus": {
-            "type": "string"
-          }
-        }
-      },
       "ScheduleChangeResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -19173,8 +18682,7 @@
             "type": "string",
             "enum": [
               "CONTINUE",
-              "REQUEST_WITHDRAWAL",
-              "REQUEST_TRANSFER"
+              "REQUEST_WITHDRAWAL"
             ]
           }
         }
@@ -19235,7 +18743,8 @@
               "VOLUNTARY",
               "START_DELAY_OVER_7_DAYS",
               "MEMBER_SCHEDULE_CONFLICT",
-              "REDUCED_UNIT_COUNT"
+              "REDUCED_UNIT_COUNT",
+              "CENTER_SESSION_RESCHEDULE"
             ]
           },
           "withdrawalRequestId": {
@@ -21136,115 +20645,6 @@
         "type": "object",
         "properties": {
           "imageUrl": {
-            "type": "string"
-          }
-        }
-      },
-      "RejectTransfer": {
-        "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "TransferRequest": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "scheduleChangeResponseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceEnrollmentId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceRunId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "memberAccountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "targetRunId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "requestedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "decidedByAccountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "decidedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "memberId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "memberCode": {
-            "type": "string"
-          },
-          "memberName": {
-            "type": "string"
-          },
-          "sourceCourseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "sourceCourseCode": {
-            "type": "string"
-          },
-          "sourceCourseName": {
-            "type": "string"
-          },
-          "sourceRunCode": {
-            "type": "string"
-          },
-          "sourceCourseRunStatus": {
-            "type": "string"
-          },
-          "targetCourseId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "targetCourseCode": {
-            "type": "string"
-          },
-          "targetCourseName": {
-            "type": "string"
-          },
-          "targetRunCode": {
-            "type": "string"
-          },
-          "targetCourseRunStatus": {
-            "type": "string"
-          }
-        }
-      },
-      "ApproveTransfer": {
-        "type": "object",
-        "properties": {
-          "targetRunId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reason": {
             "type": "string"
           }
         }
@@ -24355,10 +23755,6 @@
       "CourseAdmission": {
         "type": "object",
         "properties": {
-          "sessionId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "eligible": {
             "type": "boolean"
           },
@@ -24371,6 +23767,10 @@
           },
           "today": {
             "type": "boolean"
+          },
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -26005,43 +25405,6 @@
           }
         }
       },
-      "TransferTarget": {
-        "type": "object",
-        "properties": {
-          "runId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "runCode": {
-            "type": "string"
-          },
-          "courseCode": {
-            "type": "string"
-          },
-          "courseName": {
-            "type": "string"
-          },
-          "tuitionVnd": {
-            "type": "integer"
-          },
-          "capacity": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "usedSeats": {
-            "type": "integer",
-            "format": "int64"
-          },
-          "registrationClosesAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "nextSessionAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "CourseRunPageResponse": {
         "type": "object",
         "properties": {
@@ -26155,17 +25518,13 @@
       "PageCoachLeaveResponse": {
         "type": "object",
         "properties": {
-          "totalElements": {
-            "type": "integer",
-            "format": "int64"
-          },
           "totalPages": {
             "type": "integer",
             "format": "int32"
           },
-          "numberOfElements": {
+          "totalElements": {
             "type": "integer",
-            "format": "int32"
+            "format": "int64"
           },
           "size": {
             "type": "integer",
@@ -26184,14 +25543,18 @@
           "sort": {
             "$ref": "#/components/schemas/Sort"
           },
+          "numberOfElements": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pageable": {
+            "$ref": "#/components/schemas/Pageable"
+          },
           "first": {
             "type": "boolean"
           },
           "last": {
             "type": "boolean"
-          },
-          "pageable": {
-            "$ref": "#/components/schemas/Pageable"
           },
           "empty": {
             "type": "boolean"
@@ -26230,10 +25593,10 @@
           "empty": {
             "type": "boolean"
           },
-          "sorted": {
+          "unsorted": {
             "type": "boolean"
           },
-          "unsorted": {
+          "sorted": {
             "type": "boolean"
           }
         }

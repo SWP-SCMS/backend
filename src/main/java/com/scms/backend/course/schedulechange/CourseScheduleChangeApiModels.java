@@ -20,6 +20,6 @@ public final class CourseScheduleChangeApiModels {
 	}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
-	public record ScheduleChangeResponse(@Schema(allowableValues = { "CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER" }) String response) {
+	public record ScheduleChangeResponse(@Schema(allowableValues = { "CONTINUE", "REQUEST_WITHDRAWAL" }) String response) {
 	}
 }

@@ -34,7 +34,7 @@ class CourseApprovalMigrationV66Tests {
 		Flyway upgraded = flyway(null);
 		upgraded.migrate();
 		upgraded.validate();
-		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 		assertThat(db.queryForObject("select name from courses where id=?", String.class, courseId)).isEqualTo("Legacy course");
 		assertThat(db.queryForObject("select submitted_by_account_id is null and reviewed_by_account_id is null " + "from courses where id=?", Boolean.class, courseId)).isTrue();
 		assertThat(indexDefinition(db, "idx_courses_pending_approval")).contains("submitted_at", "WHERE ((status)::text = 'PENDING_APPROVAL'::text)");

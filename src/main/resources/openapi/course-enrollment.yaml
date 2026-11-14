@@ -160,7 +160,7 @@ components:
       type: object
       additionalProperties: false
       required: [response]
-      properties: {response: {type: string, enum: [CONTINUE, REQUEST_WITHDRAWAL, REQUEST_TRANSFER]}}
+      properties: {response: {type: string, enum: [CONTINUE, REQUEST_WITHDRAWAL]}}
     ScheduleChange:
       type: object
       additionalProperties: false
@@ -179,7 +179,7 @@ components:
         response: {type: [string, 'null'], enum: [CONTINUE, REQUEST_WITHDRAWAL, REQUEST_TRANSFER, null]}
         respondedAt: {type: [string, 'null'], format: date-time}
         changeEventId: {type: [string, 'null'], format: uuid}
-        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT]}
+        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT, CENTER_SESSION_RESCHEDULE]}
         withdrawalRequestId: {type: [string, 'null'], format: uuid}
         withdrawalEligible: {type: boolean}
         withdrawalReason: {type: [string, 'null']}

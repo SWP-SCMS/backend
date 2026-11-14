@@ -42,7 +42,7 @@ class AuthorizationSnapshotTests {
 			assertThat(stream).isNotNull();
 			json.readTree(stream).path("paths").properties().forEach(path -> path.getValue().properties().stream().filter(method -> List.of("get", "post", "put", "patch", "delete", "head", "options").contains(method.getKey())).forEach(method -> operations.add(method.getKey().toUpperCase() + " " + path.getKey())));
 		}
-		assertThat(operations).hasSize(332);
+		assertThat(operations).hasSize(324);
 		operations.add("OPTIONS /cleanup-unmapped");
 		operations.add("GET /cleanup-unmapped");
 		var authorization = chain.getFilters().stream().filter(AuthorizationFilter.class::isInstance).map(AuthorizationFilter.class::cast).findFirst().orElseThrow().getAuthorizationManager();
@@ -58,7 +58,7 @@ class AuthorizationSnapshotTests {
 				decisions.put(operation + "|" + role, authorization.authorize(() -> actor, request).isGranted());
 			}
 		}
-		assertThat(decisions).hasSize(2004);
+		assertThat(decisions).hasSize(1956);
 		try (var input = getClass().getResourceAsStream("/cleanup/authorization-baseline.json")) {
 			assertThat(input).isNotNull();
 			com.fasterxml.jackson.databind.JsonNode actual = json.valueToTree(decisions);

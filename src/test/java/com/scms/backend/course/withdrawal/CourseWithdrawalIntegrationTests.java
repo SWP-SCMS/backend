@@ -168,7 +168,7 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@org.junit.jupiter.params.ParameterizedTest
-	@org.junit.jupiter.params.provider.ValueSource(strings = { "VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT" })
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT", "CENTER_SESSION_RESCHEDULE" })
 	void refundProjectionSelectsOnlyWithdrawalSourceWithoutAnEvent(String cause) throws Exception {
 		var original = withdrawals.createForMember(memberId, enrollmentId, "Initial fixture");
 		withdrawals.cancelForMember(memberId, original.id(), "Replace fixture with schedule cause");
