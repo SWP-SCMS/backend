@@ -172,6 +172,9 @@ class CourseScheduleChangeIntegrationTests {
 		seedEnrollment(memberId, paidAmount);
 		CourseSessionResponse changed = managers.patchSession(managerId, runId, session.id(), new CourseSessionPatchRequest(session.version(), null, null, startAt.plusSeconds(7200), startAt.plusSeconds(10800)));
 		session = changed;
+		// Keep a broad fixture window for tests that add units or exercise batch moves.
+		// Individual reschedules now synchronize the Run window to effective sessions.
+		db.update("update course_runs set planned_start_at=?,planned_end_at=? where id=?", java.sql.Timestamp.from(run.plannedStartAt()), java.sql.Timestamp.from(run.plannedEndAt()), runId);
 		responseId = db.queryForObject("select id from course_schedule_change_responses where enrollment_session_id in " + "(select id from course_enrollment_sessions where course_session_id=?)", UUID.class, session.id());
 	}
 
@@ -534,7 +537,7 @@ class CourseScheduleChangeIntegrationTests {
 		Instant start = Instant.parse("2035-01-01T02:00:00Z").plusSeconds((day - 1L) * 86400);
 		var makeup = disruptions.scheduleMakeup(managerId, runId, session.id(), new CourseMakeupRequest(cancelled.version(), session.roomId(), coachId, start, start.plusSeconds(3600)));
 		if (day == 10) {
-			disruptions.advance(session.endAt().plusSeconds(1));
+			disruptions.advance(makeup.makeupSession().startAt().plusSeconds(1));
 			assertThat(db.queryForObject("select status from course_runs where id=?", String.class, runId)).isEqualTo("IN_PROGRESS");
 		}
 		disruptions.advance(makeup.makeupSession().endAt());
