@@ -34,7 +34,7 @@ final class CourseRefundObligationRepository {
 	String receptionSelect() {
 		return """
 			select queue.*,queue.disbursement_eligibility_reason='ELIGIBLE' disbursement_eligible from (
-			 select refund.id refund_id,refund.member_account_id member_id,profile.member_code,member.full_name member_name,
+			 select refund.id refund_id,refund.member_account_id member_id,profile.member_code,member.full_name member_name,member.phone member_phone,
 			  course.id course_id,course.code course_code,course.name course_name,refund.course_run_id,run.run_code,
 			  run.status course_run_status,refund.source_type source,refund.amount_vnd amount,refund.approved_at,
 			  refund.version,
@@ -69,11 +69,14 @@ final class CourseRefundObligationRepository {
 		return value == null ? null : value.toInstant();
 	}
 
-	ReceptionCourseRefundPage receptionRefundPage(int page, int size, Boolean eligible) {
+	ReceptionCourseRefundPage receptionRefundPage(int page, int size, Boolean eligible, String query) {
 		String source = receptionSelect();
-		String filter = " where status='APPROVED' and (cast(? as boolean) is null or disbursement_eligible=?)";
-		long total = db.queryForObject("select count(*) from (" + source + ") refunds" + filter, Long.class, eligible, eligible);
-		List<ReceptionCourseRefund> items = db.query("select * from (" + source + ") refunds" + filter + " order by approved_at desc,refund_id desc limit ? offset ?", this::mapReception, eligible, eligible, size, (long) page * size);
+		String phone = CourseRefundValidation.phoneSearch(query);
+		String filter = " where status='APPROVED' and (cast(? as boolean) is null or disbursement_eligible=?)"
+			+ " and (cast(? as text) is null or strpos(lower(concat_ws(' ',member_name,member_code)),lower(cast(? as text)))>0"
+			+ " or (cast(? as text) is not null and strpos(regexp_replace(coalesce(member_phone,''),'[^0-9]','','g'),cast(? as text))>0))";
+		long total = db.queryForObject("select count(*) from (" + source + ") refunds" + filter, Long.class, eligible, eligible, query, query, phone, phone);
+		List<ReceptionCourseRefund> items = db.query("select * from (" + source + ") refunds" + filter + " order by approved_at desc,refund_id desc limit ? offset ?", this::mapReception, eligible, eligible, query, query, phone, phone, size, (long) page * size);
 		return new ReceptionCourseRefundPage(items, page, size, total, (int) ((total + size - 1) / size));
 	}
 

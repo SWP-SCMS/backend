@@ -10,6 +10,22 @@ import java.util.Set;
 
 final class CourseRefundValidation {
 
+	static String phoneSearch(String value) {
+		if (value == null || !value.matches("[+0-9\\s().-]+")) return null;
+		String digits = value.replaceAll("[^0-9]", "");
+		if (digits.length() < 3) return null;
+		if (digits.length() == 11 && digits.startsWith("84")) return digits.substring(2);
+		if (digits.length() == 10 && digits.startsWith("0")) return digits.substring(1);
+		return digits;
+	}
+
+	static String search(String value) {
+		if (value == null || value.isBlank()) return null;
+		String query = value.strip();
+		if (query.length() > 100) throw CourseRefundException.invalid("Search must be at most 100 characters.");
+		return query;
+	}
+
 	static String reason(String value) {
 		if (value == null || value.isBlank() || value.trim().length() > 1000)
 			throw CourseRefundException.invalid("A non-blank reason of at most 1000 characters is required.");
