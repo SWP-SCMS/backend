@@ -27,7 +27,7 @@ class CourseWithdrawalMigrationV62Tests {
 		Flyway upgraded = flyway(null);
 		upgraded.migrate();
 		upgraded.validate();
-		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 		assertThat(db().queryForObject("select to_regclass('course_withdrawal_requests') is not null", Boolean.class)).isTrue();
 		assertThat(db().queryForObject("select pg_get_constraintdef(oid) from pg_constraint " + "where conname='chk_course_refund_obligations_source'", String.class)).contains("MEMBER_WITHDRAWAL");
 		assertThat(db().queryForObject("select indexdef from pg_indexes where indexname='uq_course_enrollments_member_run_active'", String.class)).contains("WITHDRAWAL_PENDING");

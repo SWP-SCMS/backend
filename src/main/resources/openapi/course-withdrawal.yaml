@@ -133,7 +133,7 @@ components:
         runCode: {type: string}
         courseRunStatus: {type: string}
         estimatedRefundAmount: {type: [integer, 'null']}
-        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT]}
+        cause: {type: string, enum: [VOLUNTARY, START_DELAY_OVER_7_DAYS, MEMBER_SCHEDULE_CONFLICT, REDUCED_UNIT_COUNT, CENTER_SESSION_RESCHEDULE]}
         withdrawalEligible: {type: boolean}
         withdrawalReason: {type: string}
         refundBasisVnd: {type: [integer, 'null']}

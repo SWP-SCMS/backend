@@ -73,7 +73,7 @@ public class CourseSessionService {
 			throw CourseException.invalidSession();
 		Account coach = accounts.findById(coachId).orElseThrow(CourseException::resourceConflict);
 		Room room = rooms.findById(roomId).orElseThrow(CourseException::resourceConflict);
-		validateResources(run, coach, room, startAt, endAt, null);
+		validateResources(run, coach, room, startAt, endAt, null, !makeup);
 		CourseSession session = new CourseSession(UUID.randomUUID(), run, unitNumber, room, coach, startAt, endAt, allocationVnd);
 		if (makeup)
 			session.scheduleMakeup();
@@ -97,7 +97,7 @@ public class CourseSessionService {
 		UUID requestedCoachId = coachId == null ? currentCoachId : coachId;
 		resourceLocks.lock(List.of(currentCoachId, requestedCoachId), List.of(currentRoomId, requestedRoomId));
 		UUID runId = sessions.findCourseRunIdById(sessionId).orElseThrow(CourseException::invalidSession);
-		runs.findByIdForUpdate(runId).orElseThrow(CourseException::invalidSession);
+		CourseRun run = runs.findByIdForUpdate(runId).orElseThrow(CourseException::invalidSession);
 		CourseSession session = sessions.findByIdForUpdate(sessionId).orElseThrow(CourseException::invalidSession);
 		if (expectedVersion != null && !expectedVersion.equals(session.getVersion())) {
 			throw CourseException.sessionChanged();
@@ -107,22 +107,56 @@ public class CourseSessionService {
 		}
 		Room room = rooms.findById(requestedRoomId).orElseThrow(CourseException::resourceConflict);
 		Account coach = accounts.findById(requestedCoachId).orElseThrow(CourseException::resourceConflict);
-		validateResources(session.getCourseRun(), coach, room, startAt, endAt, sessionId);
+		validateResources(session.getCourseRun(), coach, room, startAt, endAt, sessionId, false);
 		if (session.getStatus() != CourseSessionStatus.SCHEDULED && session.getStatus() != CourseSessionStatus.MAKEUP_SCHEDULED) {
 			throw CourseException.invalidSession();
+		}
+		boolean timeChanged = !startAt.equals(session.getStartAt()) || !endAt.equals(session.getEndAt());
+		Instant runStart = startAt, runEnd = endAt;
+		if (timeChanged) {
+			// Use actual dates, not unit numbers; a moved middle unit can become the first/last.
+			for (CourseSession other : sessions.findByCourseRunIdOrderByStartAtAscIdAsc(runId)) {
+				if (other.getId().equals(sessionId) || other.getReplacementSession() != null
+					|| !List.of(CourseSessionStatus.SCHEDULED, CourseSessionStatus.MAKEUP_SCHEDULED, CourseSessionStatus.COMPLETED).contains(other.getStatus()))
+					continue;
+				if (other.getStartAt().isBefore(runStart)) runStart = other.getStartAt();
+				if (other.getEndAt().isAfter(runEnd)) runEnd = other.getEndAt();
+			}
+			if (run.getRegistrationClosesAt() != null && runStart.isBefore(run.getRegistrationClosesAt()))
+				throw CourseException.validation("startAt", "must not precede registration closing");
 		}
 		scheduleChanges.notifyReschedule(session, session.getStartAt(), session.getEndAt(), startAt, endAt);
 		session.reschedule(startAt, endAt);
 		session.updateAssignment(room, coach);
+		if (timeChanged && (!runStart.equals(run.getPlannedStartAt()) || !runEnd.equals(run.getPlannedEndAt()))) {
+			run.changeSchedule(runStart, runEnd, run.getTotalUnits());
+			runs.saveAndFlush(run);
+		}
 		return sessions.saveAndFlush(session);
 	}
 
-	private void validateResources(CourseRun run, Account coach, Room room, Instant startAt, Instant endAt, UUID excludeSessionId) {
+	void synchronizeRunWindow(CourseRun run) {
+		List<CourseSession> effective = sessions.findByCourseRunIdOrderByStartAtAscIdAsc(run.getId()).stream()
+			.filter(session -> session.getReplacementSession() == null)
+			.filter(session -> List.of(CourseSessionStatus.SCHEDULED, CourseSessionStatus.MAKEUP_SCHEDULED, CourseSessionStatus.COMPLETED).contains(session.getStatus()))
+			.toList();
+		if (effective.isEmpty()) return;
+		Instant start = effective.stream().map(CourseSession::getStartAt).min(Instant::compareTo).orElseThrow();
+		Instant end = effective.stream().map(CourseSession::getEndAt).max(Instant::compareTo).orElseThrow();
+		if (run.getRegistrationClosesAt() != null && start.isBefore(run.getRegistrationClosesAt()))
+			throw CourseException.validation("startAt", "must not precede registration closing");
+		if (!start.equals(run.getPlannedStartAt()) || !end.equals(run.getPlannedEndAt())) {
+			run.changeSchedule(start, end, run.getTotalUnits());
+			runs.saveAndFlush(run);
+		}
+	}
+
+	private void validateResources(CourseRun run, Account coach, Room room, Instant startAt, Instant endAt, UUID excludeSessionId, boolean requireRunWindow) {
 		if (startAt == null || endAt == null || !startAt.isBefore(endAt))
 			throw CourseException.invalidSession();
 		if (run.getStatus() == CourseRunStatus.COMPLETED || run.getStatus() == CourseRunStatus.CANCELLED || run.getStatus() == CourseRunStatus.SETTLEMENT_PENDING)
 			throw CourseException.invalidSession();
-		if (run.getPlannedStartAt() != null && (startAt.isBefore(run.getPlannedStartAt()) || endAt.isAfter(run.getPlannedEndAt())))
+		if (requireRunWindow && run.getPlannedStartAt() != null && (startAt.isBefore(run.getPlannedStartAt()) || endAt.isAfter(run.getPlannedEndAt())))
 			throw CourseException.invalidSession();
 		validateAssignment(run.getCapacity(), coach, room, startAt, endAt);
 		boolean overlap = excludeSessionId == null ? sessions.existsResourceOverlap(coach.getId(), room.getId(), startAt, endAt) : sessions.existsResourceOverlapExcluding(excludeSessionId, coach.getId(), room.getId(), startAt, endAt);

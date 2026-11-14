@@ -28,7 +28,7 @@ class CourseRefundMigrationV64Tests {
 		upgraded.migrate();
 		upgraded.validate();
 		JdbcTemplate db = db();
-		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 		assertThat(db.queryForList("select column_name from information_schema.columns where table_schema='public' " + "and table_name='course_refund_obligations'", String.class)).contains("disbursement_idempotency_key");
 		assertThat(db.queryForList("select constraint_name from information_schema.table_constraints " + "where table_schema='public' and table_name='course_refund_obligations'", String.class)).contains("uq_course_refund_disbursement_actor_key", "chk_course_refund_disbursement_metadata");
 	}
