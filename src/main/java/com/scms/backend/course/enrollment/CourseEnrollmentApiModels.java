@@ -36,7 +36,11 @@ public final class CourseEnrollmentApiModels {
 	}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
-	public record ReceptionCourseEnrollment(UUID memberId, String memberCode, String memberName, UUID courseId, String courseCode, String courseName, UUID courseRunId, String runCode, String courseRunStatus, UUID enrollmentId, String enrollmentStatus, Instant enrolledAt, int totalUnits, int remainingUnits, boolean withdrawalEligible, CourseWithdrawalEligibilityReason withdrawalReason, @Schema(description = "Null when withdrawalEligible is false.", nullable = true) BigInteger estimatedRefundAmount, boolean learningSuspended) {
+	public record UpcomingSession(UUID sessionId, String classType, String className, String runCode, Integer unitNumber,
+			Instant startAt, Instant endAt, String roomName, String coachName) {
+	}
+
+	public record ReceptionCourseEnrollment(UUID memberId, String memberCode, String memberName, UUID courseId, String courseCode, String courseName, UUID courseRunId, String runCode, String courseRunStatus, UUID enrollmentId, String enrollmentStatus, Instant enrolledAt, int totalUnits, int remainingUnits, boolean withdrawalEligible, CourseWithdrawalEligibilityReason withdrawalReason, @Schema(description = "Null when withdrawalEligible is false.", nullable = true) BigInteger estimatedRefundAmount, boolean learningSuspended, Instant plannedStartAt, Instant nextSessionAt) {
 	}
 
 	@Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)

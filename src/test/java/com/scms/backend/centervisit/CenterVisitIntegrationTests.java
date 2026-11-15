@@ -95,7 +95,10 @@ class CenterVisitIntegrationTests {
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
 		UUID membershipId = membership(member.getAccountId(), receptionist.getId());
 		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}").andExpect(status().isCreated()).andExpect(jsonPath("$.memberId").value(member.getAccountId().toString())).andExpect(jsonPath("$.memberCode").value(member.getMemberCode())).andExpect(jsonPath("$.memberName").value("MEMBER US36")).andExpect(jsonPath("$.membershipId").value(membershipId.toString())).andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
-		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}").andExpect(status().isCreated());
+		String byPhone = "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}";
+		checkIn(receptionist, byPhone).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_ALREADY_OPEN"));
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", member.getAccountId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk());
+		checkIn(receptionist, byPhone).andExpect(status().isCreated());
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select count(distinct id) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=? and checked_out_at is null", Long.class, member.getAccountId())).isOne();

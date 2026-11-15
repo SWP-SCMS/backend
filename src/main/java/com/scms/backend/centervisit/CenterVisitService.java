@@ -77,10 +77,8 @@ class CenterVisitService {
 		} else {
 			courseEnrollmentId = visits.findEligibleCourseEnrollmentId(member.accountId(), request.courseSessionId(), now).orElseThrow(CenterVisitException::courseCheckInNotEligible);
 		}
-		visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId()).ifPresent(open -> {
-			close(open, receptionistId, CheckoutSource.AUTO_REENTRY, now);
-			visits.flush();
-		});
+		if (visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(member.accountId()).isPresent())
+			throw CenterVisitException.alreadyCheckedIn();
 		CenterVisit visit = request.courseSessionId() == null ? new CenterVisit(UUID.randomUUID(), member.accountId(), membershipId, receptionistId, now, key) : CenterVisit.forCourse(UUID.randomUUID(), member.accountId(), courseEnrollmentId, request.courseSessionId(), receptionistId, now, key);
 		try {
 			visits.saveAndFlush(visit);

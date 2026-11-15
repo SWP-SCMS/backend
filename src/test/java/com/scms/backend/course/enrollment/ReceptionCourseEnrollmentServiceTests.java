@@ -47,6 +47,9 @@ class ReceptionCourseEnrollmentServiceTests {
 		when(row.getBigDecimal("unused_allocation")).thenReturn(BigDecimal.valueOf(100));
 		when(row.getBigDecimal("amount_paid_vnd_snapshot")).thenReturn(BigDecimal.ZERO);
 		when(row.getObject(anyString(), eq(UUID.class))).thenReturn(UUID.randomUUID());
+		Instant opening = Instant.parse("2026-11-30T10:00:00Z");
+		when(row.getTimestamp("planned_start_at")).thenReturn(Timestamp.from(opening));
+		when(row.getTimestamp("next_session")).thenReturn(null);
 		when(row.getTimestamp("enrolled_at")).thenReturn(Timestamp.from(Instant.parse("2026-10-30T10:00:00Z")));
 		when(row.getString("member_code")).thenReturn("MB-100001");
 		when(row.getString("member_name")).thenReturn("Course Member");
@@ -56,6 +59,8 @@ class ReceptionCourseEnrollmentServiceTests {
 		when(db.query(anyString(), ArgumentMatchers.<RowMapper<ReceptionCourseEnrollment>>any(), any(Object[].class))).thenAnswer(invocation -> java.util.List.of(invocation.<RowMapper<ReceptionCourseEnrollment>>getArgument(1).mapRow(row, 0)));
 		ReceptionCourseEnrollmentService service = new ReceptionCourseEnrollmentService(db, accounts, Clock.fixed(Instant.parse("2026-10-30T10:00:00Z"), ZoneOffset.UTC));
 		ReceptionCourseEnrollment result = service.detail(receptionist, member, enrollment);
+		assertThat(result.plannedStartAt()).isEqualTo(opening);
+		assertThat(result.nextSessionAt()).isNull();
 		assertThat(result.estimatedRefundAmount()).isZero();
 		assertThat(result.withdrawalReason()).isEqualTo(CourseWithdrawalEligibilityReason.ELIGIBLE_WITHOUT_REFUND);
 	}

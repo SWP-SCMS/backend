@@ -45,6 +45,12 @@ class MembershipFreezeController {
 		return ResponseEntity.ok(service.endEarlyForMember(id(jwt), requestId, request));
 	}
 
+	@DeleteMapping("/reception/members/{memberCode}/membership-freeze-requests/{requestId}")
+	ResponseEntity<Void> receptionWithdraw(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode, @PathVariable UUID requestId) {
+		service.withdrawForReceptionist(id(jwt), memberCode, requestId);
+		return ResponseEntity.noContent().build();
+	}
+
 	@GetMapping("/reception/members/{memberCode}/membership-freeze-requests")
 	ResponseEntity<MembershipFreezeRequestPageResponse> receptionList(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.listForReceptionist(id(jwt), memberCode, page, size(page, size)));

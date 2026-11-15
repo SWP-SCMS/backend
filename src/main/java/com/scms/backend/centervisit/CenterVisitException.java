@@ -50,6 +50,10 @@ public class CenterVisitException extends RuntimeException {
 		return new CenterVisitException("IDEMPOTENCY_KEY_REUSED", "The Idempotency-Key was already used for another Member.");
 	}
 
+	static CenterVisitException alreadyCheckedIn() {
+		return new CenterVisitException("CENTER_VISIT_ALREADY_OPEN", "Check out the current visit before checking in again.");
+	}
+
 	static CenterVisitException openVisitNotFound() {
 		return new CenterVisitException(HttpStatus.NOT_FOUND, "OPEN_CENTER_VISIT_NOT_FOUND", "No current Center Visit was found.");
 	}

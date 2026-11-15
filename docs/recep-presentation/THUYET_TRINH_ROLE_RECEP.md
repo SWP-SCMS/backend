@@ -255,7 +255,7 @@ Nguồn: [PaymentService.receiptsForReceptionist](../../src/main/java/com/scms/b
 - **Vào theo Membership:** không đang freeze; Membership ACTIVE đúng khoảng thời gian và có benefit CENTER_ACCESS.
 - **Vào theo CourseSession:** Enrollment ACTIVE, enrollment session ENROLLED, run không CANCELLED, session hợp lệ; thời gian vào nằm trong [start − 30 phút, end + 30 phút). Nhánh này dùng quyền học khóa, không bắt buộc Membership CENTER_ACCESS.
 
-Nếu còn lượt chưa checkout, hệ thống đóng lượt cũ với AUTO_REENTRY rồi tạo lượt mới. Ghi CenterVisit với actor, thời gian, source, membership hoặc enrollment/session và audit CENTER_VISIT_CREATED.
+Nếu còn lượt đang mở, hệ thống yêu cầu check-out trước khi check-in lại. Khi tạo lượt mới, hệ thống ghi CenterVisit với actor, thời gian, source, membership hoặc enrollment/session và audit CENTER_VISIT_CREATED.
 
 **Kết quả:** 201 nếu tạo mới, 200 nếu replay. Cùng key mà member hoặc courseSession khác thì conflict.
 

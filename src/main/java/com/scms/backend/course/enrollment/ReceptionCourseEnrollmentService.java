@@ -11,6 +11,8 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Clock;
 import java.util.Set;
+import java.util.List;
+import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.UpcomingSession;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -30,6 +32,12 @@ class ReceptionCourseEnrollmentService {
 		this.accounts = accounts;
 		this.clock = clock;
 		this.receptionCourseEnrollmentRepository = new ReceptionCourseEnrollmentRepository(this.db, this.clock);
+	}
+
+	@Transactional(readOnly = true)
+	List<UpcomingSession> upcoming(UUID receptionistId, UUID memberId) {
+		active(receptionistId);
+		return receptionCourseEnrollmentRepository.upcoming(memberId);
 	}
 
 	@Transactional(readOnly = true)

@@ -88,13 +88,23 @@ class MembershipFreezeService {
 	@Transactional
 	void withdrawForMember(UUID memberId, UUID requestId) {
 		ensure(memberId, AccountRole.MEMBER);
+		withdraw(memberId, memberId, requestId);
+	}
+
+	@Transactional
+	void withdrawForReceptionist(UUID receptionistId, String memberCode, UUID requestId) {
+		ensure(receptionistId, AccountRole.RECEPTIONIST);
+		withdraw(receptionistId, findMember(memberCode).getAccountId(), requestId);
+	}
+
+	private void withdraw(UUID actorId, UUID memberId, UUID requestId) {
 		MembershipFreezeRequest request = requests.findByIdForUpdate(requestId).filter(value -> value.getMemberAccountId().equals(memberId)).orElseThrow(MembershipFreezeException::notFound);
 		if (request.getStatus() != MembershipFreezeRequestStatus.PENDING)
 			throw MembershipFreezeException.invalidTransition();
 		request.withdraw();
 		requests.saveAndFlush(request);
-		audit(memberId, "WITHDRAWN", request, Map.of());
-		notifyRole(AccountRole.MANAGER, memberId, "MEMBERSHIP_FREEZE_WITHDRAWN:" + requestId, "MEMBERSHIP_FREEZE_WITHDRAWN", requestId, Map.of());
+		audit(actorId, "WITHDRAWN", request, Map.of());
+		notifyRole(AccountRole.MANAGER, actorId, "MEMBERSHIP_FREEZE_WITHDRAWN:" + requestId, "MEMBERSHIP_FREEZE_WITHDRAWN", requestId, Map.of());
 	}
 
 	@Transactional(readOnly = true)

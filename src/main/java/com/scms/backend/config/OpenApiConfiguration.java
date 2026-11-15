@@ -122,11 +122,13 @@ public class OpenApiConfiguration {
 		if (method == HttpMethod.GET && (path.equals("/members/me/coach-assignment") || path.equals("/coach/class-sessions/{sessionId}/members/{memberId}/training-results") || path.equals("/coach/class-sessions/{sessionId}/members/{memberId}/feedback"))) {
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("No active or linked record found."));
 		}
-		if (method == HttpMethod.DELETE && path.equals("/members/me/membership-termination-requests/{requestId}")) {
+		if (method == HttpMethod.DELETE && (path.equals("/members/me/membership-termination-requests/{requestId}")
+				|| path.equals("/reception/members/{memberCode}/membership-termination-requests/{requestId}"))) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("Request withdrawn."));
 		}
-		if (method == HttpMethod.DELETE && path.equals("/members/me/membership-freeze-requests/{requestId}")) {
+		if (method == HttpMethod.DELETE && (path.equals("/members/me/membership-freeze-requests/{requestId}")
+				|| path.equals("/reception/members/{memberCode}/membership-freeze-requests/{requestId}"))) {
 			operation.getResponses().keySet().removeIf(status -> status.matches("2\\d\\d"));
 			operation.getResponses().addApiResponse("204", new ApiResponse().description("Request withdrawn."));
 		}

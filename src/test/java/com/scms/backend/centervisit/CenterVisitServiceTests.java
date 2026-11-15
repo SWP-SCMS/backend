@@ -167,19 +167,15 @@ class CenterVisitServiceTests {
 	}
 
 	@Test
-	void newEntryClosesOpenVisitAtNewCheckInTime() {
+	void newEntryRequiresCheckoutOfOpenVisit() {
 		UUID membershipId = UUID.randomUUID();
 		CenterVisit open = visit(now.minusSeconds(300), null);
 		stubEligibleMember(membershipId);
 		when(visits.findFirstByMemberAccountIdAndCheckedOutAtIsNullOrderByCheckedInAtDescIdDesc(memberId)).thenReturn(Optional.of(open));
-		when(visits.saveAndFlush(any(CenterVisit.class))).thenAnswer(invocation -> invocation.getArgument(0));
-		service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-2");
-		assertThat(open.getCheckedOutAt()).isEqualTo(now);
-		assertThat(open.getCheckedOutByAccountId()).isEqualTo(receptionistId);
-		assertThat(open.getCheckoutSource()).isEqualTo(CheckoutSource.AUTO_REENTRY);
-		var order = inOrder(visits);
-		order.verify(visits).flush();
-		order.verify(visits).saveAndFlush(any(CenterVisit.class));
+		assertCode(() -> service.checkIn(receptionistId, new CenterVisitRequest("MB-100001", null, true), "request-2"), "CENTER_VISIT_ALREADY_OPEN");
+		assertThat(open.getCheckedOutAt()).isNull();
+		verify(visits, never()).saveAndFlush(any());
+		verify(audits, never()).save(any());
 	}
 
 	@Test
