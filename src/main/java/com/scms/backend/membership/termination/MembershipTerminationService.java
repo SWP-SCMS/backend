@@ -90,13 +90,23 @@ class MembershipTerminationService {
 	@Transactional
 	void withdrawForMember(UUID memberId, UUID requestId) {
 		ensureRole(memberId, AccountRole.MEMBER);
+		withdraw(memberId, memberId, requestId);
+	}
+
+	@Transactional
+	void withdrawForReceptionist(UUID receptionistId, String memberCode, UUID requestId) {
+		ensureRole(receptionistId, AccountRole.RECEPTIONIST);
+		withdraw(receptionistId, findMember(memberCode).getAccountId(), requestId);
+	}
+
+	private void withdraw(UUID actorId, UUID memberId, UUID requestId) {
 		MembershipTerminationRequest request = requests.findByIdForUpdate(requestId).filter(value -> value.getMemberAccountId().equals(memberId)).orElseThrow(MembershipTerminationException::notFound);
 		if (request.getStatus() != MembershipTerminationRequestStatus.PENDING)
 			throw MembershipTerminationException.invalidTransition();
 		request.withdraw(Instant.now(clock));
 		requests.saveAndFlush(request);
-		audit(memberId, "WITHDRAWN", request);
-		notifyRole(AccountRole.MANAGER, memberId, "MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId, "MEMBERSHIP_TERMINATION_WITHDRAWN", requestId, Map.of());
+		audit(actorId, "WITHDRAWN", request);
+		notifyRole(AccountRole.MANAGER, actorId, "MEMBERSHIP_TERMINATION_WITHDRAWN:" + requestId, "MEMBERSHIP_TERMINATION_WITHDRAWN", requestId, Map.of());
 	}
 
 	@Transactional(readOnly = true)

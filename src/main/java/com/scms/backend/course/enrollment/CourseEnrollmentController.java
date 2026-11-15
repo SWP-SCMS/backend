@@ -7,6 +7,7 @@ import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.ReceptionCou
 import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.RosterEntry;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChangeResponse;
+import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.UpcomingSession;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,11 @@ class CourseEnrollmentController {
 	CourseEnrollmentController(CourseEnrollmentService service, ReceptionCourseEnrollmentService receptionService) {
 		this.service = service;
 		this.receptionService = receptionService;
+	}
+
+	@GetMapping("/reception/members/{memberId}/upcoming-sessions")
+	ResponseEntity<List<UpcomingSession>> upcoming(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId) {
+		return ResponseEntity.ok(receptionService.upcoming(subject(jwt), memberId));
 	}
 
 	@GetMapping("/reception/members/{memberId}/course-enrollments")

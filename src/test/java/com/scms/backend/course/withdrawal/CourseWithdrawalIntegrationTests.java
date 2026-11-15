@@ -262,6 +262,24 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void openVisitFromAnotherCourseSessionDoesNotUnlockAttendance() throws Exception {
+		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
+		db.update("update course_runs set status='IN_PROGRESS' where id=?", runId);
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		String path = roster + "/" + row + "/attendance";
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		db.update("""
+			insert into center_visits(id,member_account_id,checked_in_by_account_id,checked_in_at,visit_source,course_enrollment_id,course_session_id)
+			select ?,?,?,?,'COURSE',?,id from course_sessions where course_run_id=? and unit_number=2
+			""", UUID.randomUUID(), memberId, receptionistId, Timestamp.from(NOW.minusSeconds(86400)), enrollmentId, runId);
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("NOT_RECORDED");
+	}
+
+	@Test
 	void courseOnlyCheckInAndAttendancePersistThroughApiWithTimeAndAssignmentGuards() throws Exception {
 		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
 		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);

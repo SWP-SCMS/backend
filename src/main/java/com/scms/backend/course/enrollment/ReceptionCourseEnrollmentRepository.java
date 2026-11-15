@@ -5,6 +5,7 @@ import static com.scms.backend.course.enrollment.CourseEnrollmentApiModels.Recep
 import com.scms.backend.course.CourseWithdrawalEligibilityReason;
 import com.scms.backend.course.CourseWithdrawalException;
 import com.scms.backend.course.withdrawal.CourseWithdrawalPolicy;
+import com.scms.backend.course.enrollment.CourseEnrollmentApiModels.UpcomingSession;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.ResultSet;
@@ -26,8 +27,32 @@ final class ReceptionCourseEnrollmentRepository {
 		this.clock = clock;
 	}
 
+	List<UpcomingSession> upcoming(UUID memberId) {
+		Timestamp now = Timestamp.from(clock.instant());
+		return db.query("""
+			select s.id, c.class_type, c.name, null::text as run_code, null::integer as unit_number,
+			       s.start_time as start_at, s.end_time as end_at, room.name as room_name, coach.full_name as coach_name
+			from bookings b join class_sessions s on s.id=b.class_session_id
+			join sport_classes c on c.id=s.sport_class_id
+			join rooms room on room.id=s.room_id join accounts coach on coach.id=s.teaching_coach_account_id
+			where b.member_account_id=? and b.status='BOOKED' and s.status='SCHEDULED' and s.start_time>=?
+			union all
+			select s.id, 'COURSE', c.name, r.run_code, es.unit_number, s.start_at, s.end_at, room.name, coach.full_name
+			from course_enrollments e join course_runs r on r.id=e.course_run_id join courses c on c.id=r.course_id
+			join course_enrollment_sessions es on es.course_enrollment_id=e.id join course_sessions s on s.id=es.course_session_id
+			left join rooms room on room.id=s.room_id left join accounts coach on coach.id=s.coach_account_id
+			where e.member_account_id=? and e.lifecycle_status='ACTIVE' and es.disposition='ENROLLED'
+			  and r.status in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS')
+			  and s.status in ('SCHEDULED','MAKEUP_SCHEDULED') and s.start_at>=?
+			order by start_at, id
+			""", (rs, row) -> new UpcomingSession(rs.getObject("id", UUID.class), rs.getString("class_type"),
+				rs.getString("name"), rs.getString("run_code"), rs.getObject("unit_number", Integer.class),
+				rs.getTimestamp("start_at").toInstant(), rs.getTimestamp("end_at").toInstant(),
+				rs.getString("room_name"), rs.getString("coach_name")), memberId, now, memberId, now);
+	}
+
 	String select() {
-		return "select a.id member_id,mp.member_code,a.full_name member_name,c.id course_id,c.code course_code,c.name course_name," + "r.id course_run_id,r.run_code,r.status course_run_status,e.id enrollment_id,e.lifecycle_status enrollment_status," + "e.enrolled_at,e.total_units_snapshot total_units,e.amount_paid_vnd_snapshot," + "coalesce(u.remaining_units,0) remaining_units,coalesce(u.unused_allocation,0) unused_allocation," + "u.next_session, (e.lifecycle_status='ACTIVE' and r.status in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS') " + "and coalesce(u.remaining_units,0)>0) withdrawal_eligible," + "case when e.lifecycle_status<>'ACTIVE' then 'ENROLLMENT_NOT_ACTIVE' " + "when r.status not in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS') then 'COURSE_RUN_NOT_WITHDRAWABLE' " + "when coalesce(u.remaining_units,0)=0 then 'FINAL_UNIT_ALREADY_STARTED' " + "when coalesce(u.remaining_units,0)*100 < e.total_units_snapshot*70 then 'ELIGIBLE_WITHOUT_REFUND' " + "else 'ELIGIBLE_WITH_REFUND' end withdrawal_reason " + "from course_enrollments e join accounts a on a.id=e.member_account_id " + "join member_profiles mp on mp.account_id=a.id join course_runs r on r.id=e.course_run_id " + "join courses c on c.id=r.course_id left join lateral (select count(*) filter(where s.start_at>?) remaining_units, " + "coalesce(sum(es.allocation_vnd) filter(where s.start_at>?),0) unused_allocation, " + "min(s.start_at) filter(where s.start_at>?) next_session from course_enrollment_sessions es " + "join course_sessions s on s.id=es.course_session_id where es.course_enrollment_id=e.id) u on true";
+		return "select a.id member_id,mp.member_code,a.full_name member_name,c.id course_id,c.code course_code,c.name course_name," + "r.id course_run_id,r.run_code,r.status course_run_status,r.planned_start_at,e.id enrollment_id,e.lifecycle_status enrollment_status," + "e.enrolled_at,e.total_units_snapshot total_units,e.amount_paid_vnd_snapshot," + "coalesce(u.remaining_units,0) remaining_units,coalesce(u.unused_allocation,0) unused_allocation," + "u.next_session, (e.lifecycle_status='ACTIVE' and r.status in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS') " + "and coalesce(u.remaining_units,0)>0) withdrawal_eligible," + "case when e.lifecycle_status<>'ACTIVE' then 'ENROLLMENT_NOT_ACTIVE' " + "when r.status not in ('OPEN_FOR_REGISTRATION','CONFIRMED','IN_PROGRESS') then 'COURSE_RUN_NOT_WITHDRAWABLE' " + "when coalesce(u.remaining_units,0)=0 then 'FINAL_UNIT_ALREADY_STARTED' " + "when coalesce(u.remaining_units,0)*100 < e.total_units_snapshot*70 then 'ELIGIBLE_WITHOUT_REFUND' " + "else 'ELIGIBLE_WITH_REFUND' end withdrawal_reason " + "from course_enrollments e join accounts a on a.id=e.member_account_id " + "join member_profiles mp on mp.account_id=a.id join course_runs r on r.id=e.course_run_id " + "join courses c on c.id=r.course_id left join lateral (select count(*) filter(where s.start_at>?) remaining_units, " + "coalesce(sum(es.allocation_vnd) filter(where s.start_at>?),0) unused_allocation, " + "min(s.start_at) filter(where s.start_at>? and es.disposition='ENROLLED' and s.status in ('SCHEDULED','MAKEUP_SCHEDULED')) next_session from course_enrollment_sessions es " + "join course_sessions s on s.id=es.course_session_id where es.course_enrollment_id=e.id) u on true";
 	}
 
 	ReceptionCourseEnrollment map(ResultSet rs, int row) throws SQLException {
@@ -38,7 +63,8 @@ final class ReceptionCourseEnrollmentRepository {
 		BigInteger unusedAllocation = amount(rs.getBigDecimal("unused_allocation")).min(amount(rs.getBigDecimal("amount_paid_vnd_snapshot")));
 		BigInteger refund = "ACTIVE".equals(lifecycle) && runWithdrawable && remaining != 0 ? CourseWithdrawalPolicy.refund(remaining, total, unusedAllocation) : null;
 		CourseWithdrawalEligibilityReason reason = CourseWithdrawalEligibilityReason.valueOf(!"ACTIVE".equals(lifecycle) ? "ENROLLMENT_NOT_ACTIVE" : !runWithdrawable ? "COURSE_RUN_NOT_WITHDRAWABLE" : remaining == 0 ? "FINAL_UNIT_ALREADY_STARTED" : refund.signum() == 0 ? "ELIGIBLE_WITHOUT_REFUND" : "ELIGIBLE_WITH_REFUND");
-		return new ReceptionCourseEnrollment(rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"), rs.getObject("course_run_id", UUID.class), rs.getString("run_code"), rs.getString("course_run_status"), rs.getObject("enrollment_id", UUID.class), lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, eligible ? refund : null, "WITHDRAWAL_PENDING".equals(lifecycle));
+		Timestamp nextSession = rs.getTimestamp("next_session");
+		return new ReceptionCourseEnrollment(rs.getObject("member_id", UUID.class), rs.getString("member_code"), rs.getString("member_name"), rs.getObject("course_id", UUID.class), rs.getString("course_code"), rs.getString("course_name"), rs.getObject("course_run_id", UUID.class), rs.getString("run_code"), rs.getString("course_run_status"), rs.getObject("enrollment_id", UUID.class), lifecycle, rs.getTimestamp("enrolled_at").toInstant(), total, remaining, eligible, reason, eligible ? refund : null, "WITHDRAWAL_PENDING".equals(lifecycle), rs.getTimestamp("planned_start_at").toInstant(), nextSession == null ? null : nextSession.toInstant());
 	}
 
 	BigInteger amount(BigDecimal value) {

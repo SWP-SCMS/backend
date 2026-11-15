@@ -17201,6 +17201,149 @@
           }
         }
       }
+    },
+    "/reception/members/{memberCode}/membership-freeze-requests/{requestId}": {
+      "delete": {
+        "tags": [
+          "membership-freeze-controller"
+        ],
+        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
+        "operationId": "receptionWithdraw_1",
+        "parameters": [
+          {
+            "name": "memberCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request withdrawn."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/reception/members/{memberCode}/membership-termination-requests/{requestId}": {
+      "delete": {
+        "tags": [
+          "membership-termination-controller"
+        ],
+        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
+        "operationId": "receptionWithdraw",
+        "parameters": [
+          {
+            "name": "memberCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Request withdrawn."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/reception/members/{memberId}/upcoming-sessions": {
+      "get": {
+        "tags": [
+          "course-enrollment-controller"
+        ],
+        "description": "Requires RECEPTIONIST role; member access is role-scoped.",
+        "operationId": "upcoming",
+        "parameters": [
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UpcomingSession"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -23338,7 +23481,6 @@
       },
       "ReceptionCourseEnrollment": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
           "memberId": {
             "type": "string",
@@ -23411,6 +23553,14 @@
           },
           "learningSuspended": {
             "type": "boolean"
+          },
+          "plannedStartAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextSessionAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -27351,6 +27501,43 @@
           "status",
           "title"
         ]
+      },
+      "UpcomingSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classType": {
+            "type": "string"
+          },
+          "className": {
+            "type": "string"
+          },
+          "runCode": {
+            "type": "string"
+          },
+          "unitNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "roomName": {
+            "type": "string"
+          },
+          "coachName": {
+            "type": "string"
+          }
+        }
       }
     },
     "responses": {

@@ -30,6 +30,10 @@ final class CourseEnrollmentRepository {
 
 	private static final String CHECKED_IN = """
 		exists (select 1 from center_visits v where v.member_account_id=e.member_account_id
+			and ((v.visit_source='COURSE' and v.course_session_id=s.id and v.course_enrollment_id=e.id)
+				or (v.visit_source='MEMBERSHIP' and
+					(v.checked_in_at at time zone 'Asia/Ho_Chi_Minh')::date =
+					(s.start_at at time zone 'Asia/Ho_Chi_Minh')::date))
 			and v.checked_in_at <= ? and v.checked_in_at < s.end_at
 			and (v.checked_out_at is null or v.checked_out_at > s.start_at)) as checked_in
 		""";
