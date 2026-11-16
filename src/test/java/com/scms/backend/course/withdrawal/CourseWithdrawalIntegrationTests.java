@@ -262,6 +262,29 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void membershipCheckInUnlocksCourseAttendanceUntilCheckout() throws Exception {
+		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
+		db.update("update course_runs set status='IN_PROGRESS' where id=?", runId);
+		UUID membership = new com.scms.backend.qa.CourseQaFixtures(db).membership(memberId, receptionistId, "BASIC", "Basic", NOW);
+		UUID visit = UUID.randomUUID();
+		db.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at) values(?,?,?,?,?)",
+			visit, memberId, membership, receptionistId, Timestamp.from(NOW));
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		String path = roster + "/" + row + "/attendance";
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(true));
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isOk());
+		when(clock.instant()).thenReturn(NOW.plusSeconds(60));
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/reception/members/{id}/center-visits/current/checkout", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(receptionistId))).andExpect(status().isOk());
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
+		attendanceApi(coachId, path, "ABSENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("PRESENT");
+	}
+
+	@Test
 	void openVisitFromAnotherCourseSessionDoesNotUnlockAttendance() throws Exception {
 		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
 		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
