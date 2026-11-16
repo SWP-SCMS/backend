@@ -119,14 +119,19 @@ public interface CenterVisitRepository extends JpaRepository<CenterVisit, UUID> 
 		""", nativeQuery = true)
 	int checkoutOpenForMembershipFreeze(@Param("memberId") UUID memberId, @Param("actorId") UUID actorId, @Param("at") Instant at);
 
-	@Query(value = """
+	String OPEN_ATTENDANCE_VISIT = """
 		select id from center_visits
 		where member_account_id = :memberId
 		and checked_in_at <= :now
 		and checked_in_at < :sessionEnd
-		and (checked_out_at is null or checked_out_at > :sessionStart)
+		and checked_out_at is null
 		order by checked_in_at desc, id
 		limit 1
-		""", nativeQuery = true)
-	Optional<UUID> findOverlappingVisitId(@Param("memberId") UUID memberId, @Param("sessionStart") Instant sessionStart, @Param("sessionEnd") Instant sessionEnd, @Param("now") Instant now);
+		""";
+
+	@Query(value = OPEN_ATTENDANCE_VISIT, nativeQuery = true)
+	Optional<UUID> findOpenAttendanceVisitId(@Param("memberId") UUID memberId, @Param("sessionEnd") Instant sessionEnd, @Param("now") Instant now);
+
+	@Query(value = OPEN_ATTENDANCE_VISIT + "for share", nativeQuery = true)
+	Optional<UUID> lockOpenAttendanceVisitId(@Param("memberId") UUID memberId, @Param("sessionEnd") Instant sessionEnd, @Param("now") Instant now);
 }
