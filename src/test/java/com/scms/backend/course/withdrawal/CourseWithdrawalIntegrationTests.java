@@ -304,6 +304,14 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("PRESENT");
 		when(clock.instant()).thenReturn(NOW.plusSeconds(5399));
 		attendanceApi(coachId, path, "ABSENT").andExpect(status().isOk());
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(true));
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/reception/members/{id}/center-visits/current/checkout", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(receptionistId))).andExpect(status().isOk());
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
 		when(clock.instant()).thenReturn(NOW.plusSeconds(5400));
 		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict());
 		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("ABSENT");

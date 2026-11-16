@@ -138,7 +138,7 @@ class AttendanceServiceTests {
 				return "Member";
 			}
 		}));
-		when(visits.findOverlappingVisitId(any(), org.mockito.ArgumentMatchers.eq(session.getStartTime()), org.mockito.ArgumentMatchers.eq(session.getEndTime()), org.mockito.ArgumentMatchers.eq(now))).thenReturn(Optional.empty());
+		when(visits.lockOpenAttendanceVisitId(any(), org.mockito.ArgumentMatchers.eq(session.getEndTime()), org.mockito.ArgumentMatchers.eq(now))).thenReturn(Optional.empty());
 		assertThatThrownBy(() -> service.update(coachId, session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.PRESENT))).isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("CENTER_VISIT_REQUIRED");
 		verify(audits, never()).save(any());
 	}
@@ -171,7 +171,7 @@ class AttendanceServiceTests {
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
 		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
 		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
-		when(visits.findOverlappingVisitId(member.getMemberId(), session.getStartTime(), session.getEndTime(), now)).thenReturn(Optional.of(UUID.randomUUID()));
+		when(visits.lockOpenAttendanceVisitId(member.getMemberId(), session.getEndTime(), now)).thenReturn(Optional.of(UUID.randomUUID()));
 		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
 		assertThat(result.memberId()).isEqualTo(member.getMemberId());
 	}
@@ -199,14 +199,14 @@ class AttendanceServiceTests {
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
 		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
 		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
-		when(visits.findOverlappingVisitId(member.getMemberId(), session.getStartTime(), session.getEndTime(), now)).thenReturn(Optional.of(UUID.randomUUID()));
+		when(visits.lockOpenAttendanceVisitId(member.getMemberId(), session.getEndTime(), now)).thenReturn(Optional.of(UUID.randomUUID()));
 		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.ABSENT));
 		assertThat(result.memberId()).isEqualTo(member.getMemberId());
 		verify(lifecycle).catchUp(now);
 	}
 
 	@Test
-	void presentUsesOverlappingVisitForBookedMember() {
+	void presentUsesOpenVisitForBookedMember() {
 		ClassSession session = session(now.minusSeconds(1800), now.plusSeconds(1800));
 		UUID coachId = session.getTeachingCoach().getId();
 		Attendance row = attendance(session.getId());
@@ -216,7 +216,7 @@ class AttendanceServiceTests {
 		when(sessions.findByIdAndTeachingCoach_Id(session.getId(), coachId)).thenReturn(Optional.of(session));
 		when(attendance.findById(row.getId())).thenReturn(Optional.of(row));
 		when(bookings.findBookedAttendanceMembers(session.getId())).thenReturn(List.of(member));
-		when(visits.findOverlappingVisitId(memberId, session.getStartTime(), session.getEndTime(), now)).thenReturn(Optional.of(visitId));
+		when(visits.lockOpenAttendanceVisitId(memberId, session.getEndTime(), now)).thenReturn(Optional.of(visitId));
 		AttendanceResponse result = service.update(coachId, session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.PRESENT));
 		assertThat(result.centerVisitId()).isEqualTo(visitId);
 	}
