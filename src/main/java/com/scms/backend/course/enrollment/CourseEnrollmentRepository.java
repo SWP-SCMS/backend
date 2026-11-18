@@ -28,17 +28,23 @@ final class CourseEnrollmentRepository {
 			""", memberId);
 	}
 
-	private static final String CHECKED_IN = """
-		exists (select 1 from center_visits v where v.member_account_id=e.member_account_id
+	private static final String OPEN_VISIT = """
+		select 1 from center_visits v where v.member_account_id=e.member_account_id
+			and ((v.visit_source='COURSE' and v.course_session_id=s.id and v.course_enrollment_id=e.id)
+				or (v.visit_source='MEMBERSHIP' and
+					(v.checked_in_at at time zone 'Asia/Ho_Chi_Minh')::date =
+					(s.start_at at time zone 'Asia/Ho_Chi_Minh')::date))
 			and v.checked_in_at <= ? and v.checked_in_at < s.end_at
-			and (v.checked_out_at is null or v.checked_out_at > s.start_at)) as checked_in
+			and v.checked_out_at is null
 		""";
 
 	List<RosterEntry> rosterFindCourseEnrollmentSessions(UUID coachId, UUID sessionId, Timestamp now) {
 		return db.query("""
 			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
 				es.attendance_status,es.attendance_recorded_at,
-			""" + CHECKED_IN + """
+			exists (
+			""" + OPEN_VISIT + """
+			) as checked_in
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id and s.coach_account_id=?
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id
@@ -67,7 +73,9 @@ final class CourseEnrollmentRepository {
 		return db.queryForList("""
 			select es.id,e.member_account_id,p.member_code,a.full_name,p.profile_image_url,
 				es.attendance_status,es.attendance_recorded_at,
-			""" + CHECKED_IN + """
+			exists (
+			""" + OPEN_VISIT + """
+			for share of v) as checked_in
 			from course_enrollment_sessions es join course_enrollments e on e.id=es.course_enrollment_id
 			join course_sessions s on s.id=es.course_session_id
 			join accounts a on a.id=e.member_account_id join member_profiles p on p.account_id=a.id

@@ -49,6 +49,14 @@ class CourseScheduleChangeServiceTests {
 	private final UUID responseId = UUID.randomUUID();
 
 	@Test
+	void transferChoiceIsRejectedBeforeReadingOrWritingScheduleChanges() {
+		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
+		assertThatThrownBy(() -> service.respond(memberId, responseId, "REQUEST_TRANSFER"))
+			.isInstanceOfSatisfying(CourseException.class, error -> assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID"));
+		verifyNoInteractions(db, notifications);
+	}
+
+	@Test
 	void nullChoiceProducesStableValidationError() {
 		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
 		assertThatThrownBy(() -> service.respond(memberId, responseId, null)).isInstanceOfSatisfying(CourseException.class, error -> org.assertj.core.api.Assertions.assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_INVALID"));
@@ -79,7 +87,7 @@ class CourseScheduleChangeServiceTests {
 		var existing = new com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange(responseId, enrollmentSessionId, NOW.minusSeconds(7200), NOW.minusSeconds(3600), NOW.plusSeconds(3600), NOW.plusSeconds(7200), NOW.minusSeconds(3600), NOW.plusSeconds(1800), "RESPONDED", "CONTINUE", NOW);
 		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), eq(responseId), eq(memberId))).thenReturn(List.of(existing));
 		org.assertj.core.api.Assertions.assertThat(service.respond(memberId, responseId, "CONTINUE")).isEqualTo(existing);
-		assertThatThrownBy(() -> service.respond(memberId, responseId, "REQUEST_TRANSFER")).isInstanceOfSatisfying(CourseException.class, error -> org.assertj.core.api.Assertions.assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT"));
+		assertThatThrownBy(() -> service.respond(memberId, responseId, "REQUEST_WITHDRAWAL")).isInstanceOfSatisfying(CourseException.class, error -> org.assertj.core.api.Assertions.assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_CONFLICT"));
 		verify(db, never()).update(any(String.class), any(Object[].class));
 	}
 
@@ -120,7 +128,7 @@ class CourseScheduleChangeServiceTests {
 		}).when(db).update(contains("insert into course_schedule_change_responses"), any(Object[].class));
 		Instant oldStart = Instant.parse("2035-01-01T02:00:00Z");
 		service.notifyReschedule(session(), oldStart, oldStart.plusSeconds(3600), oldStart.plusSeconds(8 * 86400), oldStart.plusSeconds(8 * 86400 + 3600));
-		assertThat(inserts).singleElement().satisfies(values -> assertThat(values[8]).isEqualTo("VOLUNTARY"));
+		assertThat(inserts).singleElement().satisfies(values -> assertThat(values[8]).isEqualTo("CENTER_SESSION_RESCHEDULE"));
 	}
 
 	@Test
@@ -138,7 +146,7 @@ class CourseScheduleChangeServiceTests {
 		service.notifyReschedule(session(), oldStart, oldStart.plusSeconds(3600), oldStart.plusSeconds(7200), oldStart.plusSeconds(10800));
 		assertThat(inserts).hasSize(2);
 		assertThat(inserts.get(0)[8]).isEqualTo("MEMBER_SCHEDULE_CONFLICT");
-		assertThat(inserts.get(1)[8]).isEqualTo("VOLUNTARY");
+		assertThat(inserts.get(1)[8]).isEqualTo("CENTER_SESSION_RESCHEDULE");
 	}
 
 	@Test
@@ -147,6 +155,52 @@ class CourseScheduleChangeServiceTests {
 		assertThatThrownBy(() -> service.notifyReschedule(session(), NOW, NOW.plusSeconds(3600), NOW.plusSeconds(3601), NOW.plusSeconds(7201))).isInstanceOfSatisfying(CourseException.class, error -> org.assertj.core.api.Assertions.assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_DEADLINE_UNAVAILABLE"));
 		verify(db, never()).update(any(String.class), any(Object[].class));
 		verifyNoInteractions(notifications);
+	}
+
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "CONTINUE", "REQUEST_WITHDRAWAL" })
+	void oneDecisionUpdatesTheWholeEventAndCreatesAtMostOneWithdrawal(String choice) {
+		var audits = mock(com.scms.backend.audit.AuditEventRepository.class);
+		var withdrawals = mock(com.scms.backend.course.withdrawal.CourseWithdrawalService.class);
+		var batchService = new CourseScheduleChangeService(db, notifications, accounts, Clock.fixed(NOW, ZoneOffset.UTC), withdrawals, audits);
+		UUID event = UUID.randomUUID(), siblingId = UUID.randomUUID();
+		var first = batchRow(responseId, event, NOW.plusSeconds(3600), null, com.scms.backend.course.CourseWithdrawalCause.START_DELAY_OVER_7_DAYS);
+		var sibling = batchRow(siblingId, event, NOW.plusSeconds(3600), null, com.scms.backend.course.CourseWithdrawalCause.CENTER_SESSION_RESCHEDULE);
+		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
+		var member = mock(com.scms.backend.account.Account.class);
+		when(member.getRole()).thenReturn(com.scms.backend.account.AccountRole.MEMBER);
+		when(member.getStatus()).thenReturn(com.scms.backend.account.AccountStatus.ACTIVE);
+		when(accounts.findByIdForUpdate(memberId)).thenReturn(java.util.Optional.of(member));
+		when(db.queryForList(contains("select e.course_run_id"), eq(UUID.class), eq(responseId), eq(memberId))).thenReturn(List.of(UUID.randomUUID()));
+		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), any(UUID.class), eq(memberId)))
+			.thenReturn(List.of(first, sibling), List.of(batchRow(responseId, event, NOW.plusSeconds(3600), choice)));
+		batchService.respond(memberId, responseId, choice);
+		verify(db).update(contains("where status='PENDING' and id in"), eq(choice), eq(java.sql.Timestamp.from(NOW)), eq(responseId));
+		verify(audits).save(any(com.scms.backend.audit.AuditEvent.class));
+		if (choice.equals("REQUEST_WITHDRAWAL")) verify(withdrawals).createForScheduleChange(eq(memberId), eq(memberId), eq(siblingId));
+		else verifyNoInteractions(withdrawals);
+	}
+
+	@Test
+	void earliestDeadlineClosesTheWholeEventBeforeAnyWrite() {
+		when(accounts.existsByIdAndRoleAndStatus(memberId, com.scms.backend.account.AccountRole.MEMBER, com.scms.backend.account.AccountStatus.ACTIVE)).thenReturn(true);
+		UUID event = UUID.randomUUID();
+		when(db.query(any(String.class), any(RowMapper.class), any(java.sql.Timestamp.class), any(java.sql.Timestamp.class), eq(responseId), eq(memberId)))
+			.thenReturn(List.of(batchRow(responseId, event, NOW.plusSeconds(3600), null), batchRow(UUID.randomUUID(), event, NOW, null)));
+		assertThatThrownBy(() -> service.respond(memberId, responseId, "CONTINUE"))
+			.isInstanceOfSatisfying(CourseException.class, error -> assertThat(error.getCode()).isEqualTo("COURSE_SCHEDULE_CHANGE_RESPONSE_CLOSED"));
+		verify(db, never()).update(any(String.class), any(Object[].class));
+	}
+
+	private CourseScheduleChangeApiModels.ScheduleChange batchRow(UUID id, UUID event, Instant deadline, String response) {
+		return batchRow(id, event, deadline, response, com.scms.backend.course.CourseWithdrawalCause.VOLUNTARY);
+	}
+
+	private CourseScheduleChangeApiModels.ScheduleChange batchRow(UUID id, UUID event, Instant deadline, String response, com.scms.backend.course.CourseWithdrawalCause cause) {
+		return new CourseScheduleChangeApiModels.ScheduleChange(id, enrollmentSessionId, NOW.plusSeconds(7200), NOW.plusSeconds(10800),
+			NOW.plusSeconds(14400), NOW.plusSeconds(18000), NOW, deadline,
+			response == null ? "PENDING" : "RESPONDED", response, response == null ? null : NOW, event,
+			cause, null, true, "ELIGIBLE_WITH_REFUND", java.math.BigInteger.TEN, java.math.BigInteger.valueOf(8));
 	}
 
 	private CourseSession session() {

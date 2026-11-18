@@ -13,17 +13,16 @@ import com.scms.backend.course.CourseSession;
 import com.scms.backend.course.CourseWithdrawalCause;
 import com.scms.backend.course.CourseWithdrawalException;
 import com.scms.backend.course.run.CourseRunRescheduleService;
-import com.scms.backend.course.transfer.CourseTransferService;
 import com.scms.backend.course.withdrawal.CourseWithdrawalService;
 import com.scms.backend.notification.NotificationWriter;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,9 +41,6 @@ public class CourseScheduleChangeService {
 	private final CourseWithdrawalService withdrawals;
 
 	private final AuditEventRepository audits;
-
-	@Autowired(required = false)
-	private CourseTransferService transfers;
 
 	CourseScheduleChangeService(JdbcTemplate db, NotificationWriter notifications, AccountRepository accounts, Clock clock) {
 		this(db, notifications, accounts, clock, null, null);
@@ -91,7 +87,7 @@ public class CourseScheduleChangeService {
 		if (!actorId.equals(memberId))
 			accounts.findByIdForUpdate(actorId).filter(account -> account.getRole() == AccountRole.RECEPTIONIST && account.getStatus() == AccountStatus.ACTIVE).orElseThrow(InvalidAuthenticatedAccountException::new);
 		activeMember(memberId);
-		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL", "REQUEST_TRANSFER").contains(choice))
+		if (choice == null || !List.of("CONTINUE", "REQUEST_WITHDRAWAL").contains(choice))
 			throw CourseException.invalidResponse();
 		if (!"CONTINUE".equals(choice)) {
 			List<UUID> runIds = courseScheduleChangeRepository.respondFindCourseScheduleChangeResponses(responseId, memberId);
@@ -104,33 +100,31 @@ public class CourseScheduleChangeService {
 		List<ScheduleChange> rows = courseScheduleChangeRepository.respondFindOf(queryTime, queryTime, responseId, memberId);
 		if (rows.isEmpty())
 			throw CourseException.responseNotFound();
-		ScheduleChange current = rows.getFirst();
-		if (current.response() != null) {
-			if (current.response().equals(choice)) {
-				if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
-					withdrawals.createForScheduleChange(actorId, memberId, responseId);
-					return reload(memberId, responseId);
-				}
-				if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
-					transfers.requestFromScheduleChange(actorId, memberId, responseId, current.respondedAt() == null ? clock.instant() : current.respondedAt());
-				return current;
-			}
+		// One decision per enrollment and change event, even when called through a sibling row ID.
+		ScheduleChange current = rows.stream().min(Comparator
+			.comparing((ScheduleChange row) -> row.withdrawalRequestId() == null)
+			.thenComparing(row -> !row.cause().fullUnusedRefund())
+			.thenComparing(row -> row.cause() == CourseWithdrawalCause.VOLUNTARY)
+			.thenComparing(ScheduleChange::id)).orElseThrow();
+		if (rows.stream().anyMatch(row -> row.response() != null && !row.response().equals(choice)))
 			throw CourseException.responseConflict();
+		boolean replay = rows.stream().allMatch(row -> choice.equals(row.response()));
+		if (!replay) {
+			Instant now = clock.instant();
+			if (rows.stream().anyMatch(row -> row.response() == null
+				&& (!"PENDING".equals(row.status()) || !now.isBefore(row.responseDeadline()))))
+				throw CourseException.responseClosed();
+			if ("REQUEST_WITHDRAWAL".equals(choice) && rows.stream().noneMatch(ScheduleChange::withdrawalEligible))
+				throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED", "Withdrawal is not allowed for the current Enrollment or CourseRun state.");
+			courseScheduleChangeRepository.respondUpdateCourseScheduleChangeResponses(choice, Timestamp.from(now), responseId);
+			audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_SCHEDULE_CHANGE_RESPONDED", "COURSE_SCHEDULE_CHANGE_RESPONSE", current.id(),
+				Map.of("memberAccountId", memberId.toString(), "response", choice, "changedSessionCount", rows.size())));
 		}
-		Instant now = clock.instant();
-		if (!current.status().equals("PENDING") || !now.isBefore(current.responseDeadline()))
-			throw CourseException.responseClosed();
-		if ("REQUEST_WITHDRAWAL".equals(choice) && !current.withdrawalEligible())
-			throw CourseWithdrawalException.conflict("COURSE_WITHDRAWAL_WINDOW_CLOSED", "Withdrawal is not allowed for the current Enrollment or CourseRun state.");
-		courseScheduleChangeRepository.respondUpdateCourseScheduleChangeResponses(choice, Timestamp.from(now), responseId);
-		audits.save(new AuditEvent(UUID.randomUUID(), actorId, "COURSE_SCHEDULE_CHANGE_RESPONDED", "COURSE_SCHEDULE_CHANGE_RESPONSE", responseId, Map.of("memberAccountId", memberId.toString(), "response", choice)));
 		if ("REQUEST_WITHDRAWAL".equals(choice) && withdrawals != null) {
-			withdrawals.createForScheduleChange(actorId, memberId, responseId);
-			return reload(memberId, responseId);
+			withdrawals.createForScheduleChange(actorId, memberId, current.id());
+			return reload(memberId, current.id());
 		}
-		if ("REQUEST_TRANSFER".equals(choice) && transfers != null)
-			transfers.requestFromScheduleChange(actorId, memberId, responseId, now);
-		return reload(memberId, responseId);
+		return replay ? current : reload(memberId, responseId);
 	}
 
 	@Transactional

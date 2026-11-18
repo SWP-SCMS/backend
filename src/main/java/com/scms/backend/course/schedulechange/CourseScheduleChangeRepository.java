@@ -189,10 +189,31 @@ final class CourseScheduleChangeRepository {
 	}
 
 	List<com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange> respondFindOf(Timestamp queryTime, Timestamp queryTime2, UUID responseId, UUID memberId) {
-		return db.query(select() + " where r.id=? and e.member_account_id=? for update of r", this::map, queryTime, queryTime2, responseId, memberId);
+		return db.query(select() + """
+			 where r.id in (
+			   select sibling.id from course_schedule_change_responses target
+			   join course_enrollment_sessions target_unit on target_unit.id=target.enrollment_session_id
+			   join course_enrollments owner on owner.id=target_unit.course_enrollment_id
+			   join course_enrollment_sessions sibling_unit on sibling_unit.course_enrollment_id=owner.id
+			   join course_schedule_change_responses sibling on sibling.enrollment_session_id=sibling_unit.id
+			   where target.id=? and owner.member_account_id=? and (sibling.id=target.id or
+			     (target.status<>'SUPERSEDED' and sibling.status<>'SUPERSEDED'
+			       and target.change_event_id is not null and sibling.change_event_id=target.change_event_id))
+			 ) order by r.id for update of r
+			 """, this::map, queryTime, queryTime2, responseId, memberId);
 	}
 
 	int respondUpdateCourseScheduleChangeResponses(java.lang.String choice, Timestamp nowTimestamp, UUID responseId) {
-		return db.update("update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED' where id=?", choice, nowTimestamp, responseId);
+		return db.update("""
+			update course_schedule_change_responses set response=?,responded_at=?,status='RESPONDED'
+			where status='PENDING' and id in (
+			  select sibling.id from course_schedule_change_responses target
+			  join course_enrollment_sessions target_unit on target_unit.id=target.enrollment_session_id
+			  join course_enrollment_sessions sibling_unit on sibling_unit.course_enrollment_id=target_unit.course_enrollment_id
+			  join course_schedule_change_responses sibling on sibling.enrollment_session_id=sibling_unit.id
+			  where target.id=? and (sibling.id=target.id or
+			    (target.change_event_id is not null and sibling.change_event_id=target.change_event_id))
+			)
+			""", choice, nowTimestamp, responseId);
 	}
 }

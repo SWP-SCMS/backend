@@ -59,7 +59,7 @@ public class AttendanceService {
 		if (now.isBefore(s.getStartTime()))
 			throw AttendanceException.closed();
 		return bookings.findBookedAttendanceMembers(sid).stream().map(m -> {
-			boolean checkedIn = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).isPresent();
+			boolean checkedIn = visits.findOpenAttendanceVisitId(m.getMemberId(), s.getEndTime(), now).isPresent();
 			return attendance.findByBookingId(m.getBookingId()).map(a -> AttendanceResponse.from(a, m, checkedIn)).orElseGet(() -> new AttendanceResponse(null, m.getBookingId(), m.getMemberId(), m.getMemberCode(), m.getFullName(), AttendanceStatus.ABSENT, s.getStartTime(), null, checkedIn));
 		}).toList();
 	}
@@ -76,7 +76,7 @@ public class AttendanceService {
 		Attendance a = attendance.findById(aid).orElseThrow(AttendanceException::missing);
 		var members = bookings.findBookedAttendanceMembers(sid);
 		var m = members.stream().filter(x -> aid.equals(x.getAttendanceId())).findFirst().orElseThrow(AttendanceException::missing);
-		UUID visit = visits.findOverlappingVisitId(m.getMemberId(), s.getStartTime(), s.getEndTime(), now).orElseThrow(AttendanceException::visit);
+		UUID visit = visits.lockOpenAttendanceVisitId(m.getMemberId(), s.getEndTime(), now).orElseThrow(AttendanceException::visit);
 		AttendanceStatus before = a.getStatus();
 		a.mark(req.status(), req.status() == AttendanceStatus.PRESENT ? visit : null, coach, now);
 		attendance.save(a);

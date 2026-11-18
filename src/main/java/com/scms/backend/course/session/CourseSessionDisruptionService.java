@@ -120,6 +120,7 @@ public class CourseSessionDisruptionService {
 		original.linkReplacement(makeup, now);
 		sessions.saveAndFlush(original);
 		courseSessionDisruptionRepository.cancelWithMakeupUpdateCourseEnrollmentSessions(makeup.getId(), sessionId);
+		sessionService.synchronizeRunWindow(run);
 		audit(managerId, "COURSE_SESSION_CANCELLED", sessionId, before, snapshot(original));
 		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before, Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
 		notify(recipients, original, "COURSE_SESSION_CANCELLED", "cancelled");
@@ -148,6 +149,7 @@ public class CourseSessionDisruptionService {
 		original.linkReplacement(makeup, now);
 		sessions.saveAndFlush(original);
 		courseSessionDisruptionRepository.scheduleMakeupUpdateCourseEnrollmentSessions(makeup.getId(), sessionId);
+		sessionService.synchronizeRunWindow(run);
 		audit(managerId, "COURSE_SESSION_MAKEUP_SCHEDULED", sessionId, before, Map.of("replacementSessionId", makeup.getId().toString(), "status", original.getStatus().name()));
 		notify(recipients, makeup, "COURSE_SESSION_MAKEUP_SCHEDULED", "makeup scheduled");
 		return new CourseMakeupResponse(CourseSessionResponse.from(original), CourseSessionResponse.from(makeup, original.getId()));

@@ -116,7 +116,7 @@ class CoursePaymentMigrationV53Tests {
 		assertThat(snapshot(db, "course_reservations", fixture.reservationId())).isEqualTo(reservationBefore);
 		assertThat(db.queryForObject("select (to_jsonb(existing) - 'course_payment_id')::text from " + "(select * from payment_provider_events where id=?) existing", String.class, event)).isEqualTo(eventBefore);
 		assertThat(db.queryForObject("select course_payment_id from payment_provider_events where id=?", UUID.class, event)).isNull();
-		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db.queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 	}
 
 	private Fixture fixture(JdbcTemplate db) {

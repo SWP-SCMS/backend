@@ -46,6 +46,7 @@ paths:
         - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
         - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
         - {name: eligible, in: query, required: false, schema: {type: boolean}}
+        - {name: query, in: query, required: false, description: Case-insensitive partial member name, code or phone number., schema: {type: string, maxLength: 100}}
       responses:
         '200':
           description: Paginated Receptionist refund queue

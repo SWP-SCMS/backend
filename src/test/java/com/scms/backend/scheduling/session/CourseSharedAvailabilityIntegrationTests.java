@@ -349,6 +349,8 @@ class CourseSharedAvailabilityIntegrationTests {
 		Instant shifted = firstStart.plusSeconds(1800);
 		courseSessions.reschedule(first.getId(), firstRoom.getId(), coach.getId(), shifted, shifted.plusSeconds(3600));
 		Instant secondStart = firstStart.plusSeconds(7200);
+		// The first reschedule contracts the Run window; extend the fixture before adding unit 2.
+		jdbc.update("update course_runs set planned_end_at=? where id=?", java.sql.Timestamp.from(secondStart.plusSeconds(3600)), runId);
 		courseSessions.create(runId, 2, coach.getId(), secondRoom.getId(), secondStart, secondStart.plusSeconds(3600), BigInteger.TEN);
 		assertThatThrownBy(() -> courseSessions.reschedule(first.getId(), firstRoom.getId(), coach.getId(), secondStart, secondStart.plusSeconds(3600))).isInstanceOf(com.scms.backend.course.CourseException.class);
 	}

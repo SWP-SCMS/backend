@@ -155,43 +155,13 @@ class CourseTransferIntegrationTests {
 	}
 
 	@Test
-	void completedTransferKeepsScheduleResponseRetryIdempotentForReception() throws Exception {
-		Account receptionist = account(AccountRole.RECEPTIONIST);
-		requestTransfer();
-		var request = currentRequest();
-		var offer = transfers.approve(managerId, request.id(), targetRunId, "Replay completed transfer");
-		transfers.accept(memberId, offer.id(), "completed-replay");
-		mockMvc.perform(post("/api/v1/reception/members/{member}/course-schedule-changes/{id}/response", memberId, responseId).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).contentType("application/json").content("{\"response\":\"REQUEST_TRANSFER\"}")).andExpect(status().isOk());
-		assertThat(db.queryForObject("select count(*) from course_transfer_requests where schedule_change_response_id=?", Long.class, responseId)).isOne();
-		assertThat(db.queryForObject("select requester_account_id from course_transfer_requests where id=?", UUID.class, request.id())).isEqualTo(memberId);
-		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_SCHEDULE_CHANGE_RESPONDED' and target_id=?", Long.class, responseId)).isOne();
-	}
-
-	@org.junit.jupiter.params.ParameterizedTest
-	@org.junit.jupiter.params.provider.ValueSource(strings = { "SOURCE_INACTIVE", "TARGET_SCHEDULE_INVALID" })
-	void proxyAcceptanceFailureRollsBackAcceptanceMarkerAndTargetEnrollment(String failure) throws Exception {
-		Account receptionist = account(AccountRole.RECEPTIONIST);
-		requestTransfer();
-		var offer = transfers.approve(managerId, currentRequest().id(), targetRunId, "Failure after offer issued");
-		if (failure.equals("SOURCE_INACTIVE"))
-			db.update("update course_enrollments set lifecycle_status='WITHDRAWN' where id=?", sourceEnrollmentId);
-		else
-			db.update("update course_runs set total_units=2 where id=?", targetRunId);
-		mockMvc.perform(post("/api/v1/reception/members/{member}/course-transfer-offers/{id}/accept", memberId, offer.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).header("Idempotency-Key", "must-rollback")).andExpect(status().isConflict());
-		assertThat(db.queryForObject("select accepted_at from course_transfer_offers where id=?", Timestamp.class, offer.id())).isNull();
-		assertThat(db.queryForObject("select acceptance_idempotency_key from course_transfer_offers where id=?", String.class, offer.id())).isNull();
-		assertThat(db.queryForObject("select count(*) from course_enrollments where source_transfer_offer_id=?", Long.class, offer.id())).isZero();
-		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_TRANSFER_ACCEPTED' and target_id=?", Long.class, offer.id())).isZero();
-	}
-
-	@Test
 	void proxyDifferencePaymentUsesExistingSepayWebhookAndKeepsInitiatorOnReplay() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		db.update("update course_runs set tuition_vnd=120000 where id=?", targetRunId);
 		requestTransfer();
 		var offer = transfers.approve(managerId, currentRequest().id(), targetRunId, "Mock bank difference payment");
 		String base = "/api/v1/reception/members/" + memberId, auth = "Bearer " + token(receptionist);
-		mockMvc.perform(post(base + "/course-transfer-offers/{id}/accept", offer.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-bank-accept")).andExpect(status().isOk());
+		transfers.accept(receptionist.getId(), memberId, offer.id(), "proxy-bank-accept");
 		UUID orderId = db.queryForObject("select difference_order_id from course_transfer_offers where id=?", UUID.class, offer.id());
 		for (int retry = 0; retry < 2; retry++) mockMvc.perform(post(base + "/course-orders/{id}/payments/sepay", orderId).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-bank-payment")).andExpect(status().isOk());
 		String reference = db.queryForObject("select payment_reference from course_payments where course_order_id=?", String.class, orderId);
@@ -206,22 +176,6 @@ class CourseTransferIntegrationTests {
 		assertThat(db.queryForObject("select count(*) from audit_events where action='COURSE_TRANSFER_COMPLETED' and target_id=?", Long.class, offer.id())).isOne();
 		assertThat(db.queryForObject("select payload->>'initiatorAccountId' from notification_outbox where event_key=?", String.class, "course-transfer-completed:" + offer.id())).isEqualTo(receptionist.getId().toString());
 		assertThat(db.queryForObject("select payload->>'actorAccountId' from notification_outbox where event_key=?", String.class, "course-transfer-completed:" + offer.id())).isNull();
-	}
-
-	@Test
-	void proxyAcceptanceReplaysZeroDifferenceAndPreservesActorAndNotifications() throws Exception {
-		Account receptionist = account(AccountRole.RECEPTIONIST);
-		requestTransfer();
-		var offer = transfers.approve(managerId, currentRequest().id(), targetRunId, "Proxy equal price");
-		String path = "/api/v1/reception/members/" + memberId + "/course-transfer-offers/" + offer.id() + "/accept";
-		String first = mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).header("Idempotency-Key", "proxy-zero")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-		assertThat(mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).header("Idempotency-Key", "proxy-zero")).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).isEqualTo(first);
-		mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist)).header("Idempotency-Key", "different-key")).andExpect(status().isConflict());
-		assertThat(db.queryForObject("select actor_account_id from course_enrollments where source_transfer_offer_id=?", UUID.class, offer.id())).isEqualTo(receptionist.getId());
-		assertThat(db.queryForObject("select actor_account_id from audit_events where action='COURSE_TRANSFER_ACCEPTED' and target_id=?", UUID.class, offer.id())).isEqualTo(receptionist.getId());
-		assertThat(db.queryForObject("select payload->>'actorAccountId' from notification_outbox where event_key=?", String.class, "course-transfer-completed:" + offer.id())).isEqualTo(receptionist.getId().toString());
-		assertThat(db.queryForObject("select recipient_account_id from notification_outbox where event_key=?", UUID.class, "course-transfer-completed:" + offer.id())).isEqualTo(memberId);
-		assertThat(db.queryForObject("select count(*) from course_enrollments where source_transfer_offer_id=?", Long.class, offer.id())).isOne();
 	}
 
 	@Test
@@ -241,48 +195,6 @@ class CourseTransferIntegrationTests {
 	}
 
 	@Test
-	void proxyOfferCannotCrossOwnersOmitKeysOrAcceptAtExpiry() throws Exception {
-		Account receptionist = account(AccountRole.RECEPTIONIST), other = account(AccountRole.MEMBER);
-		requestTransfer();
-		var offer = transfers.approve(managerId, currentRequest().id(), targetRunId, "Proxy boundaries");
-		String auth = "Bearer " + token(receptionist), path = "/api/v1/reception/members/" + memberId + "/course-transfer-offers/" + offer.id() + "/accept";
-		mockMvc.perform(post("/api/v1/reception/members/{member}/course-transfer-offers/{id}/accept", other.getId(), offer.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "wrong-owner")).andExpect(status().isNotFound());
-		mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isBadRequest());
-		db.update("update accounts set status='SUSPENDED' where id=?", memberId);
-		mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "inactive")).andExpect(status().isUnauthorized());
-		db.update("update accounts set status='ACTIVE' where id=?", memberId);
-		db.update("update course_transfer_offers set expires_at=? where id=?", Timestamp.from(NOW), offer.id());
-		db.update("update course_transfer_holds set expires_at=? where transfer_offer_id=?", Timestamp.from(NOW), offer.id());
-		mockMvc.perform(post(path).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "expired")).andExpect(status().isConflict());
-		assertThat(db.queryForObject("select status from course_transfer_offers where id=?", String.class, offer.id())).isEqualTo("EXPIRED");
-		assertThat(db.queryForObject("select status from course_transfer_holds where transfer_offer_id=?", String.class, offer.id())).isEqualTo("RELEASED");
-		assertThat(db.queryForObject("select lifecycle_status from course_enrollments where id=?", String.class, sourceEnrollmentId)).isEqualTo("ACTIVE");
-	}
-
-	@Test
-	void receptionistRequestsAndAcceptsTransferWithCorrectActorThroughExistingCashPayment() throws Exception {
-		Account receptionist = account(AccountRole.RECEPTIONIST);
-		String auth = "Bearer " + token(receptionist);
-		String base = "/api/v1/reception/members/" + memberId;
-		db.update("update course_runs set tuition_vnd=120000 where id=?", targetRunId);
-		mockMvc.perform(get(base + "/course-schedule-changes").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isOk());
-		mockMvc.perform(post(base + "/course-schedule-changes/{id}/response", responseId).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).contentType("application/json").content("{\"response\":\"REQUEST_TRANSFER\"}")).andExpect(status().isOk());
-		var request = currentRequest();
-		assertThat(db.queryForObject("select requester_account_id from course_transfer_requests where id=?", UUID.class, request.id())).isEqualTo(receptionist.getId());
-		var offer = transfers.approve(managerId, request.id(), targetRunId, "Reception transfer");
-		mockMvc.perform(get(base + "/course-transfer-offers").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth)).andExpect(status().isOk());
-		mockMvc.perform(post(base + "/course-transfer-offers/{id}/accept", offer.id()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, auth).header("Idempotency-Key", "proxy-transfer")).andExpect(status().isOk());
-		UUID orderId = db.queryForObject("select difference_order_id from course_transfer_offers where id=?", UUID.class, offer.id());
-		assertThat(db.queryForObject("select actor_account_id from course_orders where id=?", UUID.class, orderId)).isEqualTo(receptionist.getId());
-		assertThat(db.queryForObject("select tuition_vnd_snapshot from course_orders where id=?", java.math.BigDecimal.class, orderId)).isEqualByComparingTo("20000");
-		Account cashier = account(AccountRole.RECEPTIONIST);
-		mockMvc.perform(post(base + "/course-orders/{id}/payments/cash", orderId).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(cashier)).header("Idempotency-Key", "proxy-transfer-cash")).andExpect(status().isOk());
-		assertThat(db.queryForObject("select actor_account_id from course_enrollments where source_transfer_offer_id=?", UUID.class, offer.id())).isEqualTo(receptionist.getId());
-		assertThat(db.queryForObject("select processed_by_account_id from course_enrollments where source_transfer_offer_id=?", UUID.class, offer.id())).isEqualTo(cashier.getId());
-		assertThat(db.queryForObject("select status from course_transfer_offers where id=?", String.class, offer.id())).isEqualTo("COMPLETED");
-	}
-
-	@Test
 	void receptionistScheduleWithdrawalCapturesSnapshotAndActorOnce() throws Exception {
 		Account receptionist = account(AccountRole.RECEPTIONIST);
 		String path = "/api/v1/reception/members/" + memberId + "/course-schedule-changes/" + responseId + "/response";
@@ -296,7 +208,7 @@ class CourseTransferIntegrationTests {
 
 	@Test
 	void equalPriceOfferMovesEnrollmentOnceAndPreservesSourceHistory() {
-		enrollmentService.respondToScheduleChange(memberId, responseId, new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_TRANSFER"));
+		requestTransfer();
 		var request = currentRequest();
 		assertThat(request.memberId()).isEqualTo(memberId);
 		assertThat(request.memberCode()).isNotBlank();
@@ -378,7 +290,9 @@ class CourseTransferIntegrationTests {
 	}
 
 	private void requestTransfer() {
-		enrollmentService.respondToScheduleChange(memberId, responseId, new CourseScheduleChangeApiModels.ScheduleChangeResponse("REQUEST_TRANSFER"));
+		// Historical fixture: new HTTP schedule responses no longer permit transfers.
+		db.update("update course_schedule_change_responses set status='RESPONDED',response='REQUEST_TRANSFER',responded_at=? where id=?", Timestamp.from(NOW), responseId);
+		transfers.requestFromScheduleChange(memberId, memberId, responseId, NOW);
 	}
 
 	private CourseTransferApiModels.TransferRequest currentRequest() {

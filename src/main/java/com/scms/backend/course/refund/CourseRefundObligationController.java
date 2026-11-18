@@ -47,8 +47,8 @@ class CourseRefundObligationController {
 
 	@Operation(description = "Requires RECEPTIONIST role. Returns only approved refunds and excludes contact, bank, and evidence data.")
 	@GetMapping(value = "/reception/course-refunds", produces = MediaType.APPLICATION_JSON_VALUE)
-	ResponseEntity<ReceptionCourseRefundPage> receptionList(@AuthenticationPrincipal Jwt jwt, @Parameter(schema = @Schema(minimum = "0", defaultValue = "0")) @RequestParam(defaultValue = "0") int page, @Parameter(schema = @Schema(minimum = "1", maximum = "100", defaultValue = "20")) @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) Boolean eligible) {
-		return ResponseEntity.ok(service.listForReceptionist(subject(jwt), page, size, eligible));
+	ResponseEntity<ReceptionCourseRefundPage> receptionList(@AuthenticationPrincipal Jwt jwt, @Parameter(schema = @Schema(minimum = "0", defaultValue = "0")) @RequestParam(defaultValue = "0") int page, @Parameter(schema = @Schema(minimum = "1", maximum = "100", defaultValue = "20")) @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) Boolean eligible, @Parameter(description = "Case-insensitive partial member name, code or phone number.", schema = @Schema(maxLength = 100)) @RequestParam(required = false) String query) {
+		return ResponseEntity.ok(service.listForReceptionist(subject(jwt), page, size, eligible, query));
 	}
 
 	@Operation(description = "Requires RECEPTIONIST role. Returns a redacted Course refund detail.")

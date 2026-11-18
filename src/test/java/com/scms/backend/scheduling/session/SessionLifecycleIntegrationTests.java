@@ -163,7 +163,7 @@ class SessionLifecycleIntegrationTests {
 	}
 
 	@Test
-	void attendanceUsesHalfOpenWindowAndMemberVisitOverlap() {
+	void attendanceRequiresOpenVisitWithinHalfOpenWindow() {
 		Account manager = account(AccountRole.MANAGER, "Attendance manager");
 		Account coach = account(AccountRole.COACH, "Attendance coach");
 		MemberProfile member = member("Attendance member");
@@ -171,7 +171,10 @@ class SessionLifecycleIntegrationTests {
 		Booking booking = booking(session, member, manager);
 		lifecycle.catchUp(NOW);
 		Attendance row = attendance.findByBookingId(booking.getId()).orElseThrow();
-		UUID visitId = visit(member.getAccountId(), booking.getMembershipId(), manager.getId(), NOW.minusSeconds(600), NOW.plusSeconds(600));
+		visit(member.getAccountId(), booking.getMembershipId(), manager.getId(), NOW.minusSeconds(600), NOW);
+		assertThatThrownBy(() -> attendanceService.update(coach.getId(), session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.PRESENT)))
+			.isInstanceOf(AttendanceException.class).extracting("code").isEqualTo("CENTER_VISIT_REQUIRED");
+		UUID visitId = visit(member.getAccountId(), booking.getMembershipId(), manager.getId(), NOW, null);
 		AttendanceResponse response = attendanceService.update(coach.getId(), session.getId(), row.getId(), new AttendanceUpdateRequest(AttendanceStatus.PRESENT));
 		assertThat(response.memberId()).isEqualTo(member.getAccountId());
 		assertThat(response.centerVisitId()).isEqualTo(visitId);

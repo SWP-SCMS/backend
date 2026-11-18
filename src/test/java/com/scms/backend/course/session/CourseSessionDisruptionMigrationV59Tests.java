@@ -38,7 +38,7 @@ class CourseSessionDisruptionMigrationV59Tests {
 		Flyway upgraded = flyway(null);
 		upgraded.migrate();
 		upgraded.validate();
-		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(77);
+		assertThat(db().queryForObject("select max(version::integer) from flyway_schema_history where success", Integer.class)).isEqualTo(78);
 		assertThat(db().queryForObject("select count(*) from information_schema.tables where table_schema='public' " + "and table_name='course_refund_obligations'", Long.class)).isOne();
 	}
 

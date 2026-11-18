@@ -168,7 +168,7 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@org.junit.jupiter.params.ParameterizedTest
-	@org.junit.jupiter.params.provider.ValueSource(strings = { "VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT" })
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "VOLUNTARY", "START_DELAY_OVER_7_DAYS", "MEMBER_SCHEDULE_CONFLICT", "REDUCED_UNIT_COUNT", "CENTER_SESSION_RESCHEDULE" })
 	void refundProjectionSelectsOnlyWithdrawalSourceWithoutAnEvent(String cause) throws Exception {
 		var original = withdrawals.createForMember(memberId, enrollmentId, "Initial fixture");
 		withdrawals.cancelForMember(memberId, original.id(), "Replace fixture with schedule cause");
@@ -262,6 +262,47 @@ class CourseWithdrawalIntegrationTests {
 	}
 
 	@Test
+	void membershipCheckInUnlocksCourseAttendanceUntilCheckout() throws Exception {
+		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
+		db.update("update course_runs set status='IN_PROGRESS' where id=?", runId);
+		UUID membership = new com.scms.backend.qa.CourseQaFixtures(db).membership(memberId, receptionistId, "BASIC", "Basic", NOW);
+		UUID visit = UUID.randomUUID();
+		db.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at) values(?,?,?,?,?)",
+			visit, memberId, membership, receptionistId, Timestamp.from(NOW));
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		String path = roster + "/" + row + "/attendance";
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(true));
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isOk());
+		when(clock.instant()).thenReturn(NOW.plusSeconds(60));
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/reception/members/{id}/center-visits/current/checkout", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(receptionistId))).andExpect(status().isOk());
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
+		attendanceApi(coachId, path, "ABSENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("PRESENT");
+	}
+
+	@Test
+	void openVisitFromAnotherCourseSessionDoesNotUnlockAttendance() throws Exception {
+		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
+		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
+		db.update("update course_runs set status='IN_PROGRESS' where id=?", runId);
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		String path = roster + "/" + row + "/attendance";
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		db.update("""
+			insert into center_visits(id,member_account_id,checked_in_by_account_id,checked_in_at,visit_source,course_enrollment_id,course_session_id)
+			select ?,?,?,?,'COURSE',?,id from course_sessions where course_run_id=? and unit_number=2
+			""", UUID.randomUUID(), memberId, receptionistId, Timestamp.from(NOW.minusSeconds(86400)), enrollmentId, runId);
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("NOT_RECORDED");
+	}
+
+	@Test
 	void courseOnlyCheckInAndAttendancePersistThroughApiWithTimeAndAssignmentGuards() throws Exception {
 		UUID session = db.queryForObject("select id from course_sessions where course_run_id=? and unit_number=3", UUID.class, runId);
 		UUID row = db.queryForObject("select id from course_enrollment_sessions where course_enrollment_id=? and course_session_id=?", UUID.class, enrollmentId, session);
@@ -286,6 +327,14 @@ class CourseWithdrawalIntegrationTests {
 		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("PRESENT");
 		when(clock.instant()).thenReturn(NOW.plusSeconds(5399));
 		attendanceApi(coachId, path, "ABSENT").andExpect(status().isOk());
+		String roster = "/api/v1/coach/course-sessions/" + session + "/roster";
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(true));
+		mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/reception/members/{id}/center-visits/current/checkout", memberId)
+			.contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(receptionistId))).andExpect(status().isOk());
+		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_REQUIRED"));
+		mockMvc.perform(get(roster).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAtClock(coachId)))
+			.andExpect(status().isOk()).andExpect(jsonPath("$[0].receptionistCheckedIn").value(false));
 		when(clock.instant()).thenReturn(NOW.plusSeconds(5400));
 		attendanceApi(coachId, path, "PRESENT").andExpect(status().isConflict());
 		assertThat(db.queryForObject("select attendance_status from course_enrollment_sessions where id=?", String.class, row)).isEqualTo("ABSENT");

@@ -4,6 +4,7 @@ import com.scms.backend.ScmsBackendApplication;
 import com.scms.backend.account.AccountRole;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -42,7 +43,10 @@ public final class CourseQaApplication {
 		for (var entry : Map.of("manager", AccountRole.MANAGER, "reception", AccountRole.RECEPTIONIST, "coach", AccountRole.COACH, "coach2", AccountRole.COACH, "member", AccountRole.MEMBER, "member2", AccountRole.MEMBER).entrySet()) data.put(entry.getKey(), fixture.account(entry.getKey(), entry.getValue()));
 		data.put("port", ((WebServerApplicationContext) context).getWebServer().getPort());
 		data.put("pid", ProcessHandle.current().pid());
-		Files.writeString(directory.resolve("ready.json"), context.getBean(ObjectMapper.class).writeValueAsString(data));
+		// Publish readiness only after the complete JSON is visible to the parent JVM.
+		Path ready = directory.resolve("ready.tmp");
+		Files.writeString(ready, context.getBean(ObjectMapper.class).writeValueAsString(data));
+		Files.move(ready, directory.resolve("ready.json"), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 	}
 
 	static String required(String key) {

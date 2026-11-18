@@ -61,7 +61,7 @@ class CourseResourceAvailabilityTests {
 	}
 
 	CourseResourceAvailabilityController.Request request(int capacity, UUID exclude) {
-		return new CourseResourceAvailabilityController.Request(List.of(new CourseResourceAvailabilityController.Window(start, start.plusSeconds(3600)), new CourseResourceAvailabilityController.Window(start.plusSeconds(86400), start.plusSeconds(90000))), capacity, exclude);
+        return new CourseResourceAvailabilityController.Request(List.of(new CourseResourceAvailabilityController.Window(start, start.plusSeconds(3600)), new CourseResourceAvailabilityController.Window(start.plusSeconds(86400), start.plusSeconds(90000))), capacity, exclude, null);
 	}
 
 	@Test
@@ -91,8 +91,28 @@ class CourseResourceAvailabilityTests {
 	void editExclusionIsPassedToQuery() {
 		setup(List.of());
 		UUID excluded = UUID.randomUUID();
-		when(sessions.existsById(excluded)).thenReturn(true);
+		when(sessions.findAllById(java.util.Set.of(excluded))).thenReturn(List.of(mock(com.scms.backend.course.CourseSession.class)));
 		assertThat(controller.available(jwt, request(10, excluded)).rooms()).hasSize(1);
 		verify(db).query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<CourseResourceAvailabilityController.Occupied>>any(), eq(excluded), any(), any());
+	}
+
+	@Test
+	void batchExcludesAllSelectedOldSchedulesButKeepsOtherConflicts() {
+		setup(List.of(new CourseResourceAvailabilityController.Occupied(coachId, roomId, start, start.plusSeconds(3600))));
+		UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+		when(sessions.findAllById(java.util.Set.of(first, second))).thenReturn(List.of(mock(com.scms.backend.course.CourseSession.class), mock(com.scms.backend.course.CourseSession.class)));
+		var request = new CourseResourceAvailabilityController.Request(request(10, null).windows(), 10, null, List.of(first, second));
+		var result = controller.available(jwt, request);
+		assertThat(result.rooms()).isEmpty();
+		assertThat(result.coaches()).isEmpty();
+		verify(db).query(org.mockito.ArgumentMatchers.contains("and id not in (?,?)"), org.mockito.ArgumentMatchers.<RowMapper<CourseResourceAvailabilityController.Occupied>>any(), eq(first), eq(second), any(), any());
+	}
+
+	@Test
+	void rejectsAnUnknownBatchSessionBeforeQueryingAvailability() {
+		setup(List.of());
+		var request = new CourseResourceAvailabilityController.Request(request(10, null).windows(), 10, null, List.of(UUID.randomUUID()));
+		assertThatThrownBy(() -> controller.available(jwt, request)).isInstanceOf(com.scms.backend.course.CourseException.class);
+		verifyNoInteractions(db);
 	}
 }

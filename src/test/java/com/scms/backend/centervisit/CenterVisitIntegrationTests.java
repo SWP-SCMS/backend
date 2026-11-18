@@ -95,7 +95,10 @@ class CenterVisitIntegrationTests {
 		MemberProfile member = member(AccountStatus.ACTIVE, "https://example.test/member.jpg");
 		UUID membershipId = membership(member.getAccountId(), receptionist.getId());
 		checkIn(receptionist, "{\"memberId\":\"" + member.getMemberCode() + "\",\"identityVerified\":true}").andExpect(status().isCreated()).andExpect(jsonPath("$.memberId").value(member.getAccountId().toString())).andExpect(jsonPath("$.memberCode").value(member.getMemberCode())).andExpect(jsonPath("$.memberName").value("MEMBER US36")).andExpect(jsonPath("$.membershipId").value(membershipId.toString())).andExpect(jsonPath("$.checkedInBy").value(receptionist.getId().toString()));
-		checkIn(receptionist, "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}").andExpect(status().isCreated());
+		String byPhone = "{\"phone\":\"" + member.getAccount().getPhone() + "\",\"identityVerified\":true}";
+		checkIn(receptionist, byPhone).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CENTER_VISIT_ALREADY_OPEN"));
+		mockMvc.perform(patch("/api/v1/reception/members/{id}/center-visits/current/checkout", member.getAccountId()).contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk());
+		checkIn(receptionist, byPhone).andExpect(status().isCreated());
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select count(distinct id) from center_visits where member_account_id = ?", Long.class, member.getAccountId())).isEqualTo(2L);
 		assertThat(jdbc.queryForObject("select count(*) from center_visits where member_account_id=? and checked_out_at is null", Long.class, member.getAccountId())).isOne();
@@ -203,10 +206,13 @@ class CenterVisitIntegrationTests {
 		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=0&size=1").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].id").value(firstVisit.toString())).andExpect(jsonPath("$.content[0].memberName").value("First Open Member")).andExpect(jsonPath("$.totalElements").value(2)).andExpect(jsonPath("$.totalPages").value(2));
 		mockMvc.perform(get("/api/v1/reception/center-visits/open?page=1&size=1").contextPath("/api/v1").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(receptionist))).andExpect(status().isOk()).andExpect(jsonPath("$.content.length()").value(1)).andExpect(jsonPath("$.content[0].id").value(thirdVisit.toString())).andExpect(jsonPath("$.content[0].memberName").value("Third Open Member")).andExpect(jsonPath("$.totalElements").value(2));
 		jdbc.update("update center_visits set checked_in_at=?,checked_out_at=?,checked_out_by_account_id=?,checkout_source='RECEPTIONIST' where member_account_id=?", java.sql.Timestamp.from(Instant.parse("2026-10-05T01:00:00Z")), java.sql.Timestamp.from(Instant.parse("2026-10-05T02:00:00Z")), receptionist.getId(), first.getAccountId());
-		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
+		assertThat(visits.findOpenAttendanceVisitId(first.getAccountId(), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
 		UUID overlap = UUID.randomUUID();
 		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at,checked_out_at,checked_out_by_account_id,checkout_source) values(?,?,?,?,?,?,?,'RECEPTIONIST')", overlap, first.getAccountId(), firstMembership, receptionist.getId(), java.sql.Timestamp.from(Instant.parse("2026-10-05T09:30:00Z")), java.sql.Timestamp.from(Instant.parse("2026-10-05T10:30:00Z")), receptionist.getId());
-		assertThat(visits.findOverlappingVisitId(first.getAccountId(), Instant.parse("2026-10-05T10:00:00Z"), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).contains(overlap);
+		assertThat(visits.findOpenAttendanceVisitId(first.getAccountId(), Instant.parse("2026-10-05T11:00:00Z"), Instant.now())).isEmpty();
+		UUID reentry = UUID.randomUUID();
+		jdbc.update("insert into center_visits(id,member_account_id,membership_id,checked_in_by_account_id,checked_in_at) values(?,?,?,?,?)", reentry, first.getAccountId(), firstMembership, receptionist.getId(), java.sql.Timestamp.from(Instant.parse("2026-10-05T10:45:00Z")));
+		assertThat(visits.findOpenAttendanceVisitId(first.getAccountId(), Instant.parse("2026-10-05T11:00:00Z"), Instant.parse("2026-10-05T10:50:00Z"))).contains(reentry);
 	}
 
 	@Test
@@ -244,38 +250,7 @@ class CenterVisitIntegrationTests {
 	}
 
 	private UUID membership(UUID memberId, UUID actorId, String planCode, String offerName) {
-		UUID offerId = UUID.randomUUID();
-		UUID orderId = UUID.randomUUID();
-		UUID paymentId = UUID.randomUUID();
-		UUID membershipId = UUID.randomUUID();
-		jdbc.update("""
-			insert into membership_plans (plan_code, display_name, supports_booking, supports_personal_coaching)
-			values (?, ?, false, false)
-			on conflict (plan_code) do nothing
-			""", planCode, offerName);
-		jdbc.update("""
-			insert into membership_offers (id, plan_code, name, description, price_amount, duration_days,
-				status, created_by_account_id)
-			values (?, ?, ?, 'Center access', 12000, 30, 'ACTIVE', ?)
-			""", offerId, planCode, offerName, actorId);
-		jdbc.update("""
-			insert into membership_orders (id, order_number, member_account_id, created_by_account_id, offer_id,
-				offer_name_snapshot, plan_code_snapshot, price_amount_snapshot, currency_code_snapshot,
-				duration_days_snapshot, payment_method, status, expires_at, paid_at)
-			values (?, ?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'CASH', 'PAID', ?, ?)
-			""", orderId, "ORD-" + orderId, memberId, actorId, offerId, offerName, planCode, java.sql.Timestamp.from(Instant.now().plusSeconds(3600)), java.sql.Timestamp.from(Instant.now()));
-		jdbc.update("""
-			insert into payments (id, order_id, method, status, amount, currency_code,
-				processed_by_account_id, paid_at)
-			values (?, ?, 'CASH', 'PAID', 12000, 'VND', ?, ?)
-			""", paymentId, orderId, actorId, java.sql.Timestamp.from(Instant.now()));
-		jdbc.update("""
-			insert into memberships (id, member_account_id, order_id, offer_id, plan_code_snapshot,
-				offer_name_snapshot, price_amount_snapshot, currency_code_snapshot, duration_days_snapshot,
-				status, starts_at, ends_at)
-			values (?, ?, ?, ?, ?, ?, 12000, 'VND', 30, 'ACTIVE', ?, ?)
-			""", membershipId, memberId, orderId, offerId, planCode, offerName, java.sql.Timestamp.from(Instant.now().minusSeconds(60)), java.sql.Timestamp.from(Instant.now().plusSeconds(3600)));
-		return membershipId;
+		return new com.scms.backend.qa.CourseQaFixtures(jdbc).membership(memberId, actorId, planCode, offerName, Instant.now());
 	}
 
 	private String token(Account account) {

@@ -12,6 +12,29 @@ class CourseUnitRefundsTests {
 
 	private static final Instant NOW = Instant.parse("2035-01-01T00:00:00Z");
 
+	@org.junit.jupiter.params.ParameterizedTest
+	@org.junit.jupiter.params.provider.ValueSource(strings = { "COMPLETED", "SCHEDULED" })
+	void centerCancellationAfterOneHeldSessionRefundsAllNineRemainingUnitsAtFullAllocation(String heldStatus) {
+		var units = new ArrayList<CourseUnitRefunds.Unit>();
+		var held = unit("ENROLLED", heldStatus, NOW.minusSeconds(86400), 100000);
+		units.add(held);
+		for (int i = 1; i <= 9; i++)
+			units.add(unit("ENROLLED", "SCHEDULED", NOW.plusSeconds(i * 86400L), 100000));
+		var refund = CourseUnitRefunds.eligible(units, NOW, "COURSE_RUN_CANCELLED");
+		assertThat(refund).hasSize(9).doesNotContain(held);
+		assertThat(total(refund)).isEqualTo(BigInteger.valueOf(900000));
+	}
+
+	@Test
+	void centerCancellationPreservesOriginalUnevenAllocationsInsteadOfRepricingRemainingUnits() {
+		var held = unit("ENROLLED", "COMPLETED", NOW.minusSeconds(86400), 333334);
+		var units = List.of(held,
+			unit("ENROLLED", "SCHEDULED", NOW.plusSeconds(86400), 333333),
+			unit("ENROLLED", "SCHEDULED", NOW.plusSeconds(2 * 86400), 333333));
+		assertThat(total(CourseUnitRefunds.eligible(units, NOW, "COURSE_RUN_CANCELLED")))
+			.isEqualTo(BigInteger.valueOf(666666));
+	}
+
 	@Test
 	void tenUnitsReducedToEightThenOneDeliveredRefundsTwoPlusSevenOriginalAllocations() {
 		var units = new ArrayList<CourseUnitRefunds.Unit>();

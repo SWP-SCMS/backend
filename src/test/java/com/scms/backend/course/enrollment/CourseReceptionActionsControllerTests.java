@@ -53,6 +53,18 @@ class CourseReceptionActionsControllerTests {
 	@MockitoBean
 	ActiveAccountJwtValidator activeAccounts;
 
+	@org.junit.jupiter.api.Test
+	void retiredTransferEndpointsAreNotFoundForReceptionist() throws Exception {
+		String base = "/reception/members/" + UUID.randomUUID();
+		for (String route : List.of("GET /course-transfer-offers", "POST /course-transfer-offers/" + UUID.randomUUID() + "/accept")) {
+			String[] parts = route.split(" ");
+			mvc.perform(request(HttpMethod.valueOf(parts[0]), base + parts[1])
+				.with(jwt().jwt(token -> token.subject(UUID.randomUUID().toString()).claim("role", "RECEPTIONIST")).authorities(new SimpleGrantedAuthority("ROLE_RECEPTIONIST"))))
+				.andExpect(status().isNotFound());
+		}
+		verifyNoInteractions(waitlists, changes, transfers, withdrawals, refunds);
+	}
+
 	@ParameterizedTest
 	@ValueSource(strings = { "MEMBER", "COACH", "MANAGER", "ANONYMOUS" })
 	void allProxyRoutesRequireReceptionist(String role) throws Exception {

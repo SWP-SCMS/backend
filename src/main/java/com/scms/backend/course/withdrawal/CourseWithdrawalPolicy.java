@@ -21,6 +21,8 @@ public final class CourseWithdrawalPolicy {
 			throw new IllegalArgumentException("Invalid withdrawal allocation.");
 		if (cause == null)
 			throw new IllegalArgumentException("Withdrawal cause is required.");
+		if (cause.fullUnusedRefund())
+			return unusedAllocation;
 		if (cause == CourseWithdrawalCause.VOLUNTARY && (long) remainingUnits * 100 < (long) totalUnits * 70)
 			return BigInteger.ZERO;
 		return unusedAllocation.multiply(BigInteger.valueOf(80)).divide(BigInteger.valueOf(100));

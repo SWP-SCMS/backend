@@ -40,6 +40,12 @@ class MembershipTerminationController {
 		return ResponseEntity.noContent().build();
 	}
 
+	@DeleteMapping("/reception/members/{memberCode}/membership-termination-requests/{requestId}")
+	ResponseEntity<Void> receptionWithdraw(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode, @PathVariable UUID requestId) {
+		service.withdrawForReceptionist(id(jwt), memberCode, requestId);
+		return ResponseEntity.noContent().build();
+	}
+
 	@GetMapping("/reception/members/{memberCode}/membership-termination-requests")
 	ResponseEntity<MembershipTerminationRequestPageResponse> receptionList(@AuthenticationPrincipal Jwt jwt, @PathVariable String memberCode, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
 		return ResponseEntity.ok(service.listForReceptionist(id(jwt), memberCode, page, validateSize(page, size)));

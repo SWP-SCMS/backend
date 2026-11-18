@@ -7,8 +7,6 @@ import com.scms.backend.course.refund.CourseRefundObligationService;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChange;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeApiModels.ScheduleChangeResponse;
 import com.scms.backend.course.schedulechange.CourseScheduleChangeService;
-import com.scms.backend.course.transfer.CourseTransferApiModels.TransferOffer;
-import com.scms.backend.course.transfer.CourseTransferService;
 import com.scms.backend.course.waitlist.CourseWaitlistResponse;
 import com.scms.backend.course.waitlist.CourseWaitlistService;
 import com.scms.backend.course.withdrawal.CourseWithdrawalApiModels.WithdrawalRequest;
@@ -40,16 +38,13 @@ class CourseReceptionActionsController {
 
 	private final CourseScheduleChangeService changes;
 
-	private final CourseTransferService transfers;
-
 	private final CourseWithdrawalService withdrawals;
 
 	private final CourseRefundObligationService refunds;
 
-	CourseReceptionActionsController(CourseWaitlistService waitlists, CourseScheduleChangeService changes, CourseTransferService transfers, CourseWithdrawalService withdrawals, CourseRefundObligationService refunds) {
+	CourseReceptionActionsController(CourseWaitlistService waitlists, CourseScheduleChangeService changes, CourseWithdrawalService withdrawals, CourseRefundObligationService refunds) {
 		this.waitlists = waitlists;
 		this.changes = changes;
-		this.transfers = transfers;
 		this.withdrawals = withdrawals;
 		this.refunds = refunds;
 	}
@@ -83,16 +78,6 @@ class CourseReceptionActionsController {
 	@PostMapping("/course-schedule-changes/{responseId}/response")
 	ResponseEntity<ScheduleChange> respond(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId, @PathVariable UUID responseId, @RequestBody ScheduleChangeResponse request) {
 		return ResponseEntity.ok(changes.respond(subject(jwt), memberId, responseId, request == null ? null : request.response()));
-	}
-
-	@GetMapping("/course-transfer-offers")
-	ResponseEntity<List<TransferOffer>> offers(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId) {
-		return ResponseEntity.ok(transfers.offersForReceptionist(subject(jwt), memberId));
-	}
-
-	@PostMapping("/course-transfer-offers/{offerId}/accept")
-	ResponseEntity<TransferOffer> acceptTransfer(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID memberId, @PathVariable UUID offerId, @Parameter(required = true, schema = @Schema(minLength = 1, maxLength = 100)) @Size(min = 1, max = 100) @RequestHeader(name = "Idempotency-Key", required = false) String key) {
-		return ResponseEntity.ok(transfers.accept(subject(jwt), memberId, offerId, key));
 	}
 
 	@GetMapping("/course-withdrawal-requests")

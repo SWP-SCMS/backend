@@ -220,7 +220,7 @@ Không hard-code các UUID minh họa thành dữ liệu thật. Giá phải đ�
 1. Tra A, đối chiếu người thật/ảnh; gọi `POST /reception/center-visits` với đúng một memberId dạng MB-… hoặc phone, `identityVerified=true`, key riêng.
 2. Kiểm tra visit có source MEMBERSHIP, thời điểm và người tạo. Tạo mới kỳ vọng 201; replay cùng key kỳ vọng 200 và cùng visit.
 3. Mở `GET /reception/center-visits/open` để thấy A trong danh sách.
-4. Check-in lại bằng key mới khi còn lượt mở: chỉ lượt cũ được đóng AUTO_REENTRY và có lượt mới.
+4. Check-in bằng key mới khi còn lượt mở trả 409 CENTER_VISIT_ALREADY_OPEN. Check-out lượt hiện tại rồi check-in lại để tạo lượt mới.
 5. Checkout: `PATCH /reception/members/{memberAccountId}/center-visits/current/checkout`; lúc này path nhận UUID. Tải lại danh sách open, A không còn ở trong đó.
 
 **Nhánh vào học khóa:** dùng K có Enrollment ACTIVE và buổi học đúng thời gian, thêm courseSessionId vào check-in. Kỳ vọng source COURSE; có thể dùng hội viên không có Membership CENTER_ACCESS để chứng minh entitlement khóa độc lập.
