@@ -17588,6 +17588,94 @@
           }
         }
       }
+    },
+    "/members/me/class-sessions/{sessionId}/training-summary": {
+      "get": {
+        "tags": [
+          "member-session-training-controller"
+        ],
+        "description": "Requires MEMBER role; resource ownership is limited to the authenticated member.",
+        "operationId": "classSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberSessionTrainingSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/members/me/course-sessions/{sessionId}/training-summary": {
+      "get": {
+        "tags": [
+          "member-session-training-controller"
+        ],
+        "description": "Requires MEMBER role; resource ownership is limited to the authenticated member.",
+        "operationId": "courseSession",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberSessionTrainingSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -27978,6 +28066,26 @@
           "status",
           "title"
         ]
+      },
+      "MemberSessionTrainingSummary": {
+        "type": "object",
+        "description": "The authenticated member's result and feedback for one session. Missing entries are null; membership expiry does not hide history.",
+        "properties": {
+          "result": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "$ref": "#/components/schemas/TrainingResultResponse"
+          },
+          "feedback": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "$ref": "#/components/schemas/TrainingFeedbackResponse"
+          }
+        }
       }
     },
     "responses": {
