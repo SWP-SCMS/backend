@@ -259,6 +259,7 @@ public class SecurityConfiguration {
 			.requestMatchers("/reception/members/*/course-orders/**").hasRole("RECEPTIONIST")
 			.requestMatchers(HttpMethod.GET, "/members/me/receipts", "/members/me/memberships").hasRole("MEMBER")
 			.requestMatchers(HttpMethod.GET, "/members/me/training-results").hasRole("MEMBER")
+			.requestMatchers(HttpMethod.GET, "/members/me/class-sessions/*/training-summary", "/members/me/course-sessions/*/training-summary").hasRole("MEMBER")
 			.requestMatchers(HttpMethod.GET, "/members/me/feedback").hasRole("MEMBER")
 			.requestMatchers(HttpMethod.GET, "/members/me/training-plans").hasRole("MEMBER")
 			.requestMatchers(HttpMethod.GET, "/members/me/coach-assignment").hasRole("MEMBER")

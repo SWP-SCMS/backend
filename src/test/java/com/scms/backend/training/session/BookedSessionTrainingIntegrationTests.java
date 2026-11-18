@@ -44,6 +44,9 @@ class BookedSessionTrainingIntegrationTests {
 	@Autowired
 	MemberTrainingFeedbackService memberFeedback;
 
+	@Autowired
+	MemberSessionTrainingService memberSummary;
+
 	@MockitoBean
 	Clock clock;
 
@@ -81,6 +84,11 @@ class BookedSessionTrainingIntegrationTests {
 		var edited = service.save(f.coach(), f.session(), f.member(), true, null, "More", "Better");
 		assertThat(edited.result().id()).isEqualTo(created.result().id());
 		assertThat(edited.feedback().id()).isEqualTo(created.feedback().id());
+		var summary = memberSummary.get(f.member(), f.session(), true);
+		assertThat(summary.result().content()).containsEntry("notes", "More");
+		assertThat(summary.feedback().content()).isEqualTo("Better");
+		assertThat(memberSummary.get(UUID.randomUUID(), f.session(), true).result()).isNull();
+		assertThat(memberSummary.get(f.member(), UUID.randomUUID(), true).feedback()).isNull();
 		assertThat(edited.result().activityAt()).isEqualTo(NOW.minusSeconds(3600));
 		var history = memberResults.viewOwnHistory(f.member(), PageRequest.of(0, 20)).content();
 		assertThat(history).hasSize(1);

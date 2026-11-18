@@ -1972,5 +1972,17 @@
   "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary|COACH" : true,
   "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary|MANAGER" : false,
   "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary|MEMBER" : false,
-  "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary|RECEPTIONIST" : false
+  "PUT /coach/pt-sessions/{sessionId}/members/{memberId}/training-summary|RECEPTIONIST" : false,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|ANONYMOUS" : false,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|AUTHENTICATED" : false,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|MEMBER" : true,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|COACH" : false,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|RECEPTIONIST" : false,
+  "GET /members/me/class-sessions/{sessionId}/training-summary|MANAGER" : false,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|ANONYMOUS" : false,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|AUTHENTICATED" : false,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|MEMBER" : true,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|COACH" : false,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|RECEPTIONIST" : false,
+  "GET /members/me/course-sessions/{sessionId}/training-summary|MANAGER" : false
 }
