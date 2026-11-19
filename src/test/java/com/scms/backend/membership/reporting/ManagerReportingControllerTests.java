@@ -29,6 +29,17 @@ class ManagerReportingControllerTests {
 	ManagerReportingService service;
 
 	@Test
+	void returnsBothRevenueSourcesAndRefunds() throws Exception {
+		UUID managerId = UUID.randomUUID();
+		var source = new RevenueSourceResponse(1, java.math.BigInteger.valueOf(100), java.math.BigInteger.valueOf(30), java.math.BigInteger.valueOf(70), 2, 3, java.math.BigInteger.TEN);
+		when(service.revenue(managerId, null, null, false)).thenReturn(new CenterRevenueReportResponse(null, null, source, source, source.plus(source), false));
+		mockMvc.perform(get("/api/v1/manager/reports/revenue").contextPath("/api/v1").with(jwt().jwt(jwt -> jwt.subject(managerId.toString()).claim("role", "MANAGER"))))
+			.andExpect(status().isOk()).andExpect(jsonPath("$.total.paidRevenue").value(200))
+			.andExpect(jsonPath("$.total.completedRefundAmount").value(60)).andExpect(jsonPath("$.total.netRevenue").value(140))
+			.andExpect(jsonPath("$.membership.pendingRefundAmount").value(10)).andExpect(jsonPath("$.course.paidPayments").value(1));
+	}
+
+	@Test
 	void returnsTypedBookingReport() throws Exception {
 		UUID managerId = UUID.randomUUID();
 		Instant from = Instant.parse("2026-10-01T00:00:00Z");

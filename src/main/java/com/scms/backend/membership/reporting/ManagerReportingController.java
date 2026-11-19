@@ -30,6 +30,12 @@ class ManagerReportingController {
 		return ResponseEntity.ok(service.dashboard(id(jwt), from, to, includeTestData));
 	}
 
+	@GetMapping("/reports/revenue")
+	@Operation(description = "Paid revenue by payment date and completed refunds by completion date in [from,to). Pending refund amounts are current outstanding balances.")
+	ResponseEntity<CenterRevenueReportResponse> revenue(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to, @RequestParam(defaultValue = "false") boolean includeTestData) {
+		return ResponseEntity.ok(service.revenue(id(jwt), from, to, includeTestData));
+	}
+
 	@GetMapping("/reports/members")
 	ResponseEntity<MemberReportResponse> members(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) Instant from, @RequestParam(required = false) Instant to, @RequestParam(defaultValue = "false") boolean includeTestData) {
 		return ResponseEntity.ok(service.members(id(jwt), from, to, includeTestData));

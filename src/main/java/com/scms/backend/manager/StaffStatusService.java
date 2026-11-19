@@ -58,7 +58,7 @@ public class StaffStatusService {
 		target.deactivateStaff();
 		accounts.flush();
 		audits.save(new AuditEvent(UUID.randomUUID(), managerId, "STAFF_DEACTIVATED", "ACCOUNT", accountId, request.reason().trim(), Map.of("status", before.name()), Map.of("status", AccountStatus.INACTIVE.name())));
-		return new StaffAccountResponse(target.getId(), target.getRole(), target.getStatus(), target.getFullName(), target.getPhone(), target.getEmail(), target.getBirthDate());
+		return new StaffAccountResponse(target.getId(), target.getRole(), target.getStatus(), target.getFullName(), target.getPhone(), target.getEmail(), target.getBirthDate(), target.getStaffEmergencyContactName(), target.getStaffEmergencyContactPhone());
 	}
 
 	private void ensureCoachHasNoOutstandingWork(UUID coachId) {

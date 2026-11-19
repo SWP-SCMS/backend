@@ -17432,6 +17432,65 @@
           }
         }
       }
+    },
+    "/manager/reports/revenue": {
+      "get": {
+        "tags": [
+          "manager-reporting-controller"
+        ],
+        "description": "Paid revenue by payment date and completed refunds by completion date in [from,to). Pending refund amounts are current outstanding balances.",
+        "operationId": "revenue",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "includeTestData",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "$ref": "#/components/schemas/CenterRevenueReportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -19997,6 +20056,12 @@
           "birthDate": {
             "type": "string",
             "format": "date"
+          },
+          "emergencyContactName": {
+            "type": "string"
+          },
+          "emergencyContactPhone": {
+            "type": "string"
           }
         }
       },
@@ -25623,6 +25688,9 @@
           },
           "includesTestData": {
             "type": "boolean"
+          },
+          "centerRevenue": {
+            "$ref": "#/components/schemas/CenterRevenueReportResponse"
           }
         }
       },
@@ -26721,6 +26789,9 @@
           "assignedSince": {
             "type": "string",
             "format": "date-time"
+          },
+          "physicalConditionNotes": {
+            "type": "string"
           }
         }
       },
@@ -27644,6 +27715,60 @@
               "null"
             ],
             "$ref": "#/components/schemas/TrainingFeedbackResponse"
+          }
+        }
+      },
+      "CenterRevenueReportResponse": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "membership": {
+            "$ref": "#/components/schemas/RevenueSourceResponse"
+          },
+          "course": {
+            "$ref": "#/components/schemas/RevenueSourceResponse"
+          },
+          "total": {
+            "$ref": "#/components/schemas/RevenueSourceResponse"
+          },
+          "includesTestData": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RevenueSourceResponse": {
+        "type": "object",
+        "properties": {
+          "paidPayments": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "paidRevenue": {
+            "type": "integer"
+          },
+          "completedRefundAmount": {
+            "type": "integer"
+          },
+          "netRevenue": {
+            "type": "integer"
+          },
+          "pendingPayments": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failedPayments": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pendingRefundAmount": {
+            "type": "integer"
           }
         }
       }

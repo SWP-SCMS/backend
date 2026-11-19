@@ -138,7 +138,9 @@ class CoachAssignedMemberServiceTests {
 		when(accounts.findById(memberId)).thenReturn(Optional.of(member));
 		when(profiles.findById(memberId)).thenReturn(Optional.of(profile));
 		when(profile.getMemberCode()).thenReturn("MBR-000001");
+		when(profile.getPhysicalConditionNotes()).thenReturn("Previous knee injury");
 		CoachMemberTrainingProfileResponse result = service.getMemberTrainingProfile(coachId, memberId);
+		assertThat(result.physicalConditionNotes()).isEqualTo("Previous knee injury");
 		assertThat(result.memberAccountId()).isEqualTo(memberId);
 		assertThat(result.assignmentId()).isEqualTo(assignment.getId());
 		assertThat(result.memberId()).isEqualTo("MBR-000001");

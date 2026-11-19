@@ -43,6 +43,7 @@ class ManagerReportingServiceTests {
 
 	@Test
 	void rejectsInactiveOrNonManagerActorBeforeReadingReports() {
+		assertThatThrownBy(() -> service.revenue(managerId, null, null, false)).isInstanceOf(InvalidAuthenticatedAccountException.class);
 		assertThatThrownBy(() -> service.members(managerId, null, null, false)).isInstanceOf(InvalidAuthenticatedAccountException.class);
 		verify(db, never()).queryForMap(anyString(), any(Object[].class));
 	}
@@ -50,6 +51,7 @@ class ManagerReportingServiceTests {
 	@Test
 	void rejectsNonIncreasingHalfOpenRangeBeforeReadingReports() {
 		when(accounts.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		assertThatThrownBy(() -> service.revenue(managerId, now, now, false)).isInstanceOf(ReportingValidationException.class);
 		assertThatThrownBy(() -> service.bookings(managerId, now, now, false)).isInstanceOf(ReportingValidationException.class).hasMessage("must be later than from");
 		verify(db, never()).queryForMap(anyString(), any(Object[].class));
 	}

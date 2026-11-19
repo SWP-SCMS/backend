@@ -146,6 +146,6 @@ public class StaffAccountService {
 	}
 
 	private StaffAccountResponse toResponse(Account account) {
-		return new StaffAccountResponse(account.getId(), account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate());
+		return new StaffAccountResponse(account.getId(), account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate(), account.getStaffEmergencyContactName(), account.getStaffEmergencyContactPhone());
 	}
 }
