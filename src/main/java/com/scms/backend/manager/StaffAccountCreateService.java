@@ -58,7 +58,7 @@ public class StaffAccountCreateService {
 		Map<String, Object> snapshot = Map.of("accountId", accountId.toString(), "fullName", account.getFullName(), "phone", account.getPhone(), "email", account.getEmail(), "birthDate", account.getBirthDate().toString(), "role", account.getRole().name(), "status", account.getStatus().name());
 		auditRepository.save(new AuditEvent(UUID.randomUUID(), managerId, "ACCOUNT_CREATED", "ACCOUNT", accountId, snapshot));
 		notificationWriter.write("ACCOUNT_CREATED:" + accountId, accountId, "ACCOUNT_CREATED", "ACCOUNT", accountId, Map.of("accountId", accountId.toString(), "role", account.getRole().name()));
-		return new StaffAccountResponse(accountId, account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate());
+		return new StaffAccountResponse(accountId, account.getRole(), account.getStatus(), account.getFullName(), account.getPhone(), account.getEmail(), account.getBirthDate(), account.getStaffEmergencyContactName(), account.getStaffEmergencyContactPhone());
 	}
 
 	private void ensureActiveManager(UUID managerId) {

@@ -44,6 +44,18 @@ class StaffAccountServiceTests {
 	}
 
 	@Test
+	void managerCanReadStaffEmergencyContact() {
+		UUID managerId = UUID.randomUUID();
+		Account coach = account(AccountRole.COACH, AccountStatus.ACTIVE, "Coach One");
+		coach.updateStaffEmergencyContact("Contact Person", "0912345678", "Sibling");
+		when(accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);
+		when(accountRepository.findById(coach.getId())).thenReturn(java.util.Optional.of(coach));
+		StaffAccountResponse result = service.get(managerId, coach.getId());
+		assertThat(result.emergencyContactName()).isEqualTo("Contact Person");
+		assertThat(result.emergencyContactPhone()).isEqualTo("0912345678");
+	}
+
+	@Test
 	void memberRoleIsRejectedFromStaffSearch() {
 		UUID managerId = UUID.randomUUID();
 		when(accountRepository.existsByIdAndRoleAndStatus(managerId, AccountRole.MANAGER, AccountStatus.ACTIVE)).thenReturn(true);

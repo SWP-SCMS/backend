@@ -35,18 +35,34 @@ class ManagerReportingService {
 
 	private final Clock clock;
 
+	private final CenterRevenueRepository centerRevenue;
+
 	ManagerReportingService(JdbcTemplate db, AccountRepository accounts, PaymentService payments, Clock clock) {
 		this.db = db;
 		this.accounts = accounts;
 		this.payments = payments;
 		this.clock = clock;
+		this.centerRevenue = new CenterRevenueRepository(db);
 		this.managerReportingRepository = new ManagerReportingRepository(this.db, this.clock);
 	}
 
-	@Transactional
+	@Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
 	ManagerDashboardResponse dashboard(UUID actor, Instant from, Instant to, boolean includeTestData) {
 		validate(actor, from, to);
-		return new ManagerDashboardResponse(from, to, membersData(from, to, includeTestData), payments.report(actor, from, to, includeTestData), bookingsData(from, to, includeTestData), attendanceData(from, to, includeTestData), visitsData(from, to, includeTestData), utilizationData(from, to, includeTestData), includeTestData);
+		RevenueReportResponse membershipReport = payments.report(actor, from, to, includeTestData);
+		return new ManagerDashboardResponse(from, to, membersData(from, to, includeTestData), membershipReport, bookingsData(from, to, includeTestData), attendanceData(from, to, includeTestData), visitsData(from, to, includeTestData), utilizationData(from, to, includeTestData), includeTestData, revenueData(membershipReport, from, to, includeTestData));
+	}
+
+	@Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+	CenterRevenueReportResponse revenue(UUID actor, Instant from, Instant to, boolean includeTestData) {
+		validate(actor, from, to);
+		return revenueData(payments.report(actor, from, to, includeTestData), from, to, includeTestData);
+	}
+
+	private CenterRevenueReportResponse revenueData(RevenueReportResponse membershipReport, Instant from, Instant to, boolean includeTestData) {
+		RevenueSourceResponse membership = RevenueSourceResponse.membership(membershipReport, centerRevenue.pendingMembershipRefunds(includeTestData));
+		RevenueSourceResponse course = centerRevenue.course(from, to, includeTestData);
+		return new CenterRevenueReportResponse(from, to, membership, course, membership.plus(course), includeTestData);
 	}
 
 	@Transactional
